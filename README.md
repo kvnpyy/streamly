@@ -41,7 +41,17 @@ custom HLS player, TV remote navigation, EPG guide, parental controls, and more.
 
 ## Screenshots
 
-<!-- TODO: add screenshots/demo GIF -->
+**Home — Continue Watching + library stats**
+![Home](public/screenshots/home.png)
+
+**Movies — discovery shelves (Continue Watching, Top Rated) + full poster grid**
+![Movies](public/screenshots/movies.jpeg)
+
+**Series — Top Rated and Newly Added shelves**
+![Series](public/screenshots/series.png)
+
+**Settings — TV pairing via PIN (no password needed on the remote)**
+![TV Pairing](public/screenshots/settings.png)
 
 ---
 
