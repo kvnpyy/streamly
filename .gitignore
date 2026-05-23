@@ -20,6 +20,9 @@
 # production
 /build
 
+# local SQLite (Drizzle / Auth multi-account)
+/data/
+
 # misc
 .DS_Store
 *.pem
@@ -32,6 +35,22 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+
+# Local VPS deploy target (see scripts/vps-deploy.env.example)
+scripts/.vps-deploy.env
+
+# AI coding-assistant context files (not useful for contributors)
+AGENTS.md
+CLAUDE.md
+
+# Internal planning / pre-launch notes
+PRE_LAUNCH.md
+
+# macOS app bundle (binary, rebuild locally)
+Stream.app/
+
+# macOS one-click launchers (personal shortcuts, not needed for self-hosting)
+*.command
 
 # vercel
 .vercel

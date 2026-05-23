@@ -1,26 +1,305 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  color-scheme: dark;
+  --bg-0: #06070b;
+  --bg-1: #0b0d14;
+  --bg-2: #11141c;
+  --bg-3: #181c27;
+  --line: #1f2330;
+  --line-2: #262b3a;
+  --text: #eef0f6;
+  --text-dim: #9aa0b3;
+  --text-muted: #6b7180;
+  --brand: #7c5cff;
+  --brand-2: #00e0c6;
+  --danger: #ff5470;
+  --warn: #f5a524;
+  --ok: #22c55e;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
+  --color-background: var(--bg-0);
+  --color-foreground: var(--text);
+  --color-bg-1: var(--bg-1);
+  --color-bg-2: var(--bg-2);
+  --color-bg-3: var(--bg-3);
+  --color-line: var(--line);
+  --color-line-2: var(--line-2);
+  --color-text: var(--text);
+  --color-text-dim: var(--text-dim);
+  --color-text-muted: var(--text-muted);
+  --color-brand: var(--brand);
+  --color-brand-2: var(--brand-2);
+  --color-danger: var(--danger);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+/*
+ * Skip next/font variables on TV / Silk (see root layout + middleware) — avoids downloading Geist on weak CPUs.
+ */
+html.tv-server-hint,
+html.stream-silk-hint {
+  --font-geist-sans: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-geist-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
+    "Courier New", monospace;
+}
+
+* {
+  border-color: var(--line);
+}
+
+/* Respect OS “reduce motion” — shorten transitions/animations (incl. Framer Motion). */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
   }
 }
 
+html,
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--bg-0);
+  color: var(--text);
+  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, -apple-system,
+    BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  background:
+    radial-gradient(1200px 600px at 80% -10%, rgba(124, 92, 255, 0.18), transparent 60%),
+    radial-gradient(900px 500px at -10% 20%, rgba(0, 224, 198, 0.10), transparent 60%),
+    linear-gradient(180deg, #06070b 0%, #06070b 100%);
+  min-height: 100vh;
+}
+
+/*
+ * iOS Safari (and several mobile WebViews) zoom the whole page when a focused
+ * input/textarea/select computes to font-size < 16px, forcing a pinch-out to
+ * restore layout. Keep real text fields at least 16px on phone/tablet widths.
+ * Excludes controls that are not “text entry” (range thumbs stay compact).
+ */
+@media (max-width: 1024px) {
+  input:not(
+      [type="checkbox"],
+      [type="radio"],
+      [type="range"],
+      [type="file"],
+      [type="hidden"],
+      [type="button"],
+      [type="submit"],
+      [type="reset"],
+      [type="image"]
+    ),
+  textarea,
+  select {
+    font-size: max(16px, 1em) !important;
+  }
+}
+
+/* Living-room browsers: solid backdrop + faster text shaping (less GPU than layered gradients). */
+html.tv-server-hint body,
+html.stream-silk-hint body,
+html[data-tv="true"] body {
+  background: var(--bg-0);
+  text-rendering: optimizeSpeed;
+}
+
+/* Amazon Silk: fewer compositor layers + no tap flash on D‑Pad / remote “clicks”. */
+html.stream-silk-hint *,
+html.tv-server-hint * {
+  -webkit-tap-highlight-color: transparent;
+}
+
+html[data-tv="true"] .skeleton {
+  animation: none;
+  background: var(--bg-2);
+}
+
+html.stream-silk-hint .skeleton {
+  animation: none;
+  background: var(--bg-2);
+}
+
+/* Scrollbars */
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background: #20252f;
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: #2a3140;
+  background-clip: padding-box;
+}
+
+/* Thin horizontal rails (category chips): hide scrollbar, keep scroll */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+/*
+ * Samsung Internet + other TV WebKit browsers: force hardware-accelerated
+ * momentum scrolling on horizontal rails and channel shelves.
+ * These vendor properties must be in a stylesheet — inline styles alone are
+ * not always picked up by Samsung Internet's compositor.
+ */
+.tv-shelf-scroll {
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-x;
+  will-change: scroll-position;
+}
+.tv-shelf-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+/* Selection */
+::selection {
+  background: rgba(124, 92, 255, 0.35);
+  color: #fff;
+}
+
+/* Glass surface utility */
+@utility glass {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0)) ,
+    rgba(17, 20, 28, 0.6);
+  backdrop-filter: blur(14px) saturate(140%);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+@utility card {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.025), rgba(255, 255, 255, 0))
+    , var(--bg-2);
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.045),
+    0 20px 50px -28px rgba(0, 0, 0, 0.75);
+}
+
+html[data-tv="true"] .card,
+html.stream-silk-hint .card {
+  box-shadow: none;
+}
+
+html[data-tv="true"] .guide-no-epg-play,
+html.stream-silk-hint .guide-no-epg-play {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07);
+}
+
+@utility focus-ring {
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+}
+.focus-ring:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+/* Brand button */
+@utility btn-brand {
+  background: linear-gradient(135deg, #8a6dff 0%, #6a47ff 50%, #5230f0 100%);
+  color: white;
+  box-shadow:
+    0 8px 30px rgba(124, 92, 255, 0.25),
+    inset 0 1px 0 rgba(255, 255, 255, 0.18);
+}
+.btn-brand:hover {
+  filter: brightness(1.05);
+}
+.btn-brand:active {
+  transform: translateY(1px);
+}
+
+/* Subtle chip */
+@utility chip {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--text-dim);
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 12px;
+}
+
+/* Animated skeleton */
+@keyframes shimmer {
+  0% { background-position: -400px 0; }
+  100% { background-position: 400px 0; }
+}
+.skeleton {
+  background: linear-gradient(90deg, #161a24 0%, #1f2532 50%, #161a24 100%);
+  background-size: 800px 100%;
+  animation: shimmer 1.4s linear infinite;
+  border-radius: 0.5rem;
+}
+
+/* Hide native video controls inside our player */
+video::-webkit-media-controls {
+  display: none !important;
+}
+
+/* Marquee for long titles on hover */
+@keyframes marquee {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+
+/*
+ * Smart TV & console browsers (see `detectTvBrowser` + `TvBrowserProvider`).
+ * `data-tv`: modest scale so UI isn’t “half sidebar”. `data-tv-comfort`: optional larger UI from Settings.
+ */
+html[data-tv="true"] {
+  font-size: 106%;
+}
+
+html[data-tv-comfort="true"] {
+  font-size: 118%;
+}
+
+html[data-tv="true"] .focus-ring:focus-visible {
+  outline-width: 3px;
+  outline-offset: 5px;
+  outline-color: var(--brand-2);
+}
+
+html[data-tv="true"] .glass {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  background: rgba(17, 20, 28, 0.94);
+}
+
+html[data-tv="true"] aside nav[aria-label="Main"] a {
+  min-height: 2.75rem;
+  align-items: center;
+}
+
+html[data-tv-comfort="true"] aside nav[aria-label="Main"] a {
+  min-height: 3.25rem;
+}
+
+html[data-tv="true"] video {
+  /* Softer compositing on some TV GPUs */
+  transform: translateZ(0);
 }

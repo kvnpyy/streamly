@@ -1,0 +1,51 @@
+/**
+ * Public product name and copy — single place to rebrand or A/B later.
+ * "Stream" alone is generic in search and app stores; a short compound name
+ * reads more like a product and is easier to defend as a mark (not legal advice).
+ */
+export const SITE_NAME = "Streamly";
+export const SITE_TAGLINE = "Your playlist. One calm player.";
+export const SITE_DESCRIPTION =
+  "Streamly is a fast browser IPTV player for Xtream Codes playlists: live TV, movies, series, EPG, and TV-friendly controls. Sign in with your own provider — we don’t sell channels.";
+
+/** Logged-in feedback (Typeform). Override for staging, e.g. a duplicate form. */
+export const FEEDBACK_FORM_URL =
+  process.env.NEXT_PUBLIC_FEEDBACK_FORM_URL?.trim() ||
+  "https://form.typeform.com/to/e9haRFsv";
+
+/** Shown near login and checkout-style surfaces. */
+export const USER_CONTENT_DISCLAIMER_SHORT =
+  "Streamly does not provide channels or copyrighted content. You need your own subscription and must follow your provider’s terms and applicable law.";
+
+/** Production host — used when `NEXT_PUBLIC_SITE_URL` is unset (canonical, OG, sitemap). */
+export const DEFAULT_SITE_URL = "https://iptvwebplayer.org";
+
+export function siteMetadataBase(): URL | undefined {
+  const raw = process.env.NEXT_PUBLIC_SITE_URL?.trim();
+  if (raw) {
+    try {
+      return new URL(raw.endsWith("/") ? raw.slice(0, -1) : raw);
+    } catch {
+      /* fallthrough */
+    }
+  }
+  if (process.env.VERCEL_URL) {
+    try {
+      return new URL(`https://${process.env.VERCEL_URL}`);
+    } catch {
+      /* fallthrough */
+    }
+  }
+  try {
+    return new URL(DEFAULT_SITE_URL);
+  } catch {
+    return undefined;
+  }
+}
+
+export function absoluteSiteUrl(path = ""): string {
+  const base = siteMetadataBase();
+  if (!base) return path || "/";
+  const p = path.startsWith("/") ? path : `/${path}`;
+  return `${base.origin}${p}`;
+}

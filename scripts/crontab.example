@@ -1,0 +1,10 @@
+# Example: SQLite backups for Streamly (iptv-player) on the VPS.
+# Install: crontab -e (as the same user that owns the app + DATABASE_URL file, usually `stream`)
+#
+# Daily at 03:15 UTC — adjust TZ/time if you prefer local wall clock.
+# Log path must be writable by THIS user (often `stream` cannot write /var/log — use app dir or $HOME).
+15 3 * * * cd /opt/stream/iptv-player && /usr/bin/env bash -lc 'npm run db:backup >> /opt/stream/iptv-player/data/backup-cron.log 2>&1'
+
+# Optional: prune old *.bak.* files weekly (keep last N days on your own schedule;
+# below only logs — replace with find -mtime +14 -delete when you are confident).
+# 0 4 * * 0 find /opt/stream/iptv-player/data -name '*.bak.*' -mtime +14 -print >> /opt/stream/iptv-player/data/prune-cron.log 2>&1
