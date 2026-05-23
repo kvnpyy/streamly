@@ -68,6 +68,9 @@ const noStoreDocument = [
 ] as const;
 
 const nextConfig: NextConfig = {
+  // Produces a self-contained build in .next/standalone — required for the
+  // Dockerfile. Has no effect on `npm start` (bare Node) deployments.
+  output: process.env.DOCKER_BUILD === "1" ? "standalone" : undefined,
   outputFileTracingRoot: projectRoot,
   turbopack: {
     root: projectRoot,

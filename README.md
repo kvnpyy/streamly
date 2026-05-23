@@ -74,25 +74,30 @@ A ready-made **systemd service** is in `scripts/systemd/stream.service`.
 A scripted Ubuntu bootstrap (installs Node, sets up the service, etc.) is in
 `scripts/vps-bootstrap.sh`.
 
-### Option C: Docker
+### Option C: Docker / Docker Compose
 
-```dockerfile
-FROM node:22-alpine AS builder
-WORKDIR /app
-COPY . .
-RUN npm ci && npm run build
+A `Dockerfile` and `docker-compose.yml` are included.
 
-FROM node:22-alpine
-WORKDIR /app
-COPY --from=builder /app/.next/standalone ./
-COPY --from=builder /app/public ./public
-COPY --from=builder /app/.next/static ./.next/static
-ENV NODE_ENV=production PORT=3000
-EXPOSE 3000
-CMD ["node", "server.js"]
+```bash
+# 1. Copy and fill in required env vars
+cp .env.example .env
+
+# 2. Build and start
+docker compose up -d
+
+# App is now at http://localhost:3000
 ```
 
-> Enable `output: 'standalone'` in `next.config.ts` for the standalone copy.
+Or build the image manually:
+
+```bash
+docker build -t streamly .
+docker run -d -p 3000:3000 \
+  -v streamly_data:/app/data \
+  -e AUTH_SECRET=your_secret \
+  -e STREAM_SESSION_SECRET=your_secret \
+  streamly
+```
 
 ---
 
