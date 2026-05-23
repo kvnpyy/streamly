@@ -50,7 +50,7 @@ custom HLS player, TV remote navigation, EPG guide, parental controls, and more.
 ### Option A: run locally (Mac / Linux / Windows WSL)
 
 ```bash
-git clone https://github.com/kevinpayoyo96-dot/streamly.git
+git clone https://github.com/kvnpyy/streamly.git
 cd streamly
 npm install
 cp .env.example .env        # fill in AUTH_SECRET and STREAM_SESSION_SECRET at minimum
