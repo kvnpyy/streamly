@@ -3,17 +3,12 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 
-/**
- * TV Lobby — redirects straight to Live TV, which is the primary use-case
- * when sitting in front of a TV. The home page already shows the TV Hub
- * dashboard on living-room browsers, so this route avoids duplicating it
- * and instead drops the user directly into the channel guide.
- */
+/** TV entry — home hub with discovery (same as /app on living-room clients). */
 export default function TvLobbyPage() {
   const router = useRouter();
 
   useEffect(() => {
-    router.replace("/app/live");
+    router.replace("/app");
   }, [router]);
 
   return (

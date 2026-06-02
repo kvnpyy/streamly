@@ -4,7 +4,7 @@ import { useTvBrowser } from "@/components/TvBrowserProvider";
 import { MOBILE_NAV_MORE, MOBILE_NAV_PRIMARY } from "@/lib/nav-config";
 import { feedbackFormUrlWithContext } from "@/lib/feedback-url";
 import { cn } from "@/lib/utils";
-import { useAuth } from "@/store/auth";
+import { signOutFully } from "@/lib/sign-out-client";
 import { LogOut, Menu, MessageSquare, Settings } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -16,7 +16,6 @@ export function MobileBottomNav() {
   const pathname = usePathname();
   const router = useRouter();
   const tv = useTvBrowser();
-  const { signOut } = useAuth();
   const [sheetOpen, setSheetOpen] = useState(false);
   const [sheetDragY, setSheetDragY] = useState(0);
   const sheetDragYRef = useRef(0);
@@ -197,8 +196,7 @@ export function MobileBottomNav() {
                 className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-sm text-(--text-dim) active:bg-(--bg-2) text-left"
                 onClick={() => {
                   closeSheet();
-                  signOut();
-                  router.push("/login");
+                  void signOutFully().then(() => router.replace("/login"));
                 }}
               >
                 <LogOut className="size-[18px] text-(--danger)" />

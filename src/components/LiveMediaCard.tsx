@@ -27,22 +27,32 @@ import {
   getCachedEpgTitle,
   setCachedEpgTitle,
 } from "@/lib/epg-local-cache";
+import { prefetchLiveStreamManifest } from "@/lib/live-stream-prefetch";
 import type { XtreamCredentials } from "@/lib/xtream-types";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 type LiveMediaCardProps = Omit<MediaCardProps, "subtitle"> & {
   streamId: number;
   creds: XtreamCredentials;
+  /** Proxied `/api/stream` URL — warmed on hover/focus before play. */
+  warmPlaybackUrl?: string;
   /** Xtream category title — improves public EPG country matching. */
   categoryLine?: string;
+  /** Skip per-tile EPG (home recents) — avoids dozens of guide requests. */
+  skipTileEpg?: boolean;
 };
 
 export function LiveMediaCard({
   streamId,
   creds,
+  warmPlaybackUrl,
   categoryLine,
+  skipTileEpg = false,
   ...rest
 }: LiveMediaCardProps) {
+  const warmStream = useCallback(() => {
+    if (warmPlaybackUrl) prefetchLiveStreamManifest(warmPlaybackUrl);
+  }, [warmPlaybackUrl]);
   const fallbackMeta = useMemo(() => parseChannelMeta(rest.title), [rest.title]);
   const countryCode =
     inferCountryFromCategory(categoryLine || "") || fallbackMeta.countryCode;
@@ -60,7 +70,7 @@ export function LiveMediaCard({
   const [ref, inView] = useInView<HTMLDivElement>("400px");
   const { programs } = useChannelEPG({
     streamId,
-    enabled: inView,
+    enabled: inView && !skipTileEpg,
     channelName: rest.title,
     country: countryCode,
   });
@@ -85,9 +95,10 @@ export function LiveMediaCard({
   const displayTitle = nowPlaying ?? cachedTitle ?? undefined;
 
   return (
-    <div ref={ref}>
+    <div ref={ref} onPointerEnter={warmStream} onFocus={warmStream}>
       <MediaCard
         {...rest}
+        panelServer={creds.server}
         subtitle={displayTitle ? `▶ ${displayTitle}` : undefined}
       />
     </div>

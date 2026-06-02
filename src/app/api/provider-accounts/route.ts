@@ -1,6 +1,6 @@
 import { auth } from "@/auth";
 import { getDb } from "@/db";
-import { iptvProviderAccounts } from "@/db/schema";
+import { iptvProviderAccounts, users } from "@/db/schema";
 import {
   attachSessionCookie,
   SessionCookieEncodeError,
@@ -21,10 +21,9 @@ export const dynamic = "force-dynamic";
 
 export async function GET() {
   const session = await auth();
-  const uid = session?.user?.id;
-  if (!uid) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const uidOrRes = await requireStreamUserId(session?.user?.id);
+  if (uidOrRes instanceof NextResponse) return uidOrRes;
+  const uid = uidOrRes;
 
   const rows = await getDb()
     .select({
@@ -39,13 +38,32 @@ export async function GET() {
   return NextResponse.json({ accounts: rows });
 }
 
-/** Verify Xtream creds, encrypt at rest, save, and set playback cookie. */
-export async function POST(req: NextRequest) {
-  const session = await auth();
-  const uid = session?.user?.id;
+async function requireStreamUserId(
+  uid: string | undefined
+): Promise<NextResponse | string> {
   if (!uid) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  const row = await getDb()
+    .select({ id: users.id })
+    .from(users)
+    .where(eq(users.id, uid))
+    .limit(1);
+  if (!row[0]) {
+    return NextResponse.json(
+      { error: "Session expired. Please sign in again." },
+      { status: 401 }
+    );
+  }
+  return uid;
+}
+
+/** Verify Xtream creds, encrypt at rest, save, and set playback cookie. */
+export async function POST(req: NextRequest) {
+  const session = await auth();
+  const uidOrRes = await requireStreamUserId(session?.user?.id);
+  if (uidOrRes instanceof NextResponse) return uidOrRes;
+  const uid = uidOrRes;
 
   let body: unknown;
   try {

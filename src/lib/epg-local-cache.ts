@@ -1,99 +1,184 @@
 /**
- * Tiny localStorage-backed cache for EPG "now playing" titles.
- *
- * Why this exists:
- * - TanStack Query's cache is in-memory only; it's wiped on page refresh.
- * - The `TvCategoryView` localEpg state is also wiped every time the overlay
- *   is closed and re-opened.
- * - EPG API calls (both provider shortEPG and external iptv-org) are slow
- *   enough (~0.5–2 s each) that re-running them every time the overlay opens
- *   creates a noticeable blank period.
- *
- * This module stores { title, fetchedAt } for each stream_id, keyed by
- * `server:username:streamId` so different providers don't pollute each other.
- * Entries expire after TTL_MS (30 min, matching SHORT_EPG_STALE_MS).
- *
- * Storage estimate: ~60 bytes per channel. 2 000 channels ≈ 120 KB —
- * well within the typical 5 MB localStorage quota.
+ * EPG "now playing" title cache — hot in-memory layer + IndexedDB persistence.
+ * Avoids synchronous JSON.parse of huge localStorage blobs on Library first paint.
  */
 
-const LS_KEY = "iptv_epg_cache_v1";
-const TTL_MS = 30 * 60 * 1000; // 30 minutes
+import {
+  idbForEachBatch,
+  idbPutEntries,
+  isIndexedDbAvailable,
+  migrateLegacyLocalStorageEpg,
+  type EpgCacheEntry,
+} from "@/lib/epg-idb";
 
-type Entry = { title: string; at: number };
-type Store = Record<string, Entry>;
+export const EPG_CACHE_TTL_MS = 30 * 60 * 1000;
+const FLUSH_MS = 800;
+const MEMORY_MAX_KEYS = 5_000;
+const IDB_HYDRATE_BATCH = 400;
 
-function load(): Store {
-  if (typeof window === "undefined") return {};
-  try {
-    const raw = localStorage.getItem(LS_KEY);
-    return raw ? (JSON.parse(raw) as Store) : {};
-  } catch {
-    return {};
-  }
-}
+type Store = Record<string, EpgCacheEntry>;
 
-function save(store: Store): void {
-  if (typeof window === "undefined") return;
-  try {
-    localStorage.setItem(LS_KEY, JSON.stringify(store));
-  } catch {
-    // Quota exceeded or private browsing — ignore silently.
-  }
-}
+let memory: Store | null = null;
+let diskHydrateStarted = false;
+let flushTimer: ReturnType<typeof setTimeout> | null = null;
+const dirtyKeys = new Set<string>();
 
-function key(server: string, username: string, streamId: number): string {
+function cacheKey(server: string, username: string, streamId: number): string {
   return `${server}|${username}|${streamId}`;
 }
 
-/** Read a cached title. Returns `null` if absent or expired. */
+function pruneExpired(store: Store, now = Date.now()): void {
+  for (const k of Object.keys(store)) {
+    if (now - store[k]!.at > EPG_CACHE_TTL_MS) delete store[k];
+  }
+}
+
+function trimMemory(store: Store): void {
+  const keys = Object.keys(store);
+  if (keys.length <= MEMORY_MAX_KEYS) return;
+  keys.sort((a, b) => store[a]!.at - store[b]!.at);
+  const drop = keys.length - MEMORY_MAX_KEYS;
+  for (let i = 0; i < drop; i++) delete store[keys[i]!];
+}
+
+function ensureMemory(): Store {
+  if (!memory) {
+    memory = {};
+    scheduleDiskHydrate();
+  }
+  return memory;
+}
+
+/** Hydrate memory from IndexedDB (and migrate legacy LS once) off the critical path. */
+function scheduleDiskHydrate(): void {
+  if (diskHydrateStarted || typeof window === "undefined") return;
+  diskHydrateStarted = true;
+
+  const run = async () => {
+    if (!isIndexedDbAvailable()) return;
+    try {
+      await migrateLegacyLocalStorageEpg();
+      await idbForEachBatch(IDB_HYDRATE_BATCH, async (batch) => {
+        if (!memory) memory = {};
+        const now = Date.now();
+        for (const [k, entry] of batch) {
+          if (now - entry.at <= EPG_CACHE_TTL_MS) {
+            memory[k] = entry;
+          }
+        }
+        pruneExpired(memory, now);
+        trimMemory(memory);
+      });
+    } catch {
+      /* idb blocked / private mode */
+    }
+  };
+
+  if (typeof requestIdleCallback !== "undefined") {
+    requestIdleCallback(() => void run(), { timeout: 3_000 });
+  } else {
+    window.setTimeout(() => void run(), 150);
+  }
+}
+
+function scheduleFlush(): void {
+  if (typeof window === "undefined" || !isIndexedDbAvailable()) return;
+  if (flushTimer) return;
+  flushTimer = setTimeout(() => {
+    flushTimer = null;
+    if (!memory || dirtyKeys.size === 0) return;
+    const batch: Array<[string, EpgCacheEntry]> = [];
+    for (const k of dirtyKeys) {
+      const row = memory[k];
+      if (row) batch.push([k, row]);
+    }
+    dirtyKeys.clear();
+    void idbPutEntries(batch).catch(() => {});
+  }, FLUSH_MS);
+}
+
+function touchEntry(
+  server: string,
+  username: string,
+  streamId: number,
+  title: string
+): void {
+  const store = ensureMemory();
+  const k = cacheKey(server, username, streamId);
+  store[k] = { title, at: Date.now() };
+  dirtyKeys.add(k);
+  trimMemory(store);
+  scheduleFlush();
+}
+
+/** Read a cached title from the hot memory layer (null until hydrated). */
 export function getCachedEpgTitle(
   server: string,
   username: string,
   streamId: number
 ): string | null {
-  const entry = load()[key(server, username, streamId)];
+  const store = ensureMemory();
+  const entry = store[cacheKey(server, username, streamId)];
   if (!entry) return null;
-  if (Date.now() - entry.at > TTL_MS) return null;
+  if (Date.now() - entry.at > EPG_CACHE_TTL_MS) return null;
   return entry.title;
 }
 
-/** Write a title into the cache and prune any expired entries. */
 export function setCachedEpgTitle(
   server: string,
   username: string,
   streamId: number,
   title: string
 ): void {
-  const store = load();
-  store[key(server, username, streamId)] = { title, at: Date.now() };
-
-  // Prune expired entries so localStorage doesn't grow unboundedly.
-  const now = Date.now();
-  for (const k of Object.keys(store)) {
-    if (now - store[k]!.at > TTL_MS) delete store[k];
-  }
-  save(store);
+  touchEntry(server, username, streamId, title);
 }
 
-/**
- * Bulk-read: returns a Map<streamId, title> for all supplied streamIds
- * that are present and non-expired. Useful to pre-populate the localEpg
- * map on overlay open without any API calls.
- */
+export function setCachedEpgTitlesBatch(
+  server: string,
+  username: string,
+  entries: Array<{ streamId: number; title: string }>
+): void {
+  if (!entries.length) return;
+  const store = ensureMemory();
+  const now = Date.now();
+  for (const { streamId, title } of entries) {
+    const k = cacheKey(server, username, streamId);
+    store[k] = { title, at: now };
+    dirtyKeys.add(k);
+  }
+  pruneExpired(store, now);
+  trimMemory(store);
+  scheduleFlush();
+}
+
 export function getBulkCachedEpgTitles(
   server: string,
   username: string,
   streamIds: number[]
 ): Map<number, string> {
-  const store = load();
+  const store = ensureMemory();
   const now = Date.now();
   const result = new Map<number, string>();
   for (const id of streamIds) {
-    const entry = store[key(server, username, id)];
-    if (entry && now - entry.at <= TTL_MS) {
+    const entry = store[cacheKey(server, username, id)];
+    if (entry && now - entry.at <= EPG_CACHE_TTL_MS) {
       result.set(id, entry.title);
     }
   }
   return result;
+}
+
+export function getCachedEpgKnownIds(
+  server: string,
+  username: string,
+  streamIds: number[]
+): Set<number> {
+  const store = ensureMemory();
+  const now = Date.now();
+  const known = new Set<number>();
+  for (const id of streamIds) {
+    const entry = store[cacheKey(server, username, id)];
+    if (entry && now - entry.at <= EPG_CACHE_TTL_MS) known.add(id);
+  }
+  return known;
 }

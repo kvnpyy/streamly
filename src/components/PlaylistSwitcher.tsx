@@ -1,5 +1,6 @@
 "use client";
 
+import { invalidateBrowseCatalogs } from "@/lib/catalog-queries";
 import {
   activateSavedProviderAccount,
   fetchSavedProviderAccounts,
@@ -97,7 +98,7 @@ export function PlaylistSwitcher({ className }: { className?: string }) {
         const merged = account ?? useAuth.getState().account;
         if (merged) writeAuthSessionBridge(nextCreds, merged);
         setActiveSavedId(id);
-        await qc.invalidateQueries();
+        await invalidateBrowseCatalogs(qc, nextCreds);
         await refetch();
         setOpen(false);
       } catch (e) {

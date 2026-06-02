@@ -62,3 +62,41 @@ export type User = typeof users.$inferSelect;
 export type AuthToken = typeof authTokens.$inferSelect;
 export type IptvProviderAccount = typeof iptvProviderAccounts.$inferSelect;
 export type UserProviderFavorites = typeof userProviderFavorites.$inferSelect;
+
+/** Cloud-synced recently watched + VOD resume per Stream user + Xtream login. */
+export const userProviderWatchState = sqliteTable(
+  "user_provider_watch_state",
+  {
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    providerAccountKey: text("provider_account_key").notNull(),
+    recentsJson: text("recents_json").notNull(),
+    vodResumeJson: text("vod_resume_json").notNull(),
+    updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.providerAccountKey] })]
+);
+
+export type UserProviderWatchState = typeof userProviderWatchState.$inferSelect;
+
+/** TMDB weekly trending cache for discovery shelves (Phase 1). */
+export const discoveryTmdbCache = sqliteTable("discovery_tmdb_cache", {
+  id: text("id").primaryKey(),
+  region: text("region").notNull().default("US"),
+  mediaType: text("media_type").notNull(),
+  payloadJson: text("payload_json").notNull(),
+  syncedAt: integer("synced_at", { mode: "timestamp_ms" }).notNull(),
+});
+
+export type DiscoveryTmdbCache = typeof discoveryTmdbCache.$inferSelect;
+
+/** BALLDONTLIE MMA events cache for sports discovery shelves (Phase 3). */
+export const discoverySportsCache = sqliteTable("discovery_sports_cache", {
+  id: text("id").primaryKey(),
+  region: text("region").notNull().default("US"),
+  payloadJson: text("payload_json").notNull(),
+  syncedAt: integer("synced_at", { mode: "timestamp_ms" }).notNull(),
+});
+
+export type DiscoverySportsCache = typeof discoverySportsCache.$inferSelect;

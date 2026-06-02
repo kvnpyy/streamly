@@ -24,3 +24,34 @@ export function isPlayPauseShortcutKey(key: string): boolean {
     key === "MediaPlay"
   );
 }
+
+/**
+ * Remote “channel zap” keys → flip delta (-1 / +1), or null if not a channel key.
+ * Handles legacy `keyCode` values seen on Samsung/LG webviews.
+ */
+export function liveChannelFlipKeyDelta(
+  key: string,
+  keyCode?: number
+): -1 | 1 | null {
+  switch (key) {
+    case "ChannelUp":
+    case "MediaChannelUp":
+    case "PageUp":
+    case "ArrowUp":
+      return -1;
+    case "ChannelDown":
+    case "MediaChannelDown":
+    case "PageDown":
+    case "ArrowDown":
+      return 1;
+    case "MediaTrackNext":
+      return 1;
+    case "MediaTrackPrevious":
+      return -1;
+    default:
+      break;
+  }
+  if (keyCode === 427 || keyCode === 33) return -1;
+  if (keyCode === 428 || keyCode === 34) return 1;
+  return null;
+}

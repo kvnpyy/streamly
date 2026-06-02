@@ -2,7 +2,7 @@
 
 import type { ChannelMeta } from "@/lib/channel-meta";
 import { cn } from "@/lib/utils";
-import { buildImageProxy } from "@/lib/xtream";
+import { proxiedCssBackground } from "@/lib/image-proxy";
 import { Heart, Play } from "lucide-react";
 
 /** Styled initials fallback — same logic as TvChannelCard/TvCategoryView. */
@@ -95,6 +95,7 @@ export function ChannelTile({
   active,
 }: ChannelTileProps) {
   const hasEpg = Boolean(nowPlaying);
+  const iconBg = proxiedCssBackground(icon);
 
   return (
     <div
@@ -120,12 +121,12 @@ export function ChannelTile({
           <div className="absolute inset-0 bg-(--bg-3)">
             <ChannelInitials name={name} />
           </div>
-          {icon && (
+          {iconBg && (
             <div
               aria-hidden
               className="absolute inset-0"
               style={{
-                backgroundImage: `url("${buildImageProxy(icon)}")`,
+                backgroundImage: iconBg,
                 backgroundSize: "contain",
                 backgroundRepeat: "no-repeat",
                 backgroundPosition: "center",

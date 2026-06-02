@@ -1,24 +1,44 @@
 "use client";
 
 import { ChannelTile } from "@/components/ChannelTile";
-import { TvSpatialGrid } from "@/components/TvSpatialGrid";
+import { VirtualChannelTileGrid } from "@/components/VirtualChannelTileGrid";
+import { TvSearchPanel } from "@/components/TvSearchPanel";
 import { MediaCard } from "@/components/MediaCard";
+import { VirtualMediaCatalogGrid } from "@/components/VirtualMediaCatalogGrid";
 import { SectionHeader } from "@/components/SectionHeader";
+import { useTvBrowser } from "@/components/TvBrowserProvider";
+import { liveCatalogQueryOptions } from "@/lib/live-catalog-query";
+import { seriesCatalogQueryOptions } from "@/lib/series-catalog-query";
+import { vodCatalogQueryOptions } from "@/lib/vod-catalog-query";
 import { useSlashFocusSearch } from "@/lib/use-slash-focus-search";
-import { looksAdult, parsePositiveRouteId, safeLower } from "@/lib/utils";
-import { buildLivePlayUrl, xtream } from "@/lib/xtream";
+import {
+  buildLiveChannelIndex,
+  filterLiveChannelsByName,
+} from "@/lib/live-channel-index";
+import {
+  buildNameSearchIndex,
+  filterByNameQuery,
+} from "@/lib/name-search-index";
+import { looksAdult, parsePositiveRouteId } from "@/lib/utils";
+import {
+  buildLiveFlipPlaylist,
+  liveStreamToPlayerSource,
+} from "@/lib/live-flip-playlist";
 import { useAuth } from "@/store/auth";
 import { usePlayer } from "@/store/player";
 import { usePrefs } from "@/store/preferences";
 import { useQuery } from "@tanstack/react-query";
 import { useSearchParams } from "next/navigation";
-import { Suspense, useMemo, useRef } from "react";
+import { Suspense, useDeferredValue, useMemo, useRef } from "react";
+
+const MIN_SEARCH_LEN = 2;
+const MAX_PER_SECTION = 48;
 
 function SearchInner() {
   const sp = useSearchParams();
   const q = sp.get("q") ?? "";
+  const tv = useTvBrowser();
   const slashRef = useRef<HTMLInputElement>(null);
-  /** `/` focuses the sticky bar field via {@link useSlashFocusSearch} fallback id. */
   useSlashFocusSearch(slashRef);
 
   const creds = useAuth((s) => s.creds)!;
@@ -27,54 +47,85 @@ function SearchInner() {
     usePrefs();
   const safe = hideAdult && !parentalUnlocked;
 
-  const live = useQuery({
-    queryKey: ["live", creds.server, creds.username, "all"],
-    queryFn: ({ signal }) => xtream.liveStreamsAll(creds, { signal }),
+  const f = q.trim().toLowerCase();
+  const searchEnabled = f.length >= MIN_SEARCH_LEN;
+
+  const liveCatalog = useQuery({
+    ...liveCatalogQueryOptions(creds),
+    enabled: searchEnabled,
   });
   const vod = useQuery({
-    queryKey: ["vod", creds.server, creds.username, "all"],
-    queryFn: ({ signal }) => xtream.vodStreams(creds, undefined, signal),
+    ...vodCatalogQueryOptions(creds, searchEnabled),
   });
   const series = useQuery({
-    queryKey: ["series", creds.server, creds.username, "all"],
-    queryFn: ({ signal }) => xtream.series(creds, undefined, signal),
+    ...seriesCatalogQueryOptions(creds, searchEnabled),
   });
 
-  const f = q.trim().toLowerCase();
-  const filteredLive = useMemo(
-    () =>
-      f
-        ? (live.data || [])
-            .filter((s) => safeLower(s.name).includes(f))
-            .filter((s) => !safe || !looksAdult({ name: s.name, is_adult: s.is_adult }))
-            .slice(0, 60)
-        : [],
-    [live.data, f, safe]
-  );
-  const filteredVod = useMemo(
-    () =>
-      f
-        ? (vod.data || [])
-            .filter((s) => parsePositiveRouteId(s.stream_id) != null)
-            .filter((s) => safeLower(s.name).includes(f))
-            .filter((s) => !safe || !looksAdult({ name: s.name, is_adult: s.is_adult }))
-            .slice(0, 60)
-        : [],
-    [vod.data, f, safe]
-  );
-  const filteredSeries = useMemo(
-    () =>
-      f
-        ? (series.data || [])
-            .filter((s) => parsePositiveRouteId(s.series_id) != null)
-            .filter((s) => safeLower(s.name).includes(f))
-            .filter((s) => !safe || !looksAdult({ name: s.name }))
-            .slice(0, 60)
-        : [],
-    [series.data, f, safe]
-  );
+  const liveChannelIndex = useMemo(() => {
+    const rows = liveCatalog.data?.streams;
+    if (!searchEnabled || !rows?.length) return null;
+    return buildLiveChannelIndex(rows);
+  }, [liveCatalog.data?.streams, searchEnabled]);
 
-  const total = filteredLive.length + filteredVod.length + filteredSeries.length;
+  const filteredLive = useMemo(() => {
+    if (!searchEnabled || !liveChannelIndex) return [];
+    const matched = filterLiveChannelsByName(liveChannelIndex, f);
+    const out: typeof matched = [];
+    for (const s of matched) {
+      if (out.length >= MAX_PER_SECTION) break;
+      if (safe && looksAdult({ name: s.name, is_adult: s.is_adult })) continue;
+      out.push(s);
+    }
+    return out;
+  }, [liveChannelIndex, f, safe, searchEnabled]);
+  const vodNameIndex = useMemo(() => {
+    const rows = vod.data?.streams;
+    if (!searchEnabled || !rows?.length) return null;
+    return buildNameSearchIndex(rows, (s) => s.name);
+  }, [vod.data?.streams, searchEnabled]);
+
+  const seriesNameIndex = useMemo(() => {
+    const rows = series.data?.streams;
+    if (!searchEnabled || !rows?.length) return null;
+    return buildNameSearchIndex(rows, (s) => s.name);
+  }, [series.data?.streams, searchEnabled]);
+
+  const filteredVod = useMemo(() => {
+    if (!searchEnabled || !vodNameIndex) return [];
+    const matched = filterByNameQuery(vodNameIndex, f);
+    const out: typeof matched = [];
+    for (const s of matched) {
+      if (parsePositiveRouteId(s.stream_id) == null) continue;
+      if (safe && looksAdult({ name: s.name, is_adult: s.is_adult })) continue;
+      out.push(s);
+      if (out.length >= MAX_PER_SECTION) break;
+    }
+    return out;
+  }, [vodNameIndex, f, safe, searchEnabled]);
+
+  const filteredSeries = useMemo(() => {
+    if (!searchEnabled || !seriesNameIndex) return [];
+    const matched = filterByNameQuery(seriesNameIndex, f);
+    const out: typeof matched = [];
+    for (const s of matched) {
+      if (parsePositiveRouteId(s.series_id) == null) continue;
+      if (safe && looksAdult({ name: s.name })) continue;
+      out.push(s);
+      if (out.length >= MAX_PER_SECTION) break;
+    }
+    return out;
+  }, [seriesNameIndex, f, safe, searchEnabled]);
+
+  const deferredLive = useDeferredValue(filteredLive);
+  const deferredVod = useDeferredValue(filteredVod);
+  const deferredSeries = useDeferredValue(filteredSeries);
+
+  const loading =
+    searchEnabled &&
+    (liveCatalog.isFetching || vod.isFetching || series.isFetching);
+
+  const total =
+    deferredLive.length + deferredVod.length + deferredSeries.length;
 
   return (
     <div className="space-y-3 sm:space-y-5">
@@ -83,11 +134,28 @@ function SearchInner() {
         hideDescriptionOnMobile
         eyebrow="Find anything"
         title="Search"
-        description="Use the bar at the top — results update as you type. Live channels, movies, and series all at once."
+        description={
+          tv
+            ? "Type below with your remote — matches appear as you search."
+            : "Use the bar at the top — results update as you type. Live channels, movies, and series all at once."
+        }
       />
+
+      {tv ? <TvSearchPanel className="scroll-mt-4" /> : null}
+
       {!f ? (
         <div className="rounded-xl border border-(--line) bg-(--bg-2)/80 px-4 py-6 sm:py-8 text-center text-sm text-(--text-muted)">
-          Type in the search bar above to see matches here.
+          {tv
+            ? "Enter a title in the search box above to see matches here."
+            : "Type in the search bar at the top of the screen to see matches here."}
+        </div>
+      ) : f.length < MIN_SEARCH_LEN ? (
+        <div className="rounded-xl border border-(--line) bg-(--bg-2)/80 px-4 py-6 text-center text-sm text-(--text-muted)">
+          Type at least {MIN_SEARCH_LEN} characters to search the catalog.
+        </div>
+      ) : loading && total === 0 ? (
+        <div className="rounded-xl border border-(--line) bg-(--bg-2)/80 px-4 py-6 text-center text-sm text-(--text-muted)">
+          Searching…
         </div>
       ) : total === 0 ? (
         <div className="rounded-xl border border-(--line) bg-(--bg-2)/80 px-4 py-6 sm:py-8 text-center text-sm text-(--text-muted)">
@@ -95,15 +163,16 @@ function SearchInner() {
         </div>
       ) : (
         <div className="space-y-6 sm:space-y-8 scroll-mt-4">
-          {filteredLive.length > 0 && (
+          {deferredLive.length > 0 && (
             <section>
               <h3 className="text-sm uppercase tracking-wider text-(--text-muted) mb-3">
-                Live ({filteredLive.length})
+                Live ({deferredLive.length})
               </h3>
-              <TvSpatialGrid className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                {filteredLive.map((c) => (
+              <VirtualChannelTileGrid
+                items={deferredLive}
+                itemKey={(c) => c.stream_id}
+                renderItem={(c) => (
                   <ChannelTile
-                    key={c.stream_id}
                     number={c.num}
                     name={c.name}
                     icon={c.stream_icon}
@@ -120,12 +189,8 @@ function SearchInner() {
                       })
                     }
                     onClick={() => {
-                      play({
-                        kind: "live",
-                        id: c.stream_id,
-                        title: c.name,
-                        poster: c.stream_icon,
-                        url: buildLivePlayUrl(creds, c),
+                      play(liveStreamToPlayerSource(creds, c), {
+                        playlist: buildLiveFlipPlaylist(creds, deferredLive),
                       });
                       addRecent({
                         kind: "live",
@@ -138,72 +203,78 @@ function SearchInner() {
                       });
                     }}
                   />
-                ))}
-              </TvSpatialGrid>
+                )}
+              />
             </section>
           )}
 
-          {filteredVod.length > 0 && (
+          {deferredVod.length > 0 && (
             <section>
               <h3 className="text-sm uppercase tracking-wider text-(--text-muted) mb-3">
-                Movies ({filteredVod.length})
+                Movies ({deferredVod.length})
               </h3>
-              <TvSpatialGrid className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 gap-4">
-                {filteredVod.map((m) => {
+              <VirtualMediaCatalogGrid
+                items={deferredVod}
+                maxItems={MAX_PER_SECTION}
+                revision={f}
+                renderItem={(m) => {
                   const mid = parsePositiveRouteId(m.stream_id)!;
                   return (
-                  <MediaCard
-                    key={mid}
-                    href={`/app/movies/${mid}`}
-                    poster={m.stream_icon}
-                    title={m.name}
-                    subtitle={m.year}
-                    rating={m.rating}
-                    isFavorite={isFavorite("movie", mid)}
-                    onToggleFavorite={() =>
-                      toggleFavorite({
-                        kind: "movie",
-                        id: mid,
-                        name: m.name,
-                        icon: m.stream_icon,
-                      })
-                    }
-                  />
+                    <MediaCard
+                      href={`/app/movies/${mid}`}
+                      poster={m.stream_icon}
+                      title={m.name}
+                      subtitle={m.year}
+                      rating={m.rating}
+                      isFavorite={isFavorite("movie", mid)}
+                      onToggleFavorite={() =>
+                        toggleFavorite({
+                          kind: "movie",
+                          id: mid,
+                          name: m.name,
+                          icon: m.stream_icon,
+                        })
+                      }
+                    />
                   );
-                })}
-              </TvSpatialGrid>
+                }}
+                itemKey={(m) => parsePositiveRouteId(m.stream_id) ?? m.stream_id}
+              />
             </section>
           )}
 
-          {filteredSeries.length > 0 && (
+          {deferredSeries.length > 0 && (
             <section>
               <h3 className="text-sm uppercase tracking-wider text-(--text-muted) mb-3">
-                Series ({filteredSeries.length})
+                Series ({deferredSeries.length})
               </h3>
-              <TvSpatialGrid className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 gap-4">
-                {filteredSeries.map((s) => {
+              <VirtualMediaCatalogGrid
+                items={deferredSeries}
+                maxItems={MAX_PER_SECTION}
+                revision={f}
+                renderItem={(s) => {
                   const sid = parsePositiveRouteId(s.series_id)!;
                   return (
-                  <MediaCard
-                    key={sid}
-                    href={`/app/series/${sid}`}
-                    poster={s.cover}
-                    title={s.name}
-                    subtitle={s.year}
-                    rating={s.rating}
-                    isFavorite={isFavorite("series", sid)}
-                    onToggleFavorite={() =>
-                      toggleFavorite({
-                        kind: "series",
-                        id: sid,
-                        name: s.name,
-                        icon: s.cover,
-                      })
-                    }
-                  />
+                    <MediaCard
+                      href={`/app/series/${sid}`}
+                      poster={s.cover}
+                      title={s.name}
+                      subtitle={s.year}
+                      rating={s.rating}
+                      isFavorite={isFavorite("series", sid)}
+                      onToggleFavorite={() =>
+                        toggleFavorite({
+                          kind: "series",
+                          id: sid,
+                          name: s.name,
+                          icon: s.cover,
+                        })
+                      }
+                    />
                   );
-                })}
-              </TvSpatialGrid>
+                }}
+                itemKey={(s) => parsePositiveRouteId(s.series_id) ?? s.series_id}
+              />
             </section>
           )}
         </div>

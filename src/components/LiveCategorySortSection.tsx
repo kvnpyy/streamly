@@ -8,7 +8,7 @@ import {
   type LiveCategorySortMode,
 } from "@/lib/live-category-sort";
 import { looksAdult } from "@/lib/utils";
-import { xtream } from "@/lib/xtream";
+import { liveCatalogQueryOptions } from "@/lib/live-catalog-query";
 import { browseAccountKey, usePrefs } from "@/store/preferences";
 import { useAuth } from "@/store/auth";
 import { useQuery } from "@tanstack/react-query";
@@ -51,17 +51,16 @@ export function LiveCategorySortSection() {
   const browseByAccount = usePrefs((s) => s.browseByAccount);
   const setBrowsePref = usePrefs((s) => s.setBrowsePref);
 
-  const cats = useQuery({
+  const catalog = useQuery({
+    ...liveCatalogQueryOptions(creds!),
     enabled: !!creds,
-    queryKey: ["live-cats", creds?.server, creds?.username],
-    queryFn: ({ signal }) => xtream.liveCategories(creds!, signal),
   });
 
   const rawFiltered: Category[] = useMemo(() => {
-    const list = cats.data || [];
+    const list = catalog.data?.categories || [];
     if (!hideAdult || parentalUnlocked) return list;
     return list.filter((c) => !looksAdult({ category_name: c.category_name }));
-  }, [cats.data, hideAdult, parentalUnlocked]);
+  }, [catalog.data?.categories, hideAdult, parentalUnlocked]);
 
   const browsePrefsSlice = browseByAccount[accountKey];
 
@@ -140,7 +139,7 @@ export function LiveCategorySortSection() {
         Chooses how groups appear in Live TV rails and the category browser for this Xtream login.
       </p>
 
-      {cats.isLoading ? (
+      {catalog.isLoading ? (
         <div className="flex items-center gap-2 text-sm text-(--text-muted)">
           <Loader2 className="size-4 animate-spin" aria-hidden />
           Loading categories…

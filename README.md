@@ -128,10 +128,23 @@ Copy `.env.example` and fill in at minimum:
 | `DATABASE_URL` | — | SQLite path (default: `file:./data/stream.db`) |
 | `RESEND_API_KEY` | production | Email for sign-up verification & password reset |
 | `EMAIL_FROM` | production | Sender address Resend accepts |
-| `TMDB_API_TOKEN` | optional | [TMDB](https://www.themoviedb.org/settings/api) free read token — enables artwork on channel cards |
+| `TMDB_API_TOKEN` | optional | [TMDB](https://www.themoviedb.org/settings/api) free read token — artwork on channel cards + **Trending this week** discovery shelves |
+| `BALLDONTLIE_API_KEY` | optional | [BALLDONTLIE](https://www.balldontlie.io/) free MMA events API — **Fight night & events** live shelf (5 req/min on free tier) |
+| `NEXT_PUBLIC_DISCOVERY_SHELVES` | optional | Set to `0` to disable discovery shelves (enabled by default) |
+| `DISCOVERY_CRON_SECRET` | optional | Protects `POST /api/discovery/sync-tmdb` and `sync-sports` when set |
+| `NEXT_PUBLIC_DISCOVERY_REGION` | optional | Region code for **Trending in …** home shelf (default `US`) |
 | `NEXT_PUBLIC_GA_MEASUREMENT_ID` | optional | GA4 measurement ID — leave unset to disable analytics |
+| `STREAM_VOD_TRANSCODE` + `NEXT_PUBLIC_VOD_TRANSCODE` | optional | Server-side MKV → HLS via **ffmpeg** (see below) |
 
 See `.env.example` for the full list with comments.
+
+### MKV / HEVC movies & series (optional)
+
+Many Xtream panels serve **MKV** with codecs browsers cannot play. When both
+`STREAM_VOD_TRANSCODE=1` and `NEXT_PUBLIC_VOD_TRANSCODE=1` are set and **ffmpeg**
+is on the server (`apt install ffmpeg`), `/api/stream` can remux/transcode VOD to
+HLS on demand. TV browsers start the boost automatically for MKV-like containers;
+desktop/mobile try native playback first, then fall back on decode errors or long stalls.
 
 ---
 
@@ -142,7 +155,7 @@ src/
   app/
     api/
       xtream/        Xtream Codes JSON proxy
-      stream/        HLS + VOD media proxy (manifest rewriting + Range)
+      stream/        HLS + VOD media proxy (manifest rewriting + optional MKV transcode)
       img/           Poster/logo proxy with caching
       external-epg/  Public XMLTV fallback (epg.pw / iptv-org)
       artwork/       TMDB artwork proxy (server-side cached)

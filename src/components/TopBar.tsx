@@ -6,6 +6,8 @@ import { isAmazonSilkUserAgent } from "@/lib/tv-user-agent";
 import { cn } from "@/lib/utils";
 import { SITE_NAME } from "@/lib/site-brand";
 import { useDebouncedValue } from "@/lib/use-debounce";
+import { useLiveSearchContextOptional } from "@/lib/live-search-context";
+import { LIVE_PAGE_PATH } from "@/lib/use-live-page-search";
 import { Search, Sparkles } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
@@ -55,6 +57,8 @@ function TopBarInner({ title, subtitle }: { title?: string; subtitle?: string })
 
   const showSearchSubmit = tv || silkUa;
   const onSearchPage = pathname === "/app/search";
+  const liveSearch = useLiveSearchContextOptional();
+  const onLivePage = pathname === LIVE_PAGE_PATH && liveSearch != null;
   const urlQ = sp.get("q") ?? "";
 
   /**
@@ -84,7 +88,11 @@ function TopBarInner({ title, subtitle }: { title?: string; subtitle?: string })
   }, [debouncedDraft, searchDraft, onSearchPage, urlQ, sp, router]);
 
   // Ctrl/Cmd+K focuses the search input.
-  const inputValue = onSearchPage ? (searchDraft ?? urlQ) : offRouteQuery;
+  const inputValue = onSearchPage
+    ? (searchDraft ?? urlQ)
+    : onLivePage && liveSearch
+      ? liveSearch.inputValue
+      : offRouteQuery;
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -126,6 +134,10 @@ function TopBarInner({ title, subtitle }: { title?: string; subtitle?: string })
             e.preventDefault();
             const v = inputValue.trim();
             if (!v) return;
+            if (onLivePage && liveSearch) {
+              liveSearch.setInputValue(v);
+              return;
+            }
             router.push(`/app/search?q=${encodeURIComponent(v)}`);
           }}
         >
@@ -135,17 +147,31 @@ function TopBarInner({ title, subtitle }: { title?: string; subtitle?: string })
               ref={ref}
               id="global-search-input"
               value={inputValue}
-              onChange={(e) => {
-                const v = e.target.value;
+              onInput={(e) => {
+                const v = e.currentTarget.value;
                 if (onSearchPage) {
-                  // Update draft instantly (no lag, spacebar works correctly).
-                  // The debounced effect above pushes to the URL after 300 ms.
                   setSearchDraft(v);
+                } else if (onLivePage && liveSearch) {
+                  liveSearch.setInputValue(v);
                 } else {
                   setOffRouteQuery(v);
                 }
               }}
-              placeholder="Search channels, movies, series…"
+              onChange={(e) => {
+                const v = e.target.value;
+                if (onSearchPage) {
+                  setSearchDraft(v);
+                } else if (onLivePage && liveSearch) {
+                  liveSearch.setInputValue(v);
+                } else {
+                  setOffRouteQuery(v);
+                }
+              }}
+              placeholder={
+                onLivePage
+                  ? "Search channels or programs…"
+                  : "Search channels, movies, series…"
+              }
               className="bg-transparent outline-none text-sm w-full min-w-0 placeholder:text-(--text-muted)"
             />
             {!tv && (

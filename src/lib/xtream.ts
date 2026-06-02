@@ -10,7 +10,23 @@ import type {
   VodStream,
   XtreamCredentials,
 } from "./xtream-types";
-import { isXtreamCatalogCacheAction } from "./xtream-catalog-cache";
+import { runEpgFetch } from "./epg-fetch-limiter";
+import {
+  isXtreamCatalogCacheAction,
+  XTREAM_CATALOG_CACHE_MAX_AGE_SEC,
+} from "./xtream-catalog-cache";
+import {
+  finalizeLiveCatalogAsync,
+  MAX_LIVE_CATALOG_STREAMS,
+  normalizeLiveStreamsPayload,
+  normalizeLiveStreamsPayloadAsync,
+} from "./xtream-live-catalog";
+import { yieldToMain } from "./yield-to-main";
+import { resolveProviderMediaUrl } from "./image-proxy";
+
+export { normalizeLiveStreamsPayload } from "./xtream-live-catalog";
+
+export { buildImageProxy } from "./image-proxy";
 
 /** Panels vary: listing array may sit under several keys or at the root. */
 export function extractXtreamEpgPayload(raw: unknown): ShortEPG {
@@ -249,86 +265,8 @@ async function call<T>(
   return (await res.json()) as T;
 }
 
-/** Panels return arrays directly or nest them ({ streams, data, … }). */
-function extractLiveStreamsRows(raw: unknown): unknown[] {
-  if (raw == null) return [];
-  if (Array.isArray(raw)) return raw;
-  if (typeof raw !== "object") return [];
-  const o = raw as Record<string, unknown>;
-  const keys = [
-    "streams",
-    "live_streams",
-    "channels",
-    "available_channels",
-    "data",
-  ];
-  for (const k of keys) {
-    const v = o[k];
-    if (Array.isArray(v)) return v;
-    if (v && typeof v === "object") {
-      const inner = v as Record<string, unknown>;
-      if (Array.isArray(inner.streams)) return inner.streams;
-      if (Array.isArray(inner.data)) return inner.data as unknown[];
-    }
-  }
-  return [];
-}
-
-/**
- * Normalize Xtream `get_live_streams` JSON into usable rows (handles wrappers +
- * loose number/string IDs).
- */
-export function normalizeLiveStreamsPayload(raw: unknown): LiveStream[] {
-  const rows = extractLiveStreamsRows(raw);
-  const out: LiveStream[] = [];
-  for (const item of rows) {
-    if (!item || typeof item !== "object") continue;
-    const r = item as Record<string, unknown>;
-    const stream_id = Number(r.stream_id);
-    if (!Number.isFinite(stream_id)) continue;
-    const name =
-      typeof r.name === "string"
-        ? r.name
-        : r.name != null
-          ? String(r.name)
-          : "";
-    if (!name.trim()) continue;
-    const category_id =
-      r.category_id != null ? String(r.category_id) : "";
-    out.push({
-      num: Number(r.num) || 0,
-      name,
-      stream_type: "live",
-      stream_id,
-      stream_icon:
-        typeof r.stream_icon === "string" ? r.stream_icon : "",
-      epg_channel_id:
-        r.epg_channel_id != null ? String(r.epg_channel_id) : undefined,
-      added:
-        typeof r.added === "string"
-          ? r.added
-          : String(r.added ?? ""),
-      is_adult: r.is_adult as LiveStream["is_adult"],
-      category_id,
-      category_ids: Array.isArray(r.category_ids)
-        ? (r.category_ids as number[])
-        : undefined,
-      custom_sid:
-        r.custom_sid === null || r.custom_sid === undefined
-          ? r.custom_sid
-          : String(r.custom_sid),
-      tv_archive: (r.tv_archive ?? 0) as LiveStream["tv_archive"],
-      direct_source:
-        typeof r.direct_source === "string"
-          ? r.direct_source
-          : undefined,
-      tv_archive_duration: r.tv_archive_duration as LiveStream["tv_archive_duration"],
-    });
-  }
-  return out;
-}
-
-function normalizeLiveCategoriesPayload(raw: unknown): Category[] {
+/** Some panels return `category_name` as a number — coerce before UI calls `.trim()`. */
+export function normalizeCategoriesPayload(raw: unknown): Category[] {
   if (!Array.isArray(raw)) return [];
   const out: Category[] = [];
   for (const item of raw) {
@@ -350,15 +288,106 @@ function normalizeLiveCategoriesPayload(raw: unknown): Category[] {
   return out;
 }
 
-function dedupeLiveStreamsById(rows: LiveStream[]): LiveStream[] {
-  const seen = new Set<number>();
-  const out: LiveStream[] = [];
-  for (const row of rows) {
-    if (seen.has(row.stream_id)) continue;
-    seen.add(row.stream_id);
-    out.push(row);
+export type LiveCatalogBundle = {
+  categories: Category[];
+  streams: LiveStream[];
+  /** Precomputed on VPS — avoids scanning 10k+ streams in the browser for pickers. */
+  countByCategoryId?: Record<string, number>;
+  /** Precomputed on VPS — fast shelf grouping without re-walking the full catalog. */
+  streamIdsByCategory?: Record<string, number[]>;
+};
+
+function liveCatalogServerDisabled(): boolean {
+  const v = process.env.NEXT_PUBLIC_LIVE_CATALOG_SERVER?.trim();
+  return v === "0" || v === "false";
+}
+
+function vodCatalogServerDisabled(): boolean {
+  const v = process.env.NEXT_PUBLIC_VOD_CATALOG_SERVER?.trim();
+  return v === "0" || v === "false";
+}
+
+function seriesCatalogServerDisabled(): boolean {
+  const v = process.env.NEXT_PUBLIC_SERIES_CATALOG_SERVER?.trim();
+  return v === "0" || v === "false";
+}
+
+/** VPS-built live catalogue (one request, normalized server-side). */
+async function fetchLiveCatalogBundle(
+  c: XtreamCredentials,
+  signal?: AbortSignal
+): Promise<LiveCatalogBundle> {
+  const headers: Record<string, string> = {
+    "x-iptv-server": c.server,
+    "x-iptv-username": c.username,
+    "x-iptv-password": c.password,
+  };
+  const res = await fetch("/api/live/catalog", {
+    method: "GET",
+    headers,
+    signal,
+    cache: "default",
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    let msg = `Live catalogue failed (${res.status}).`;
+    try {
+      const j = JSON.parse(text) as { error?: string };
+      if (typeof j?.error === "string" && j.error.length > 0) msg = j.error;
+    } catch {
+      /* keep generic */
+    }
+    throw new Error(msg);
   }
-  return out;
+  const text = await res.text();
+  const { parseCatalogJson } = await import("@/lib/parse-catalog-json");
+  return (await parseCatalogJson(text)) as LiveCatalogBundle;
+}
+
+async function fetchVodCatalogBundle(
+  c: XtreamCredentials,
+  signal?: AbortSignal
+): Promise<import("@/lib/vod-catalog-bundle").VodCatalogBundle> {
+  const headers: Record<string, string> = {
+    "x-iptv-server": c.server,
+    "x-iptv-username": c.username,
+    "x-iptv-password": c.password,
+  };
+  const res = await fetch("/api/vod/catalog", {
+    method: "GET",
+    headers,
+    signal,
+    cache: "default",
+  });
+  if (!res.ok) {
+    throw new Error(`Movie catalog failed (${res.status}).`);
+  }
+  const text = await res.text();
+  const { parseCatalogJson } = await import("@/lib/parse-catalog-json");
+  return (await parseCatalogJson(text)) as import("@/lib/vod-catalog-bundle").VodCatalogBundle;
+}
+
+async function fetchSeriesCatalogBundle(
+  c: XtreamCredentials,
+  signal?: AbortSignal
+): Promise<import("@/lib/vod-catalog-bundle").SeriesCatalogBundle> {
+  const headers: Record<string, string> = {
+    "x-iptv-server": c.server,
+    "x-iptv-username": c.username,
+    "x-iptv-password": c.password,
+  };
+  const res = await fetch("/api/series/catalog", {
+    method: "GET",
+    headers,
+    signal,
+    cache: "default",
+  });
+  if (!res.ok) {
+    throw new Error(`Series catalog failed (${res.status}).`);
+  }
+  const text = await res.text();
+  const { parseCatalogJson } = await import("@/lib/parse-catalog-json");
+  return (await parseCatalogJson(text)) as import("@/lib/vod-catalog-bundle").SeriesCatalogBundle;
 }
 
 /**
@@ -370,19 +399,32 @@ async function fetchLiveStreamsCatalogMerged(
   opts?: { prefetchedCategories?: Category[]; signal?: AbortSignal }
 ): Promise<LiveStream[]> {
   const signal = opts?.signal;
+  if (!liveCatalogServerDisabled()) {
+    try {
+      const bundle = await fetchLiveCatalogBundle(c, signal);
+      return bundle.streams;
+    } catch (e) {
+      if (signal?.aborted) throw e;
+      /* fall through to browser merge */
+    }
+  }
   const rawAll = await call<unknown>(
     c,
     { action: "get_live_streams" },
     signal
   );
-  const direct = normalizeLiveStreamsPayload(rawAll);
+  const direct = await normalizeLiveStreamsPayloadAsync(
+    rawAll,
+    c.server,
+    signal
+  );
   if (direct.length > 0) {
-    return dedupeLiveStreamsById(direct);
+    return finalizeLiveCatalogAsync(direct, signal);
   }
   const categories =
     opts?.prefetchedCategories && opts.prefetchedCategories.length > 0
       ? opts.prefetchedCategories
-      : normalizeLiveCategoriesPayload(
+      : normalizeCategoriesPayload(
           await call<unknown>(
             c,
             { action: "get_live_categories" },
@@ -392,23 +434,37 @@ async function fetchLiveStreamsCatalogMerged(
   if (!categories.length) {
     return [];
   }
-  const settled = await Promise.allSettled(
-    categories.map((cat) =>
-      call<unknown>(
-        c,
-        {
-          action: "get_live_streams",
-          category_id: cat.category_id,
-        },
-        signal
-      ).then(normalizeLiveStreamsPayload)
-    )
-  );
   const merged: LiveStream[] = [];
-  for (const r of settled) {
-    if (r.status === "fulfilled") merged.push(...r.value);
+  const CATEGORY_FETCH_CONCURRENCY = 4;
+  for (let i = 0; i < categories.length; i += CATEGORY_FETCH_CONCURRENCY) {
+    if (signal?.aborted) {
+      throw new DOMException("Aborted", "AbortError");
+    }
+    if (merged.length >= MAX_LIVE_CATALOG_STREAMS) break;
+
+    const slice = categories.slice(i, i + CATEGORY_FETCH_CONCURRENCY);
+    const settled = await Promise.allSettled(
+      slice.map((cat) =>
+        normalizeLiveStreamsPayloadAsync(
+          call<unknown>(
+            c,
+            {
+              action: "get_live_streams",
+              category_id: cat.category_id,
+            },
+            signal
+          ),
+          c.server,
+          signal
+        )
+      )
+    );
+    for (const r of settled) {
+      if (r.status === "fulfilled") merged.push(...r.value);
+    }
+    await yieldToMain();
   }
-  return dedupeLiveStreamsById(merged);
+  return finalizeLiveCatalogAsync(merged, signal);
 }
 
 export const xtream = {
@@ -420,14 +476,56 @@ export const xtream = {
       turnstileToken: opts?.turnstileToken,
     });
   },
-  liveCategories(c: XtreamCredentials, signal?: AbortSignal) {
-    return call<Category[]>(c, { action: "get_live_categories" }, signal);
+  async liveCategories(c: XtreamCredentials, signal?: AbortSignal) {
+    if (!liveCatalogServerDisabled()) {
+      try {
+        const bundle = await fetchLiveCatalogBundle(c, signal);
+        return bundle.categories;
+      } catch (e) {
+        if (signal?.aborted) throw e;
+      }
+    }
+    const raw = await call<unknown>(
+      c,
+      { action: "get_live_categories" },
+      signal
+    );
+    return normalizeCategoriesPayload(raw);
   },
-  vodCategories(c: XtreamCredentials, signal?: AbortSignal) {
-    return call<Category[]>(c, { action: "get_vod_categories" }, signal);
+  /** Categories + merged streams from `/api/live/catalog` (cached on VPS). */
+  async liveCatalogBundle(
+    c: XtreamCredentials,
+    signal?: AbortSignal
+  ): Promise<LiveCatalogBundle> {
+    if (!liveCatalogServerDisabled()) {
+      return fetchLiveCatalogBundle(c, signal);
+    }
+    const categories = normalizeCategoriesPayload(
+      await call<unknown>(c, { action: "get_live_categories" }, signal)
+    );
+    const streams = await fetchLiveStreamsCatalogMerged(c, {
+      prefetchedCategories: categories,
+      signal,
+    });
+    return { categories, streams };
   },
-  seriesCategories(c: XtreamCredentials, signal?: AbortSignal) {
-    return call<Category[]>(c, { action: "get_series_categories" }, signal);
+  /** React Query staleTime helper — matches server catalog TTL. */
+  liveCatalogStaleMs: XTREAM_CATALOG_CACHE_MAX_AGE_SEC * 1000,
+  async vodCategories(c: XtreamCredentials, signal?: AbortSignal) {
+    const raw = await call<unknown>(
+      c,
+      { action: "get_vod_categories" },
+      signal
+    );
+    return normalizeCategoriesPayload(raw);
+  },
+  async seriesCategories(c: XtreamCredentials, signal?: AbortSignal) {
+    const raw = await call<unknown>(
+      c,
+      { action: "get_series_categories" },
+      signal
+    );
+    return normalizeCategoriesPayload(raw);
   },
   async liveStreams(
     c: XtreamCredentials,
@@ -439,7 +537,7 @@ export const xtream = {
       { action: "get_live_streams", category_id: categoryId },
       signal
     );
-    return normalizeLiveStreamsPayload(raw);
+    return normalizeLiveStreamsPayload(raw, c.server);
   },
   /** Full live catalogue: fast path without category_id, then per-category merge if empty. */
   liveStreamsAll(
@@ -455,12 +553,50 @@ export const xtream = {
       signal
     );
   },
+  async vodCatalogBundle(c: XtreamCredentials, signal?: AbortSignal) {
+    if (!vodCatalogServerDisabled()) {
+      try {
+        return await fetchVodCatalogBundle(c, signal);
+      } catch (e) {
+        if (signal?.aborted) throw e;
+      }
+    }
+    const categories = normalizeCategoriesPayload(
+      await call<unknown>(c, { action: "get_vod_categories" }, signal)
+    );
+    const streams = await call<VodStream[]>(
+      c,
+      { action: "get_vod_streams" },
+      signal
+    );
+    const { bundleVodWithIndex } = await import("@/lib/vod-catalog-bundle");
+    return bundleVodWithIndex(categories, streams ?? []);
+  },
   series(c: XtreamCredentials, categoryId?: string, signal?: AbortSignal) {
     return call<SeriesItem[]>(
       c,
       { action: "get_series", category_id: categoryId },
       signal
     );
+  },
+  async seriesCatalogBundle(c: XtreamCredentials, signal?: AbortSignal) {
+    if (!seriesCatalogServerDisabled()) {
+      try {
+        return await fetchSeriesCatalogBundle(c, signal);
+      } catch (e) {
+        if (signal?.aborted) throw e;
+      }
+    }
+    const categories = normalizeCategoriesPayload(
+      await call<unknown>(c, { action: "get_series_categories" }, signal)
+    );
+    const streams = await call<SeriesItem[]>(
+      c,
+      { action: "get_series" },
+      signal
+    );
+    const { bundleSeriesWithIndex } = await import("@/lib/vod-catalog-bundle");
+    return bundleSeriesWithIndex(categories, streams ?? []);
   },
   vodInfo(c: XtreamCredentials, vodId: number, signal?: AbortSignal) {
     return call<VodInfo>(c, { action: "get_vod_info", vod_id: vodId }, signal);
@@ -479,12 +615,14 @@ export const xtream = {
     limit = 6,
     signal?: AbortSignal
   ) {
-    const raw = await call<unknown>(
-      c,
-      { action: "get_short_epg", stream_id: streamId, limit },
-      signal
-    );
-    return extractXtreamEpgPayload(raw);
+    return runEpgFetch(async () => {
+      const raw = await call<unknown>(
+        c,
+        { action: "get_short_epg", stream_id: streamId, limit },
+        signal
+      );
+      return extractXtreamEpgPayload(raw);
+    });
   },
   /**
    * Full per-channel EPG (often multi-day). Many providers populate this
@@ -496,12 +634,14 @@ export const xtream = {
     streamId: number,
     signal?: AbortSignal
   ) {
-    const raw = await call<unknown>(
-      c,
-      { action: "get_simple_data_table", stream_id: streamId },
-      signal
-    );
-    return extractXtreamEpgPayload(raw);
+    return runEpgFetch(async () => {
+      const raw = await call<unknown>(
+        c,
+        { action: "get_simple_data_table", stream_id: streamId },
+        signal
+      );
+      return extractXtreamEpgPayload(raw);
+    });
   },
 };
 
@@ -528,10 +668,3 @@ export function buildStreamUrl(
   return `/api/stream?${params.toString()}`;
 }
 
-export function buildImageProxy(url?: string | null): string | undefined {
-  if (!url) return undefined;
-  const trimmed = url.trim();
-  if (!trimmed) return undefined;
-  if (trimmed.startsWith("/api/img")) return trimmed;
-  return `/api/img?u=${encodeURIComponent(trimmed)}`;
-}

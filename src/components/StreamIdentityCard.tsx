@@ -2,7 +2,8 @@
 
 import { cn } from "@/lib/utils";
 import { SITE_NAME } from "@/lib/site-brand";
-import { signIn, signOut, useSession } from "next-auth/react";
+import { signOutFully } from "@/lib/sign-out-client";
+import { signIn, useSession } from "next-auth/react";
 import { LogIn, LogOut, UserPlus } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
@@ -60,7 +61,7 @@ export function StreamIdentityCard() {
           onClick={async () => {
             setBusy(true);
             setMsg(null);
-            await signOut({ redirect: false });
+            await signOutFully();
             setBusy(false);
           }}
           className="shrink-0 h-9 px-3 rounded-lg bg-(--bg-2) border border-(--line) text-sm flex items-center justify-center gap-2 hover:border-(--line-2)"

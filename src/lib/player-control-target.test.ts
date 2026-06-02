@@ -3,6 +3,7 @@ import {
   isPlayPauseShortcutKey,
   isPlayerControlKeyboardTarget,
   isRemoteActivateKey,
+  liveChannelFlipKeyDelta,
 } from "./player-control-target";
 
 describe("isPlayerControlKeyboardTarget", () => {
@@ -24,5 +25,20 @@ describe("isPlayPauseShortcutKey", () => {
   it("includes media keys", () => {
     expect(isPlayPauseShortcutKey("MediaPlayPause")).toBe(true);
     expect(isPlayPauseShortcutKey("f")).toBe(false);
+  });
+});
+
+describe("liveChannelFlipKeyDelta", () => {
+  it("maps channel and arrow keys", () => {
+    expect(liveChannelFlipKeyDelta("ChannelUp")).toBe(-1);
+    expect(liveChannelFlipKeyDelta("ChannelDown")).toBe(1);
+    expect(liveChannelFlipKeyDelta("ArrowUp")).toBe(-1);
+    expect(liveChannelFlipKeyDelta("ArrowDown")).toBe(1);
+    expect(liveChannelFlipKeyDelta("Escape")).toBeNull();
+  });
+
+  it("maps legacy Samsung key codes", () => {
+    expect(liveChannelFlipKeyDelta("", 427)).toBe(-1);
+    expect(liveChannelFlipKeyDelta("", 428)).toBe(1);
   });
 });

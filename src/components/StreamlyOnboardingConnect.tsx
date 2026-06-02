@@ -21,7 +21,8 @@ import {
   Tv,
 } from "lucide-react";
 import { Turnstile } from "@marsidev/react-turnstile";
-import { signOut, useSession } from "next-auth/react";
+import { signOutFully } from "@/lib/sign-out-client";
+import { useSession } from "next-auth/react";
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 
@@ -54,7 +55,7 @@ export function StreamlyOnboardingConnect() {
   const [turnstileMountKey, setTurnstileMountKey] = useState(0);
   const prevTabRef = useRef<Tab | undefined>(undefined);
 
-  /** Remount Turnstile when switching tabs — not on first paint (avoids DOM races with the widget). */
+  /** Remount Turnstile when switching tabs - not on first paint (avoids DOM races with the widget). */
   useEffect(() => {
     const prev = prevTabRef.current;
     prevTabRef.current = tab;
@@ -243,7 +244,7 @@ export function StreamlyOnboardingConnect() {
             <form onSubmit={submitPinLogin} className="space-y-5">
               <div className="rounded-xl border border-(--line) bg-(--bg-3)/80 px-4 py-3 text-sm text-(--text-dim) leading-relaxed">
                 On another device where you&apos;re already logged in, open{" "}
-                <strong className="text-(--text)">{SITE_NAME}</strong> → Settings →{" "}
+                <strong className="text-(--text)">{SITE_NAME}</strong> ? Settings ?{" "}
                 <strong className="text-(--text)">Link a TV with a PIN</strong>, then
                 enter the code here.
               </div>
@@ -284,7 +285,7 @@ export function StreamlyOnboardingConnect() {
                 {loading ? (
                   <>
                     <span className="size-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
-                    Linking…
+                    Linking
                   </>
                 ) : (
                   <>
@@ -371,7 +372,7 @@ export function StreamlyOnboardingConnect() {
                 {loading ? (
                   <>
                     <span className="size-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
-                    Connecting…
+                    Connecting
                   </>
                 ) : (
                   <>
@@ -391,7 +392,11 @@ export function StreamlyOnboardingConnect() {
           <div className="mt-6 pt-5 border-t border-(--line) flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <button
               type="button"
-              onClick={() => void signOut({ callbackUrl: "/login" })}
+              onClick={() =>
+                void signOutFully().then(() => {
+                  window.location.assign("/login");
+                })
+              }
               className="text-xs text-(--text-muted) hover:text-(--text) underline underline-offset-2 min-h-11 text-left"
             >
               Sign out and use a different account

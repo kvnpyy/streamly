@@ -1,7 +1,7 @@
 "use client";
 
 import { TvSpatialGrid } from "@/components/TvSpatialGrid";
-import { useWindowVirtualizer } from "@tanstack/react-virtual";
+import { useVirtualizer, useWindowVirtualizer } from "@tanstack/react-virtual";
 import {
   useLayoutEffect,
   useMemo,
@@ -19,7 +19,7 @@ import {
  */
 function useWindowVirtualAnchorMargin(
   anchorRef: RefObject<HTMLElement | null>,
-  /** Bumps the subscription when list length changes (row virtualizer reset). */
+  /** Bumps the subscription when list length or layout above the grid changes. */
   listRevision: unknown
 ) {
   const [scrollMargin, setScrollMargin] = useState(0);
@@ -31,39 +31,53 @@ function useWindowVirtualAnchorMargin(
         setScrollMargin(0);
         return;
       }
-      setScrollMargin(el.getBoundingClientRect().top + window.scrollY);
+      const rect = el.getBoundingClientRect();
+      const y = rect.top + window.scrollY;
+      setScrollMargin((prev) => (Math.abs(prev - y) < 0.5 ? prev : y));
     };
 
-    update();
-    window.addEventListener("resize", update);
-    window.addEventListener("scroll", update, { passive: true });
+    const scheduleUpdate = () => {
+      requestAnimationFrame(() => requestAnimationFrame(update));
+    };
+
+    scheduleUpdate();
+    window.addEventListener("resize", scheduleUpdate);
+    window.addEventListener("scroll", scheduleUpdate, { passive: true });
     const vv = window.visualViewport;
-    vv?.addEventListener("resize", update);
-    vv?.addEventListener("scroll", update);
+    vv?.addEventListener("resize", scheduleUpdate);
+    vv?.addEventListener("scroll", scheduleUpdate);
 
     const el = anchorRef.current;
+    const parent = el?.parentElement ?? null;
+
     const ro =
       typeof ResizeObserver !== "undefined" && el
-        ? new ResizeObserver(update)
+        ? new ResizeObserver(scheduleUpdate)
         : null;
-    ro?.observe(el!);
+    if (el) ro?.observe(el);
+    if (parent && parent !== el) ro?.observe(parent);
 
-    const io =
-      typeof IntersectionObserver !== "undefined" && el
-        ? new IntersectionObserver(update, {
-            root: null,
-            threshold: [0, 0.01, 0.25, 0.5, 1],
-          })
+    /** Discovery shelves / rails above the grid change height without resizing the anchor. */
+    const mo =
+      typeof MutationObserver !== "undefined" && parent
+        ? new MutationObserver(scheduleUpdate)
         : null;
-    io?.observe(el!);
+    if (parent) {
+      mo?.observe(parent, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      characterData: false,
+      });
+    }
 
     return () => {
-      window.removeEventListener("resize", update);
-      window.removeEventListener("scroll", update);
-      vv?.removeEventListener("resize", update);
-      vv?.removeEventListener("scroll", update);
+      window.removeEventListener("resize", scheduleUpdate);
+      window.removeEventListener("scroll", scheduleUpdate);
+      vv?.removeEventListener("resize", scheduleUpdate);
+      vv?.removeEventListener("scroll", scheduleUpdate);
       ro?.disconnect();
-      io?.disconnect();
+      mo?.disconnect();
     };
   }, [listRevision]); // eslint-disable-line react-hooks/exhaustive-deps -- anchorRef stable
 
@@ -105,6 +119,11 @@ export type VirtualMediaCatalogGridProps<T> = {
    * appearing/disappearing) so scrollMargin recalculates and the black-gap is avoided.
    */
   revision?: unknown;
+  /**
+   * Window virtualization breaks when large discovery rails sit above the grid
+   * (blank scroll region). Plain grid is used when true — still capped at maxItems.
+   */
+  plainGrid?: boolean;
 };
 
 /**
@@ -118,9 +137,11 @@ export function VirtualMediaCatalogGrid<T>({
   itemKey,
   footer,
   revision,
+  plainGrid = false,
 }: VirtualMediaCatalogGridProps<T>) {
   const sliced = useMemo(() => items.slice(0, maxItems), [items, maxItems]);
   const anchorRef = useRef<HTMLDivElement>(null);
+  const gridRef = useRef<HTMLDivElement>(null);
   const [cols, setCols] = useState(2);
   const [containerWidth, setContainerWidth] = useState(800);
   // Combine sliced.length with revision so scrollMargin refreshes when shelves above toggle.
@@ -150,14 +171,14 @@ export function VirtualMediaCatalogGrid<T>({
   useLayoutEffect(() => {
     const update = () => {
       setCols(catalogColsFromViewport());
-      const el = anchorRef.current;
+      const el = gridRef.current ?? anchorRef.current?.parentElement;
       if (el) {
         setContainerWidth(el.offsetWidth);
       }
     };
     update();
     window.addEventListener("resize", update);
-    const el = anchorRef.current;
+    const el = gridRef.current ?? anchorRef.current?.parentElement;
     const ro =
       typeof ResizeObserver !== "undefined" && el
         ? new ResizeObserver(update)
@@ -172,16 +193,49 @@ export function VirtualMediaCatalogGrid<T>({
   const virtualizer = useWindowVirtualizer({
     count: rows.length,
     estimateSize: () => rowHeight,
-    overscan,
+    overscan: Math.max(overscan, 3),
     scrollMargin,
     getItemKey: getRowItemKey,
   });
 
+  useLayoutEffect(() => {
+    virtualizer.measure();
+  }, [rows.length, scrollMargin, cols, rowHeight, listRevision, virtualizer]);
+
+  if (plainGrid && sliced.length > 0) {
+    return (
+      <>
+        <div ref={anchorRef} className="h-0 w-full shrink-0" aria-hidden />
+        <div ref={gridRef} className="w-full">
+          <TvSpatialGrid
+            className="grid w-full gap-4"
+            style={{
+              gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`,
+            }}
+          >
+            {sliced.map((item, idx) => {
+              const rowIndex = Math.floor(idx / cols);
+              const colIdx = idx % cols;
+              return (
+                <div key={itemKey(item, rowIndex, colIdx)} className="min-w-0">
+                  {renderItem(item)}
+                </div>
+              );
+            })}
+          </TvSpatialGrid>
+        </div>
+        {footer}
+      </>
+    );
+  }
+
   return (
     <>
-      <div ref={anchorRef} className="w-full">
+      <div ref={anchorRef} className="h-0 w-full shrink-0" aria-hidden />
+      <div ref={gridRef} className="w-full min-h-[1px]">
         <TvSpatialGrid
-          className="relative w-full"
+          key={listRevision}
+          className="relative w-full [transform:translateZ(0)]"
           style={{
             height: `${virtualizer.getTotalSize()}px`,
           }}
@@ -189,13 +243,15 @@ export function VirtualMediaCatalogGrid<T>({
           {virtualizer.getVirtualItems().map((vi) => {
             const row = rows[vi.index];
             if (!row) return null;
+            const rowOffset = vi.start - scrollMargin;
             return (
               <div
                 key={vi.key}
                 data-index={vi.index}
-                className="absolute left-0 top-0 w-full gap-4"
+                className="absolute left-0 top-0 w-full"
                 style={{
-                  transform: `translateY(${vi.start}px)`,
+                  transform: `translate3d(0, ${rowOffset}px, 0)`,
+                  WebkitTransform: `translate3d(0, ${rowOffset}px, 0)`,
                   height: vi.size,
                   display: "grid",
                   gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`,
@@ -234,6 +290,9 @@ export type VirtualLiveChannelGridProps<T> = {
   renderItem: (item: T) => ReactNode;
   itemKey: (item: T, rowIndex: number, colIndex: number) => string | number;
   footer?: ReactNode;
+  /** Override scroll panel max-height (e.g. full overlay: `calc(100dvh - 8rem)`). */
+  scrollMaxHeight?: string;
+  scrollClassName?: string;
 };
 
 export function VirtualLiveChannelGrid<T>({
@@ -242,11 +301,12 @@ export function VirtualLiveChannelGrid<T>({
   renderItem,
   itemKey,
   footer,
+  scrollMaxHeight,
+  scrollClassName,
 }: VirtualLiveChannelGridProps<T>) {
   const sliced = useMemo(() => items.slice(0, maxItems), [items, maxItems]);
-  const anchorRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
   const [cols, setCols] = useState(1);
-  const scrollMargin = useWindowVirtualAnchorMargin(anchorRef, sliced.length);
 
   const rows = useMemo(() => {
     const out: T[][] = [];
@@ -266,32 +326,36 @@ export function VirtualLiveChannelGrid<T>({
   );
 
   useLayoutEffect(() => {
-    const update = () => {
-      setCols(liveColsFromViewport());
-    };
+    const update = () => setCols(liveColsFromViewport());
     update();
     window.addEventListener("resize", update);
-    return () => {
-      window.removeEventListener("resize", update);
-    };
+    return () => window.removeEventListener("resize", update);
   }, [sliced.length]);
 
-  const virtualizer = useWindowVirtualizer({
+  const virtualizer = useVirtualizer({
     count: rows.length,
+    getScrollElement: () => scrollRef.current,
     estimateSize: () => LIVE_ROW_EST_PX,
-    overscan: 4,
-    scrollMargin,
+    overscan: 5,
     getItemKey: getRowItemKey,
   });
 
+  const truncated = items.length > maxItems;
+
   return (
-    <>
-      <div ref={anchorRef} className="w-full">
-        <TvSpatialGrid
-          className="relative w-full"
-          style={{
-            height: `${virtualizer.getTotalSize()}px`,
-          }}
+    <div className="space-y-2">
+      <div
+        ref={scrollRef}
+        className={`live-channel-scroll w-full flex-1 min-h-0 overflow-y-auto overflow-x-hidden overscroll-y-contain rounded-xl border border-(--line) bg-(--bg-1)/30 ${scrollClassName ?? ""}`}
+        style={{
+          maxHeight:
+            scrollMaxHeight ?? "min(72dvh, calc(100vh - 11rem))",
+          WebkitOverflowScrolling: "touch",
+        }}
+      >
+        <div
+          className="relative w-full p-2 sm:p-3"
+          style={{ height: `${virtualizer.getTotalSize()}px` }}
         >
           {virtualizer.getVirtualItems().map((vi) => {
             const row = rows[vi.index];
@@ -300,10 +364,12 @@ export function VirtualLiveChannelGrid<T>({
               <div
                 key={vi.key}
                 data-index={vi.index}
-                className="absolute left-0 top-0 w-full"
+                ref={virtualizer.measureElement}
+                className="absolute left-0 w-full box-border"
                 style={{
+                  top: 0,
                   transform: `translateY(${vi.start}px)`,
-                  height: vi.size,
+                  minHeight: vi.size,
                   display: "grid",
                   gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`,
                   gap: LIVE_GAP_PX,
@@ -317,9 +383,15 @@ export function VirtualLiveChannelGrid<T>({
               </div>
             );
           })}
-        </TvSpatialGrid>
+        </div>
       </div>
+      {truncated && (
+        <p className="text-xs text-(--text-muted) px-1">
+          Showing first {maxItems.toLocaleString()} of {items.length.toLocaleString()}{" "}
+          channels. Pick a category or search to narrow the list.
+        </p>
+      )}
       {footer}
-    </>
+    </div>
   );
 }

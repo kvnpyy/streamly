@@ -23,6 +23,9 @@
 # local SQLite (Drizzle / Auth multi-account)
 /data/
 
+# VPS upstream / live-catalog disk cache
+.cache/
+
 # misc
 .DS_Store
 *.pem

@@ -83,14 +83,39 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     }),
   ],
   callbacks: {
-    jwt({ token, user }) {
-      if (user?.id) token.sub = user.id;
+    async jwt({ token, user }) {
+      if (user?.id) {
+        token.sub = user.id;
+        token.email = user.email ?? token.email;
+        token.name = user.name ?? token.name;
+        return token;
+      }
+      const sub = token.sub;
+      if (typeof sub !== "string") return token;
+      const rows = await getDb()
+        .select({ id: users.id, name: users.name, email: users.email })
+        .from(users)
+        .where(eq(users.id, sub))
+        .limit(1);
+      const row = rows[0];
+      if (!row) {
+        delete token.sub;
+        delete token.name;
+        delete token.email;
+        return token;
+      }
+      token.name = row.name ?? undefined;
+      token.email = row.email;
       return token;
     },
     session({ session, token }) {
       const sub = token.sub;
       if (session.user && typeof sub === "string") {
         session.user.id = sub;
+        if (typeof token.name === "string") session.user.name = token.name;
+        if (typeof token.email === "string") session.user.email = token.email;
+      } else if (session.user) {
+        delete (session.user as { id?: string }).id;
       }
       return session;
     },

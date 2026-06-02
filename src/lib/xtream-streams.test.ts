@@ -49,4 +49,12 @@ describe("normalizeLiveStreamsPayload", () => {
     ]);
     expect(r[0]?.stream_id).toBe(404);
   });
+
+  it("resolves relative stream_icon against panel server", () => {
+    const r = normalizeLiveStreamsPayload(
+      [{ stream_id: 9, name: "News", stream_icon: "/logos/news.png" }],
+      "http://192.168.0.10:8080"
+    );
+    expect(r[0]?.stream_icon).toBe("http://192.168.0.10:8080/logos/news.png");
+  });
 });

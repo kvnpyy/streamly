@@ -2,21 +2,46 @@
 
 import { ActiveCategoryFilterBar } from "@/components/ActiveCategoryFilterBar";
 import { VirtualMediaCatalogGrid } from "@/components/VirtualMediaCatalogGrid";
+import { DiscoveryShelf } from "@/components/DiscoveryShelf";
 import { MediaShelf } from "@/components/MediaShelf";
+import { useCatalogPageReady } from "@/hooks/use-catalog-page-ready";
+import { useMovieDiscoveryShelves } from "@/hooks/use-vod-discovery-shelves";
+import { isDiscoveryShelvesEnabled } from "@/lib/discovery";
 import { MobileCategoryRail } from "@/components/MobileCategoryRail";
 import { MediaCard } from "@/components/MediaCard";
 import { SectionHeader, SkeletonGrid } from "@/components/SectionHeader";
+import { buildProviderGenreShelves } from "@/lib/vod-genre-discovery";
 import { parsePositiveRouteId } from "@/lib/utils";
 import { useDebouncedValue } from "@/lib/use-debounce";
 import { useSlashFocusSearch } from "@/lib/use-slash-focus-search";
-import { looksAdult, safeLower, safeStr } from "@/lib/utils";
-import { xtream } from "@/lib/xtream";
-import type { XtreamCredentials } from "@/lib/xtream-types";
+import {
+  buildNameSearchIndex,
+  filterByNameQuery,
+} from "@/lib/name-search-index";
+import { looksAdult, safeStr } from "@/lib/utils";
+import { vodCatalogQueryOptions } from "@/lib/vod-catalog-query";
+import type { VodStream, XtreamCredentials } from "@/lib/xtream-types";
 import { useAuth } from "@/store/auth";
 import { browseAccountKey, usePrefs } from "@/store/preferences";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowDownAZ, Star, TrendingUp } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { scheduleWhenIdle } from "@/lib/defer-idle";
+import {
+  buildIdsByCategory,
+  buildItemByIdMap,
+  countByCategoryFromIndex,
+  pickItemsForCategory,
+} from "@/lib/vod-catalog-index";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import {
+  useCallback,
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useTransition,
+} from "react";
 
 type Sort = "added" | "rating" | "name";
 
@@ -35,8 +60,18 @@ function MoviesPageInner({
   creds: XtreamCredentials;
   accountKey: string;
 }) {
-  const { isFavorite, toggleFavorite, hideAdult, parentalUnlocked, setBrowsePref, recents } =
-    usePrefs();
+  const {
+    isFavorite,
+    toggleFavorite,
+    hideAdult,
+    parentalUnlocked,
+    setBrowsePref,
+    recents,
+    favorites,
+  } = usePrefs();
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
 
   const [categoryOverride, setCategoryOverride] = useState<
     string | "all" | null
@@ -58,25 +93,58 @@ function MoviesPageInner({
         ? "all"
         : String(savedMoviesCategory);
 
-  const selectedBase = categoryOverride ?? prefsCategory;
+  const [, startCategorySwitch] = useTransition();
 
   const setCategory = useCallback(
     (v: string | "all") => {
-      const next = v === "all" ? "all" : String(v);
-      setCategoryOverride(next);
-      setBrowsePref(accountKey, { moviesCategory: next });
+      startCategorySwitch(() => {
+        const next = v === "all" ? "all" : String(v);
+        setCategoryOverride(next);
+        setBrowsePref(accountKey, { moviesCategory: next });
+        const params = new URLSearchParams(searchParams.toString());
+        if (next === "all") params.delete("category");
+        else params.set("category", next);
+        const qs = params.toString();
+        router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+      });
     },
-    [accountKey, setBrowsePref]
+    [accountKey, setBrowsePref, searchParams, pathname, router, startCategorySwitch]
   );
 
-  const cats = useQuery({
-    queryKey: ["vod-cats", creds.server, creds.username],
-    queryFn: ({ signal }) => xtream.vodCategories(creds, signal),
-  });
-  const movies = useQuery({
-    queryKey: ["vod", creds.server, creds.username, "all"],
-    queryFn: ({ signal }) => xtream.vodStreams(creds, undefined, signal),
-  });
+  const catalogReady = useCatalogPageReady();
+  const catalog = useQuery(vodCatalogQueryOptions(creds, catalogReady));
+
+  const cats = useMemo(
+    () => ({
+      data: catalog.data?.categories,
+      isLoading: !catalogReady || catalog.isLoading,
+      isError: catalog.isError,
+      isFetched: catalog.isFetched,
+    }),
+    [
+      catalog.data?.categories,
+      catalogReady,
+      catalog.isLoading,
+      catalog.isError,
+      catalog.isFetched,
+    ]
+  );
+
+  const movies = useMemo(
+    () => ({
+      data: catalog.data?.streams,
+      isLoading: !catalogReady || catalog.isLoading,
+      isError: catalog.isError,
+      isFetched: catalog.isFetched,
+    }),
+    [
+      catalog.data?.streams,
+      catalogReady,
+      catalog.isLoading,
+      catalog.isError,
+      catalog.isFetched,
+    ]
+  );
 
   const filteredCats = useMemo(() => {
     const list = cats.data || [];
@@ -88,6 +156,15 @@ function MoviesPageInner({
     () => new Set(filteredCats.map((c) => String(c.category_id))),
     [filteredCats]
   );
+
+  const fromUrlCategory = useMemo(() => {
+    const fromUrl = searchParams.get("category");
+    if (!fromUrl || fromUrl === "all") return null;
+    if (!allowedCatIds.has(fromUrl)) return null;
+    return fromUrl;
+  }, [searchParams, allowedCatIds]);
+
+  const selectedBase = categoryOverride ?? fromUrlCategory ?? prefsCategory;
 
   const selected =
     selectedBase !== "all" &&
@@ -102,34 +179,79 @@ function MoviesPageInner({
     queueMicrotask(() => setCategoryOverride(null));
   }, [selectedBase, selected, accountKey, setBrowsePref]);
 
-  const countById = useMemo(() => {
-    const map: Record<string, number> = {};
-    (movies.data || []).forEach((s) => {
-      const cid = String(s.category_id);
-      if (hideAdult && !parentalUnlocked) {
-        if (!allowedCatIds.has(cid)) return;
-        if (looksAdult({ name: s.name, is_adult: s.is_adult })) return;
-      }
-      map[cid] = (map[cid] || 0) + 1;
+  useEffect(() => {
+    if (!fromUrlCategory) return;
+    queueMicrotask(() => {
+      setBrowsePref(accountKey, { moviesCategory: fromUrlCategory });
     });
-    return map;
-  }, [movies.data, hideAdult, parentalUnlocked, allowedCatIds]);
+  }, [fromUrlCategory, accountKey, setBrowsePref]);
 
-  const visible = useMemo(() => {
-    let list = movies.data || [];
+  const vodCatalog = useMemo(() => {
+    const raw = movies.data || [];
+    if (!raw.length) {
+      return {
+        filtered: [] as VodStream[],
+        byId: undefined as Map<number, VodStream> | undefined,
+        idsByCategory: undefined as Record<string, number[]> | undefined,
+        countById: {} as Record<string, number>,
+      };
+    }
+    let filtered = raw;
     if (hideAdult && !parentalUnlocked) {
-      list = list.filter(
+      filtered = filtered.filter(
         (s) =>
           allowedCatIds.has(String(s.category_id)) &&
           !looksAdult({ name: s.name, is_adult: s.is_adult })
       );
     }
-    if (selected !== "all") {
-      const sel = String(selected);
-      list = list.filter((s) => String(s.category_id) === sel);
+    const byId = buildItemByIdMap(filtered, (s) => s.stream_id);
+    const serverIndex = catalog.data?.idsByCategory;
+    const serverCounts = catalog.data?.countByCategoryId;
+    if (serverIndex && serverCounts) {
+      return {
+        filtered,
+        byId,
+        idsByCategory: serverIndex,
+        countById: serverCounts,
+      };
     }
+    const idsByCategory = buildIdsByCategory(
+      filtered,
+      (s) => String(s.category_id),
+      (s) => s.stream_id
+    );
+    return {
+      filtered,
+      byId,
+      idsByCategory,
+      countById: countByCategoryFromIndex(idsByCategory),
+    };
+  }, [catalog.data, movies.data, hideAdult, parentalUnlocked, allowedCatIds]);
+
+  const countById = vodCatalog.countById;
+
+  const categoryStreams = useMemo(
+    () =>
+      selected === "all"
+        ? vodCatalog.filtered
+        : pickItemsForCategory(
+            vodCatalog.filtered,
+            selected,
+            vodCatalog.idsByCategory,
+            vodCatalog.byId
+          ),
+    [vodCatalog, selected]
+  );
+
+  const categoryNameIndex = useMemo(
+    () => buildNameSearchIndex(categoryStreams, (s) => s.name),
+    [categoryStreams]
+  );
+
+  const visible = useMemo(() => {
+    let list = categoryStreams;
     const f = qFilter.trim().toLowerCase();
-    if (f) list = list.filter((s) => safeLower(s.name).includes(f));
+    if (f) list = filterByNameQuery(categoryNameIndex, f);
     if (sort === "rating" || sort === "name") {
       list = list.slice().sort((a, b) => {
         if (sort === "rating") {
@@ -142,15 +264,7 @@ function MoviesPageInner({
     }
     /* sort === "added": keep panel order (avoids O(n log n) on huge catalogs). */
     return list;
-  }, [
-    movies.data,
-    selected,
-    qFilter,
-    sort,
-    hideAdult,
-    parentalUnlocked,
-    allowedCatIds,
-  ]);
+  }, [categoryStreams, categoryNameIndex, qFilter, sort]);
 
   // ── Discovery shelves ───────────────────────────────────────────────────
 
@@ -182,61 +296,97 @@ function MoviesPageInner({
       .filter((x): x is NonNullable<typeof x> => x !== null);
   }, [recents, movies.data, isFavorite, toggleFavorite]);
 
-  /** Top-rated movies — sorted by Xtream rating, capped at 24. */
-  const topRatedItems = useMemo(() => {
-    const safe_ = hideAdult && !parentalUnlocked;
-    return (movies.data ?? [])
-      .filter((m) => {
-        if (parsePositiveRouteId(m.stream_id) == null) return false;
-        if (safe_ && looksAdult({ name: m.name, is_adult: m.is_adult })) return false;
-        return (parseFloat(m.rating || "0") || 0) >= 6;
-      })
-      .sort(
-        (a, b) =>
-          (parseFloat(b.rating || "0") || 0) - (parseFloat(a.rating || "0") || 0)
-      )
-      .slice(0, 24)
-      .map((m) => {
-        const mid = parsePositiveRouteId(m.stream_id)!;
-        return {
-          id: mid,
-          href: `/app/movies/${mid}`,
-          poster: m.stream_icon,
-          title: m.name,
-          subtitle: m.year,
-          rating: m.rating,
-          isFavorite: isFavorite("movie", mid),
-          onToggleFavorite: () =>
-            toggleFavorite({ kind: "movie", id: mid, name: m.name, icon: m.stream_icon }),
-        };
-      });
-  }, [movies.data, hideAdult, parentalUnlocked, isFavorite, toggleFavorite]);
+  const toggleFavoriteMovie = useCallback(
+    (m: VodStream, mid: number) => {
+      toggleFavorite({ kind: "movie", id: mid, name: m.name, icon: m.stream_icon });
+    },
+    [toggleFavorite]
+  );
 
-  /** Newly added movies — provider order (newest first), capped at 24. */
-  const newlyAddedItems = useMemo(() => {
-    const safe_ = hideAdult && !parentalUnlocked;
-    return (movies.data ?? [])
-      .filter((m) => {
-        if (parsePositiveRouteId(m.stream_id) == null) return false;
-        if (safe_ && looksAdult({ name: m.name, is_adult: m.is_adult })) return false;
-        return true;
-      })
-      .slice(0, 24)
-      .map((m) => {
-        const mid = parsePositiveRouteId(m.stream_id)!;
-        return {
-          id: mid,
-          href: `/app/movies/${mid}`,
-          poster: m.stream_icon,
-          title: m.name,
-          subtitle: m.year,
-          rating: m.rating,
-          isFavorite: isFavorite("movie", mid),
-          onToggleFavorite: () =>
-            toggleFavorite({ kind: "movie", id: mid, name: m.name, icon: m.stream_icon }),
-        };
-      });
-  }, [movies.data, hideAdult, parentalUnlocked, isFavorite, toggleFavorite]);
+  const discoveryOn = isDiscoveryShelvesEnabled();
+
+  const [discoveryReady, setDiscoveryReady] = useState(false);
+  useEffect(() => {
+    if (selected !== "all" || qFilter || movies.isLoading || !discoveryOn) {
+      queueMicrotask(() => setDiscoveryReady(false));
+      return;
+    }
+    return scheduleWhenIdle(() => setDiscoveryReady(true), 2_500);
+  }, [selected, qFilter, movies.isLoading, discoveryOn]);
+
+  const discovery = useMovieDiscoveryShelves(
+    discoveryReady ? movies.data : undefined,
+    recents,
+    favorites,
+    {
+      hideAdult,
+      parentalUnlocked,
+      isFavorite,
+      toggleFavoriteMovie,
+    }
+  );
+
+  const topRatedItems = discovery.topRated;
+  const newlyAddedItems = discovery.newlyAdded;
+
+  const genreShelves = useMemo(
+    () =>
+      discoveryReady
+        ? buildProviderGenreShelves({
+        kind: "movie",
+        categories: filteredCats,
+        countById,
+        streams: movies.data ?? [],
+        allowedCatIds,
+        hideAdult,
+        parentalUnlocked,
+        isFavorite: (kind, id) => isFavorite(kind, id),
+        toggleFavorite,
+          })
+        : [],
+    [
+      discoveryReady,
+      filteredCats,
+      countById,
+      movies.data,
+      allowedCatIds,
+      hideAdult,
+      parentalUnlocked,
+      isFavorite,
+      toggleFavorite,
+    ]
+  );
+
+  const showDiscovery =
+    discoveryReady &&
+    discoveryOn &&
+    selected === "all" &&
+    !qFilter &&
+    !movies.isLoading;
+
+  const displayVisible = useDeferredValue(visible);
+
+  const gridRevision = useMemo(
+    () =>
+      [
+        showDiscovery ? "disc" : "grid",
+        recentMovieItems.length,
+        topRatedItems.length,
+        newlyAddedItems.length,
+        genreShelves.map((s) => `${s.categoryId}:${s.items.length}`).join(","),
+        selected,
+        qFilter,
+      ].join("|"),
+    [
+      showDiscovery,
+      recentMovieItems.length,
+      topRatedItems.length,
+      newlyAddedItems.length,
+      genreShelves,
+      selected,
+      qFilter,
+    ]
+  );
 
   const selectedCategoryName = useMemo(() => {
     if (selected === "all") return "";
@@ -274,7 +424,7 @@ function MoviesPageInner({
       />
 
       {/* ── Discovery shelves (hidden when user has active filters) ── */}
-      {selected === "all" && !qFilter && !movies.isLoading && (
+      {showDiscovery && (
         <div className="space-y-6">
           {recentMovieItems.length > 0 && (
             <MediaShelf
@@ -283,20 +433,40 @@ function MoviesPageInner({
               items={recentMovieItems}
             />
           )}
+          {discoveryOn && discovery.forYou.length > 0 && (
+            <DiscoveryShelf
+              meta={discovery.meta.vod_for_you_movies}
+              items={discovery.forYou}
+            />
+          )}
+          {discoveryOn && discovery.trending.length > 0 && (
+            <DiscoveryShelf
+              meta={discovery.meta.vod_trending_movies}
+              items={discovery.trending}
+              loading={discovery.trendingLoading}
+            />
+          )}
           {topRatedItems.length > 0 && (
-            <MediaShelf
-              eyebrow="Highly rated"
-              title="Top Rated"
+            <DiscoveryShelf
+              meta={discovery.meta.vod_top_rated_movies}
               items={topRatedItems}
             />
           )}
           {newlyAddedItems.length > 0 && (
-            <MediaShelf
-              eyebrow="Fresh from your provider"
-              title="Newly Added"
+            <DiscoveryShelf
+              meta={discovery.meta.vod_new_movies}
               items={newlyAddedItems}
             />
           )}
+          {genreShelves.map((shelf) => (
+            <MediaShelf
+              key={shelf.categoryId}
+              eyebrow="Browse by genre"
+              title={shelf.title}
+              items={shelf.items}
+              seeAllHref={`/app/movies?category=${encodeURIComponent(shelf.categoryId)}`}
+            />
+          ))}
         </div>
       )}
 
@@ -328,11 +498,22 @@ function MoviesPageInner({
           No movies match your filters.
         </div>
       ) : (
-        <VirtualMediaCatalogGrid
-          items={visible}
-          maxItems={600}
+        <>
+          {showDiscovery && (
+            <div className="pt-1">
+              <p className="text-[11px] font-semibold uppercase tracking-widest text-(--brand-2) mb-0.5">
+                Full catalog
+              </p>
+              <h2 className="text-base font-bold text-(--text) leading-tight">
+                All Movies
+              </h2>
+            </div>
+          )}
+          <VirtualMediaCatalogGrid
+          items={displayVisible}
+          maxItems={400}
           itemKey={(m) => m.stream_id}
-          revision={`${movies.isLoading ? "loading" : "loaded"}:${selected}:${qFilter}`}
+          revision={gridRevision}
           renderItem={(m) => (
             <MediaCard
               href={`/app/movies/${m.stream_id}`}
@@ -359,6 +540,7 @@ function MoviesPageInner({
             ) : null
           }
         />
+        </>
       )}
     </div>
   );

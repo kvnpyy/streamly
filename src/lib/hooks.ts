@@ -36,6 +36,7 @@ export function useShortEPG(
     enabled:
       queryEnabled && !!creds && !!streamId && Number.isFinite(streamId),
     staleTime: SHORT_EPG_STALE_MS,
+    retry: false,
   });
 }
 
@@ -52,6 +53,7 @@ export function useFullEPG(streamId?: number, enabled = true) {
     enabled:
       enabled && !!creds && !!streamId && Number.isFinite(streamId),
     staleTime: 5 * 60_000,
+    retry: false,
   });
 }
 
@@ -260,6 +262,8 @@ export function useChannelEPG(opts: {
   enabled?: boolean;
   channelName?: string;
   country?: string;
+  /** Rows for provider short EPG (tiles use 2; guide uses more). */
+  shortLimit?: number;
 }) {
   const {
     streamId,
@@ -267,10 +271,11 @@ export function useChannelEPG(opts: {
     enabled = true,
     channelName,
     country,
+    shortLimit = 6,
   } = opts;
   const canFetchProvider =
     enabled && !!streamId && hasEpgChannelId !== false;
-  const short = useShortEPG(canFetchProvider ? streamId : undefined, 6);
+  const short = useShortEPG(canFetchProvider ? streamId : undefined, shortLimit);
   const shortList =
     short.isSuccess ? (short.data?.epg_listings ?? []) : [];
   const shortParsable = epgListingsHaveParsableTimes(shortList);

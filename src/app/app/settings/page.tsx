@@ -10,10 +10,11 @@ import { UserContentDisclaimer } from "@/components/UserContentDisclaimer";
 import { formatDate } from "@/lib/utils";
 import { feedbackFormUrlWithContext } from "@/lib/feedback-url";
 import { SITE_NAME } from "@/lib/site-brand";
+import { signOutFully } from "@/lib/sign-out-client";
 import { useAuth } from "@/store/auth";
 import { usePrefs } from "@/store/preferences";
 import { Lock, MonitorPlay, ShieldCheck, ShieldOff, Unlock } from "lucide-react";
-import { signOut as nextAuthSignOut, useSession } from "next-auth/react";
+import { useSession } from "next-auth/react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
@@ -25,7 +26,7 @@ export default function SettingsPage() {
   const { data: streamSession, status: streamSessionStatus } = useSession();
   const streamSignedIn =
     streamSessionStatus === "authenticated" && !!streamSession?.user?.id;
-  const { creds, account, signOut } = useAuth();
+  const { creds, account } = useAuth();
   const {
     favorites,
     recents,
@@ -100,7 +101,7 @@ export default function SettingsPage() {
         </p>
         <Toggle
           label="Comfort layout"
-          description="Bumps root font size and sidebar row height across the app."
+          description="Larger text, TV-style home hub, and grid shelves when browsing from the couch."
           value={comfortTvBrowsing}
           onChange={setComfortTvBrowsing}
         />
@@ -133,8 +134,7 @@ export default function SettingsPage() {
           <button
             type="button"
             onClick={async () => {
-              await nextAuthSignOut({ redirect: false });
-              signOut();
+              await signOutFully();
               router.replace("/login");
             }}
             className="min-h-11 px-4 rounded-lg bg-(--danger)/15 border border-(--danger)/30 text-(--danger) text-sm hover:bg-(--danger)/20 inline-flex items-center justify-center"
@@ -147,8 +147,7 @@ export default function SettingsPage() {
       {streamSignedIn && (
         <DeleteStreamAccountCard
           onSuccess={async () => {
-            await nextAuthSignOut({ redirect: false });
-            signOut();
+            await signOutFully();
             try {
               usePrefs.persist.clearStorage();
             } catch {

@@ -1,0 +1,1066 @@
+"use client";
+
+import { useEffect, type Dispatch, type RefObject, type SetStateAction } from "react";
+import type Hls from "hls.js";
+import type { ErrorData, Level, MediaPlaylist } from "hls.js";
+import { STREAM_PROXY_REQUEST_ID_HEADER } from "@/lib/request-id";
+import {
+  isAppleMobileWebKitDevice,
+  isChromiumBasedDesktopBrowser,
+  isSafariFamilyWithoutChromium,
+} from "@/lib/browser";
+import {
+  applyGentleLiveHlsRecovery,
+  LIVE_PLAYBACK_ERROR_GRACE_MS,
+  indexOfLowestSafeLevel,
+  levelDeclaresHevc,
+  levelDeclaresNonPreferredChromePackagedAudio,
+  livePlaybackStoppedMessage,
+  preferBrowserFriendlyAudioTrack,
+  stabilizeBrowserFriendlyCodecs,
+  tryCapAbrLower,
+} from "@/lib/live-hls-playback";
+import { playbackBreadcrumb } from "@/lib/playback-telemetry";
+import {
+  buildAppleMobileLiveHlsConfig,
+  buildIptvHlsJsConfig,
+  levelsListKey,
+} from "@/lib/iptv-hls-config";
+import { playbackUrlIsHls } from "@/lib/playback-url";
+import {
+  readPreferredPlayerVolume,
+} from "@/lib/player-volume-pref";
+import { withLiveHlsCompatMse } from "@/lib/stream-url";
+import { isAmazonSilkUserAgent, isTvClassUserAgent } from "@/lib/tv-user-agent";
+import { safeVideoPlay } from "@/lib/video-play";
+import {
+  playbackUrlUsesVodTranscode,
+} from "@/lib/vod-transcode-url";
+import { vodResumeStorageKey } from "@/lib/player-vod-resume";
+import { browseAccountKey, usePrefs } from "@/store/preferences";
+import type { PlayerSource } from "@/store/player";
+import type { useHlsRuntime } from "@/hooks/use-hls-runtime";
+
+export type UsePlayerPlaybackPipelineParams = {
+  open: boolean;
+  current: PlayerSource | null;
+  isLive: boolean;
+  creds: { server: string; username: string; password: string } | null;
+  vodPlaybackUrl: string | null;
+  playbackRetryKey: number;
+  chromiumDesktopClient: boolean;
+  tvBrowser: boolean;
+  silkLikeClient: boolean;
+  hlsRuntime: ReturnType<typeof useHlsRuntime>;
+  videoRef: RefObject<HTMLVideoElement | null>;
+  hlsRef: RefObject<InstanceType<typeof Hls> | null>;
+  streamSupportRequestIdRef: RefObject<string | null>;
+  liveTryAgainStrikeRef: RefObject<number>;
+  fragLoadDowngradeRef: RefObject<number>;
+  probeFetchRef: RefObject<AbortController | null>;
+  vodDurationHintRef: RefObject<number>;
+  vodStartOffsetRef: RefObject<number>;
+  vodEncodedSecRef: RefObject<number>;
+  hlsLiveEdgeRestartGateRef: RefObject<number>;
+  livePlaybackRecoveryGenRef: RefObject<number>;
+  livePlaybackErrorSuppressUntilRef: RefObject<number>;
+  userChoseAutoHlsQualityRef: RefObject<boolean>;
+  userTouchedHlsQualityRef: RefObject<boolean>;
+  vodPrepKickRef: RefObject<AbortController | null>;
+  vodSeekRestartTimerRef: RefObject<ReturnType<typeof setTimeout> | null>;
+  stallTimer: RefObject<ReturnType<typeof setTimeout> | null>;
+  requestVodTranscodeFallbackRef: RefObject<() => boolean>;
+  setError: Dispatch<SetStateAction<string | null>>;
+  setStreamSupportRequestId: Dispatch<SetStateAction<string | null>>;
+  setNeedsTapToPlay: Dispatch<SetStateAction<boolean>>;
+  setStalled: Dispatch<SetStateAction<boolean>>;
+  setTime: Dispatch<SetStateAction<number>>;
+  setDuration: Dispatch<SetStateAction<number>>;
+  setVodTotalSec: Dispatch<SetStateAction<number>>;
+  setLevels: Dispatch<SetStateAction<Level[]>>;
+  setCurrentLevel: Dispatch<SetStateAction<number>>;
+  setSubtitles: Dispatch<SetStateAction<{ id: number; label: string; lang?: string; source: "hls" | "native" }[]>>;
+  setActiveSubtitle: Dispatch<SetStateAction<number>>;
+  setLiveAudioNoPicture: Dispatch<SetStateAction<boolean>>;
+  setLoading: Dispatch<SetStateAction<boolean>>;
+  setVolume: Dispatch<SetStateAction<number>>;
+  setVideoHasFrame: Dispatch<SetStateAction<boolean>>;
+  setVodPrepProgress: Dispatch<SetStateAction<number>>;
+  applyVodDurationHint: (sec: number) => void;
+  applyVodTranscodeTimelineHints: (hints: {
+    startOffset?: number;
+    encoded?: number;
+  }) => void;
+};
+
+export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
+  const {
+    open,
+    current,
+    isLive,
+    creds,
+    vodPlaybackUrl,
+    playbackRetryKey,
+    chromiumDesktopClient,
+    tvBrowser,
+    silkLikeClient,
+    hlsRuntime,
+    videoRef,
+    hlsRef,
+    streamSupportRequestIdRef,
+    liveTryAgainStrikeRef,
+    fragLoadDowngradeRef,
+    probeFetchRef,
+    vodDurationHintRef,
+    vodStartOffsetRef,
+    vodEncodedSecRef,
+    hlsLiveEdgeRestartGateRef,
+    livePlaybackRecoveryGenRef,
+    livePlaybackErrorSuppressUntilRef,
+    userChoseAutoHlsQualityRef,
+    userTouchedHlsQualityRef,
+    vodPrepKickRef,
+    vodSeekRestartTimerRef,
+    stallTimer,
+    requestVodTranscodeFallbackRef,
+    setError,
+    setStreamSupportRequestId,
+    setNeedsTapToPlay,
+    setStalled,
+    setTime,
+    setDuration,
+    setVodTotalSec,
+    setLevels,
+    setCurrentLevel,
+    setSubtitles,
+    setActiveSubtitle,
+    setLiveAudioNoPicture,
+    setLoading,
+    setVolume,
+    setVideoHasFrame,
+    setVodPrepProgress,
+    applyVodDurationHint,
+    applyVodTranscodeTimelineHints,
+  } = p;
+
+  useEffect(() => {
+    if (!open || !current) return;
+    const video = videoRef.current;
+    if (!video) return;
+
+    setError(null);
+    streamSupportRequestIdRef.current = null;
+    setStreamSupportRequestId(null);
+    liveTryAgainStrikeRef.current = 0;
+    setNeedsTapToPlay(false);
+    setStalled(false);
+    setTime(0);
+    setDuration(0);
+    setVodTotalSec(0);
+      vodDurationHintRef.current = 0;
+    vodStartOffsetRef.current = 0;
+    vodEncodedSecRef.current = 0;
+    setLevels([]);
+    setCurrentLevel(-1);
+    setSubtitles([]);
+    setActiveSubtitle(-1);
+    setLiveAudioNoPicture(false);
+    userChoseAutoHlsQualityRef.current = false;
+    userTouchedHlsQualityRef.current = false;
+
+    let cancelled = false;
+    fragLoadDowngradeRef.current = 0;
+    probeFetchRef.current?.abort();
+    probeFetchRef.current = new AbortController();
+    const probeSignal = probeFetchRef.current.signal;
+    const url = withLiveHlsCompatMse(
+      vodPlaybackUrl ?? current.url,
+      isLive
+    );
+    const vodTranscodeHls = !isLive && playbackUrlUsesVodTranscode(url);
+    setLoading(!vodTranscodeHls);
+
+    const preferredVol = readPreferredPlayerVolume();
+    if (preferredVol != null) {
+      video.volume = preferredVol;
+      queueMicrotask(() => setVolume(preferredVol));
+    }
+
+    const cleanupHls = () => {
+      if (hlsRef.current) {
+        try {
+          hlsRef.current.stopLoad();
+        } catch {
+          /* noop */
+        }
+        try {
+          hlsRef.current.destroy();
+        } catch {
+          /* noop */
+        }
+        hlsRef.current = null;
+      }
+    };
+
+    cleanupHls();
+    hlsLiveEdgeRestartGateRef.current = 0;
+
+    const tryAutoplay = async () => {
+      if (cancelled) return;
+      try {
+        await safeVideoPlay(video);
+      } catch {
+        if (cancelled) return;
+        // Autoplay rejected (usually because audio isn't allowed).
+        // Try muted autoplay as a fallback.
+        try {
+          video.muted = true;
+          await safeVideoPlay(video);
+          // Show a hint so the user can tap to unmute.
+          setNeedsTapToPlay(true);
+        } catch {
+          if (!cancelled) setNeedsTapToPlay(true);
+        }
+      }
+    };
+
+    const isHls = playbackUrlIsHls(url, isLive);
+
+    const canNativeHls =
+      typeof video.canPlayType === "function" &&
+      video.canPlayType("application/vnd.apple.mpegurl") !== "";
+    /**
+     * Safari native HLS cannot play our **in-progress** server transcode playlists (growing
+     * EVENT-style m3u8). Always use hls.js for `transcode=hls` on Mac Safari, iPhone, etc.
+     */
+    /**
+     * Native WebKit HLS: VOD everywhere it works; **live** only on iPhone/iPad (AC-3 / variant ladders).
+     * macOS Safari live uses hls.js so we can hold the live edge (native AVFoundation buffers heavily).
+     */
+    const useNativeAppleHls =
+      isHls &&
+      !vodTranscodeHls &&
+      ((isLive && isAppleMobileWebKitDevice()) ||
+        (!isLive && (canNativeHls || isAppleMobileWebKitDevice())));
+
+    /**
+     * iPhone/iPad live: **native** `<video src=m3u8>` (AVFoundation) is the default — it usually handles
+     * provider muxed AAC/AC‑3 and variant ladders better than hls.js over **MSE** on WebKit.
+     * Set `NEXT_PUBLIC_IOS_LIVE_USE_HLSJS=1` to force hls.js (legacy workaround for some native DVR edge cases).
+     */
+    const appleMobileLiveMse =
+      typeof process !== "undefined" &&
+      process.env.NEXT_PUBLIC_IOS_LIVE_USE_HLSJS === "1" &&
+      isLive &&
+      isHls &&
+      isAppleMobileWebKitDevice() &&
+      (hlsRuntime?.isSupported() ?? false);
+
+    const livingRoomLike =
+      typeof navigator !== "undefined" &&
+      isTvClassUserAgent(navigator.userAgent || "");
+
+    const silkLike =
+      typeof navigator !== "undefined" &&
+      isAmazonSilkUserAgent(navigator.userAgent || "");
+
+    /** Do not treat touchscreen laptops as mobile — `pointer: coarse` alone caused huge live buffers + lag. */
+    const mobileLike =
+      typeof window !== "undefined" &&
+      (livingRoomLike ||
+        silkLike ||
+        window.matchMedia("(max-width: 768px)").matches);
+
+    const unsupportedBrowserAudioMsg = livingRoomLike || silkLike
+      ? "This channel’s audio (often AC-3/E-AC-3) isn’t supported in the Amazon Silk / TV browser player. Try another channel, use Chromecast, or watch with a native IPTV app on the same device if available."
+      : isSafariFamilyWithoutChromium() || isAppleMobileWebKitDevice()
+        ? "This channel's audio (often AC-3 / E-AC-3) isn't supported in Safari for this feed. Try Chromecast from Chrome or Edge on a computer, your provider's IPTV app, or another channel."
+        : "This channel uses audio (often AC-3/EAC-3) that Chromium-based browsers cannot decode in a web player. Try Safari on Mac or iPhone, your provider's native app, or Chromecast.";
+
+    const wantsHlsJs =
+      isHls && (!useNativeAppleHls || appleMobileLiveMse);
+    if (wantsHlsJs && !hlsRuntime) {
+      setLoading(true);
+      return () => {
+        cancelled = true;
+        if (stallTimer.current) clearTimeout(stallTimer.current);
+        cleanupHls();
+        video.removeAttribute("src");
+        try {
+          video.load();
+        } catch {
+          /* noop */
+        }
+      };
+    }
+
+    /** VOD only: Range probe before assigning src (live skips). Returns false if probe failed hard. */
+    const probeVodThenPlayNative = async (): Promise<boolean> => {
+      if (!isLive) {
+        try {
+          const probe = await fetch(url, {
+            method: "GET",
+            headers: { Range: "bytes=0-0" },
+            cache: "no-store",
+            signal: probeSignal,
+          });
+          if (cancelled) return false;
+          const rid = probe.headers.get(STREAM_PROXY_REQUEST_ID_HEADER);
+          if (rid) {
+            streamSupportRequestIdRef.current = rid;
+            setStreamSupportRequestId(rid);
+          }
+          if (probe.status === 404 || probe.status === 410) {
+            setError("This episode isn't available from your provider.");
+            setLoading(false);
+            return false;
+          }
+          if (probe.status >= 400) {
+            setError(
+              probe.status === 403
+                ? "Your provider blocked this request. Try another episode or try again later."
+                : `Provider returned ${probe.status}. The file may be offline or temporarily unavailable.`
+            );
+            setLoading(false);
+            return false;
+          }
+        } catch (e) {
+          if (cancelled || (e instanceof DOMException && e.name === "AbortError"))
+            return false;
+          /* fall through — let <video> try */
+        }
+      }
+      if (cancelled) return false;
+      video.src = url;
+      void tryAutoplay();
+      return true;
+    };
+
+    // Native WebKit: VOD + Apple live fallback when MSE/hls.js isn’t available (older iOS, unsupported codecs).
+    // Apple mobile **live** + MSE: use hls.js — smoother IPTV experience than native `<video>` alone.
+    if (useNativeAppleHls && !appleMobileLiveMse) {
+      void probeVodThenPlayNative();
+    } else if (
+      isHls &&
+      hlsRuntime &&
+      hlsRuntime.isSupported() &&
+      (!isAppleMobileWebKitDevice() || isLive || vodTranscodeHls)
+    ) {
+      const Hls = hlsRuntime;
+      const isLikelyUnsupportedAudioCodecError = (data: ErrorData): boolean => {
+        const d = data.details;
+        if (
+          d === Hls.ErrorDetails.BUFFER_ADD_CODEC_ERROR ||
+          d === Hls.ErrorDetails.BUFFER_INCOMPATIBLE_CODECS_ERROR ||
+          d === Hls.ErrorDetails.MANIFEST_INCOMPATIBLE_CODECS_ERROR
+        ) {
+          return true;
+        }
+        if (
+          d === Hls.ErrorDetails.BUFFER_APPEND_ERROR &&
+          data.sourceBufferName === "audio"
+        ) {
+          const idx = hlsRef.current?.currentLevel ?? -1;
+          const lv =
+            idx >= 0 && hlsRef.current?.levels
+              ? hlsRef.current.levels[idx]
+              : undefined;
+          return !!lv && levelDeclaresNonPreferredChromePackagedAudio(lv);
+        }
+        return false;
+      };
+      let mediaRecoverAttempts = 0;
+      let audioCodecFallbackTried = false;
+      let swapAudioCodecTried = false;
+      let audioAppendRecoveryAttempts = 0;
+
+      const chromiumLiveQualityLockEligible =
+        isLive &&
+        !livingRoomLike &&
+        !silkLike &&
+        !appleMobileLiveMse &&
+        !mobileLike &&
+        isChromiumBasedDesktopBrowser();
+
+      const tvLiveQualityLockEligible =
+        isLive && (livingRoomLike || silkLike) && !appleMobileLiveMse;
+
+      const liveManifestStabilizeLocked =
+        chromiumLiveQualityLockEligible || tvLiveQualityLockEligible;
+
+      /**
+       * Live playlists refresh and ABR climbs — re-apply filters so we don't drift into HEVC/Dolby variants Chromium can't decode over MSE.
+       * Desktop Chromium: pin lowest-safe **once on MANIFEST_PARSED only** — repeating `currentLevel=` on every `MANIFEST_LOADED`/recovery thrashed MSE and produced bogus codec errors.
+       */
+      const recoveryGenAtStart = livePlaybackRecoveryGenRef.current;
+      let livePlaybackHealthy = false;
+      let liveSoftRecoverBeforeError = false;
+      let lastManifestStabilizeMs = 0;
+
+      const attemptLiveSoftRecover = (): boolean => {
+        const el = videoRef.current;
+        if (cancelled || !el) return false;
+        try {
+          livePlaybackErrorSuppressUntilRef.current =
+            performance.now() + 10_000;
+          applyGentleLiveHlsRecovery(hls, el);
+          return true;
+        } catch {
+          return false;
+        }
+      };
+
+      /** Live: keep hls.js for Try again (soft reload). Tear down only for VOD or channel change. */
+      const surfacePlaybackError = (message: string) => {
+        if (cancelled || recoveryGenAtStart !== livePlaybackRecoveryGenRef.current) {
+          return;
+        }
+        if (
+          isLive &&
+          performance.now() < livePlaybackErrorSuppressUntilRef.current
+        ) {
+          return;
+        }
+        setStalled(false);
+        setLoading(false);
+        setError(message);
+        playbackBreadcrumb("playback_error", {
+          live: isLive,
+          requestId: streamSupportRequestIdRef.current ?? undefined,
+          channelId: current?.id,
+        });
+        if (!isLive) {
+          cleanupHls();
+          return;
+        }
+        /** Don't stopLoad on live — Try again soft-restarts load; stopLoad left panels stuck with no buffer. */
+      };
+
+      const runStabilizeBrowserFriendlyCodecs = () => {
+        if (cancelled) return;
+        stabilizeBrowserFriendlyCodecs(hls, {
+          isLive,
+          livingRoomLike,
+          silkLike,
+          appleMobileLiveMse,
+        });
+      };
+
+      const levelsReactKeyRef = { current: "" };
+
+      const publishLevels = (lvls: Level[]) => {
+        const key = levelsListKey(lvls);
+        if (key === levelsReactKeyRef.current) return;
+        levelsReactKeyRef.current = key;
+        setLevels([...lvls]);
+      };
+
+      const baseHlsConfig = appleMobileLiveMse
+        ? buildAppleMobileLiveHlsConfig()
+        : buildIptvHlsJsConfig({
+            isLive,
+            mobileLike,
+            livingRoomLike,
+            silkLike,
+            chromiumDesktop: chromiumDesktopClient,
+          });
+      const hlsConfig = {
+        ...baseHlsConfig,
+        ...(vodTranscodeHls
+          ? {
+              maxBufferLength: 24,
+              maxMaxBufferLength: 90,
+              backBufferLength: 45,
+              maxBufferHole: isSafariFamilyWithoutChromium() ? 1.2 : 0.65,
+              maxFragLookUpTolerance: 0.4,
+              stretchShortVideoTrack: true,
+              startFragPrefetch: true,
+              initialLiveManifestSize: 1,
+              liveSyncDurationCount: 1,
+              maxLiveSyncPlaybackRate: 1,
+              manifestLoadingTimeOut: 22_000,
+              levelLoadingTimeOut: 22_000,
+              fragLoadingTimeOut: 28_000,
+              manifestLoadingMaxRetry: 24,
+              levelLoadingMaxRetry: 24,
+              fragLoadingMaxRetry: 18,
+            }
+          : {}),
+        xhrSetup(xhr: XMLHttpRequest, reqUrl: string) {
+          if (!reqUrl.includes("/api/stream")) return;
+          xhr.addEventListener("load", function onLoad() {
+            xhr.removeEventListener("load", onLoad);
+            if (cancelled) return;
+            const rid = xhr.getResponseHeader(STREAM_PROXY_REQUEST_ID_HEADER);
+            if (rid) {
+            streamSupportRequestIdRef.current = rid;
+            setStreamSupportRequestId(rid);
+          }
+            if (vodTranscodeHls && !reqUrl.includes("media=")) {
+              setVodPrepProgress((p) => Math.max(p, 34));
+            }
+            if (!vodTranscodeHls) return;
+            const durHdr = xhr.getResponseHeader("x-vod-duration-sec");
+            const hint = durHdr ? parseFloat(durHdr) : NaN;
+            if (Number.isFinite(hint) && hint > 1) {
+              applyVodDurationHint(hint);
+            }
+            const offHdr = xhr.getResponseHeader("x-vod-start-offset-sec");
+            const encHdr = xhr.getResponseHeader("x-vod-encoded-sec");
+            const off = offHdr ? parseFloat(offHdr) : NaN;
+            const enc = encHdr ? parseFloat(encHdr) : NaN;
+            applyVodTranscodeTimelineHints({
+              startOffset: Number.isFinite(off) && off >= 0 ? off : undefined,
+              encoded: Number.isFinite(enc) && enc > 0 ? enc : undefined,
+            });
+          });
+        },
+      };
+      const hls = new Hls(hlsConfig);
+      hlsRef.current = hls;
+      hls.loadSource(url);
+      hls.attachMedia(video);
+
+      /** Fatal `NETWORK_ERROR` streak — reset whenever data actually flows (Safari otherwise accumulates transient fatals). */
+      let consecutiveNetworkErrors = 0;
+      const resetNetErrStreak = () => {
+        consecutiveNetworkErrors = 0;
+      };
+
+      /** Intentionally no periodic `startLoad(-1)` — it fights hls.js live playlist refresh and causes visible black/rebuffer loops on many panels. */
+
+      hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        if (cancelled) return;
+        resetNetErrStreak();
+        publishLevels(hls.levels);
+        if (vodTranscodeHls) {
+          setVodPrepProgress((p) => Math.max(p, 48));
+          setCurrentLevel(-1);
+          try {
+            hls.startLoad(0);
+          } catch {
+            /* noop */
+          }
+          void tryAutoplay();
+          return;
+        }
+        runStabilizeBrowserFriendlyCodecs();
+        if (chromiumLiveQualityLockEligible) {
+          const startIdx = indexOfLowestSafeLevel(hls.levels);
+          if (startIdx >= 0) {
+            try {
+              hls.startLevel = startIdx;
+              hls.autoLevelCapping = startIdx;
+            } catch {
+              /* noop */
+            }
+          }
+        }
+        livePlaybackErrorSuppressUntilRef.current =
+          performance.now() + LIVE_PLAYBACK_ERROR_GRACE_MS;
+        setCurrentLevel(-1);
+        // Pull subtitle tracks from HLS manifest
+        const subs = hls.subtitleTracks as MediaPlaylist[] | undefined;
+        if (subs && subs.length) {
+          setSubtitles(
+            subs.map((t, i) => ({
+              id: i,
+              label: t.name || t.lang || `Track ${i + 1}`,
+              lang: t.lang,
+              source: "hls" as const,
+            }))
+          );
+          hls.subtitleTrack = -1;
+        }
+        void tryAutoplay();
+      });
+
+      hls.on(Hls.Events.SUBTITLE_TRACKS_UPDATED, (_e, data) => {
+        if (cancelled) return;
+        const subs = data.subtitleTracks || [];
+        setSubtitles(
+          subs.map((t, i) => ({
+            id: i,
+            label: t.name || t.lang || `Track ${i + 1}`,
+            lang: t.lang,
+            source: "hls" as const,
+          }))
+        );
+      });
+
+      hls.on(Hls.Events.AUDIO_TRACKS_UPDATED, () => {
+        if (cancelled) return;
+        preferBrowserFriendlyAudioTrack(hls);
+      });
+
+      /**
+       * Live playlists refresh every few seconds. Re-strip codec rungs (no quality re-pin)
+       * so ABR can't drift into Dolby/HEVC variants that weren't in the first manifest.
+       */
+      hls.on(Hls.Events.MANIFEST_LOADED, () => {
+        if (cancelled) return;
+        resetNetErrStreak();
+        if (isLive && !liveManifestStabilizeLocked) {
+          const now = performance.now();
+          if (now - lastManifestStabilizeMs >= 8000) {
+            lastManifestStabilizeMs = now;
+            runStabilizeBrowserFriendlyCodecs();
+          }
+        }
+      });
+
+      hls.on(Hls.Events.LEVELS_UPDATED, () => {
+        if (cancelled || !isLive) return;
+        publishLevels(hls.levels);
+        if (!liveManifestStabilizeLocked) {
+          runStabilizeBrowserFriendlyCodecs();
+        }
+      });
+
+      hls.on(Hls.Events.AUDIO_TRACK_SWITCHED, () => {
+        if (cancelled) return;
+        preferBrowserFriendlyAudioTrack(hls);
+      });
+
+      hls.on(Hls.Events.LEVEL_SWITCHED, (_e, data) => {
+        if (cancelled) return;
+        const next = hls.autoLevelEnabled ? -1 : data.level;
+        setCurrentLevel((prev) => (prev === next ? prev : next));
+        const idx = data.level;
+        const lv = hls.levels[idx];
+        if (!lv || cancelled) return;
+        if (
+          levelDeclaresHevc(lv) ||
+          levelDeclaresNonPreferredChromePackagedAudio(lv)
+        ) {
+          const safeIdx = indexOfLowestSafeLevel(hls.levels);
+          if (
+            safeIdx >= 0 &&
+            safeIdx !== idx &&
+            !levelDeclaresHevc(hls.levels[safeIdx]) &&
+            !levelDeclaresNonPreferredChromePackagedAudio(hls.levels[safeIdx])
+          ) {
+            try {
+              hls.autoLevelCapping = safeIdx;
+              /**
+               * Forcing `currentLevel` after playback started thrashes MSE and surfaces
+               * `<video error>` ~1s in — cap ABR and only hard-switch before first buffer.
+               */
+              if (!livePlaybackHealthy) {
+                hls.currentLevel = safeIdx;
+              }
+            } catch {
+              /* noop */
+            }
+          }
+        }
+      });
+
+      hls.on(Hls.Events.FRAG_LOADED, resetNetErrStreak);
+      hls.on(Hls.Events.LEVEL_LOADED, resetNetErrStreak);
+
+      if (isLive) {
+        hls.on(Hls.Events.FRAG_BUFFERED, () => {
+          if (cancelled) return;
+          livePlaybackHealthy = true;
+          livePlaybackErrorSuppressUntilRef.current =
+            performance.now() + LIVE_PLAYBACK_ERROR_GRACE_MS;
+          setError(null);
+          setStalled(false);
+          setLoading(false);
+        });
+      }
+
+      const markTranscodePlaybackStarted = () => {
+        if (cancelled) return;
+        setVodPrepProgress((p) => Math.max(p, 88));
+        setVideoHasFrame(true);
+        setLoading(false);
+        setStalled(false);
+        void tryAutoplay();
+      };
+
+      if (vodTranscodeHls) {
+        hls.on(Hls.Events.FRAG_LOADED, () => {
+          if (cancelled) return;
+          const vv = videoRef.current;
+          if (vv) {
+            vodEncodedSecRef.current = Math.max(
+              vodEncodedSecRef.current,
+              vv.currentTime + 6
+            );
+          }
+          setVodPrepProgress((p) => Math.max(p, 72));
+          markTranscodePlaybackStarted();
+        });
+        hls.on(Hls.Events.FRAG_BUFFERED, markTranscodePlaybackStarted);
+        hls.on(Hls.Events.BUFFER_APPENDED, () => {
+          if (cancelled) return;
+          const vv = videoRef.current;
+          if (vv && vv.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
+            markTranscodePlaybackStarted();
+          }
+        });
+      }
+
+      hls.on(Hls.Events.ERROR, (_e, data) => {
+        if (!data.fatal) {
+          // BUFFER_APPEND_ERROR fires in tight loops on bad audio tracks — recover once before fatal MEDIA_ERROR.
+          if (data.details === Hls.ErrorDetails.BUFFER_APPEND_ERROR) {
+            const audioBuf =
+              data.sourceBufferName === "audio" ||
+              data.sourceBufferName === "audiovideo";
+            // Never call full stabilize here — stripping levels + re-pinning quality mid-playback caused transient MEDIA_ERROR; Try again only ran startLoad().
+            if (isLive && audioBuf && audioAppendRecoveryAttempts < 4) {
+              audioAppendRecoveryAttempts += 1;
+              preferBrowserFriendlyAudioTrack(hls);
+              const tracks = hls.audioTracks;
+              const cur = hls.audioTrack;
+              if (tracks.length > 1 && cur >= 0) {
+                for (let i = 0; i < tracks.length; i++) {
+                  if (i === cur) continue;
+                  try {
+                    hls.audioTrack = i;
+                    break;
+                  } catch {
+                    /* try next */
+                  }
+                }
+              }
+              if (audioAppendRecoveryAttempts >= 2) {
+                tryCapAbrLower(hls);
+                runStabilizeBrowserFriendlyCodecs();
+              }
+              try {
+                hls.recoverMediaError();
+              } catch {
+                /* noop */
+              }
+            }
+            return;
+          }
+          // Repeated frag/level transport errors → step ABR down (live + VOD).
+          const bumpDetails = [
+            Hls.ErrorDetails.BUFFER_FULL_ERROR,
+            Hls.ErrorDetails.FRAG_LOAD_ERROR,
+            Hls.ErrorDetails.FRAG_LOAD_TIMEOUT,
+            Hls.ErrorDetails.LEVEL_LOAD_ERROR,
+            Hls.ErrorDetails.LEVEL_LOAD_TIMEOUT,
+          ];
+          const fragish = bumpDetails.includes(data.details);
+          if (fragish) {
+            fragLoadDowngradeRef.current += 1;
+            if (fragLoadDowngradeRef.current >= 6) {
+              fragLoadDowngradeRef.current = 0;
+              tryCapAbrLower(hls);
+            }
+          }
+          // Live: let hls.js retry fragments — edge `startLoad(-1)` on every frag error causes pause/freeze loops.
+          if (!isLive && fragish) {
+            try {
+              const vv = videoRef.current;
+              const pos =
+                vodTranscodeHls && vv && Number.isFinite(vv.currentTime)
+                  ? Math.max(0, vv.currentTime)
+                  : -1;
+              hls.startLoad(pos);
+            } catch {
+              /* noop */
+            }
+          }
+          if (process.env.NODE_ENV !== "production") {
+            console.warn("[hls] error", data.type, data.details, data);
+          }
+          return;
+        }
+
+        if (process.env.NODE_ENV !== "production") {
+          console.warn("[hls] fatal", data.type, data.details, data);
+        }
+
+        switch (data.type) {
+          case Hls.ErrorTypes.NETWORK_ERROR: {
+            const softManifestReload =
+              vodTranscodeHls &&
+              [
+                Hls.ErrorDetails.MANIFEST_LOAD_ERROR,
+                Hls.ErrorDetails.MANIFEST_LOAD_TIMEOUT,
+                Hls.ErrorDetails.LEVEL_LOAD_ERROR,
+                Hls.ErrorDetails.LEVEL_LOAD_TIMEOUT,
+              ].includes(data.details);
+            if (softManifestReload) {
+              try {
+                hls.startLoad(0);
+              } catch {
+                /* noop */
+              }
+              break;
+            }
+            consecutiveNetworkErrors += 1;
+            {
+              const touchyClient =
+                mobileLike || isAppleMobileWebKitDevice();
+              const maxFatalNet = vodTranscodeHls
+                ? 28
+                : touchyClient
+                  ? isLive
+                    ? 22
+                    : 14
+                  : isLive
+                    ? 7
+                    : 8;
+              if (consecutiveNetworkErrors >= maxFatalNet) {
+                if (
+                  isLive &&
+                  !liveSoftRecoverBeforeError &&
+                  attemptLiveSoftRecover()
+                ) {
+                  liveSoftRecoverBeforeError = true;
+                  break;
+                }
+                surfacePlaybackError(
+                  vodTranscodeHls
+                    ? "Transcoded playback failed. Tap Try again to restart encoding — or use a native IPTV app for MKV files."
+                    : "Couldn't reach this stream. The channel may be offline or your provider blocked the request."
+                );
+              } else {
+                try {
+                  const vv = videoRef.current;
+                  const pos =
+                    vodTranscodeHls && vv && Number.isFinite(vv.currentTime)
+                      ? Math.max(0, vv.currentTime)
+                      : -1;
+                  hls.startLoad(pos);
+                } catch {
+                  hls.startLoad();
+                }
+              }
+            }
+            break;
+          }
+          case Hls.ErrorTypes.MEDIA_ERROR:
+            if (isLikelyUnsupportedAudioCodecError(data)) {
+              const tracks = hls.audioTracks;
+              const cur = hls.audioTrack;
+              if (!audioCodecFallbackTried && tracks.length > 1 && cur >= 0) {
+                audioCodecFallbackTried = true;
+                let switched = false;
+                for (let i = 0; i < tracks.length; i++) {
+                  if (i === cur) continue;
+                  try {
+                    hls.audioTrack = i;
+                    hls.recoverMediaError();
+                    switched = true;
+                    break;
+                  } catch {
+                    /* try next alternate */
+                  }
+                }
+                if (switched) break;
+              }
+              if (!swapAudioCodecTried) {
+                swapAudioCodecTried = true;
+                try {
+                  hls.swapAudioCodec();
+                  hls.recoverMediaError();
+                  break;
+                } catch {
+                  /* fall through */
+                }
+              }
+              if (
+                isLive &&
+                !liveSoftRecoverBeforeError &&
+                attemptLiveSoftRecover()
+              ) {
+                liveSoftRecoverBeforeError = true;
+                break;
+              }
+              surfacePlaybackError(
+                isLive
+                  ? livePlaybackStoppedMessage(livePlaybackHealthy)
+                  : unsupportedBrowserAudioMsg
+              );
+              break;
+            }
+            if (mediaRecoverAttempts >= (isLive ? 10 : 2)) {
+              if (
+                isLive &&
+                !liveSoftRecoverBeforeError &&
+                attemptLiveSoftRecover()
+              ) {
+                liveSoftRecoverBeforeError = true;
+                break;
+              }
+              surfacePlaybackError(
+                isLive
+                  ? livePlaybackStoppedMessage(livePlaybackHealthy)
+                  : "Playback failed after repeated media errors. This stream may use unsupported audio/video in your browser."
+              );
+              break;
+            }
+            mediaRecoverAttempts += 1;
+            try {
+              hls.recoverMediaError();
+            } catch {
+              surfacePlaybackError(
+                "Media error: this stream isn't playable in the browser."
+              );
+            }
+            break;
+          default:
+            surfacePlaybackError("Playback failed. Try a different channel.");
+        }
+      });
+    } else if (!isHls) {
+      // Direct progressive file (mp4/mkv via proxy) — same VOD probe as native HLS path.
+      void probeVodThenPlayNative();
+    } else {
+      queueMicrotask(() =>
+        setError("Your browser cannot play this stream.")
+      );
+    }
+
+    // Stall watchdog: if almost nothing has buffered after a timeout, surface a hint.
+    // Live copy suggests provider issues; VOD often means unsupported codec/container on mobile.
+    if (stallTimer.current) clearTimeout(stallTimer.current);
+    const vodProgressivePlayback =
+      !isLive && !playbackUrlIsHls(url, isLive);
+    const stallMs = vodTranscodeHls
+      ? 50_000
+      : vodProgressivePlayback
+        ? 26_000
+        : isLive && chromiumDesktopClient
+          ? 28_000
+          : isLive && livingRoomLike
+            ? 32_000
+            : silkLike
+              ? 18_000
+              : isLive
+                ? 20_000
+                : 12_000;
+
+    let liveStallRecoveryTried = false;
+
+    const runStallWatchdog = () => {
+      if (cancelled) return;
+      const v = videoRef.current;
+      if (!v) return;
+      let bufferedEnd = 0;
+      for (let bi = 0; bi < v.buffered.length; bi++) {
+        bufferedEnd = Math.max(bufferedEnd, v.buffered.end(bi));
+      }
+      const hasBuffer = bufferedEnd > 0.35;
+      if (hasBuffer || v.error) {
+        setStalled(false);
+        return;
+      }
+      if (
+        vodProgressivePlayback &&
+        requestVodTranscodeFallbackRef.current()
+      ) {
+        return;
+      }
+      if (isLive) {
+        const suppressRemaining =
+          livePlaybackErrorSuppressUntilRef.current - performance.now();
+        if (suppressRemaining > 0) {
+          stallTimer.current = setTimeout(
+            runStallWatchdog,
+            suppressRemaining + 400
+          );
+          return;
+        }
+        const hls = hlsRef.current;
+        if (!liveStallRecoveryTried && hls) {
+          liveStallRecoveryTried = true;
+          try {
+            applyGentleLiveHlsRecovery(hls, v);
+          } catch {
+            /* noop */
+          }
+          stallTimer.current = setTimeout(runStallWatchdog, 5_000);
+          return;
+        }
+      }
+      setStalled(true);
+    };
+
+    stallTimer.current = setTimeout(runStallWatchdog, stallMs);
+
+    return () => {
+      if (video && creds && current && current.kind !== "live") {
+        const key = vodResumeStorageKey(browseAccountKey(creds), current);
+        const t = video.currentTime;
+        const d = video.duration;
+        if (key && t > 12 && d && Number.isFinite(d) && t < d - 45) {
+          usePrefs.getState().saveVodResume(key, t);
+        }
+      }
+      cancelled = true;
+      probeFetchRef.current?.abort();
+      vodPrepKickRef.current?.abort();
+      vodPrepKickRef.current = null;
+      if (vodSeekRestartTimerRef.current) {
+        clearTimeout(vodSeekRestartTimerRef.current);
+        vodSeekRestartTimerRef.current = null;
+      }
+      if (stallTimer.current) clearTimeout(stallTimer.current);
+      cleanupHls();
+      try {
+        video.pause();
+        video.removeAttribute("src");
+        video.load();
+      } catch {
+        /* noop */
+      }
+    };
+  }, [
+    open,
+    current,
+    isLive,
+    creds,
+    vodPlaybackUrl,
+    applyVodDurationHint,
+    applyVodTranscodeTimelineHints,
+    playbackRetryKey,
+    chromiumDesktopClient,
+    tvBrowser,
+    silkLikeClient,
+    hlsRuntime,
+    videoRef,
+    hlsRef,
+    streamSupportRequestIdRef,
+    liveTryAgainStrikeRef,
+    fragLoadDowngradeRef,
+    probeFetchRef,
+    vodDurationHintRef,
+    vodStartOffsetRef,
+    vodEncodedSecRef,
+    hlsLiveEdgeRestartGateRef,
+    livePlaybackRecoveryGenRef,
+    livePlaybackErrorSuppressUntilRef,
+    userChoseAutoHlsQualityRef,
+    userTouchedHlsQualityRef,
+    vodPrepKickRef,
+    vodSeekRestartTimerRef,
+    stallTimer,
+    requestVodTranscodeFallbackRef,
+    setError,
+    setStreamSupportRequestId,
+    setNeedsTapToPlay,
+    setStalled,
+    setTime,
+    setDuration,
+    setVodTotalSec,
+    setLevels,
+    setCurrentLevel,
+    setSubtitles,
+    setActiveSubtitle,
+    setLiveAudioNoPicture,
+    setLoading,
+    setVolume,
+    setVideoHasFrame,
+    setVodPrepProgress,
+  ]);
+}

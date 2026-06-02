@@ -6,6 +6,7 @@ import { useTvBrowser } from "@/components/TvBrowserProvider";
 import { feedbackFormUrlWithContext } from "@/lib/feedback-url";
 import { SITE_NAME, SITE_TAGLINE } from "@/lib/site-brand";
 import { cn } from "@/lib/utils";
+import { signOutFully } from "@/lib/sign-out-client";
 import { useAuth } from "@/store/auth";
 import { usePrefs } from "@/store/preferences";
 import { LogOut, MessageSquare, PanelLeftClose, PanelLeftOpen, Settings, Star } from "lucide-react";
@@ -18,7 +19,7 @@ export function Sidebar() {
   const router = useRouter();
   const tv = useTvBrowser();
   const tvCollapsedOnce = useRef(false);
-  const { account, signOut } = useAuth();
+  const account = useAuth((s) => s.account);
   const collapsed = usePrefs((s) => s.sidebarCollapsed);
   const setCollapsed = usePrefs((s) => s.setSidebarCollapsed);
 
@@ -191,8 +192,7 @@ export function Sidebar() {
           title={collapsed ? "Sign out" : undefined}
           aria-label="Sign out"
           onClick={() => {
-            signOut();
-            router.push("/login");
+            void signOutFully().then(() => router.replace("/login"));
           }}
         >
           <LogOut className="size-[18px] shrink-0" />

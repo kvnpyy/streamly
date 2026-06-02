@@ -3,6 +3,7 @@ import {
   decodeSessionCookiePayload,
   SESSION_COOKIE_NAME,
   SessionCookieEncodeError,
+  sessionCookieOptions,
 } from "@/lib/auth-session-cookie";
 import type { XtreamCredentials } from "@/lib/xtream-types";
 import { cookies } from "next/headers";
@@ -59,8 +60,11 @@ export async function POST(req: NextRequest) {
 }
 
 /** Clear Xtream HttpOnly cookie (NextAuth sign-out is separate). */
-export async function DELETE() {
-  const jar = await cookies();
-  jar.delete(SESSION_COOKIE_NAME);
-  return NextResponse.json({ ok: true });
+export async function DELETE(req: NextRequest) {
+  const res = NextResponse.json({ ok: true });
+  res.cookies.set(SESSION_COOKIE_NAME, "", {
+    ...sessionCookieOptions(req),
+    maxAge: 0,
+  });
+  return res;
 }

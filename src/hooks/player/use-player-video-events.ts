@@ -1,0 +1,583 @@
+"use client";
+
+import { useEffect, type Dispatch, type RefObject, type SetStateAction } from "react";
+import type Hls from "hls.js";
+import {
+  isAppleMobileWebKitDevice,
+  isSafariFamilyWithoutChromium,
+} from "@/lib/browser";
+import {
+  applyGentleLiveHlsRecovery,
+  LIVE_PLAYBACK_ERROR_GRACE_MS,
+  LIVE_VIDEO_ERROR_DEFER_MS,
+  liveCodecUserMessage,
+} from "@/lib/live-hls-playback";
+import { playbackUrlIsHls } from "@/lib/playback-url";
+import { withLiveHlsCompatMse } from "@/lib/stream-url";
+import { voidSafeVideoPlay } from "@/lib/video-play";
+import { writePreferredPlayerVolume } from "@/lib/player-volume-pref";
+import type { PlayerSource } from "@/store/player";
+
+function isBraveOnAppleMobile(): boolean {
+  if (typeof navigator === "undefined") return false;
+  if (!isAppleMobileWebKitDevice()) return false;
+  return /\bBrave\b/i.test(navigator.userAgent || "");
+}
+
+export type UsePlayerVideoEventsParams = {
+  open: boolean;
+  current: PlayerSource | null;
+  videoRef: RefObject<HTMLVideoElement | null>;
+  hlsRef: RefObject<InstanceType<typeof Hls> | null>;
+  usesTranscodePlayback: boolean;
+  vodTotalSec: number;
+  vodDurationHintRef: RefObject<number>;
+  vodStartOffsetRef: RefObject<number>;
+  mobileLikeViewport: boolean;
+  chromiumDesktopClient: boolean;
+  cancelLiveMediaErrorDeferRef: RefObject<() => void>;
+  livePlaybackErrorSuppressUntilRef: RefObject<number>;
+  requestVodTranscodeFallbackRef: RefObject<() => boolean>;
+  setIsPlaying: Dispatch<SetStateAction<boolean>>;
+  setNeedsTapToPlay: Dispatch<SetStateAction<boolean>>;
+  setLoading: Dispatch<SetStateAction<boolean>>;
+  setStalled: Dispatch<SetStateAction<boolean>>;
+  setTime: Dispatch<SetStateAction<number>>;
+  setBuffered: Dispatch<SetStateAction<number>>;
+  setMuted: Dispatch<SetStateAction<boolean>>;
+  setVolume: Dispatch<SetStateAction<number>>;
+  setError: Dispatch<SetStateAction<string | null>>;
+  setLiveAudioNoPicture: Dispatch<SetStateAction<boolean>>;
+  setVideoHasFrame: Dispatch<SetStateAction<boolean>>;
+  setVodPrepProgress: Dispatch<SetStateAction<number>>;
+  setIsPip: Dispatch<SetStateAction<boolean>>;
+  applyVodDurationHint: (sec: number) => void;
+};
+
+export function usePlayerVideoEvents(p: UsePlayerVideoEventsParams) {
+  const {
+    open,
+    current,
+    videoRef,
+    hlsRef,
+    usesTranscodePlayback,
+    vodTotalSec,
+    vodDurationHintRef,
+    vodStartOffsetRef,
+    mobileLikeViewport,
+    chromiumDesktopClient,
+    cancelLiveMediaErrorDeferRef,
+    livePlaybackErrorSuppressUntilRef,
+    requestVodTranscodeFallbackRef,
+    setIsPlaying,
+    setNeedsTapToPlay,
+    setLoading,
+    setStalled,
+    setTime,
+    setBuffered,
+    setMuted,
+    setVolume,
+    setError,
+    setLiveAudioNoPicture,
+    setVideoHasFrame,
+    setVodPrepProgress,
+    setIsPip,
+    applyVodDurationHint,
+  } = p;
+
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!v) return;
+    let volPersistTimer: ReturnType<typeof setTimeout> | null = null;
+    const schedulePersistPreferredVolume = (vol: number) => {
+      if (volPersistTimer) clearTimeout(volPersistTimer);
+      volPersistTimer = setTimeout(() => {
+        volPersistTimer = null;
+        writePreferredPlayerVolume(vol);
+      }, 400);
+    };
+
+    const isLiveStream = current?.kind === "live";
+    let liveKickTimer: ReturnType<typeof setTimeout> | null = null;
+    /** `window.setTimeout` id — avoids DOM vs `@types/node` Timeout mismatch. */
+    let liveMediaErrorDeferTimer: number | null = null;
+    const liveProgress = { lastCt: -1, stuckSince: 0 };
+    let lastLowBufferKick = 0;
+    let nativeStallKicks = 0;
+    /** Throttle React state from `timeupdate` — frequent setState competes with video decode on WebKit. */
+    let lastUiFlushMs = 0;
+    let lastMarkPictureMs = 0;
+
+    const cancelLiveKickTimer = () => {
+      if (liveKickTimer) {
+        clearTimeout(liveKickTimer);
+        liveKickTimer = null;
+      }
+    };
+
+    const cancelLiveMediaErrorDefer = () => {
+      if (liveMediaErrorDeferTimer) {
+        clearTimeout(liveMediaErrorDeferTimer);
+        liveMediaErrorDeferTimer = null;
+      }
+    };
+    cancelLiveMediaErrorDeferRef.current = cancelLiveMediaErrorDefer;
+
+    /** Chromium (hls.js): restart loading. Safari/WebKit (native HLS): nudge toward live edge — was missing before. */
+    const kickLivePlayback = () => {
+      const vv = videoRef.current;
+      if (!vv || vv.paused || vv.error) return;
+      const hls = hlsRef.current;
+      if (hls) {
+        try {
+          applyGentleLiveHlsRecovery(hls, vv);
+        } catch {
+          try {
+            hls.recoverMediaError();
+          } catch {
+            /* noop */
+          }
+          voidSafeVideoPlay(vv);
+        }
+        return;
+      }
+      /**
+       * Native WebKit HLS (iPhone **and** Safari on Mac): seek-to-live-edge + buffer micro-seeks
+       * fight AVFoundation’s sliding timeline on IPTV — same snap-back and short-loop reports as
+       * the ~30s iPhone DVR case. Only nudge `play()`; `reloadNativeLiveSource` still exists after
+       * repeated stall kicks.
+       */
+      if (
+        isAppleMobileWebKitDevice() ||
+        isSafariFamilyWithoutChromium()
+      ) {
+        voidSafeVideoPlay(vv);
+        return;
+      }
+      try {
+        if (vv.seekable?.length) {
+          const idx = vv.seekable.length - 1;
+          const end = vv.seekable.end(idx);
+          const start = vv.seekable.start(idx);
+          if (Number.isFinite(end) && end > start + 0.25) {
+            const target = Math.min(Math.max(end - 3.5, start + 0.05), end - 0.1);
+            if (target > vv.currentTime + 0.12) {
+              vv.currentTime = target;
+              voidSafeVideoPlay(vv);
+              return;
+            }
+          }
+        }
+      } catch {
+        /* seek on live can throw */
+      }
+      try {
+        if (vv.buffered.length > 0) {
+          const end = vv.buffered.end(vv.buffered.length - 1);
+          const ahead = end - vv.currentTime;
+          if (ahead >= 0 && ahead < 2.8) {
+            const hop = Math.min(end - 0.08, vv.currentTime + Math.max(0.35, ahead * 0.65));
+            if (hop > vv.currentTime && hop <= end) {
+              vv.currentTime = hop;
+              voidSafeVideoPlay(vv);
+              return;
+            }
+          }
+        }
+      } catch {
+        /* noop */
+      }
+      voidSafeVideoPlay(vv);
+    };
+
+    const reloadNativeLiveSource = () => {
+      const vv = videoRef.current;
+      const url =
+        current?.url && current.kind === "live"
+          ? withLiveHlsCompatMse(current.url, true)
+          : current?.url;
+      if (!vv || !url || current?.kind !== "live") return;
+      try {
+        vv.pause();
+        vv.removeAttribute("src");
+        vv.load();
+        vv.src = url;
+        voidSafeVideoPlay(vv);
+      } catch {
+        /* noop */
+      }
+    };
+
+    const kickLiveIfBufferLow = () => {
+      const vv = videoRef.current;
+      if (!vv) return;
+      const ahead =
+        vv.buffered.length > 0
+          ? vv.buffered.end(vv.buffered.length - 1) - vv.currentTime
+          : 0;
+      const threshold = hlsRef.current ? 2.4 : 4.5;
+      if (ahead < threshold) kickLivePlayback();
+    };
+
+    const stripPosterForWebKit = () => {
+      try {
+        v.removeAttribute("poster");
+      } catch {
+        /* noop */
+      }
+    };
+
+    const markPictureReady = () => {
+      const hasDimensions = v.videoWidth > 0 && v.videoHeight > 0;
+      const hasDecodedFrame =
+        usesTranscodePlayback &&
+        !v.error &&
+        v.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA &&
+        (hasDimensions || v.currentTime > 0.02);
+      if (hasDimensions || hasDecodedFrame) {
+        setVideoHasFrame(true);
+        setLoading(false);
+        setStalled(false);
+        if (usesTranscodePlayback) setVodPrepProgress(100);
+      }
+    };
+
+    const onPlay = () => {
+      setIsPlaying(true);
+      if (!usesTranscodePlayback) setLoading(false);
+      else markPictureReady();
+      setNeedsTapToPlay(false);
+      if (!usesTranscodePlayback) setStalled(false);
+      stripPosterForWebKit();
+      if (v.videoWidth > 0) setLiveAudioNoPicture(false);
+    };
+    const onPause = () => setIsPlaying(false);
+    const onWaiting = () => {
+      if (!isLiveStream && usesTranscodePlayback) return;
+      setLoading(true);
+      if (!isLiveStream) return;
+      /** Native iOS + hls.js: let the library rebuffer — edge restarts here cause freeze/pause loops. */
+      if (!hlsRef.current && isAppleMobileWebKitDevice()) return;
+      if (hlsRef.current) return;
+      cancelLiveKickTimer();
+      liveKickTimer = setTimeout(() => {
+        liveKickTimer = null;
+        kickLiveIfBufferLow();
+      }, 3200);
+    };
+    const onPlaying = () => {
+      if (!usesTranscodePlayback) setLoading(false);
+      else markPictureReady();
+      if (!usesTranscodePlayback) setStalled(false);
+      stripPosterForWebKit();
+      if (v.videoWidth > 0) setLiveAudioNoPicture(false);
+      cancelLiveKickTimer();
+      cancelLiveMediaErrorDefer();
+      if (isLiveStream) {
+        livePlaybackErrorSuppressUntilRef.current =
+          performance.now() + LIVE_PLAYBACK_ERROR_GRACE_MS;
+        setError(null);
+        liveProgress.lastCt = -1;
+        liveProgress.stuckSince = 0;
+      }
+    };
+    const onTime = () => {
+      const nativeAppleLive =
+        isLiveStream &&
+        !hlsRef.current &&
+        isAppleMobileWebKitDevice();
+
+      const uiFlushMs = isLiveStream
+        ? chromiumDesktopClient
+          ? 800
+          : isAppleMobileWebKitDevice()
+            ? 300
+            : mobileLikeViewport
+              ? 400
+              : 550
+        : 220;
+
+      const nowUi = performance.now();
+      if (nowUi - lastUiFlushMs >= uiFlushMs) {
+        lastUiFlushMs = nowUi;
+        const off = usesTranscodePlayback ? vodStartOffsetRef.current : 0;
+        setTime(off + v.currentTime);
+        const buf = v.buffered;
+        if (buf.length) setBuffered(off + buf.end(buf.length - 1));
+      }
+
+      if (usesTranscodePlayback) {
+        if (nowUi - lastMarkPictureMs >= 450) {
+          lastMarkPictureMs = nowUi;
+          markPictureReady();
+        }
+      }
+
+      if (
+        isLiveStream &&
+        !v.paused &&
+        v.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA &&
+        v.currentTime > 6 &&
+        v.videoWidth === 0 &&
+        v.videoHeight === 0
+      ) {
+        setLiveAudioNoPicture(true);
+      } else if (v.videoWidth > 0) {
+        setLiveAudioNoPicture(false);
+      }
+
+      if (
+        !nativeAppleLive &&
+        isLiveStream &&
+        !v.paused &&
+        !v.error &&
+        v.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA
+      ) {
+        let ahead = 999;
+        if (v.buffered.length > 0) {
+          ahead = v.buffered.end(v.buffered.length - 1) - v.currentTime;
+        }
+        const nowMs = performance.now();
+        const usingHlsJs = hlsRef.current != null;
+        const lowAheadKick = usingHlsJs
+          ? ahead < 0.12 && v.readyState < HTMLMediaElement.HAVE_FUTURE_DATA
+          : ahead < 1.05;
+        const lowKickCooldownMs = usingHlsJs ? 18_000 : 5200;
+        if (
+          lowAheadKick &&
+          nowMs - lastLowBufferKick > lowKickCooldownMs
+        ) {
+          lastLowBufferKick = nowMs;
+          if (!usingHlsJs) kickLivePlayback();
+        }
+      }
+
+      if (!isLiveStream || v.paused) return;
+      if (nativeAppleLive) return;
+
+      const ct = v.currentTime;
+      const now = performance.now();
+      if (liveProgress.lastCt < 0) {
+        liveProgress.lastCt = ct;
+        liveProgress.stuckSince = now;
+        return;
+      }
+      if (Math.abs(ct - liveProgress.lastCt) > 0.2) {
+        nativeStallKicks = 0;
+        liveProgress.lastCt = ct;
+        liveProgress.stuckSince = now;
+        return;
+      }
+      const usingHlsJs = hlsRef.current != null;
+      const stuckThresholdMs = usingHlsJs
+        ? 28_000
+        : isAppleMobileWebKitDevice()
+          ? 3800
+          : 6500;
+      if (now - liveProgress.stuckSince > stuckThresholdMs) {
+        liveProgress.stuckSince = now;
+        liveProgress.lastCt = ct;
+        nativeStallKicks += 1;
+        if (usingHlsJs) {
+          try {
+            hlsRef.current?.recoverMediaError();
+          } catch {
+            /* noop */
+          }
+        } else {
+          kickLivePlayback();
+          if (nativeStallKicks >= 5) {
+            nativeStallKicks = 0;
+            reloadNativeLiveSource();
+          }
+        }
+      }
+    };
+    const onMeta = () => {
+      const vd = v.duration;
+      const hint = vodDurationHintRef.current || vodTotalSec;
+      const d =
+        Number.isFinite(vd) && vd > 1 && vd < 86400
+          ? vd
+          : hint > 1
+            ? hint
+            : 0;
+      if (d > 0) applyVodDurationHint(d);
+      if (v.videoWidth > 0) setLiveAudioNoPicture(false);
+    };
+
+    const onLoadedData = () => {
+      markPictureReady();
+      if (v.videoWidth > 0) setLiveAudioNoPicture(false);
+    };
+    const onVol = () => {
+      setMuted(v.muted);
+      setVolume(v.volume);
+      schedulePersistPreferredVolume(v.volume);
+    };
+    const onErr = () => {
+      if (!v.error) return;
+      const code = v.error.code;
+      const vodProgressive =
+        current &&
+        (current.kind === "movie" || current.kind === "series") &&
+        !playbackUrlIsHls(current.url, false);
+      const braveIosVod =
+        vodProgressive && isBraveOnAppleMobile();
+      const liveMidPlayHint =
+        current?.kind === "live" ? ` ${liveCodecUserMessage()}` : "";
+      const braveIosVodHint =
+        " On iPhone, Safari and Brave share the same in-page limits for many MKV/HEVC/Dolby files—VLC/Infuse or your provider's app is the reliable path.";
+      const map: Record<number, string> = {
+        1: "Playback was aborted.",
+        2: "Network error fetching the stream.",
+        3: vodProgressive
+          ? braveIosVod
+            ? `This movie or episode uses codecs or a container mobile browsers can't play in-page (very common with MKV, or MP4 with HEVC/AC‑3).${braveIosVodHint} Or copy the stream link from Share → open in VLC.`
+            : "This episode or movie uses codecs or a container in-browser players can't decode (common with MKV, HEVC, or DTS from Xtream). Safari and Brave share many of the same limits—try your provider's native app, VLC/TiviMate, or another encode labeled MP4 / H.264 / AAC if available."
+          : current?.kind === "live"
+            ? liveCodecUserMessage()
+            : `The stream is corrupt or in an unsupported codec.${liveMidPlayHint}`,
+        4: vodProgressive
+          ? braveIosVod
+            ? `The file format isn't playable here (often MKV, or MP4 with codecs WebKit won't decode).${braveIosVodHint}`
+            : "The file uses a format or codec this web player can't play (often MKV or HEVC). That usually isn't a bug: desktop browsers often can't handle what IPTV apps stream fine. Use a native IPTV player or VLC, or pick an MP4 release if your provider lists one."
+          : current?.kind === "live"
+            ? liveCodecUserMessage()
+            : `This stream uses a format or codec your browser can't play here.${liveMidPlayHint}`,
+      };
+
+      const hlsNow = hlsRef.current;
+      /** Same recovery as Try again — transient MSE hiccups clear without nuking UX if we defer surfacing codec errors. */
+      if (
+        isLiveStream &&
+        hlsNow &&
+        (code === 3 || code === 4)
+      ) {
+        cancelLiveMediaErrorDefer();
+        livePlaybackErrorSuppressUntilRef.current =
+          performance.now() + LIVE_PLAYBACK_ERROR_GRACE_MS;
+        let recoveryPasses = 0;
+        const runLiveVideoErrorRecovery = () => {
+          const vv = videoRef.current;
+          const hls = hlsRef.current;
+          if (!vv || !hls) return;
+          recoveryPasses += 1;
+          try {
+            applyGentleLiveHlsRecovery(hls, vv);
+          } catch {
+            voidSafeVideoPlay(vv);
+          }
+        };
+        runLiveVideoErrorRecovery();
+        const persistedCode = code;
+        const scheduleDeferCheck = (delayMs: number) => {
+          liveMediaErrorDeferTimer = window.setTimeout(() => {
+            liveMediaErrorDeferTimer = null;
+            if (
+              performance.now() < livePlaybackErrorSuppressUntilRef.current
+            ) {
+              return;
+            }
+            const vv = videoRef.current;
+            if (!vv?.error || vv.error.code !== persistedCode) return;
+            if (
+              !vv.paused &&
+              vv.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA
+            ) {
+              setError(null);
+              return;
+            }
+            if (recoveryPasses < 4 && hlsRef.current) {
+              runLiveVideoErrorRecovery();
+              scheduleDeferCheck(LIVE_VIDEO_ERROR_DEFER_MS);
+              return;
+            }
+            const hlsRetry = hlsRef.current;
+            if (hlsRetry) {
+              setError(null);
+              setLoading(true);
+              livePlaybackErrorSuppressUntilRef.current =
+                performance.now() + LIVE_PLAYBACK_ERROR_GRACE_MS;
+              applyGentleLiveHlsRecovery(hlsRetry, vv);
+              scheduleDeferCheck(LIVE_VIDEO_ERROR_DEFER_MS);
+              return;
+            }
+            setError(map[persistedCode] || `Playback error (${persistedCode}).`);
+          }, delayMs);
+        };
+        scheduleDeferCheck(LIVE_VIDEO_ERROR_DEFER_MS);
+        return;
+      }
+
+      if (
+        vodProgressive &&
+        (code === 3 || code === 4) &&
+        requestVodTranscodeFallbackRef.current()
+      ) {
+        return;
+      }
+
+      setError(map[code] || `Playback error (${code}).`);
+    };
+    const onEnter = () => setIsPip(true);
+    const onLeave = () => setIsPip(false);
+
+    v.addEventListener("play", onPlay);
+    v.addEventListener("pause", onPause);
+    v.addEventListener("waiting", onWaiting);
+    v.addEventListener("playing", onPlaying);
+    v.addEventListener("timeupdate", onTime);
+    v.addEventListener("loadedmetadata", onMeta);
+    v.addEventListener("loadeddata", onLoadedData);
+    v.addEventListener("volumechange", onVol);
+    v.addEventListener("error", onErr);
+    v.addEventListener("enterpictureinpicture", onEnter);
+    v.addEventListener("leavepictureinpicture", onLeave);
+    return () => {
+      if (volPersistTimer) clearTimeout(volPersistTimer);
+      cancelLiveKickTimer();
+      cancelLiveMediaErrorDefer();
+      cancelLiveMediaErrorDeferRef.current = () => {};
+      v.removeEventListener("play", onPlay);
+      v.removeEventListener("pause", onPause);
+      v.removeEventListener("waiting", onWaiting);
+      v.removeEventListener("playing", onPlaying);
+      v.removeEventListener("timeupdate", onTime);
+      v.removeEventListener("loadedmetadata", onMeta);
+      v.removeEventListener("loadeddata", onLoadedData);
+      v.removeEventListener("volumechange", onVol);
+      v.removeEventListener("error", onErr);
+      v.removeEventListener("enterpictureinpicture", onEnter);
+      v.removeEventListener("leavepictureinpicture", onLeave);
+    };
+  }, [
+    open,
+    current,
+    usesTranscodePlayback,
+    applyVodDurationHint,
+    vodTotalSec,
+    mobileLikeViewport,
+    chromiumDesktopClient,
+    videoRef,
+    hlsRef,
+    vodDurationHintRef,
+    vodStartOffsetRef,
+    cancelLiveMediaErrorDeferRef,
+    livePlaybackErrorSuppressUntilRef,
+    requestVodTranscodeFallbackRef,
+    setIsPlaying,
+    setNeedsTapToPlay,
+    setLoading,
+    setStalled,
+    setTime,
+    setBuffered,
+    setMuted,
+    setVolume,
+    setError,
+    setLiveAudioNoPicture,
+    setVideoHasFrame,
+    setVodPrepProgress,
+    setIsPip,
+  ]);
+}

@@ -242,15 +242,18 @@ function LoginPageInner() {
         <div className="flex items-center gap-3 mb-6">
           <BrandMark size={11} />
           <div className="min-w-0">
-            <h1 className="text-xl font-semibold tracking-tight">{SITE_NAME}</h1>
+            <h1 className="text-xl font-semibold tracking-tight">
+              {SITE_NAME}{" "}
+              <span className="text-(--text-muted) font-normal">IPTV web player</span>
+            </h1>
             <p className="text-xs text-(--text-muted) mt-0.5">{SITE_TAGLINE}</p>
           </div>
         </div>
 
         <p className="text-sm text-(--text-muted) leading-relaxed mb-6 max-w-prose">
-          Watch live TV, movies, and series in your browser — with a guide, search, and
-          layouts tuned for phones and living-room TVs. Sign in with credentials from{" "}
-          <strong className="text-(--text)">your</strong> Xtream provider.
+          Live TV, movies, and series in the browser. Guide, search, layouts for phone and
+          TV. Sign in with credentials from{" "}
+          <strong className="text-(--text)">your</strong> Xtream or M3U provider.
         </p>
 
         <div className="card p-6 sm:p-7">
@@ -438,6 +441,12 @@ function LoginPageInner() {
         <div className="mt-6 flex flex-col items-center gap-3 text-[11px] text-(--text-muted)">
           <div className="flex flex-wrap justify-center gap-x-5 gap-y-2">
             <Link
+              href="/"
+              className="min-h-11 inline-flex items-center underline underline-offset-2 hover:text-(--text)"
+            >
+              Home
+            </Link>
+            <Link
               href="/legal/terms"
               className="min-h-11 inline-flex items-center underline underline-offset-2 hover:text-(--text)"
             >
@@ -449,10 +458,16 @@ function LoginPageInner() {
             >
               Privacy
             </Link>
+            <Link
+              href="/blog"
+              className="min-h-11 inline-flex items-center underline underline-offset-2 hover:text-(--text)"
+            >
+              Blog
+            </Link>
           </div>
           <div className="flex items-center gap-2">
             <Sparkles className="size-3 text-(--brand-2)" />
-            Designed for 2026 — fast, smooth, beautiful.
+            iptvwebplayer.org
           </div>
         </div>
       </div>

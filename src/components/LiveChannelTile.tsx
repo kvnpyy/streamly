@@ -5,6 +5,7 @@ import {
   inferCountryFromCategory,
   parseChannelMeta,
 } from "@/lib/channel-meta";
+import { isLiveTileEpgEnabled } from "@/lib/live-epg-policy";
 import {
   decodeEpgText,
   useChannelEPG,
@@ -37,6 +38,8 @@ type LiveChannelTileProps = Omit<
   /** Notify the parent which programme is currently airing on this
    *  channel, so the page can include it in the search index. */
   onNowPlaying?: (programTitle: string | undefined) => void;
+  /** When set, skip provider EPG fetches and show this on-air title. */
+  knownNowPlaying?: string;
 };
 
 function formatRemaining(seconds: number): string {
@@ -54,6 +57,7 @@ export function LiveChannelTile({
   fallbackSubtitle,
   categoryLine,
   onNowPlaying,
+  knownNowPlaying,
   ...rest
 }: LiveChannelTileProps) {
   const fallbackMeta = useMemo(
@@ -64,13 +68,16 @@ export function LiveChannelTile({
     inferCountryFromCategory(categoryLine || "") ||
     fallbackMeta.countryCode;
   const [ref, inView] = useInView<HTMLDivElement>("250px");
+  const skipEpg =
+    Boolean(knownNowPlaying?.trim()) || !isLiveTileEpgEnabled();
   const { programs, isLoading, isResolved, skipped, sourceIsExternal } =
     useChannelEPG({
       streamId,
       hasEpgChannelId,
-      enabled: inView,
+      enabled: inView && !skipEpg,
       channelName: rest.name,
       country: countryCode,
+      shortLimit: 2,
     });
   const now = useNow(60_000);
 
@@ -121,25 +128,28 @@ export function LiveChannelTile({
     };
   }, [programs, now]);
 
+  const displayNowPlaying = knownNowPlaying?.trim() || nowPlaying;
+
   useEffect(() => {
-    if (onNowPlaying) onNowPlaying(nowPlaying);
-  }, [nowPlaying, onNowPlaying]);
+    if (onNowPlaying) onNowPlaying(displayNowPlaying);
+  }, [displayNowPlaying, onNowPlaying]);
 
   const noScheduleAvailable =
-    !nowPlaying && (skipped || (isResolved && programs.length === 0));
+    !displayNowPlaying &&
+    (skipped || (isResolved && programs.length === 0));
 
   return (
     <div ref={ref}>
       <ChannelTile
         {...rest}
-        nowPlaying={nowPlaying}
+        nowPlaying={displayNowPlaying}
         nextPlaying={nextPlaying}
         endsIn={endsIn}
         nowProgress={nowProgress}
         nowStart={nowStart}
         nowEnd={nowEnd}
         nextStart={nextStart}
-        epgLoading={inView && isLoading && !nowPlaying}
+        epgLoading={inView && isLoading && !displayNowPlaying}
         epgSourceTag={sourceIsExternal ? "iptv-org" : undefined}
         fallbackSubtitle={
           noScheduleAvailable ? fallbackSubtitle : undefined

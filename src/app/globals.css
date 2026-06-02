@@ -303,3 +303,316 @@ html[data-tv="true"] video {
   /* Softer compositing on some TV GPUs */
   transform: translateZ(0);
 }
+
+/* Living-room: 16:9 discovery cards, stronger focus for remotes */
+html[data-living-room="true"] [data-tv-card-root]:focus-visible {
+  outline: 3px solid var(--brand-2);
+  outline-offset: 4px;
+}
+
+html[data-tv-comfort="true"] [data-tv-card-root] {
+  min-height: 2.75rem;
+}
+
+/*
+ * Samsung Smart TV browsers default to ~125% page zoom. Use root font-size (not
+ * `zoom`) — zoom on html breaks keyboard input in search fields on Tizen.
+ */
+html.samsung-tv-hint,
+html[data-samsung-tv="true"] {
+  font-size: 80%;
+}
+
+html[data-samsung-tv="true"][data-tv-comfort="true"] {
+  font-size: 88%;
+}
+
+html[data-samsung-tv="true"] .live-channel-search__input {
+  font-size: max(18px, 1.05rem);
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+/* ── TV home (living-room hub) ───────────────────────────────────────── */
+.tv-home {
+  display: flex;
+  flex-direction: column;
+  gap: 2.25rem;
+  padding-bottom: 2.5rem;
+  max-width: 100%;
+}
+
+.tv-home__hero {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1.25rem 2rem;
+}
+
+.tv-home__greeting {
+  font-size: clamp(1.75rem, 3.5vw, 2.5rem);
+  font-weight: 650;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+  color: var(--text);
+}
+
+.tv-home__greeting span {
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.tv-home-quick-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+}
+
+.tv-home-quick-nav__pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 2.85rem;
+  padding: 0 1.15rem;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--bg-2);
+  color: var(--text);
+  font-size: 0.95rem;
+  font-weight: 600;
+  transition:
+    border-color 0.15s,
+    background 0.15s,
+    box-shadow 0.15s;
+}
+
+.tv-home-quick-nav__pill:hover,
+.tv-home-quick-nav__pill:focus-visible {
+  border-color: color-mix(in srgb, var(--brand) 45%, var(--line));
+  background: color-mix(in srgb, var(--brand) 12%, var(--bg-2));
+  box-shadow: 0 8px 28px -12px rgba(124, 92, 255, 0.45);
+}
+
+.tv-home-row__head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.85rem;
+}
+
+.tv-home-row__title {
+  font-size: clamp(1.15rem, 2.2vw, 1.45rem);
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  color: var(--text);
+  line-height: 1.15;
+}
+
+.tv-home-row__subtitle {
+  margin-top: 0.25rem;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  max-width: 36rem;
+}
+
+.tv-home-row__see-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem;
+  min-height: 2.75rem;
+  padding: 0 0.65rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-dim);
+  border-radius: 0.65rem;
+  flex-shrink: 0;
+}
+
+.tv-home-row__see-all:hover,
+.tv-home-row__see-all:focus-visible {
+  color: var(--text);
+  background: var(--bg-2);
+}
+
+/* Spotlight grid: lead tile + up to 5 supporting tiles */
+.tv-home-spotlight {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.85rem;
+}
+
+.tv-home-spotlight__cell {
+  min-width: 0;
+}
+
+.tv-home-spotlight__cell--lead .card {
+  min-height: 100%;
+}
+
+@media (min-width: 900px) {
+  .tv-home-spotlight {
+    grid-template-columns: 1.35fr 1fr 1fr;
+    grid-template-rows: repeat(2, minmax(0, 1fr));
+    gap: 1rem;
+    min-height: 22rem;
+  }
+
+  .tv-home-spotlight__cell--lead {
+    grid-row: 1 / 3;
+    grid-column: 1;
+  }
+}
+
+html[data-samsung-tv="true"] .tv-home-spotlight {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+@media (min-width: 900px) {
+  html[data-samsung-tv="true"] .tv-home-spotlight {
+    min-height: 19rem;
+  }
+}
+
+.tv-home-shelf-card {
+  flex: 0 0 clamp(11rem, 28vw, 16rem);
+  scroll-snap-align: start;
+}
+
+.tv-home-continue .tv-shelf-scroll > * {
+  flex: 0 0 clamp(9.5rem, 22vw, 12.5rem);
+}
+
+/* Fullscreen-style playback on TV / Silk — hide OS pointer when chrome is dismissed */
+html.player-immersive,
+html.player-immersive .player-immersive-surface,
+html.player-immersive .player-immersive-surface video {
+  cursor: none !important;
+}
+
+/* Windows Chrome/Brave live (hls.js + MSE): keep the decode layer cheap to composite */
+.player-chromium-live-surface video {
+  will-change: auto;
+  transform: none;
+  contain: strict;
+}
+
+/* VOD server-prep overlay — smooth motion, not a generic spinner */
+@keyframes player-prep-poster-drift {
+  0% {
+    transform: scale(1.05) translate3d(0, 0, 0);
+  }
+  100% {
+    transform: scale(1.12) translate3d(-1.5%, -1%, 0);
+  }
+}
+
+@keyframes player-prep-bar {
+  0% {
+    width: 6%;
+  }
+  100% {
+    width: 90%;
+  }
+}
+
+@keyframes player-prep-glow-pulse {
+  0%,
+  100% {
+    opacity: 0.28;
+    transform: translate(-50%, -50%) scale(1);
+  }
+  50% {
+    opacity: 0.55;
+    transform: translate(-50%, -50%) scale(1.08);
+  }
+}
+
+.player-prep-poster-drift {
+  animation: player-prep-poster-drift 28s ease-in-out infinite alternate;
+  will-change: transform;
+}
+
+.player-prep-bar-fill {
+  animation: player-prep-bar 72s cubic-bezier(0.22, 0.61, 0.36, 1) forwards;
+}
+
+.player-prep-glow {
+  animation: player-prep-glow-pulse 4.5s ease-in-out infinite;
+}
+
+.player-prep-vignette {
+  box-shadow: inset 0 0 120px 40px rgba(0, 0, 0, 0.55);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .player-prep-poster-drift,
+  .player-prep-bar-fill,
+  .player-prep-glow {
+    animation: none !important;
+  }
+  .player-prep-bar-fill {
+    width: 42%;
+  }
+}
+
+/* ——— Marketing landing (/ ) ——— */
+@keyframes landing-hero-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-8px);
+  }
+}
+
+@keyframes landing-live-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.55;
+    transform: scale(0.92);
+  }
+}
+
+.landing-hero-preview {
+  animation: landing-hero-float 7s ease-in-out infinite;
+}
+
+.landing-live-dot {
+  animation: landing-live-pulse 2s ease-in-out infinite;
+}
+
+.landing-card-lift {
+  transition:
+    transform 0.2s ease,
+    border-color 0.2s ease,
+    background-color 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.landing-card-lift:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.25);
+}
+
+.landing-focus-ring:focus-visible {
+  outline: 2px solid var(--brand-2);
+  outline-offset: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .landing-hero-preview,
+  .landing-live-dot {
+    animation: none !important;
+  }
+  .landing-card-lift:hover {
+    transform: none;
+  }
+}

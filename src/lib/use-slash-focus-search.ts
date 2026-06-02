@@ -18,6 +18,7 @@ export function useSlashFocusSearch(
       e.preventDefault();
       const el =
         inputRef.current ??
+        document.getElementById("tv-search-page-input") ??
         document.getElementById("global-search-input");
       if (!el || !(el instanceof HTMLInputElement)) return;
       el.focus();

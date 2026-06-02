@@ -6,6 +6,8 @@ import { useAuth } from "@/store/auth";
 import { usePlayer } from "@/store/player";
 import { usePrefs } from "@/store/preferences";
 import { useQuery } from "@tanstack/react-query";
+import { CastGallery } from "@/components/CastGallery";
+import { GenreChips } from "@/components/GenreChips";
 import { ArrowLeft, Heart, Play, Star } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
@@ -165,13 +167,14 @@ export default function MovieDetail() {
           <div className="flex flex-wrap items-center gap-2 mt-3 text-sm text-(--text-dim)">
             {data.year && <span>{data.year}</span>}
             {meta.duration && <span className="chip">{meta.duration}</span>}
-            {meta.genre && <span className="chip">{meta.genre}</span>}
             {meta.rating && parseFloat(meta.rating) > 0 && (
               <span className="chip flex items-center gap-1.5 text-amber-300">
                 <Star className="size-3.5 fill-amber-300" /> {meta.rating}
               </span>
             )}
           </div>
+
+          <GenreChips genre={meta.genre} className="mt-3" />
 
           {meta.plot && (
             <p className="text-(--text) mt-5 leading-relaxed max-w-3xl">
@@ -183,11 +186,18 @@ export default function MovieDetail() {
             {meta.director && (
               <Row label="Director" value={meta.director} />
             )}
-            {meta.cast && <Row label="Cast" value={meta.cast} />}
             {(meta.releasedate || meta.release_date) && (
               <Row label="Released" value={meta.releasedate || meta.release_date!} />
             )}
           </dl>
+
+          <CastGallery
+            tmdbId={meta.tmdb_id}
+            title={meta.name || data.name}
+            year={data.year}
+            mediaType="movie"
+            fallbackNames={meta.cast}
+          />
 
           <div className="mt-7 flex flex-wrap items-center gap-2">
             <button

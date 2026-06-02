@@ -1,13 +1,16 @@
 "use client";
 
-import { buildImageProxy } from "@/lib/xtream";
+import { useTmdbArtwork } from "@/hooks/use-tmdb-artwork";
+import { buildImageProxy, proxiedCssBackground } from "@/lib/image-proxy";
 import { cn } from "@/lib/utils";
 import { Play } from "lucide-react";
-import { memo, useEffect, useState } from "react";
+import { memo } from "react";
 
 export type TvChannelCardProps = {
   name: string;
   icon?: string;
+  /** Xtream panel base URL — required when `icon` is a relative path. */
+  panelServer?: string;
   /** Currently airing programme title (from EPG). */
   nowPlaying?: string;
   /** 0–1 progress through the current programme. */
@@ -15,65 +18,14 @@ export type TvChannelCardProps = {
   /** Highlight border when this channel is currently playing. */
   active?: boolean;
   onClick: () => void;
+  /** Prefetch manifest when the card is focused or hovered (faster tune-in). */
+  onWarmPointer?: () => void;
   /**
    * "tv"  — large, optimised for 3 m viewing distance (default).
-   * "web" — compact, for desktop / phone shelf browsing at normal distance.
+   * "web" — compact shelf card: logo only (no TMDB fetch — keeps "Show more" fast).
    */
   variant?: "tv" | "web";
 };
-
-// ---------------------------------------------------------------------------
-// TMDB artwork hook — module-level cache so the same title fetches once per
-// browser session regardless of how many cards show the same programme.
-// ---------------------------------------------------------------------------
-
-const tmdbCache = new Map<string, string | null>();
-
-/**
- * Tracks the latest async fetch result as `{ title, url }` so we can
- * update state only from the async callback (never synchronously inside the
- * effect body, which the React Compiler flags as a cascading-render risk).
- */
-function useTmdbArtwork(title: string | undefined): string | null {
-  const [asyncResult, setAsyncResult] = useState<{
-    title: string;
-    url: string | null;
-  } | null>(null);
-
-  useEffect(() => {
-    if (!title || tmdbCache.has(title)) return; // cache hit — no fetch needed
-
-    let cancelled = false;
-    fetch(`/api/artwork?title=${encodeURIComponent(title)}`)
-      .then((r) => r.json())
-      .then((data: { imageUrl?: string | null }) => {
-        if (cancelled) return;
-        const imageUrl = data?.imageUrl ?? null;
-        tmdbCache.set(title, imageUrl);
-        setAsyncResult({ title, url: imageUrl }); // setState only in async callback
-      })
-      .catch(() => {
-        if (!cancelled) {
-          tmdbCache.set(title, null);
-          setAsyncResult({ title, url: null });
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [title]);
-
-  if (!title) return null;
-  // Synchronous cache hit — no setState required, no extra render
-  if (tmdbCache.has(title)) return tmdbCache.get(title) ?? null;
-  // Async result (may be for a previous title if title just changed)
-  if (asyncResult?.title === title) return asyncResult.url;
-  return null;
-}
-
-// ---------------------------------------------------------------------------
-// Initials fallback
-// ---------------------------------------------------------------------------
 
 function ChannelInitials({ name }: { name: string }) {
   const clean = name
@@ -109,33 +61,25 @@ function ChannelInitials({ name }: { name: string }) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// TvChannelCard
-// ---------------------------------------------------------------------------
+type ChannelCardBodyProps = Omit<TvChannelCardProps, "variant"> & {
+  isWeb: boolean;
+  artworkUrl: string | null;
+  iconBg: string | undefined;
+  webIconSrc?: string;
+};
 
-/**
- * Vertical poster-style channel card for the Netflix-style TV shelf.
- *
- * Layer order inside the 16:9 logo area:
- *  1. ChannelInitials (always — base colour)
- *  2. Channel logo via CSS background-image (silently hidden if URL fails)
- *  3. TMDB programme artwork (full-bleed backdrop when EPG title is known)
- *
- * The TMDB layer transforms the card into a rich "what's on now" poster
- * the moment programme data arrives, falling back gracefully to the logo.
- */
-export const TvChannelCard = memo(function TvChannelCard({
+const ChannelCardBody = memo(function ChannelCardBody({
   name,
-  icon,
   nowPlaying,
   nowProgress,
   active,
   onClick,
-  variant = "tv",
-}: TvChannelCardProps) {
-  const isWeb = variant === "web";
-  const artworkUrl = useTmdbArtwork(nowPlaying);
-
+  onWarmPointer,
+  isWeb,
+  artworkUrl,
+  iconBg,
+  webIconSrc,
+}: ChannelCardBodyProps) {
   return (
     <div
       data-tv-card-root
@@ -143,6 +87,8 @@ export const TvChannelCard = memo(function TvChannelCard({
       role="button"
       aria-label={`Play ${name}`}
       onClick={onClick}
+      onPointerEnter={() => onWarmPointer?.()}
+      onFocus={() => onWarmPointer?.()}
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") {
           e.preventDefault();
@@ -154,29 +100,36 @@ export const TvChannelCard = memo(function TvChannelCard({
         "border bg-(--bg-2)",
         "outline-none transition-all duration-150",
         isWeb ? "w-36 sm:w-40 md:w-44" : "w-52 xl:w-60 2xl:w-72",
-        "hover:scale-[1.04] hover:z-10 hover:border-(--line-2)",
-        "focus-visible:scale-[1.08] focus-visible:z-20",
+        isWeb
+          ? "hover:border-(--line-2)"
+          : "hover:scale-[1.04] hover:z-10 hover:border-(--line-2)",
+        isWeb
+          ? "focus-visible:z-10 focus-visible:border-(--brand)/60"
+          : "focus-visible:scale-[1.08] focus-visible:z-20",
         "focus-visible:shadow-[0_0_0_3px_rgba(124,92,255,0.7),0_0_30px_rgba(124,92,255,0.3)]",
         active
           ? "border-(--brand)/70"
           : "border-(--line) focus-visible:border-(--brand)/60"
       )}
     >
-      {/* ── 16:9 logo / artwork area ── */}
       <div className="aspect-video w-full overflow-hidden relative">
-
-        {/* Layer 1: initials — always visible as base */}
         <div className="absolute inset-0 bg-(--bg-3) flex items-center justify-center">
           <ChannelInitials name={name} />
         </div>
-
-        {/* Layer 2: channel logo — CSS background never shows broken-image indicator */}
-        {icon && (
+        {isWeb && webIconSrc ? (
+          <img
+            src={webIconSrc}
+            alt=""
+            loading="lazy"
+            decoding="async"
+            className="absolute inset-0 m-auto max-h-[72%] max-w-[72%] object-contain pointer-events-none"
+          />
+        ) : iconBg ? (
           <div
             aria-hidden
             className="absolute inset-0"
             style={{
-              backgroundImage: `url("${buildImageProxy(icon)}")`,
+              backgroundImage: iconBg,
               backgroundSize: "contain",
               backgroundRepeat: "no-repeat",
               backgroundPosition: "center",
@@ -184,9 +137,7 @@ export const TvChannelCard = memo(function TvChannelCard({
               padding: "12px",
             }}
           />
-        )}
-
-        {/* Layer 3: TMDB programme artwork — full-bleed backdrop */}
+        ) : null}
         {artworkUrl && (
           <div
             aria-hidden
@@ -198,8 +149,6 @@ export const TvChannelCard = memo(function TvChannelCard({
             }}
           />
         )}
-
-        {/* Bottom-fade gradient when artwork shows — keeps info strip readable */}
         {artworkUrl && (
           <div
             aria-hidden
@@ -212,14 +161,12 @@ export const TvChannelCard = memo(function TvChannelCard({
         )}
       </div>
 
-      {/* Play overlay on focus / hover */}
       <div className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/22 group-focus-visible:bg-black/22 transition-all pointer-events-none">
         <div className="size-11 rounded-full bg-white/0 group-hover:bg-white/18 group-focus-visible:bg-white/18 flex items-center justify-center transition-all">
           <Play className="size-5 text-white opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 fill-current ml-0.5 transition-opacity" />
         </div>
       </div>
 
-      {/* EPG progress bar */}
       {typeof nowProgress === "number" && nowProgress > 0 && (
         <div className="absolute bottom-[3.25rem] left-0 right-0 h-[3px] bg-white/8">
           <div
@@ -231,7 +178,6 @@ export const TvChannelCard = memo(function TvChannelCard({
         </div>
       )}
 
-      {/* Info strip */}
       <div className={isWeb ? "px-2.5 py-2" : "px-3 py-2.5"}>
         <div
           className={cn(
@@ -264,12 +210,45 @@ export const TvChannelCard = memo(function TvChannelCard({
       </div>
     </div>
   );
-},
-(prev, next) =>
-  prev.name === next.name &&
-  prev.icon === next.icon &&
-  prev.nowPlaying === next.nowPlaying &&
-  prev.nowProgress === next.nowProgress &&
-  prev.active === next.active &&
-  prev.variant === next.variant
-);
+});
+
+/** Web shelf tiles — no TMDB hook (avoids global artwork cache re-render storms). */
+const TvChannelCardWeb = memo(function TvChannelCardWeb(
+  props: Omit<TvChannelCardProps, "variant">
+) {
+  const webIconSrc = buildImageProxy(props.icon, props.panelServer);
+  return (
+    <ChannelCardBody
+      {...props}
+      isWeb
+      artworkUrl={null}
+      iconBg={undefined}
+      webIconSrc={webIconSrc}
+    />
+  );
+});
+
+const TvChannelCardTv = memo(function TvChannelCardTv(
+  props: Omit<TvChannelCardProps, "variant">
+) {
+  const artworkUrl = useTmdbArtwork(props.nowPlaying);
+  const iconBg = proxiedCssBackground(props.icon, props.panelServer);
+  return (
+    <ChannelCardBody
+      {...props}
+      isWeb={false}
+      artworkUrl={artworkUrl}
+      iconBg={iconBg}
+    />
+  );
+});
+
+export const TvChannelCard = memo(function TvChannelCard({
+  variant = "tv",
+  ...props
+}: TvChannelCardProps) {
+  if (variant === "web") {
+    return <TvChannelCardWeb {...props} />;
+  }
+  return <TvChannelCardTv {...props} />;
+});

@@ -1,6 +1,8 @@
 import {
   isAmazonSilkUserAgent,
+  isSamsungTvUserAgent,
   isTvClassUserAgent,
+  STREAM_SAMSUNG_TV_HEADER,
   STREAM_SILK_HEADER,
   STREAM_TV_HEADER,
 } from "@/lib/tv-user-agent";
@@ -19,6 +21,11 @@ export function middleware(request: NextRequest) {
     requestHeaders.set(STREAM_SILK_HEADER, "1");
   } else {
     requestHeaders.delete(STREAM_SILK_HEADER);
+  }
+  if (isSamsungTvUserAgent(ua)) {
+    requestHeaders.set(STREAM_SAMSUNG_TV_HEADER, "1");
+  } else {
+    requestHeaders.delete(STREAM_SAMSUNG_TV_HEADER);
   }
   return NextResponse.next({
     request: { headers: requestHeaders },

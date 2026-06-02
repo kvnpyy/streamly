@@ -7,12 +7,26 @@ import {
   getCachedEpgTitle,
   setCachedEpgTitle,
 } from "@/lib/epg-local-cache";
+import { maxConcurrentEpgFetches } from "@/lib/epg-fetch-limiter";
 import { nowPlayingTitleFromListings, SHORT_EPG_STALE_MS } from "@/lib/hooks";
-import { buildImageProxy, xtream } from "@/lib/xtream";
+import { runWithConcurrency } from "@/lib/run-with-concurrency";
+import { proxiedCssBackground } from "@/lib/image-proxy";
+import { prefetchLiveStreamManifest } from "@/lib/live-stream-prefetch";
+import { buildLivePlayUrl, xtream } from "@/lib/xtream";
 import type { LiveStream, XtreamCredentials } from "@/lib/xtream-types";
+import { VirtualLiveChannelGrid } from "@/components/VirtualMediaCatalogGrid";
+import { LIVE_LIST_MAX_CHANNELS } from "@/lib/live-guide-limits";
 import { useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Play, Radio, Search, X } from "lucide-react";
-import { memo, useCallback, useEffect, useRef, useState } from "react";
+import {
+  memo,
+  useCallback,
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 // ---------------------------------------------------------------------------
 // Public props
@@ -39,6 +53,8 @@ const INITIAL_SCAN = 30;
 const SCAN_BATCH = 25;
 /** Estimated row height in px (for scroll-to-batch calculations) */
 const ROW_H_EST = 130;
+/** Cap overlay list size — full categories freeze the main thread. */
+const CATEGORY_VIEW_MAX_CHANNELS = LIVE_LIST_MAX_CHANNELS;
 
 // ---------------------------------------------------------------------------
 // Component
@@ -94,32 +110,35 @@ export function TvCategoryView({
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   // ── Filtered list ───────────────────────────────────────────────────────
-  const filteredChannels = searchQuery.trim()
-    ? channels.filter((c) => {
-        const q = searchQuery.toLowerCase();
-        const nowPlaying =
-          nowPlayingMap.get(c.stream_id) ?? localEpg.get(c.stream_id);
-        return (
-          c.name.toLowerCase().includes(q) ||
-          nowPlaying?.toLowerCase().includes(q)
-        );
-      })
-    : channels;
+  const filteredChannels = useMemo(() => {
+    if (!searchQuery.trim()) return channels;
+    const q = searchQuery.toLowerCase();
+    return channels.filter((c) => {
+      const nowPlaying =
+        nowPlayingMap.get(c.stream_id) ?? localEpg.get(c.stream_id);
+      return (
+        c.name.toLowerCase().includes(q) ||
+        nowPlaying?.toLowerCase().includes(q)
+      );
+    });
+  }, [channels, searchQuery, nowPlayingMap, localEpg]);
+
+  const displayChannels = useDeferredValue(filteredChannels);
 
   // ── Keyboard shortcuts ──────────────────────────────────────────────────
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      // "/" focuses search (unless already in a text input)
-      if (
-        e.key === "/" &&
-        !(e.target instanceof HTMLInputElement) &&
-        !(e.target instanceof HTMLTextAreaElement)
-      ) {
+      const inField =
+        e.target instanceof HTMLInputElement ||
+        e.target instanceof HTMLTextAreaElement ||
+        (e.target instanceof HTMLElement &&
+          e.target.isContentEditable);
+      if (e.key === "/" && !inField) {
         e.preventDefault();
         searchInputRef.current?.focus();
         return;
       }
-      // Escape/Backspace closes overlay (unless search is open with text)
+      if (inField) return;
       if (
         (e.key === "Escape" || e.key === "Backspace") &&
         !searchQuery
@@ -187,8 +206,10 @@ export function TvCategoryView({
 
       // ── Stage 1: Provider shortEPG ──────────────────────────────────────
       const noProviderEpg: LiveStream[] = [];
-      await Promise.all(
-        toScan.map(async (c) => {
+      await runWithConcurrency(
+        toScan,
+        maxConcurrentEpgFetches(),
+        async (c) => {
           try {
             const data = await queryClient.fetchQuery({
               queryKey: [
@@ -201,6 +222,7 @@ export function TvCategoryView({
               queryFn: ({ signal }) =>
                 xtream.shortEPG(creds, c.stream_id, 2, signal),
               staleTime: SHORT_EPG_STALE_MS,
+              retry: false,
             });
             const epgTitle = nowPlayingTitleFromListings(
               data?.epg_listings ?? [],
@@ -215,7 +237,7 @@ export function TvCategoryView({
           } catch {
             noProviderEpg.push(c);
           }
-        })
+        }
       );
 
       // ── Stage 2: External EPG fallback (iptv-org) ───────────────────────
@@ -274,16 +296,17 @@ export function TvCategoryView({
   // ── Scroll handler: expand scan window ─────────────────────────────────
   const scrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const handleScroll = useCallback(() => {
-    if (!creds || !listRef.current) return;
+    if (!creds) return;
+    const list =
+      listRef.current?.querySelector<HTMLElement>(".live-channel-scroll") ??
+      listRef.current;
+    if (!list) return;
     if (scrollTimerRef.current) clearTimeout(scrollTimerRef.current);
     scrollTimerRef.current = setTimeout(() => {
-      if (!listRef.current) return;
-      const list = listRef.current;
       const cols = window.innerWidth >= 1280 ? 2 : 1;
       const visibleBottomChannel =
         Math.ceil((list.scrollTop + list.clientHeight) / ROW_H_EST) * cols;
       setScanUpTo((prev) => {
-        // Expand if we're within 10 channels of the current scan frontier
         if (visibleBottomChannel + 10 > prev && prev < channels.length) {
           return Math.min(prev + SCAN_BATCH, channels.length);
         }
@@ -291,6 +314,14 @@ export function TvCategoryView({
       });
     }, 200);
   }, [creds, channels.length]);
+
+  useEffect(() => {
+    const list =
+      listRef.current?.querySelector<HTMLElement>(".live-channel-scroll");
+    if (!list) return;
+    list.addEventListener("scroll", handleScroll, { passive: true });
+    return () => list.removeEventListener("scroll", handleScroll);
+  }, [handleScroll, displayChannels.length]);
 
   const getNowPlaying = (id: number) =>
     nowPlayingMap.get(id) ?? localEpg.get(id);
@@ -352,12 +383,7 @@ export function TvCategoryView({
       </div>
 
       {/* ── Channel list ── */}
-      <div
-        ref={listRef}
-        className="flex-1 overflow-y-auto overflow-x-hidden px-5 py-3 scrollbar-hide"
-        style={{ WebkitOverflowScrolling: "touch" }}
-        onScroll={handleScroll}
-      >
+      <div ref={listRef} className="flex-1 min-h-0 px-5 py-3 flex flex-col">
         {filteredChannels.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-64 text-white/30 select-none">
             <Search className="size-12 mb-4 opacity-30" />
@@ -366,17 +392,31 @@ export function TvCategoryView({
             </p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 xl:grid-cols-2 gap-2 w-full">
-            {filteredChannels.map((c) => (
+          <VirtualLiveChannelGrid
+            items={displayChannels}
+            maxItems={CATEGORY_VIEW_MAX_CHANNELS}
+            scrollMaxHeight="calc(100dvh - 7.5rem)"
+            scrollClassName="flex-1 border-0 bg-transparent rounded-none"
+            itemKey={(c) => c.stream_id}
+            footer={
+              displayChannels.length > CATEGORY_VIEW_MAX_CHANNELS ? (
+                <p className="px-2 py-3 text-center text-xs text-white/45">
+                  Showing first {CATEGORY_VIEW_MAX_CHANNELS.toLocaleString()} of{" "}
+                  {displayChannels.length.toLocaleString()} channels — refine search
+                  to narrow the list.
+                </p>
+              ) : null
+            }
+            renderItem={(c) => (
               <ChannelRow
-                key={c.stream_id}
                 channel={c}
                 nowPlaying={getNowPlaying(c.stream_id)}
                 active={c.stream_id === activeStreamId}
                 onPlay={onPlay}
+                creds={creds}
               />
-            ))}
-          </div>
+            )}
+          />
         )}
       </div>
 
@@ -400,11 +440,19 @@ type ChannelRowProps = {
   nowPlaying?: string;
   active: boolean;
   onPlay: (c: LiveStream) => void;
+  creds?: XtreamCredentials;
 };
 
 const ChannelRow = memo(
-  function ChannelRow({ channel, nowPlaying, active, onPlay }: ChannelRowProps) {
+  function ChannelRow({
+    channel,
+    nowPlaying,
+    active,
+    onPlay,
+    creds,
+  }: ChannelRowProps) {
     const rowRef = useRef<HTMLDivElement>(null);
+    const iconBg = proxiedCssBackground(channel.stream_icon, creds?.server);
 
     return (
       <div
@@ -421,9 +469,20 @@ const ChannelRow = memo(
             onPlay(channel);
           }
         }}
-        onFocus={() =>
-          rowRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" })
-        }
+        onFocus={() => {
+          rowRef.current?.scrollIntoView({
+            block: "nearest",
+            behavior: "smooth",
+          });
+          if (creds) {
+            prefetchLiveStreamManifest(buildLivePlayUrl(creds, channel));
+          }
+        }}
+        onPointerEnter={() => {
+          if (creds) {
+            prefetchLiveStreamManifest(buildLivePlayUrl(creds, channel));
+          }
+        }}
         className={[
           "group flex items-center gap-4 px-4 py-3.5 rounded-2xl cursor-pointer select-none outline-none transition-all duration-100",
           active
@@ -436,12 +495,12 @@ const ChannelRow = memo(
           <div className="absolute inset-0 bg-white/5 flex items-center justify-center">
             <LogoInitials name={channel.name} />
           </div>
-          {channel.stream_icon && (
+          {iconBg && (
             <div
               aria-hidden
               className="absolute inset-0"
               style={{
-                backgroundImage: `url("${buildImageProxy(channel.stream_icon)}")`,
+                backgroundImage: iconBg,
                 backgroundSize: "contain",
                 backgroundRepeat: "no-repeat",
                 backgroundPosition: "center",

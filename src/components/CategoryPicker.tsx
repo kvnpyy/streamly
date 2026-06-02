@@ -1,10 +1,18 @@
 "use client";
 
+import {
+  buildNameSearchIndex,
+  filterByNameQuery,
+} from "@/lib/name-search-index";
+import { useDebouncedValue } from "@/lib/use-debounce";
 import { cn } from "@/lib/utils";
 import type { Category } from "@/lib/xtream-types";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { ChevronDown, FolderOpen } from "lucide-react";
 import {
   useCallback,
+  useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -13,18 +21,57 @@ import {
 
 type Entry = { id: string | "all"; label: string; count?: number };
 
-function CategoryListBody({
-  entries,
-  value,
-  onChange,
-  listWrapperClassName,
+/** Virtualize long IPTV category lists (500+ is common). */
+const CATEGORY_VIRTUAL_MIN = 72;
+const CATEGORY_ROW_PX = 40;
+
+function CategoryOption({
+  entry,
+  active,
+  tabIndex,
+  onSelect,
+  onKeyDown,
+  onFocus,
+  buttonRef,
 }: {
-  entries: Entry[];
-  value: string | "all";
-  onChange: (id: string | "all") => void;
-  /** e.g. flex-1 min-h-0 when used in a capped-height dialog shell */
-  listWrapperClassName?: string;
+  entry: Entry;
+  active: boolean;
+  tabIndex: number;
+  onSelect: () => void;
+  onKeyDown: (ev: KeyboardEvent<HTMLButtonElement>) => void;
+  onFocus: () => void;
+  buttonRef: (el: HTMLButtonElement | null) => void;
 }) {
+  return (
+    <button
+      ref={buttonRef}
+      type="button"
+      role="option"
+      aria-selected={active}
+      tabIndex={tabIndex}
+      onClick={onSelect}
+      onKeyDown={onKeyDown}
+      onFocus={onFocus}
+      className={cn(
+        "w-full text-left text-sm px-3 py-2 rounded-lg flex items-center justify-between transition-colors",
+        active
+          ? "bg-(--bg-3) text-(--text)"
+          : "text-(--text-dim) hover:bg-(--bg-2) hover:text-(--text)"
+      )}
+    >
+      <span className="truncate">{entry.label}</span>
+      {typeof entry.count === "number" && (
+        <span className="text-[11px] text-(--text-muted)">{entry.count}</span>
+      )}
+    </button>
+  );
+}
+
+function useCategoryListFocus(
+  entries: Entry[],
+  value: string | "all",
+  onChange: (id: string | "all") => void
+) {
   const selectedIndex = useMemo(() => {
     const i = entries.findIndex(
       (e) => (value === "all" && e.id === "all") || String(value) === e.id
@@ -32,7 +79,6 @@ function CategoryListBody({
     return i >= 0 ? i : 0;
   }, [entries, value]);
 
-  /** Roving focus offset from `selectedIndex` (resets when this component remounts — parent `key`). */
   const [bias, setBias] = useState(0);
   const focusIndex = Math.max(
     0,
@@ -47,6 +93,7 @@ function CategoryListBody({
       const clamped = Math.max(0, Math.min(i, max));
       setBias(clamped - selectedIndex);
       queueMicrotask(() => itemRefs.current[clamped]?.focus());
+      return clamped;
     },
     [entries.length, selectedIndex]
   );
@@ -66,24 +113,18 @@ function CategoryListBody({
         case "ArrowDown":
           ev.preventDefault();
           focusAt(index + 1);
-          itemRefs.current[index + 1]?.scrollIntoView({ block: "nearest" });
           break;
         case "ArrowUp":
           ev.preventDefault();
           focusAt(index - 1);
-          itemRefs.current[index - 1]?.scrollIntoView({ block: "nearest" });
           break;
         case "Home":
           ev.preventDefault();
           focusAt(0);
-          itemRefs.current[0]?.scrollIntoView({ block: "nearest" });
           break;
         case "End":
           ev.preventDefault();
           focusAt(entries.length - 1);
-          itemRefs.current[entries.length - 1]?.scrollIntoView({
-            block: "nearest",
-          });
           break;
         case "Enter":
         case " ":
@@ -96,6 +137,36 @@ function CategoryListBody({
     },
     [activateIndex, entries.length, focusAt]
   );
+
+  return {
+    selectedIndex,
+    focusIndex,
+    itemRefs,
+    focusAt,
+    activateIndex,
+    onOptionKeyDown,
+    setBias,
+  };
+}
+
+function CategoryListBody({
+  entries,
+  value,
+  onChange,
+  listWrapperClassName,
+}: {
+  entries: Entry[];
+  value: string | "all";
+  onChange: (id: string | "all") => void;
+  listWrapperClassName?: string;
+}) {
+  const {
+    selectedIndex,
+    focusIndex,
+    itemRefs,
+    onOptionKeyDown,
+    setBias,
+  } = useCategoryListFocus(entries, value, onChange);
 
   return (
     <div
@@ -113,35 +184,117 @@ function CategoryListBody({
             ? e.id === "all"
             : String(value) === String(e.id);
         return (
-          <button
+          <CategoryOption
             key={e.id === "all" ? "all" : e.id}
-            ref={(el) => {
+            entry={e}
+            active={active}
+            tabIndex={index === focusIndex ? 0 : -1}
+            buttonRef={(el) => {
               itemRefs.current[index] = el;
             }}
-            type="button"
-            role="option"
-            aria-selected={active}
-            tabIndex={index === focusIndex ? 0 : -1}
-            onClick={() => {
+            onSelect={() => {
               setBias(index - selectedIndex);
               onChange(e.id === "all" ? "all" : e.id);
             }}
             onKeyDown={(ev) => onOptionKeyDown(index, ev)}
-            onFocus={() => setBias(index - selectedIndex)}
-            className={cn(
-              "w-full text-left text-sm px-3 py-2 rounded-lg flex items-center justify-between transition-colors",
-              active
-                ? "bg-(--bg-3) text-(--text)"
-                : "text-(--text-dim) hover:bg-(--bg-2) hover:text-(--text)"
-            )}
-          >
-            <span className="truncate">{e.label}</span>
-            {typeof e.count === "number" && (
-              <span className="text-[11px] text-(--text-muted)">{e.count}</span>
-            )}
-          </button>
+            onFocus={() => setBias(index - focusIndex)}
+          />
         );
       })}
+    </div>
+  );
+}
+
+function VirtualCategoryListBody({
+  entries,
+  value,
+  onChange,
+  listWrapperClassName,
+}: {
+  entries: Entry[];
+  value: string | "all";
+  onChange: (id: string | "all") => void;
+  listWrapperClassName?: string;
+}) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const {
+    selectedIndex,
+    focusIndex,
+    itemRefs,
+    activateIndex,
+    onOptionKeyDown,
+    setBias,
+  } = useCategoryListFocus(entries, value, onChange);
+
+  const virtualizer = useVirtualizer({
+    count: entries.length,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: () => CATEGORY_ROW_PX,
+    overscan: 10,
+  });
+
+  useLayoutEffect(() => {
+    if (selectedIndex > 0) {
+      virtualizer.scrollToIndex(selectedIndex, { align: "auto" });
+    }
+  }, [selectedIndex, value, virtualizer]);
+
+  useEffect(() => {
+    const el = itemRefs.current[focusIndex];
+    el?.scrollIntoView({ block: "nearest" });
+  }, [focusIndex, itemRefs]);
+
+  return (
+    <div
+      ref={scrollRef}
+      className={cn(
+        "mt-2 overflow-y-auto pr-1 -mr-1 min-h-0",
+        listWrapperClassName
+      )}
+      role="listbox"
+      aria-label="Category list"
+      data-category-roving
+    >
+      <div
+        className="relative w-full"
+        style={{ height: `${virtualizer.getTotalSize()}px` }}
+      >
+        {virtualizer.getVirtualItems().map((vi) => {
+          const e = entries[vi.index];
+          if (!e) return null;
+          const index = vi.index;
+          const active =
+            value === "all"
+              ? e.id === "all"
+              : String(value) === String(e.id);
+          return (
+            <div
+              key={vi.key}
+              className="absolute left-0 w-full box-border px-0 py-0.5"
+              style={{
+                top: 0,
+                transform: `translateY(${vi.start}px)`,
+                minHeight: vi.size,
+              }}
+            >
+              <CategoryOption
+                entry={e}
+                active={active}
+                tabIndex={index === focusIndex ? 0 : -1}
+                buttonRef={(el) => {
+                  itemRefs.current[index] = el;
+                }}
+                onSelect={() => {
+                  setBias(index - selectedIndex);
+                  activateIndex(index);
+                }}
+                onKeyDown={(ev) => onOptionKeyDown(index, ev)}
+                onFocus={() => setBias(index - selectedIndex)}
+              />
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -157,16 +310,20 @@ export function CategoryPicker({
   value: string | "all";
   onChange: (id: string | "all") => void;
   countById?: Record<string, number>;
-  /** `dialog`: mobile sheet — no sticky, capped height */
   layout?: "sidebar" | "dialog";
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
   const [filter, setFilter] = useState("");
+  const debouncedFilter = useDebouncedValue(filter, 120);
+  const categoryNameIndex = useMemo(
+    () => buildNameSearchIndex(categories, (c) => c.category_name),
+    [categories]
+  );
   const filtered = useMemo(() => {
-    const f = filter.trim().toLowerCase();
+    const f = debouncedFilter.trim().toLowerCase();
     if (!f) return categories;
-    return categories.filter((c) => c.category_name.toLowerCase().includes(f));
-  }, [categories, filter]);
+    return filterByNameQuery(categoryNameIndex, f);
+  }, [categories, categoryNameIndex, debouncedFilter]);
 
   const entries: Entry[] = useMemo(
     () => [
@@ -185,6 +342,8 @@ export function CategoryPicker({
 
   const entryKeys = entries.map((e) => e.id).join("\u001f");
   const listKey = `${filter}\u0000${value}\u0000${entryKeys}`;
+  const useVirtual = entries.length >= CATEGORY_VIRTUAL_MIN;
+  const ListBody = useVirtual ? VirtualCategoryListBody : CategoryListBody;
 
   return (
     <div
@@ -232,7 +391,7 @@ export function CategoryPicker({
         aria-label="Filter categories"
         className="w-full bg-(--bg-3) border border-(--line) rounded-lg px-3 h-9 text-sm outline-none focus:border-(--brand)/50"
       />
-      <CategoryListBody
+      <ListBody
         key={listKey}
         entries={entries}
         value={value}

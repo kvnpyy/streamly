@@ -6,12 +6,18 @@ import {
   parsePositiveRouteId,
   vodContainerUiHint,
 } from "@/lib/utils";
+import { useTvBrowser } from "@/components/TvBrowserProvider";
+import { proxiedCssBackground } from "@/lib/image-proxy";
 import { buildImageProxy, buildSeriesEpisodePlayUrl, xtream } from "@/lib/xtream";
+import { warmVodTranscodePlay } from "@/lib/vod-transcode-url";
 import type { SeriesEpisode } from "@/lib/xtream-types";
 import { useAuth } from "@/store/auth";
 import { usePlayer, type PlayerPlaylist } from "@/store/player";
 import { usePrefs } from "@/store/preferences";
 import { useQuery } from "@tanstack/react-query";
+import { CastGallery } from "@/components/CastGallery";
+import { VirtualEpisodeList } from "@/components/VirtualEpisodeList";
+import { GenreChips } from "@/components/GenreChips";
 import { ArrowLeft, Heart, Play, Star } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
@@ -41,6 +47,7 @@ export default function SeriesDetail() {
   const seriesId = parsePositiveRouteId(params.id);
   const creds = useAuth((s) => s.creds);
   const { play } = usePlayer();
+  const tvBrowser = useTvBrowser();
   const { isFavorite, toggleFavorite, addRecent } = usePrefs();
   const [imgErr, setImgErr] = useState(false);
 
@@ -242,13 +249,14 @@ export default function SeriesDetail() {
             {meta.episode_run_time && (
               <span className="chip">{meta.episode_run_time} min ep</span>
             )}
-            {meta.genre && <span className="chip">{meta.genre}</span>}
             {meta.rating && parseFloat(meta.rating) > 0 && (
               <span className="chip flex items-center gap-1.5 text-amber-300">
                 <Star className="size-3.5 fill-amber-300" /> {meta.rating}
               </span>
             )}
           </div>
+
+          <GenreChips genre={meta.genre} className="mt-3" />
 
           {meta.plot && (
             <p className="text-(--text) mt-5 leading-relaxed max-w-3xl">
@@ -257,9 +265,15 @@ export default function SeriesDetail() {
           )}
 
           <dl className="grid grid-cols-2 gap-x-6 gap-y-2 mt-6 text-sm max-w-xl">
-            {meta.cast && <Row label="Cast" value={meta.cast} />}
             {meta.director && <Row label="Director" value={meta.director} />}
           </dl>
+
+          <CastGallery
+            title={meta.name}
+            year={(meta.releaseDate || meta.release_date)?.slice(0, 4)}
+            mediaType="tv"
+            fallbackNames={meta.cast}
+          />
 
           <div className="mt-7 flex items-center gap-2">
             <button
@@ -304,13 +318,21 @@ export default function SeriesDetail() {
           ))}
         </div>
 
-        <div className="space-y-2">
-          {episodes.map((ep) => {
+        <VirtualEpisodeList
+          items={episodes}
+          itemKey={(ep) => ep.id}
+          renderItem={(ep) => {
             const extHint = vodContainerUiHint(ep.container_extension);
             const extLabel = normalizeContainerExt(ep.container_extension);
+            const playUrl = buildSeriesEpisodePlayUrl(creds!, ep);
+            const warmTranscode = () => {
+              warmVodTranscodePlay(playUrl, { compatMse: tvBrowser });
+            };
             return (
               <button
                 key={ep.id}
+                onFocus={warmTranscode}
+                onMouseEnter={warmTranscode}
                 onClick={() => {
                   const ext = ep.container_extension || "mkv";
                   play(
@@ -321,7 +343,7 @@ export default function SeriesDetail() {
                       title: meta.name,
                       subtitle: `S${activeSeason} · E${ep.episode_num} — ${ep.title}`,
                       poster: buildImageProxy(ep.info?.movie_image || meta.cover),
-                      url: buildSeriesEpisodePlayUrl(creds, ep),
+                      url: playUrl,
                       containerExt: ext,
                     },
                     episodePlaylist ? { playlist: episodePlaylist } : undefined
@@ -338,17 +360,22 @@ export default function SeriesDetail() {
                 <div className="size-20 sm:size-28 shrink-0 rounded-lg overflow-hidden bg-(--bg-3) relative">
                   {/* CSS background-image: silently skips broken URLs, no red-box indicator.
                       Falls back to series cover when the episode has no dedicated image. */}
-                  {(ep.info?.movie_image || meta.cover) && (
-                    <div
-                      className="absolute inset-0"
-                      style={{
-                        backgroundImage: `url("${buildImageProxy(ep.info?.movie_image || meta.cover)}")`,
-                        backgroundSize: ep.info?.movie_image ? "cover" : "contain",
-                        backgroundPosition: "center",
-                        backgroundRepeat: "no-repeat",
-                      }}
-                    />
-                  )}
+                  {(() => {
+                    const epBg = proxiedCssBackground(
+                      ep.info?.movie_image || meta.cover
+                    );
+                    return epBg ? (
+                      <div
+                        className="absolute inset-0"
+                        style={{
+                          backgroundImage: epBg,
+                          backgroundSize: ep.info?.movie_image ? "cover" : "contain",
+                          backgroundPosition: "center",
+                          backgroundRepeat: "no-repeat",
+                        }}
+                      />
+                    ) : null;
+                  })()}
                   <div className="absolute inset-0 grid place-items-center bg-black/0 group-hover:bg-black/35 transition-colors">
                     <div className="size-9 rounded-full btn-brand grid place-items-center opacity-0 group-hover:opacity-100 transition-opacity">
                       <Play className="size-4 fill-white" />
@@ -397,8 +424,8 @@ export default function SeriesDetail() {
                 )}
               </button>
             );
-          })}
-        </div>
+          }}
+        />
       </div>
     </div>
   );

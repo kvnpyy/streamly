@@ -9,6 +9,9 @@ export const STREAM_TV_HEADER = "x-stream-tv";
 /** Amazon Silk (Fire TV, Echo Show, Fire tablets) — weak MSE stack; skip heavy fonts + tune playback. */
 export const STREAM_SILK_HEADER = "x-stream-silk";
 
+/** Samsung Tizen / Smart TV browser — defaults to ~125% page zoom. */
+export const STREAM_SAMSUNG_TV_HEADER = "x-stream-samsung-tv";
+
 /** Any Amazon Silk browser (WebView stack differs from Chrome TV). */
 export function isAmazonSilkUserAgent(ua: string): boolean {
   if (!ua) return false;
@@ -49,5 +52,20 @@ export function isTvClassUserAgent(ua: string): boolean {
     return true;
   }
 
+  return false;
+}
+
+/** Samsung Smart TV (Tizen) — browser zoom is typically 125%. */
+export function isSamsungTvUserAgent(ua: string): boolean {
+  if (!ua) return false;
+  const u = ua.toLowerCase();
+  if (/\btizen\b/.test(u)) return true;
+  if (/samsung/i.test(ua) && /smart[-_\s]?tv/i.test(ua)) return true;
+  if (
+    /\bsamsungbrowser\b/.test(u) &&
+    /(smart[-_\s]?tv|tizen|\btv\b|family\s*tv)/i.test(ua)
+  ) {
+    return true;
+  }
   return false;
 }

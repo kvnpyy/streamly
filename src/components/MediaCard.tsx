@@ -1,22 +1,23 @@
 "use client";
 
-import { cn } from "@/lib/utils";
-import { buildImageProxy } from "@/lib/xtream";
+import { cn, safeStr } from "@/lib/utils";
+import { proxiedCssBackground } from "@/lib/image-proxy";
 import { Heart, Play, Star } from "lucide-react";
 import Link from "next/link";
 
 /** Deterministic 0–359 hue from a string. */
-function titleHue(title: string): number {
+function titleHue(title: unknown): number {
+  const t = safeStr(title);
   let h = 0;
-  for (let i = 0; i < title.length; i++) {
-    h = (h * 31 + title.charCodeAt(i)) & 0xffff;
+  for (let i = 0; i < t.length; i++) {
+    h = (h * 31 + t.charCodeAt(i)) & 0xffff;
   }
   return h % 360;
 }
 
 /** Up to 2 initials from the first two words. */
-function titleInitials(title: string): string {
-  const words = title
+function titleInitials(title: unknown): string {
+  const words = safeStr(title)
     .replace(/[^a-zA-Z0-9\s]/g, " ")
     .trim()
     .split(/\s+/)
@@ -43,6 +44,8 @@ export type MediaCardProps = {
    * "contain" keeps aspect ratio with padding — good for channel logos.
    */
   posterFit?: "cover" | "contain";
+  /** Xtream panel base URL — required for relative provider logos. */
+  panelServer?: string;
 };
 
 export function MediaCard({
@@ -57,6 +60,7 @@ export function MediaCard({
   badge,
   className,
   posterFit = "cover",
+  panelServer,
 }: MediaCardProps) {
   const ratingNum =
     typeof rating === "number"
@@ -65,6 +69,7 @@ export function MediaCard({
         ? parseFloat(rating)
         : undefined;
 
+  const posterBg = proxiedCssBackground(poster, panelServer);
   const hue = titleHue(title);
   const initials = titleInitials(title);
 
@@ -95,11 +100,11 @@ export function MediaCard({
         </div>
 
         {/* Layer 3: poster via CSS background-image — silently skipped on error, no red boxes */}
-        {poster && (
+        {posterBg && (
           <div
             className="absolute inset-0 transition-transform duration-500 group-hover:scale-[1.04]"
             style={{
-              backgroundImage: `url("${buildImageProxy(poster)}")`,
+              backgroundImage: posterBg,
               backgroundSize: posterFit === "contain" ? "contain" : "cover",
               backgroundPosition: "center",
               backgroundRepeat: "no-repeat",

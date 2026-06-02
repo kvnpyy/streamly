@@ -9,7 +9,7 @@ npm run lint
 echo "==> vitest"
 npm test
 
-echo "==> next build"
+echo "==> next build (webpack — stable RSC client manifest on VPS)"
 npm run build
 
 echo "OK — pre-deploy checks passed."

@@ -21,6 +21,8 @@ export type TvShelfProps = {
    */
   moreCount?: number;
   className?: string;
+  /** Hide the built-in row title (parent provides section chrome). */
+  hideTitle?: boolean;
 };
 
 /**
@@ -38,6 +40,7 @@ export const TvShelf = memo(function TvShelf({
   onSeeAll,
   moreCount,
   className,
+  hideTitle = false,
 }: TvShelfProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const moreBtnRef = useRef<HTMLButtonElement>(null);
@@ -130,11 +133,17 @@ export const TvShelf = memo(function TvShelf({
   return (
     <div className={cn("space-y-3", className)}>
       {/* ── Shelf header ── */}
-      <div className="flex items-center justify-between px-1">
+      <div
+        className={cn(
+          "flex items-center justify-between px-1",
+          hideTitle && "sr-only"
+        )}
+      >
         <h2 className="text-lg font-bold text-(--text) tracking-tight">
-          {title}
+          {title || "Shelf"}
         </h2>
         {hasSeeAll &&
+          !hideTitle &&
           (seeAllHref ? (
             <Link
               href={seeAllHref}

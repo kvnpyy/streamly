@@ -4,11 +4,21 @@ import { LiveChannelTile } from "@/components/LiveChannelTile";
 import { TvSpatialGrid } from "@/components/TvSpatialGrid";
 import { MediaCard } from "@/components/MediaCard";
 import { SectionHeader } from "@/components/SectionHeader";
-import { buildLivePlayUrl } from "@/lib/xtream";
+import {
+  VirtualLiveChannelGrid,
+  VirtualMediaCatalogGrid,
+} from "@/components/VirtualMediaCatalogGrid";
+import {
+  buildLiveFlipPlaylist,
+  liveStreamToPlayerSource,
+  stubLiveStreamFromFavorite,
+} from "@/lib/live-flip-playlist";
 import { useAuth } from "@/store/auth";
 import { usePlayer } from "@/store/player";
 import { usePrefs } from "@/store/preferences";
 import { Heart } from "lucide-react";
+
+const VIRTUAL_MIN = 18;
 
 export default function FavoritesPage() {
   const creds = useAuth((s) => s.creds)!;
@@ -42,36 +52,65 @@ export default function FavoritesPage() {
           <h2 className="text-sm uppercase tracking-wider text-(--text-muted) mb-3">
             Live channels
           </h2>
-          <TvSpatialGrid className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {live.map((c) => (
-              <LiveChannelTile
-                key={c.id}
-                streamId={c.id}
-                name={c.name}
-                icon={c.icon}
-                isFavorite
-                onToggleFavorite={() =>
-                  toggleFavorite({ kind: c.kind, id: c.id, name: c.name, icon: c.icon })
-                }
-                onClick={() => {
-                  play({
-                    kind: "live",
-                    id: c.id,
-                    title: c.name,
-                    poster: c.icon,
-                    url: buildLivePlayUrl(creds, {
-                      stream_id: c.id,
-                      direct_source:
-                        typeof c.meta?.direct_source === "string"
-                          ? c.meta.direct_source
-                          : undefined,
-                    }),
-                  });
-                  addRecent(c);
-                }}
-              />
-            ))}
-          </TvSpatialGrid>
+          {live.length >= VIRTUAL_MIN ? (
+            <VirtualLiveChannelGrid
+              items={live}
+              maxItems={300}
+              itemKey={(c) => c.id}
+              renderItem={(c) => (
+                <LiveChannelTile
+                  streamId={c.id}
+                  name={c.name}
+                  icon={c.icon}
+                  isFavorite
+                  onToggleFavorite={() =>
+                    toggleFavorite({
+                      kind: c.kind,
+                      id: c.id,
+                      name: c.name,
+                      icon: c.icon,
+                    })
+                  }
+                  onClick={() => {
+                    const stream = stubLiveStreamFromFavorite(c);
+                    const flipStreams = live.map(stubLiveStreamFromFavorite);
+                    play(liveStreamToPlayerSource(creds, stream), {
+                      playlist: buildLiveFlipPlaylist(creds, flipStreams),
+                    });
+                    addRecent(c);
+                  }}
+                />
+              )}
+            />
+          ) : (
+            <TvSpatialGrid className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {live.map((c) => (
+                <LiveChannelTile
+                  key={c.id}
+                  streamId={c.id}
+                  name={c.name}
+                  icon={c.icon}
+                  isFavorite
+                  onToggleFavorite={() =>
+                    toggleFavorite({
+                      kind: c.kind,
+                      id: c.id,
+                      name: c.name,
+                      icon: c.icon,
+                    })
+                  }
+                  onClick={() => {
+                    const stream = stubLiveStreamFromFavorite(c);
+                    const flipStreams = live.map(stubLiveStreamFromFavorite);
+                    play(liveStreamToPlayerSource(creds, stream), {
+                      playlist: buildLiveFlipPlaylist(creds, flipStreams),
+                    });
+                    addRecent(c);
+                  }}
+                />
+              ))}
+            </TvSpatialGrid>
+          )}
         </section>
       )}
 
@@ -80,20 +119,50 @@ export default function FavoritesPage() {
           <h2 className="text-sm uppercase tracking-wider text-(--text-muted) mb-3">
             Movies
           </h2>
-          <TvSpatialGrid className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 gap-4">
-            {movies.map((m) => (
-              <MediaCard
-                key={m.id}
-                href={`/app/movies/${m.id}`}
-                poster={m.icon}
-                title={m.name}
-                isFavorite={isFavorite("movie", m.id)}
-                onToggleFavorite={() =>
-                  toggleFavorite({ kind: m.kind, id: m.id, name: m.name, icon: m.icon })
-                }
-              />
-            ))}
-          </TvSpatialGrid>
+          {movies.length >= VIRTUAL_MIN ? (
+            <VirtualMediaCatalogGrid
+              items={movies}
+              maxItems={300}
+              itemKey={(m) => m.id}
+              revision={movies.length}
+              renderItem={(m) => (
+                <MediaCard
+                  href={`/app/movies/${m.id}`}
+                  poster={m.icon}
+                  title={m.name}
+                  isFavorite={isFavorite("movie", m.id)}
+                  onToggleFavorite={() =>
+                    toggleFavorite({
+                      kind: m.kind,
+                      id: m.id,
+                      name: m.name,
+                      icon: m.icon,
+                    })
+                  }
+                />
+              )}
+            />
+          ) : (
+            <TvSpatialGrid className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 gap-4">
+              {movies.map((m) => (
+                <MediaCard
+                  key={m.id}
+                  href={`/app/movies/${m.id}`}
+                  poster={m.icon}
+                  title={m.name}
+                  isFavorite={isFavorite("movie", m.id)}
+                  onToggleFavorite={() =>
+                    toggleFavorite({
+                      kind: m.kind,
+                      id: m.id,
+                      name: m.name,
+                      icon: m.icon,
+                    })
+                  }
+                />
+              ))}
+            </TvSpatialGrid>
+          )}
         </section>
       )}
 
@@ -102,20 +171,50 @@ export default function FavoritesPage() {
           <h2 className="text-sm uppercase tracking-wider text-(--text-muted) mb-3">
             Series
           </h2>
-          <TvSpatialGrid className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 gap-4">
-            {series.map((s) => (
-              <MediaCard
-                key={s.id}
-                href={`/app/series/${s.id}`}
-                poster={s.icon}
-                title={s.name}
-                isFavorite={isFavorite("series", s.id)}
-                onToggleFavorite={() =>
-                  toggleFavorite({ kind: s.kind, id: s.id, name: s.name, icon: s.icon })
-                }
-              />
-            ))}
-          </TvSpatialGrid>
+          {series.length >= VIRTUAL_MIN ? (
+            <VirtualMediaCatalogGrid
+              items={series}
+              maxItems={300}
+              itemKey={(s) => s.id}
+              revision={series.length}
+              renderItem={(s) => (
+                <MediaCard
+                  href={`/app/series/${s.id}`}
+                  poster={s.icon}
+                  title={s.name}
+                  isFavorite={isFavorite("series", s.id)}
+                  onToggleFavorite={() =>
+                    toggleFavorite({
+                      kind: s.kind,
+                      id: s.id,
+                      name: s.name,
+                      icon: s.icon,
+                    })
+                  }
+                />
+              )}
+            />
+          ) : (
+            <TvSpatialGrid className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 gap-4">
+              {series.map((s) => (
+                <MediaCard
+                  key={s.id}
+                  href={`/app/series/${s.id}`}
+                  poster={s.icon}
+                  title={s.name}
+                  isFavorite={isFavorite("series", s.id)}
+                  onToggleFavorite={() =>
+                    toggleFavorite({
+                      kind: s.kind,
+                      id: s.id,
+                      name: s.name,
+                      icon: s.icon,
+                    })
+                  }
+                />
+              ))}
+            </TvSpatialGrid>
+          )}
         </section>
       )}
     </div>

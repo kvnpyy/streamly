@@ -3,7 +3,18 @@ import {
   xtreamCatalogCacheControlHeader,
 } from "@/lib/xtream-catalog-cache";
 import { enforceXtreamAuthProbeCaptcha } from "@/lib/xtream-captcha";
+import {
+  EMPTY_XTREAM_EPG,
+  isXtreamEpgAction,
+} from "@/lib/xtream-epg-actions";
+import {
+  getXtreamUpstreamCached,
+  setXtreamUpstreamCached,
+  xtreamUpstreamCacheKey,
+} from "@/lib/xtream-upstream-cache";
 import { NextRequest, NextResponse } from "next/server";
+
+const UPSTREAM_TIMEOUT_MS = 12_000;
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -35,6 +46,34 @@ export async function GET(req: NextRequest) {
     if (k === "u") continue;
     upstream.searchParams.set(k, v);
   }
+  const action = url.searchParams.get("action");
+  const epgAction = isXtreamEpgAction(action);
+
+  const cacheParams: Record<string, string> = {};
+  for (const [k, v] of url.searchParams.entries()) {
+    if (k === "u") continue;
+    cacheParams[k] = v;
+  }
+  const upstreamCacheKey = xtreamUpstreamCacheKey(creds, cacheParams);
+  const cacheableUpstream =
+    isXtreamCatalogCacheAction(action) || epgAction;
+  if (cacheableUpstream) {
+    const hit = getXtreamUpstreamCached(upstreamCacheKey);
+    if (hit) {
+      try {
+        const json = JSON.parse(hit);
+        const headers = new Headers();
+        if (isXtreamCatalogCacheAction(action)) {
+          headers.set("Cache-Control", xtreamCatalogCacheControlHeader());
+        }
+        headers.set("X-Xtream-Cache", "hit");
+        return NextResponse.json(json, { headers });
+      } catch {
+        /* refetch */
+      }
+    }
+  }
+
   try {
     const res = await fetch(upstream.toString(), {
       method: "GET",
@@ -44,9 +83,13 @@ export async function GET(req: NextRequest) {
         Accept: "application/json,text/plain,*/*",
       },
       cache: "no-store",
+      signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
     });
     const text = await res.text();
     if (!res.ok) {
+      if (epgAction) {
+        return NextResponse.json(EMPTY_XTREAM_EPG);
+      }
       return NextResponse.json(
         {
           error:
@@ -58,13 +101,19 @@ export async function GET(req: NextRequest) {
     }
     try {
       const json = JSON.parse(text);
-      const action = url.searchParams.get("action");
+      if (cacheableUpstream) {
+        setXtreamUpstreamCached(upstreamCacheKey, text, action);
+      }
       const headers = new Headers();
       if (isXtreamCatalogCacheAction(action)) {
         headers.set("Cache-Control", xtreamCatalogCacheControlHeader());
       }
+      headers.set("X-Xtream-Cache", "miss");
       return NextResponse.json(json, { headers });
     } catch {
+      if (epgAction) {
+        return NextResponse.json(EMPTY_XTREAM_EPG);
+      }
       return NextResponse.json(
         {
           error:
@@ -74,6 +123,9 @@ export async function GET(req: NextRequest) {
       );
     }
   } catch {
+    if (epgAction) {
+      return NextResponse.json(EMPTY_XTREAM_EPG);
+    }
     return NextResponse.json(
       {
         error:

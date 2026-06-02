@@ -5,7 +5,7 @@ import { PlaylistSwitcher } from "@/components/PlaylistSwitcher";
 import { APP_NAV } from "@/lib/nav-config";
 import { SITE_NAME } from "@/lib/site-brand";
 import { cn } from "@/lib/utils";
-import { Settings } from "lucide-react";
+import { Search, Settings } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
@@ -18,6 +18,7 @@ const TV_NAV_ITEMS = APP_NAV.filter((n) => n.href !== "/app/tv");
  */
 export function TvTopNav() {
   const pathname = usePathname();
+  const onSearchPage = pathname.startsWith("/app/search");
 
   return (
     <nav
@@ -38,7 +39,7 @@ export function TvTopNav() {
           title={SITE_NAME}
         >
           <BrandMark size={8} />
-          <span className="hidden sm:block font-bold text-sm tracking-tight">
+          <span className="font-bold text-sm tracking-tight">
             {SITE_NAME}
           </span>
         </Link>
@@ -56,7 +57,7 @@ export function TvTopNav() {
               data-tv-card-root
               aria-current={active ? "page" : undefined}
               className={cn(
-                "flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium transition-all",
+                "flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm sm:text-base font-medium transition-all min-h-11",
                 "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--brand)/55 focus-visible:ring-offset-1 focus-visible:ring-offset-(--bg-0)",
                 active
                   ? "bg-(--brand)/18 text-(--text)"
@@ -69,13 +70,24 @@ export function TvTopNav() {
                   active ? "text-(--brand)" : "text-(--text-muted)"
                 )}
               />
-              <span className="hidden sm:block">{label}</span>
+              <span>{label}</span>
             </Link>
           );
         })}
 
         {/* Right side: playlist switcher + settings */}
         <div className="ml-auto flex items-center gap-1.5">
+          {!onSearchPage && (
+            <Link
+              href="/app/search"
+              data-tv-card-root
+              title="Search"
+              className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium text-(--text-dim) hover:text-(--text) hover:bg-(--bg-2)/60 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--brand)/55"
+            >
+              <Search className="size-4 shrink-0" />
+              <span className="hidden sm:inline">Search</span>
+            </Link>
+          )}
           <PlaylistSwitcher className="hidden md:flex" />
           <Link
             href="/app/settings"

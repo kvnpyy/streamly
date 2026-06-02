@@ -2,20 +2,45 @@
 
 import { ActiveCategoryFilterBar } from "@/components/ActiveCategoryFilterBar";
 import { VirtualMediaCatalogGrid } from "@/components/VirtualMediaCatalogGrid";
+import { DiscoveryShelf } from "@/components/DiscoveryShelf";
 import { MediaShelf } from "@/components/MediaShelf";
+import { useCatalogPageReady } from "@/hooks/use-catalog-page-ready";
+import { useSeriesDiscoveryShelves } from "@/hooks/use-vod-discovery-shelves";
+import { isDiscoveryShelvesEnabled } from "@/lib/discovery";
 import { MobileCategoryRail } from "@/components/MobileCategoryRail";
 import { MediaCard } from "@/components/MediaCard";
 import { SectionHeader, SkeletonGrid } from "@/components/SectionHeader";
+import { buildProviderGenreShelves } from "@/lib/vod-genre-discovery";
 import { useDebouncedValue } from "@/lib/use-debounce";
 import { useSlashFocusSearch } from "@/lib/use-slash-focus-search";
-import { looksAdult, parsePositiveRouteId, safeLower, safeStr } from "@/lib/utils";
-import { xtream } from "@/lib/xtream";
-import type { XtreamCredentials } from "@/lib/xtream-types";
+import {
+  buildNameSearchIndex,
+  filterByNameQuery,
+} from "@/lib/name-search-index";
+import { looksAdult, parsePositiveRouteId, safeStr } from "@/lib/utils";
+import { seriesCatalogQueryOptions } from "@/lib/series-catalog-query";
+import type { SeriesItem, XtreamCredentials } from "@/lib/xtream-types";
 import { useAuth } from "@/store/auth";
 import { browseAccountKey, usePrefs } from "@/store/preferences";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowDownAZ, Star, TrendingUp } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { scheduleWhenIdle } from "@/lib/defer-idle";
+import {
+  buildIdsByCategory,
+  buildItemByIdMap,
+  countByCategoryFromIndex,
+  pickItemsForCategory,
+} from "@/lib/vod-catalog-index";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import {
+  useCallback,
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useTransition,
+} from "react";
 
 type Sort = "added" | "rating" | "name";
 
@@ -34,8 +59,18 @@ function SeriesPageInner({
   creds: XtreamCredentials;
   accountKey: string;
 }) {
-  const { isFavorite, toggleFavorite, hideAdult, parentalUnlocked, setBrowsePref, recents } =
-    usePrefs();
+  const {
+    isFavorite,
+    toggleFavorite,
+    hideAdult,
+    parentalUnlocked,
+    setBrowsePref,
+    recents,
+    favorites,
+  } = usePrefs();
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
 
   const [categoryOverride, setCategoryOverride] = useState<
     string | "all" | null
@@ -57,25 +92,58 @@ function SeriesPageInner({
         ? "all"
         : String(savedSeriesCategory);
 
-  const selectedBase = categoryOverride ?? prefsCategory;
+  const [, startCategorySwitch] = useTransition();
 
   const setCategory = useCallback(
     (v: string | "all") => {
-      const next = v === "all" ? "all" : String(v);
-      setCategoryOverride(next);
-      setBrowsePref(accountKey, { seriesCategory: next });
+      startCategorySwitch(() => {
+        const next = v === "all" ? "all" : String(v);
+        setCategoryOverride(next);
+        setBrowsePref(accountKey, { seriesCategory: next });
+        const params = new URLSearchParams(searchParams.toString());
+        if (next === "all") params.delete("category");
+        else params.set("category", next);
+        const qs = params.toString();
+        router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+      });
     },
-    [accountKey, setBrowsePref]
+    [accountKey, setBrowsePref, searchParams, pathname, router, startCategorySwitch]
   );
 
-  const cats = useQuery({
-    queryKey: ["series-cats", creds.server, creds.username],
-    queryFn: ({ signal }) => xtream.seriesCategories(creds, signal),
-  });
-  const items = useQuery({
-    queryKey: ["series", creds.server, creds.username, "all"],
-    queryFn: ({ signal }) => xtream.series(creds, undefined, signal),
-  });
+  const catalogReady = useCatalogPageReady();
+  const catalog = useQuery(seriesCatalogQueryOptions(creds, catalogReady));
+
+  const cats = useMemo(
+    () => ({
+      data: catalog.data?.categories,
+      isLoading: !catalogReady || catalog.isLoading,
+      isError: catalog.isError,
+      isFetched: catalog.isFetched,
+    }),
+    [
+      catalog.data?.categories,
+      catalogReady,
+      catalog.isLoading,
+      catalog.isError,
+      catalog.isFetched,
+    ]
+  );
+
+  const items = useMemo(
+    () => ({
+      data: catalog.data?.streams,
+      isLoading: !catalogReady || catalog.isLoading,
+      isError: catalog.isError,
+      isFetched: catalog.isFetched,
+    }),
+    [
+      catalog.data?.streams,
+      catalogReady,
+      catalog.isLoading,
+      catalog.isError,
+      catalog.isFetched,
+    ]
+  );
 
   const filteredCats = useMemo(() => {
     const list = cats.data || [];
@@ -87,6 +155,15 @@ function SeriesPageInner({
     () => new Set(filteredCats.map((c) => String(c.category_id))),
     [filteredCats]
   );
+
+  const fromUrlCategory = useMemo(() => {
+    const fromUrl = searchParams.get("category");
+    if (!fromUrl || fromUrl === "all") return null;
+    if (!allowedCatIds.has(fromUrl)) return null;
+    return fromUrl;
+  }, [searchParams, allowedCatIds]);
+
+  const selectedBase = categoryOverride ?? fromUrlCategory ?? prefsCategory;
 
   const selected =
     selectedBase !== "all" &&
@@ -101,36 +178,81 @@ function SeriesPageInner({
     queueMicrotask(() => setCategoryOverride(null));
   }, [selectedBase, selected, accountKey, setBrowsePref]);
 
-  const countById = useMemo(() => {
-    const map: Record<string, number> = {};
-    (items.data || []).forEach((s) => {
-      const cid = String(s.category_id);
-      if (hideAdult && !parentalUnlocked) {
-        if (!allowedCatIds.has(cid)) return;
-        if (looksAdult({ name: s.name })) return;
-      }
-      map[cid] = (map[cid] || 0) + 1;
+  useEffect(() => {
+    if (!fromUrlCategory) return;
+    queueMicrotask(() => {
+      setBrowsePref(accountKey, { seriesCategory: fromUrlCategory });
     });
-    return map;
-  }, [items.data, hideAdult, parentalUnlocked, allowedCatIds]);
+  }, [fromUrlCategory, accountKey, setBrowsePref]);
 
-  const visible = useMemo(() => {
-    let list = (items.data || []).filter(
+  const seriesCatalog = useMemo(() => {
+    const raw = (items.data || []).filter(
       (s) => parsePositiveRouteId(s.series_id) != null
     );
+    if (!raw.length) {
+      return {
+        filtered: [] as SeriesItem[],
+        byId: undefined as Map<number, SeriesItem> | undefined,
+        idsByCategory: undefined as Record<string, number[]> | undefined,
+        countById: {} as Record<string, number>,
+      };
+    }
+    let filtered = raw;
     if (hideAdult && !parentalUnlocked) {
-      list = list.filter(
+      filtered = filtered.filter(
         (s) =>
           allowedCatIds.has(String(s.category_id)) &&
           !looksAdult({ name: s.name })
       );
     }
-    if (selected !== "all") {
-      const sel = String(selected);
-      list = list.filter((s) => String(s.category_id) === sel);
+    const byId = buildItemByIdMap(filtered, (s) => parsePositiveRouteId(s.series_id)!);
+    const serverIndex = catalog.data?.idsByCategory;
+    const serverCounts = catalog.data?.countByCategoryId;
+    if (serverIndex && serverCounts) {
+      return {
+        filtered,
+        byId,
+        idsByCategory: serverIndex,
+        countById: serverCounts,
+      };
     }
+    const idsByCategory = buildIdsByCategory(
+      filtered,
+      (s) => String(s.category_id),
+      (s) => parsePositiveRouteId(s.series_id)!
+    );
+    return {
+      filtered,
+      byId,
+      idsByCategory,
+      countById: countByCategoryFromIndex(idsByCategory),
+    };
+  }, [catalog.data, items.data, hideAdult, parentalUnlocked, allowedCatIds]);
+
+  const countById = seriesCatalog.countById;
+
+  const categoryStreams = useMemo(
+    () =>
+      selected === "all"
+        ? seriesCatalog.filtered
+        : pickItemsForCategory(
+            seriesCatalog.filtered,
+            selected,
+            seriesCatalog.idsByCategory,
+            seriesCatalog.byId
+          ),
+    [seriesCatalog, selected]
+  );
+
+  const categoryNameIndex = useMemo(
+    () => buildNameSearchIndex(categoryStreams, (s) => s.name),
+    [categoryStreams]
+  );
+
+  const visible = useMemo(() => {
+    let list = categoryStreams;
     const f = qFilter.trim().toLowerCase();
-    if (f) list = list.filter((s) => safeLower(s.name).includes(f));
+    if (f) list = filterByNameQuery(categoryNameIndex, f);
     if (sort === "rating" || sort === "name") {
       list = list.slice().sort((a, b) => {
         if (sort === "rating") {
@@ -142,7 +264,7 @@ function SeriesPageInner({
       });
     }
     return list;
-  }, [items.data, selected, qFilter, sort, hideAdult, parentalUnlocked, allowedCatIds]);
+  }, [categoryStreams, categoryNameIndex, qFilter, sort]);
 
   const selectedCategoryName = useMemo(() => {
     if (selected === "all") return "";
@@ -182,59 +304,97 @@ function SeriesPageInner({
       .filter((x): x is NonNullable<typeof x> => x !== null);
   }, [recents, items.data, isFavorite, toggleFavorite]);
 
-  const topRatedSeriesItems = useMemo(() => {
-    const safe_ = hideAdult && !parentalUnlocked;
-    return (items.data ?? [])
-      .filter((s) => {
-        if (parsePositiveRouteId(s.series_id) == null) return false;
-        if (safe_ && looksAdult({ name: s.name })) return false;
-        return (parseFloat(s.rating || "0") || 0) >= 6;
-      })
-      .sort(
-        (a, b) =>
-          (parseFloat(b.rating || "0") || 0) - (parseFloat(a.rating || "0") || 0)
-      )
-      .slice(0, 24)
-      .map((s) => {
-        const sid = parsePositiveRouteId(s.series_id)!;
-        return {
-          id: sid,
-          href: `/app/series/${sid}`,
-          poster: s.cover,
-          title: s.name,
-          subtitle: s.year,
-          rating: s.rating,
-          isFavorite: isFavorite("series", sid),
-          onToggleFavorite: () =>
-            toggleFavorite({ kind: "series", id: sid, name: s.name, icon: s.cover }),
-        };
-      });
-  }, [items.data, hideAdult, parentalUnlocked, isFavorite, toggleFavorite]);
+  const toggleFavoriteSeriesItem = useCallback(
+    (s: SeriesItem, sid: number) => {
+      toggleFavorite({ kind: "series", id: sid, name: s.name, icon: s.cover });
+    },
+    [toggleFavorite]
+  );
 
-  const newlyAddedSeriesItems = useMemo(() => {
-    const safe_ = hideAdult && !parentalUnlocked;
-    return (items.data ?? [])
-      .filter((s) => {
-        if (parsePositiveRouteId(s.series_id) == null) return false;
-        if (safe_ && looksAdult({ name: s.name })) return false;
-        return true;
-      })
-      .slice(0, 24)
-      .map((s) => {
-        const sid = parsePositiveRouteId(s.series_id)!;
-        return {
-          id: sid,
-          href: `/app/series/${sid}`,
-          poster: s.cover,
-          title: s.name,
-          subtitle: s.year,
-          rating: s.rating,
-          isFavorite: isFavorite("series", sid),
-          onToggleFavorite: () =>
-            toggleFavorite({ kind: "series", id: sid, name: s.name, icon: s.cover }),
-        };
-      });
-  }, [items.data, hideAdult, parentalUnlocked, isFavorite, toggleFavorite]);
+  const discoveryOn = isDiscoveryShelvesEnabled();
+
+  const [discoveryReady, setDiscoveryReady] = useState(false);
+  useEffect(() => {
+    if (selected !== "all" || qFilter || items.isLoading || !discoveryOn) {
+      queueMicrotask(() => setDiscoveryReady(false));
+      return;
+    }
+    return scheduleWhenIdle(() => setDiscoveryReady(true), 2_500);
+  }, [selected, qFilter, items.isLoading, discoveryOn]);
+
+  const discovery = useSeriesDiscoveryShelves(
+    discoveryReady ? items.data : undefined,
+    recents,
+    favorites,
+    {
+      hideAdult,
+      parentalUnlocked,
+      isFavorite,
+      toggleFavoriteSeries: toggleFavoriteSeriesItem,
+    }
+  );
+
+  const topRatedSeriesItems = discovery.topRated;
+  const newlyAddedSeriesItems = discovery.newlyAdded;
+
+  const genreShelves = useMemo(
+    () =>
+      discoveryReady
+        ? buildProviderGenreShelves({
+        kind: "series",
+        categories: filteredCats,
+        countById,
+        streams: items.data ?? [],
+        allowedCatIds,
+        hideAdult,
+        parentalUnlocked,
+        isFavorite: (kind, id) => isFavorite(kind, id),
+        toggleFavorite,
+          })
+        : [],
+    [
+      discoveryReady,
+      filteredCats,
+      countById,
+      items.data,
+      allowedCatIds,
+      hideAdult,
+      parentalUnlocked,
+      isFavorite,
+      toggleFavorite,
+    ]
+  );
+
+  const showDiscovery =
+    discoveryReady &&
+    discoveryOn &&
+    selected === "all" &&
+    !qFilter &&
+    !items.isLoading;
+
+  const displayVisible = useDeferredValue(visible);
+
+  const gridRevision = useMemo(
+    () =>
+      [
+        showDiscovery ? "disc" : "grid",
+        recentSeriesItems.length,
+        topRatedSeriesItems.length,
+        newlyAddedSeriesItems.length,
+        genreShelves.map((s) => `${s.categoryId}:${s.items.length}`).join(","),
+        selected,
+        qFilter,
+      ].join("|"),
+    [
+      showDiscovery,
+      recentSeriesItems.length,
+      topRatedSeriesItems.length,
+      newlyAddedSeriesItems.length,
+      genreShelves,
+      selected,
+      qFilter,
+    ]
+  );
 
   return (
     <div className="space-y-5">
@@ -263,7 +423,7 @@ function SeriesPageInner({
       />
 
       {/* ── Discovery shelves (hidden when user has active filters) ── */}
-      {selected === "all" && !qFilter && !items.isLoading && (
+      {showDiscovery && (
         <div className="space-y-6">
           {recentSeriesItems.length > 0 && (
             <MediaShelf
@@ -272,20 +432,40 @@ function SeriesPageInner({
               items={recentSeriesItems}
             />
           )}
+          {discoveryOn && discovery.forYou.length > 0 && (
+            <DiscoveryShelf
+              meta={discovery.meta.vod_for_you_series}
+              items={discovery.forYou}
+            />
+          )}
+          {discoveryOn && discovery.trending.length > 0 && (
+            <DiscoveryShelf
+              meta={discovery.meta.vod_trending_series}
+              items={discovery.trending}
+              loading={discovery.trendingLoading}
+            />
+          )}
           {topRatedSeriesItems.length > 0 && (
-            <MediaShelf
-              eyebrow="Critically acclaimed"
-              title="Top Rated"
+            <DiscoveryShelf
+              meta={discovery.meta.vod_top_rated_series}
               items={topRatedSeriesItems}
             />
           )}
           {newlyAddedSeriesItems.length > 0 && (
-            <MediaShelf
-              eyebrow="Just arrived"
-              title="Newly Added"
+            <DiscoveryShelf
+              meta={discovery.meta.vod_new_series}
               items={newlyAddedSeriesItems}
             />
           )}
+          {genreShelves.map((shelf) => (
+            <MediaShelf
+              key={shelf.categoryId}
+              eyebrow="Browse by genre"
+              title={shelf.title}
+              items={shelf.items}
+              seeAllHref={`/app/series?category=${encodeURIComponent(shelf.categoryId)}`}
+            />
+          ))}
         </div>
       )}
 
@@ -315,11 +495,22 @@ function SeriesPageInner({
           No series match your filters.
         </div>
       ) : (
-        <VirtualMediaCatalogGrid
-          items={visible}
-          maxItems={600}
+        <>
+          {showDiscovery && (
+            <div className="pt-1">
+              <p className="text-[11px] font-semibold uppercase tracking-widest text-(--brand-2) mb-0.5">
+                Full catalog
+              </p>
+              <h2 className="text-base font-bold text-(--text) leading-tight">
+                All Series
+              </h2>
+            </div>
+          )}
+          <VirtualMediaCatalogGrid
+          items={displayVisible}
+          maxItems={400}
           itemKey={(s) => parsePositiveRouteId(s.series_id) ?? s.series_id}
-          revision={`${items.isLoading ? "loading" : "loaded"}:${selected}:${qFilter}`}
+          revision={gridRevision}
           renderItem={(s) => {
             const sid = parsePositiveRouteId(s.series_id)!;
             return (
@@ -349,6 +540,7 @@ function SeriesPageInner({
             ) : null
           }
         />
+        </>
       )}
     </div>
   );

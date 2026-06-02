@@ -53,6 +53,25 @@ function runStartupMigrations(driver: InstanceType<typeof Database>): void {
       PRIMARY KEY (user_id, provider_account_key)
     );
   `);
+
+  driver.exec(`
+    CREATE TABLE IF NOT EXISTS discovery_tmdb_cache (
+      id TEXT PRIMARY KEY NOT NULL,
+      region TEXT NOT NULL DEFAULT 'US',
+      media_type TEXT NOT NULL,
+      payload_json TEXT NOT NULL,
+      synced_at INTEGER NOT NULL
+    );
+  `);
+
+  driver.exec(`
+    CREATE TABLE IF NOT EXISTS discovery_sports_cache (
+      id TEXT PRIMARY KEY NOT NULL,
+      region TEXT NOT NULL DEFAULT 'US',
+      payload_json TEXT NOT NULL,
+      synced_at INTEGER NOT NULL
+    );
+  `);
 }
 
 let cached: BetterSQLite3Database<typeof schema> | undefined;

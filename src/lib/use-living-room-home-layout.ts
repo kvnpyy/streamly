@@ -1,26 +1,52 @@
 "use client";
 
+import { isLivingRoomClient } from "@/lib/living-room-detect";
 import { detectTvBrowser } from "@/lib/tv-browser";
-import { isAmazonSilkUserAgent } from "@/lib/tv-user-agent";
+import { usePrefs } from "@/store/preferences";
 import { useSyncExternalStore } from "react";
 
-function subscribeNoop() {
-  return () => {};
+function subscribeCoarsePointer(callback: () => void) {
+  if (typeof window === "undefined") return () => {};
+  const mq = window.matchMedia("(pointer: coarse) and (min-width: 1024px)");
+  const onChange = () => callback();
+  mq.addEventListener("change", onChange);
+  return () => mq.removeEventListener("change", onChange);
+}
+
+function subscribeLivingRoom(callback: () => void) {
+  const unsubCoarse = subscribeCoarsePointer(callback);
+  return unsubCoarse;
 }
 
 /**
- * Living-room style home hub: real TV browsers (Tizen, webOS, Android TV, Fire TV)
- * plus **Amazon Silk** (often weak MSE / awkward remote) so `/app` can show fewer,
- * larger entry points without changing routes.
+ * Living-room home hub: native TV browsers, Silk, Comfort layout, or
+ * large screen + coarse pointer (typical TV browser with a remote).
  */
 export function useLivingRoomHomeLayout(): boolean {
+  const comfortTvBrowsing = usePrefs((s) => s.comfortTvBrowsing);
+
   return useSyncExternalStore(
-    subscribeNoop,
-    () => {
-      if (typeof navigator === "undefined") return false;
-      const ua = navigator.userAgent || "";
-      return detectTvBrowser() || isAmazonSilkUserAgent(ua);
-    },
+    subscribeLivingRoom,
+    () => isLivingRoomClient(comfortTvBrowsing),
+    () => false
+  );
+}
+
+/** Any UI that should use TV grids, focus targets, and EPG caps. */
+export function useTvPresentation(): boolean {
+  const comfortTvBrowsing = usePrefs((s) => s.comfortTvBrowsing);
+  return useSyncExternalStore(
+    subscribeLivingRoom,
+    () => isLivingRoomClient(comfortTvBrowsing),
+    () => false
+  );
+}
+
+/** Native TV / Silk UA only (not coarse-pointer browser on TV). */
+export function useNativeTvBrowser(): boolean {
+  return useSyncExternalStore(
+    () => () => {},
+    () => detectTvBrowser(),
     () => false
   );
 }

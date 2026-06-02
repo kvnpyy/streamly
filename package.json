@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "dev:lan": "bash scripts/dev-lan.sh",
-    "build": "next build",
+    "build": "next build --webpack",
     "start": "next start -p ${PORT:-3000} -H 127.0.0.1",
     "start:lan": "next start -p ${PORT:-3000} -H 0.0.0.0",
     "lint": "eslint",
@@ -14,6 +14,8 @@
     "deploy:vps:quick": "bash scripts/vps-push-deploy.sh --quick",
     "db:push": "drizzle-kit push",
     "db:backup": "bash scripts/backup-sqlite.sh",
+    "discovery:sync-tmdb": "npx tsx scripts/sync-tmdb-trending.ts",
+    "discovery:sync-sports": "npx tsx scripts/sync-sports-events.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "app:start": "bash scripts/run.sh start",

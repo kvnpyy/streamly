@@ -1,5 +1,6 @@
 import type { NextConfig } from "next";
 import { withSentryConfig } from "@sentry/nextjs";
+import { readFileSync } from "node:fs";
 import os from "node:os";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -11,6 +12,16 @@ const configDir = path.dirname(fileURLToPath(import.meta.url));
  * URLs (404 / ChunkLoadError) and can produce 500s on `/_next/static/*` behind HTTPS proxy.
  */
 const projectRoot = configDir;
+
+const packageVersion = JSON.parse(
+  readFileSync(path.join(projectRoot, "package.json"), "utf8")
+) as { version?: string };
+
+/** Shown in a subtle on-screen badge for external version tracking. */
+const publicAppVersion =
+  process.env.NEXT_PUBLIC_APP_VERSION?.trim() ||
+  packageVersion.version ||
+  "0.0.0";
 
 function ipv4LanAddresses(): string[] {
   const out: string[] = [];
@@ -68,16 +79,29 @@ const noStoreDocument = [
 ] as const;
 
 const nextConfig: NextConfig = {
+  env: {
+    NEXT_PUBLIC_APP_VERSION: publicAppVersion,
+  },
   // Produces a self-contained build in .next/standalone — required for the
   // Dockerfile. Has no effect on `npm start` (bare Node) deployments.
   output: process.env.DOCKER_BUILD === "1" ? "standalone" : undefined,
   outputFileTracingRoot: projectRoot,
+  /** Dev-only root fix; production uses `next build --webpack` (Turbopack prod RSC manifest bugs). */
   turbopack: {
     root: projectRoot,
   },
   ...(devLanHosts.length > 0 ? { allowedDevOrigins: devLanHosts } : {}),
   /** Avoid stale HTML referencing old hashed chunks after `npm run build` (especially behind HTTPS proxy). */
   headers: async () => [
+    {
+      source: "/_next/static/:path*",
+      headers: [
+        {
+          key: "Cache-Control",
+          value: "public, max-age=31536000, immutable",
+        },
+      ],
+    },
     { source: "/", headers: [...noStoreDocument] },
     { source: "/login", headers: [...noStoreDocument] },
     { source: "/app", headers: [...noStoreDocument] },

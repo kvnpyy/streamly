@@ -134,6 +134,13 @@ sudo bash scripts/vps-setup-app.sh /opt/stream/iptv-player
 
 This runs `npm ci`, `db:push`, `predeploy`, installs **`stream.service`**, and starts the app on **127.0.0.1:3000**. Add Caddy/nginx + DNS when you have a domain.
 
+### Playback smoke test (after player changes)
+
+1. **Windows Chrome** — open a live channel; confirm video starts; channel up/down should feel responsive (debounced zaps).
+2. **Try again** — first tap soft-reloads; second tap on the same channel does a full reset.
+3. **Incognito** — if playback fails only with extensions enabled, the CSP/`eval` warning is usually a wallet extension, not Streamly.
+4. **Reverse proxy** — avoid a strict `Content-Security-Policy` that blocks `blob:` workers unless you intentionally harden the site; the player runs hls.js on the main thread by default.
+
 ### Day-to-day: push code from your laptop to the VPS
 
 The server does **not** auto-sync with your Mac. **Do not double‑click** `vps-push-deploy.sh` in Finder — macOS will open it in **Cursor/TextEdit** instead of running it. Use **Terminal** or the launcher below.

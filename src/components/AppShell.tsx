@@ -1,5 +1,6 @@
 "use client";
 
+import { AppVersionBadge } from "@/components/AppVersionBadge";
 import { MobileBottomNav } from "@/components/MobileBottomNav";
 import { Sidebar } from "@/components/Sidebar";
 import { StreamlyOnboardingConnect } from "@/components/StreamlyOnboardingConnect";
@@ -13,6 +14,9 @@ import { peekAuthSessionBridge, useAuth, useAuthStoreHydrated } from "@/store/au
 import { useSession } from "next-auth/react";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, type ReactNode } from "react";
+import { LiveSearchProvider } from "@/lib/live-search-context";
+import { LIVE_PAGE_PATH } from "@/lib/use-live-page-search";
+import { usePlayer } from "@/store/player";
 
 const PlayerOverlay = dynamic(
   () => import("@/components/Player").then((m) => ({ default: m.PlayerOverlay })),
@@ -23,6 +27,8 @@ export function AppShell({ children }: { children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const tv = useTvBrowser();
+  /** Unmount browse UI during playback so EPG scans, virtual lists, and images don't compete with video. */
+  const playerOpen = usePlayer((s) => s.open);
   const creds = useAuth((s) => s.creds);
   const persistReady = useAuthStoreHydrated();
   const cookieReady = useAuthBootstrapReady();
@@ -33,6 +39,10 @@ export function AppShell({ children }: { children: ReactNode }) {
     sessionStatus === "authenticated" && Boolean(session?.user);
   const sessionKnown = sessionStatus !== "loading";
   const isSearchPage = pathname === "/app/search";
+  const isLivePage = pathname === LIVE_PAGE_PATH;
+
+  const wrapLiveSearch = (node: ReactNode) =>
+    isLivePage ? <LiveSearchProvider>{node}</LiveSearchProvider> : node;
 
   useEffect(() => {
     if (!authGateReady || creds) return;
@@ -96,6 +106,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           </main>
           {!tv && <MobileBottomNav />}
           <PlayerOverlay />
+          <AppVersionBadge />
         </div>
       );
     }
@@ -123,19 +134,22 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   /* ── TV layout: full-width, no sidebar, sticky top nav ── */
   if (tv) {
-    return (
+    return wrapLiveSearch(
       <div className="min-h-screen flex flex-col bg-(--bg-0)">
         <TvTopNav />
-        <main className="flex-1 min-h-0 min-w-0">
-          {children}
+        <main className="flex-1 min-h-0 min-w-0 overflow-y-auto">
+          <div className="w-full max-w-[1920px] mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6">
+            {!playerOpen ? children : null}
+          </div>
         </main>
         <PlayerOverlay />
+        <AppVersionBadge />
       </div>
     );
   }
 
   /* ── Desktop / mobile layout ── */
-  return (
+  return wrapLiveSearch(
     <div className="flex min-h-screen">
       <Sidebar />
       <main
@@ -151,11 +165,12 @@ export function AppShell({ children }: { children: ReactNode }) {
             isSearchPage ? "pt-1 pb-4 sm:pt-3 sm:pb-6" : "py-4 sm:py-6"
           )}
         >
-          {children}
+          {!playerOpen ? children : null}
         </div>
       </main>
       <MobileBottomNav />
       <PlayerOverlay />
+      <AppVersionBadge />
     </div>
   );
 }

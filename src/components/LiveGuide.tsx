@@ -15,6 +15,8 @@ import {
   inferCountryFromCategory,
   parseChannelMeta,
 } from "@/lib/channel-meta";
+import { isLiveGuideEpgEnabled } from "@/lib/live-epg-policy";
+import { LIVE_GUIDE_MAX_CHANNELS } from "@/lib/live-guide-limits";
 import { cn } from "@/lib/utils";
 import { buildImageProxy } from "@/lib/xtream";
 import type { LiveStream } from "@/lib/xtream-types";
@@ -81,10 +83,11 @@ export function LiveGuide({
     return rounded - halfHour;
   }, [now]);
 
+  const effectiveLimit = channelLimit ?? LIVE_GUIDE_MAX_CHANNELS;
+
   const visibleChannels = useMemo(
-    () =>
-      channelLimit != null ? channels.slice(0, channelLimit) : channels,
-    [channels, channelLimit]
+    () => channels.slice(0, effectiveLimit),
+    [channels, effectiveLimit]
   );
 
   const scrollerRef = useRef<HTMLDivElement | null>(null);
@@ -229,7 +232,7 @@ export function LiveGuide({
     <div className="card overflow-hidden">
       <div className="flex items-center justify-between gap-3 px-3 py-2 border-b border-(--line) bg-(--bg-2)">
         <div className="text-xs text-(--text-dim)">
-          {channelLimit != null && channels.length > channelLimit ? (
+          {channels.length > effectiveLimit ? (
             <>
               Showing {visibleChannels.length} of {channels.length} channels ·{" "}
             </>
@@ -386,9 +389,9 @@ export function LiveGuide({
         </div>
       </div>
 
-      {channelLimit != null && channels.length > channelLimit && (
+      {channels.length > effectiveLimit && (
         <div className="px-3 py-2 text-[11px] text-(--text-muted) border-t border-(--line) bg-(--bg-2)">
-          Showing first {channelLimit}. Use category filters or search above to
+          Showing first {effectiveLimit}. Use category filters or search above to
           focus on specific channels.
         </div>
       )}
@@ -422,10 +425,12 @@ function GuideRow({
   onPlay: (c: LiveStream) => void;
 }) {
   const [imgErr, setImgErr] = useState(false);
+  const iconSrc = buildImageProxy(channel.stream_icon);
   const [ioRef, rowInScrollport] = useInViewWithin<HTMLDivElement>(
     scrollRoot,
     "64px 0px 200px 0px"
   );
+  const guideEpgOn = isLiveGuideEpgEnabled();
 
   const country = useMemo(() => {
     const fromCat = categoryLabel
@@ -452,7 +457,7 @@ function GuideRow({
     channelName: channel.name,
     country,
     viewportSec,
-    epgEnabled: rowInScrollport,
+    epgEnabled: guideEpgOn && rowInScrollport,
   });
 
   const programs = useMemo(() => {
@@ -503,10 +508,10 @@ function GuideRow({
           )}
           aria-label={`Play ${channel.name}`}
         >
-          {!imgErr && channel.stream_icon ? (
+          {!imgErr && iconSrc ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
-              src={buildImageProxy(channel.stream_icon)}
+              src={iconSrc}
               onError={() => setImgErr(true)}
               alt=""
               loading="lazy"

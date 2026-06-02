@@ -5,6 +5,10 @@ import {
   fetchSavedProviderAccounts,
   type SavedProviderAccountRow as Row,
 } from "@/lib/provider-account-client";
+import {
+  isStaleStreamSessionStatus,
+  signOutFully,
+} from "@/lib/sign-out-client";
 import { providerLabelFromCreds } from "@/lib/provider-account-label";
 import { normalizeServer } from "@/lib/utils";
 import { useAuth, writeAuthSessionBridge } from "@/store/auth";
@@ -22,9 +26,11 @@ import {
   Trash2,
 } from "lucide-react";
 import { useSession } from "next-auth/react";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 export function ProviderAccountsPanel() {
+  const router = useRouter();
   const { status } = useSession();
   const qc = useQueryClient();
   const setCreds = useAuth((s) => s.setCreds);
@@ -191,6 +197,15 @@ export function ProviderAccountsPanel() {
         error?: string;
       };
       if (!r.ok) {
+        if (isStaleStreamSessionStatus(r.status)) {
+          await signOutFully();
+          setAddError(
+            data.error ||
+              "Your sign-in is no longer valid. Sign in again to save playlists."
+          );
+          router.replace("/login?stale=1");
+          return;
+        }
         setAddError(data.error || `Failed to add playlist (${r.status}).`);
         return;
       }

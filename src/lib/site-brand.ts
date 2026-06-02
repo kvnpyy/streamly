@@ -6,7 +6,7 @@
 export const SITE_NAME = "Streamly";
 export const SITE_TAGLINE = "Your playlist. One calm player.";
 export const SITE_DESCRIPTION =
-  "Streamly is a fast browser IPTV player for Xtream Codes playlists: live TV, movies, series, EPG, and TV-friendly controls. Sign in with your own provider — we don’t sell channels.";
+  "Streamly is an IPTV web player for Xtream Codes and M3U playlists: live TV, movies, series, EPG, and TV-friendly controls in your browser. Sign in with your own provider — we don’t sell channels.";
 
 /** Logged-in feedback (Typeform). Override for staging, e.g. a duplicate form. */
 export const FEEDBACK_FORM_URL =

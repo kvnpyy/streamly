@@ -1,4 +1,11 @@
+import { rewriteHlsManifest } from "@/lib/hls-manifest-rewrite";
 import { sanitizeTvMasterPlaylistIfNeeded } from "@/lib/hls-manifest-tv-sanitize";
+import {
+  getCachedManifest,
+  LIVE_HLS_MANIFEST_CACHE_TTL_MS,
+  manifestCacheKey,
+  setCachedManifest,
+} from "@/lib/stream-manifest-cache";
 import { clientIp } from "@/lib/client-ip";
 import { newRequestId, STREAM_PROXY_REQUEST_ID_HEADER } from "@/lib/request-id";
 import { passthroughStreamWithGracefulClose } from "@/lib/stream-proxy-passthrough";
@@ -10,9 +17,9 @@ import {
 } from "@/lib/stream-client-user-agent";
 import { limitStreamProxy } from "@/lib/stream-rate-limit";
 import {
-  isAmazonSilkUserAgent,
-  isTvClassUserAgent,
-} from "@/lib/tv-user-agent";
+  handleVodTranscodeRequest,
+  isVodTranscodeEnabledServer,
+} from "@/lib/vod-transcode";
 import { NextRequest } from "next/server";
 
 export const runtime = "nodejs";
@@ -86,7 +93,8 @@ function corsHeaders(extra: HeadersInit = {}, requestId?: string): Headers {
     "Access-Control-Allow-Headers",
     "Range, Origin, Accept, Accept-Language, Content-Type"
   );
-  const baseExpose = "Content-Length, Content-Range, Accept-Ranges";
+  const baseExpose =
+    "Content-Length, Content-Range, Accept-Ranges, X-Vod-Duration-Sec, X-Vod-Start-Offset-Sec, X-Vod-Encoded-Sec";
   h.set(
     "Access-Control-Expose-Headers",
     requestId ? `${baseExpose}, ${STREAM_PROXY_REQUEST_ID_HEADER}` : baseExpose
@@ -101,26 +109,6 @@ function isManifest(contentType: string | null, urlPath: string) {
   if (urlPath.toLowerCase().endsWith(".m3u8")) return true;
   if (!contentType) return false;
   return /mpegurl|m3u|x-mpegurl/i.test(contentType);
-}
-
-function rewriteManifest(text: string, manifestUrl: URL, compatMse: boolean): string {
-  const compatQs = compatMse ? "&compat=mse" : "";
-  return text
-    .split(/\r?\n/)
-    .map((line) => {
-      const trimmed = line.trim();
-      if (!trimmed || trimmed.startsWith("#")) {
-        // Some tags carry URI="..." (EXT-X-KEY, EXT-X-MEDIA, EXT-X-MAP, etc.)
-        return trimmed.replace(/URI="([^"]+)"/g, (_m, uri: string) => {
-          const abs = new URL(uri, manifestUrl).toString();
-          return `URI="/api/stream?u=${encodeURIComponent(abs)}&type=hls${compatQs}"`;
-        });
-      }
-      // Plain segment / variant URI line.
-      const abs = new URL(trimmed, manifestUrl).toString();
-      return `/api/stream?u=${encodeURIComponent(abs)}&type=hls${compatQs}`;
-    })
-    .join("\n");
 }
 
 export async function OPTIONS() {
@@ -166,17 +154,58 @@ async function handle(req: NextRequest, head: boolean) {
   const url = new URL(req.url);
   const target = url.searchParams.get("u");
   const type = url.searchParams.get("type") || "vod";
-  /** Strip risky variants for living-room browsers + propagate through nested m3u8 URLs */
+  /**
+   * Strip HEVC/Dolby ladder rungs when a safer variant exists (all HLS clients).
+   * Also propagates `compat=mse` on rewritten nested playlist URLs.
+   */
   const compatMse =
-    isTvClassUserAgent(ua) ||
-    isAmazonSilkUserAgent(ua) ||
-    url.searchParams.get("compat") === "mse";
+    type === "hls" || url.searchParams.get("compat") === "mse";
 
   if (!target) {
     return new Response("Missing 'u' parameter", {
       status: 400,
       headers: corsHeaders({ "content-type": "text/plain" }, requestId),
     });
+  }
+
+  const transcodeMode = url.searchParams.get("transcode");
+  if (transcodeMode === "hls") {
+    if (!isVodTranscodeEnabledServer()) {
+      return new Response("VOD transcode is not enabled.", {
+        status: 503,
+        headers: corsHeaders({ "content-type": "text/plain" }, requestId),
+      });
+    }
+    const media = url.searchParams.get("media");
+    const tcReset = url.searchParams.has("tc_reset");
+    const tcSeekRaw = parseFloat(url.searchParams.get("tc_seek") ?? "0");
+    const tcSeek =
+      Number.isFinite(tcSeekRaw) && tcSeekRaw > 0
+        ? Math.floor(tcSeekRaw)
+        : 0;
+    const forCast = url.searchParams.get("cast") === "1";
+    const tc = await handleVodTranscodeRequest({
+      upstream: target,
+      media,
+      head,
+      signal: req.signal,
+      compatMse,
+      resetCache: tcReset,
+      seekSec: tcSeek,
+      forCast,
+      proxyOrigin: forCast ? new URL(req.url).origin : undefined,
+    });
+    const tcHeaders = corsHeaders(
+      {
+        "content-type": tc.contentType ?? "text/plain",
+        ...(tc.extraHeaders ?? {}),
+      },
+      requestId
+    );
+    if (tc.errorText) {
+      return new Response(tc.errorText, { status: tc.status, headers: tcHeaders });
+    }
+    return new Response(tc.body ?? null, { status: tc.status, headers: tcHeaders });
   }
 
   let upstreamUrl: URL;
@@ -266,6 +295,24 @@ async function handle(req: NextRequest, head: boolean) {
         headers: responseHeaders,
       });
     }
+
+    const forCast = url.searchParams.get("cast") === "1";
+    const cacheKey = manifestCacheKey({
+      upstream: target,
+      compatMse,
+      forCast,
+    });
+    const cached = getCachedManifest(cacheKey);
+    if (cached != null) {
+      responseHeaders.set("content-type", "application/vnd.apple.mpegurl");
+      responseHeaders.set("x-stream-manifest-cache", "hit");
+      responseHeaders.delete("content-length");
+      return new Response(cached, {
+        status: upstream.status,
+        headers: responseHeaders,
+      });
+    }
+
     let text = await upstream.text();
     let finalManifestUrl: URL;
     try {
@@ -276,8 +323,18 @@ async function handle(req: NextRequest, head: boolean) {
     if (compatMse) {
       text = sanitizeTvMasterPlaylistIfNeeded(text);
     }
-    const rewritten = rewriteManifest(text, finalManifestUrl, compatMse);
+    const rewritten = rewriteHlsManifest(text, finalManifestUrl, {
+      compatMse,
+      forCast,
+      proxyOrigin: forCast ? new URL(req.url).origin : undefined,
+    });
+    setCachedManifest(
+      cacheKey,
+      rewritten,
+      type === "hls" ? LIVE_HLS_MANIFEST_CACHE_TTL_MS : undefined
+    );
     responseHeaders.set("content-type", "application/vnd.apple.mpegurl");
+    responseHeaders.set("x-stream-manifest-cache", "miss");
     responseHeaders.delete("content-length");
     return new Response(rewritten, {
       status: upstream.status,

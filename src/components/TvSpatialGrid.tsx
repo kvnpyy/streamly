@@ -1,6 +1,7 @@
 "use client";
 
 import { useTvBrowser } from "@/components/TvBrowserProvider";
+import { isTextInputTarget } from "@/lib/is-text-input-target";
 import { pickSpatialFocus, type SpatialDir } from "@/lib/tv-spatial-nav";
 import { cn } from "@/lib/utils";
 import { type HTMLAttributes, useEffect, useRef } from "react";
@@ -34,7 +35,7 @@ export function TvSpatialGrid({
 
       const active = document.activeElement as HTMLElement | null;
       if (!active || !root.contains(active)) return;
-      if (active.closest("input, textarea, select, [contenteditable=true]")) {
+      if (isTextInputTarget(active)) {
         return;
       }
 

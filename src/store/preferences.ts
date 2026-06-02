@@ -1,5 +1,6 @@
 "use client";
 
+import { sanitizeRecents } from "@/lib/watch-state-sync";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { TvRegion } from "@/lib/geo-continent";
@@ -92,6 +93,10 @@ type PrefsState = {
   isFavorite: (kind: FavoriteKind, id: number) => boolean;
   /** Replace favorites list (used by cloud sync). */
   setFavorites: (favorites: Favorite[]) => void;
+  /** Replace recently watched (used by cloud sync). */
+  setRecents: (recents: RecentItem[]) => void;
+  /** Replace VOD resume map (used by cloud sync). */
+  setVodResumeSec: (vodResumeSec: Record<string, number>) => void;
   addRecent: (f: Omit<Favorite, "addedAt">) => void;
   clearRecents: () => void;
   /** Reset persisted prefs (favorites, recents, browse memory, parental PIN). */
@@ -166,6 +171,8 @@ export const usePrefs = create<PrefsState>()(
       isFavorite: (kind, id) =>
         !!get().favorites.find((x) => x.kind === kind && x.id === id),
       setFavorites: (favorites) => set({ favorites }),
+      setRecents: (recents) => set({ recents: sanitizeRecents(recents) }),
+      setVodResumeSec: (vodResumeSec) => set({ vodResumeSec }),
       addRecent: (f) => {
         const filtered = get().recents.filter(
           (x) => !(x.kind === f.kind && x.id === f.id)
@@ -223,6 +230,8 @@ export const usePrefs = create<PrefsState>()(
     {
       name: "iptv-prefs",
       version: 8,
+      /** Defer localStorage parse — `PrefsRehydrateBootstrap` rehydrates on idle. */
+      skipHydration: true,
       partialize: (s) => ({
         favorites: s.favorites,
         recents: s.recents,
@@ -243,7 +252,9 @@ export const usePrefs = create<PrefsState>()(
             : {};
         return {
           favorites: Array.isArray(p.favorites) ? p.favorites : [],
-          recents: Array.isArray(p.recents) ? p.recents : [],
+          recents: sanitizeRecents(
+            Array.isArray(p.recents) ? p.recents : []
+          ),
           browseByAccount: baseBrowse,
           hideAdult: typeof p.hideAdult === "boolean" ? p.hideAdult : true,
           parentalPin:

@@ -5,6 +5,12 @@
 # Log path must be writable by THIS user (often `stream` cannot write /var/log — use app dir or $HOME).
 15 3 * * * cd /opt/stream/iptv-player && /usr/bin/env bash -lc 'npm run db:backup >> /opt/stream/iptv-player/data/backup-cron.log 2>&1'
 
+# Daily TMDB trending cache for discovery shelves (runs while stream.service is up).
+30 4 * * * /usr/bin/curl -fsS -X POST http://127.0.0.1:3000/api/discovery/sync-tmdb >> /opt/stream/iptv-player/data/discovery-tmdb-cron.log 2>&1
+
+# MMA events cache (BALLDONTLIE) — twice daily; requires BALLDONTLIE_API_KEY in .env.
+0 5,17 * * * /usr/bin/curl -fsS -X POST http://127.0.0.1:3000/api/discovery/sync-sports >> /opt/stream/iptv-player/data/discovery-sports-cron.log 2>&1
+
 # Optional: prune old *.bak.* files weekly (keep last N days on your own schedule;
 # below only logs — replace with find -mtime +14 -delete when you are confident).
 # 0 4 * * 0 find /opt/stream/iptv-player/data -name '*.bak.*' -mtime +14 -print >> /opt/stream/iptv-player/data/prune-cron.log 2>&1

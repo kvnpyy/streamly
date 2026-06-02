@@ -1,24 +1,30 @@
 "use client";
 
 import { TvCategoryView } from "@/components/TvCategoryView";
-import { TvChannelCard } from "@/components/TvChannelCard";
-import { TvShelf } from "@/components/TvShelf";
+import { LiveShelfList } from "@/components/LiveShelfList";
+import { LiveShelfRow } from "@/components/LiveShelfRow";
 import {
   ALL_TV_REGIONS,
   detectRegionFromTimezone,
-  getCategoryRegion,
   type TvRegion,
 } from "@/lib/geo-continent";
+import { filterStreamsForTvRegion } from "@/lib/live-category-shelf";
+import type { LiveShelfMeta } from "@/lib/live-category-shelf";
 import {
-  getCachedEpgTitle,
-  setCachedEpgTitle,
-} from "@/lib/epg-local-cache";
-import { nowPlayingTitleFromListings, SHORT_EPG_STALE_MS } from "@/lib/hooks";
-import { xtream } from "@/lib/xtream";
+  EMPTY_LIVE_STREAMS,
+  hasLiveServerCategoryCounts,
+} from "@/lib/live-browse-streams";
+import { LIVE_LIST_MAX_CHANNELS } from "@/lib/live-guide-limits";
+import { fetchLiveCategoryChannels } from "@/lib/live-catalog-channels";
+import { fetchLiveShelfPreviews } from "@/lib/live-catalog-shelves";
+import { liveCategoryChannelsQueryOptions } from "@/lib/live-catalog-channels";
+import { WebLiveBrowsePaged } from "@/components/WebLiveBrowsePaged";
+import { useLiveCategoryShelves } from "@/hooks/use-live-category-shelves";
+import { useLiveShelfSearchHits } from "@/hooks/use-live-shelf-search-hits";
+import { useQuery } from "@tanstack/react-query";
 import type { Category, LiveStream, XtreamCredentials } from "@/lib/xtream-types";
 import { usePlayer } from "@/store/player";
 import { usePrefs } from "@/store/preferences";
-import { useQueryClient } from "@tanstack/react-query";
 import { ChevronDown } from "lucide-react";
 import {
   memo,
@@ -30,45 +36,73 @@ import {
   useState,
 } from "react";
 
-const MAX_PER_SHELF = 8;
-const INITIAL_SHELF_COUNT = 5;
-const SHELF_LOAD_INCREMENT = 5;
+const MAX_PER_SHELF = 6;
+const INITIAL_SHELF_COUNT = 3;
+/** One shelf row per click keeps DOM growth smooth on large catalogs. */
+const SHELF_LOAD_INCREMENT = 1;
+
+const EMPTY_NOW_PLAYING = new Map<number, string>();
+const EMPTY_NAME_LOWER = new Map<number, string>();
+const EMPTY_STREAM_BY_ID = new Map<number, LiveStream>();
 
 export type WebLiveBrowseProps = {
   categories: Category[];
   streams: LiveStream[];
   creds: XtreamCredentials;
   openChannel: (c: LiveStream) => void;
-  nowPlayingMap: Map<number, string>;
+  nowPlayingMap?: Map<number, string>;
   reportNowPlaying?: (id: number) => (title: string | undefined) => void;
+  searchQuery?: string;
+  programTitleByStreamId?: Map<number, string>;
+  streamIdsByCategory?: Record<string, number[]>;
+  countByCategoryId?: Record<string, number>;
+  streamById?: Map<number, LiveStream>;
 };
 
-/**
- * Netflix-style horizontal shelf browsing for desktop + mobile browsers.
- * Brings the same experience as TvLiveBrowse to non-TV users:
- *  - Categories grouped into horizontal shelves
- *  - Region filter auto-detected from timezone (shared with TV pref)
- *  - "See all" overlay for deep category browsing
- *  - EPG pre-scan for visible channels
- */
-export function WebLiveBrowse({
+function WebLiveBrowseInner(props: WebLiveBrowseProps) {
+  const {
+    categories,
+    streams,
+    creds,
+    openChannel,
+    nowPlayingMap = EMPTY_NOW_PLAYING,
+    searchQuery = "",
+    programTitleByStreamId,
+    streamIdsByCategory,
+    countByCategoryId,
+    streamById: catalogStreamById,
+  } = props;
+
+  const deferredSearch = useDeferredValue(searchQuery);
+  const serverCounts = hasLiveServerCategoryCounts(countByCategoryId);
+  if (serverCounts && !deferredSearch) {
+    return <WebLiveBrowsePaged creds={creds} openChannel={openChannel} />;
+  }
+
+  return <WebLiveBrowseLegacy {...props} />;
+}
+
+function WebLiveBrowseLegacy({
   categories,
   streams,
   creds,
   openChannel,
-  nowPlayingMap,
-  reportNowPlaying,
+  nowPlayingMap = EMPTY_NOW_PLAYING,
+  searchQuery = "",
+  programTitleByStreamId,
+  streamIdsByCategory,
+  countByCategoryId,
+  streamById: catalogStreamById,
 }: WebLiveBrowseProps) {
   const { current } = usePlayer();
-  const queryClient = useQueryClient();
 
   const storedRegion = usePrefs((s) => s.tvRegionFilter);
   const setStoredRegion = usePrefs((s) => s.setTvRegionFilter);
+  const hideAdult = usePrefs((s) => s.hideAdult);
+  const parentalUnlocked = usePrefs((s) => s.parentalUnlocked);
 
-  const [visibleShelfCount, setVisibleShelfCount] = useState(INITIAL_SHELF_COUNT);
   const [openCategoryId, setOpenCategoryId] = useState<string | null>(null);
 
-  // Auto-detect region on first visit (storedRegion === null)
   useEffect(() => {
     if (storedRegion === null) {
       setStoredRegion(detectRegionFromTimezone());
@@ -76,132 +110,160 @@ export function WebLiveBrowse({
   }, [storedRegion, setStoredRegion]);
 
   const region: TvRegion = storedRegion ?? "All";
+  const serverCounts = hasLiveServerCategoryCounts(countByCategoryId);
+
+  const deferredCats = useDeferredValue(categories);
+  const allowedCatIds = useMemo(
+    () => new Set(deferredCats.map((c) => String(c.category_id))),
+    [deferredCats]
+  );
+  const deferredSearch = useDeferredValue(searchQuery);
+  const deferredStreams = useDeferredValue(streams);
+
+  const resolveShelfPreviews = useCallback(
+    (categoryIds: string[], limitPerShelf: number) =>
+      fetchLiveShelfPreviews(creds, {
+        categoryIds,
+        limitPerShelf,
+        region,
+      }),
+    [creds, region]
+  );
+
+  const resolveStreamsByIds = useCallback(
+    (ids: number[]) =>
+      fetchLiveCategoryChannels(creds, {
+        categoryId: "all",
+        streamIds: ids,
+        limit: ids.length,
+      }),
+    [creds]
+  );
+
+  const categoryIdsForSearch = useMemo(
+    () => deferredCats.map((c) => String(c.category_id)),
+    [deferredCats]
+  );
+
+  const { searchHitsByCategory: deferredSearchHits } = useLiveShelfSearchHits({
+    queryLower: deferredSearch,
+    categoryIds: categoryIdsForSearch,
+    streamIdsByCategory: streamIdsByCategory ?? null,
+    streamById: catalogStreamById ?? EMPTY_STREAM_BY_ID,
+    streams: serverCounts ? EMPTY_LIVE_STREAMS : deferredStreams,
+    nameLowerById: EMPTY_NAME_LOWER,
+    nowPlayingMap,
+    programTitleByStreamId,
+    maxHitsPerCategory: MAX_PER_SHELF + 1,
+    enabled: Boolean(deferredSearch && catalogStreamById),
+  });
+
+  const shelfInputsKey = useMemo(() => {
+    if (serverCounts) {
+      return `${region}|${deferredSearch}|${deferredCats.length}|${deferredCats[0]?.category_id ?? ""}|srv`;
+    }
+    const n = deferredStreams.length;
+    return `${region}|${deferredSearch}|${deferredCats.length}|${deferredCats[0]?.category_id ?? ""}|${n}:${deferredStreams[0]?.stream_id ?? 0}:${deferredStreams[n - 1]?.stream_id ?? 0}`;
+  }, [region, deferredSearch, deferredCats, deferredStreams, serverCounts]);
+
+  const {
+    allShelves,
+    visibleShelfCount,
+    hasMore,
+    shelvesBuilding,
+    shelvesReadyToReveal,
+    loadingMoreCategories,
+    loadMoreShelves,
+    resetVisible,
+    streamById: shelfStreamById,
+    idsByCategory: shelfIdsByCategory,
+  } = useLiveCategoryShelves({
+    categories: deferredCats,
+    streams: deferredStreams,
+    region,
+    maxPerShelf: MAX_PER_SHELF,
+    initialVisible: INITIAL_SHELF_COUNT,
+    loadIncrement: SHELF_LOAD_INCREMENT,
+    streamIdsByCategory,
+    countByCategoryId,
+    streamById: catalogStreamById,
+    searchHitsByCategory: deferredSearch ? deferredSearchHits : null,
+    shelfInputsKey,
+    categoriesPerSlice: 4,
+    resolveShelfPreviews: serverCounts ? resolveShelfPreviews : undefined,
+    resolveStreamsByIds: serverCounts ? undefined : resolveStreamsByIds,
+    enabled: true,
+  });
 
   const handleRegionChange = useCallback(
     (r: TvRegion) => {
       setStoredRegion(r);
-      setVisibleShelfCount(INITIAL_SHELF_COUNT);
+      resetVisible();
     },
-    [setStoredRegion]
+    [setStoredRegion, resetVisible]
   );
 
-  const deferredStreams = useDeferredValue(streams);
-  const deferredCats = useDeferredValue(categories);
+  const handleOpenCategory = useCallback((id: string) => {
+    setOpenCategoryId(id);
+  }, []);
 
-  // Build per-category stream index
-  const streamsByCategory = useMemo(() => {
-    const map = new Map<string, LiveStream[]>();
-    for (const s of deferredStreams) {
-      const id = String(s.category_id);
-      if (!map.has(id)) map.set(id, []);
-      map.get(id)!.push(s);
-    }
-    return map;
-  }, [deferredStreams]);
-
-  /**
-   * Two-level region filter (identical to TvLiveBrowse):
-   *  1. Category with a country prefix → hide shelf if prefix ≠ region
-   *  2. Generic category (no prefix) → filter individual channels by their name
-   */
-  const allShelves = useMemo(() => {
-    const result: { id: string; title: string; channels: LiveStream[] }[] = [];
-
-    for (const c of deferredCats) {
-      const allCh = streamsByCategory.get(String(c.category_id));
-      if (!allCh?.length) continue;
-
-      const catRegion = getCategoryRegion(c.category_name);
-
-      let channels: LiveStream[];
-      if (region === "All") {
-        channels = allCh;
-      } else if (catRegion !== null) {
-        if (catRegion !== region) continue;
-        channels = allCh;
-      } else {
-        channels = allCh.filter((ch) => {
-          const chRegion = getCategoryRegion(ch.name);
-          return chRegion === null || chRegion === region;
-        });
-      }
-
-      if (channels.length === 0) continue;
-      result.push({ id: String(c.category_id), title: c.category_name, channels });
-    }
-    return result;
-  }, [deferredCats, streamsByCategory, region]);
-
-  const renderedShelves = allShelves.slice(0, visibleShelfCount);
-  const hasMore = visibleShelfCount < allShelves.length;
-
-  // EPG pre-scan for visible channels
-  const epgScanKey = useMemo(
-    () =>
-      renderedShelves
-        .flatMap((s) => s.channels)
-        .slice(0, 32)
-        .map((c) => c.stream_id)
-        .join(","),
-    [renderedShelves]
+  const renderShelfRow = useCallback(
+    (shelf: LiveShelfMeta) => (
+      <LiveShelfRow
+        shelf={shelf}
+        maxPerShelf={MAX_PER_SHELF}
+        creds={creds}
+        variant="web"
+        activeStreamId={current?.id}
+        nowPlayingMap={EMPTY_NOW_PLAYING}
+        onSeeAll={() => handleOpenCategory(shelf.id)}
+        onPlay={openChannel}
+      />
+    ),
+    [creds, current?.id, openChannel, handleOpenCategory]
   );
 
-  useEffect(() => {
-    if (!reportNowPlaying) return;
-    const ids = epgScanKey.split(",").filter(Boolean).map(Number);
-    if (!ids.length) return;
-    let cancelled = false;
-    const nowSec = Math.floor(Date.now() / 1000);
-
-    // Pre-populate from localStorage cache immediately.
-    for (const id of ids) {
-      const cached = getCachedEpgTitle(creds.server, creds.username, id);
-      if (cached) reportNowPlaying(id)(cached);
-    }
-
-    void Promise.all(
-      ids.map(async (id) => {
-        if (getCachedEpgTitle(creds.server, creds.username, id)) return;
-        try {
-          const data = await queryClient.fetchQuery({
-            queryKey: ["short-epg", creds.server, creds.username, id, 2],
-            queryFn: ({ signal }) => xtream.shortEPG(creds, id, 2, signal),
-            staleTime: SHORT_EPG_STALE_MS,
-          });
-          if (cancelled) return;
-          const listings = data?.epg_listings;
-          if (!listings?.length) return;
-          const title = nowPlayingTitleFromListings(listings, nowSec);
-          if (title) {
-            setCachedEpgTitle(creds.server, creds.username, id, title);
-            reportNowPlaying(id)(title);
-          }
-        } catch {
-          /* network error — skip */
-        }
-      })
-    );
-    return () => { cancelled = true; };
-  }, [epgScanKey, reportNowPlaying, creds, queryClient]);
-
-  const openCategoryShelf = openCategoryId
+  const openCategoryShelfMeta = openCategoryId
     ? allShelves.find((s) => s.id === openCategoryId) ?? null
     : null;
 
-  const handleOpenCategory = useCallback(
-    (id: string) => setOpenCategoryId(id),
-    []
+  const openCategoryFetched = useQuery(
+    liveCategoryChannelsQueryOptions(
+      creds,
+      openCategoryId ?? "all",
+      LIVE_LIST_MAX_CHANNELS,
+      Boolean(openCategoryId)
+    )
   );
+
+  const openCategoryChannelsRaw = useMemo(() => {
+    if (!openCategoryId) return [];
+    const raw =
+      deferredSearchHits?.get(openCategoryId) ??
+      openCategoryFetched.data ??
+      [];
+    const cat = deferredCats.find((c) => String(c.category_id) === openCategoryId);
+    if (!cat) return raw;
+    return filterStreamsForTvRegion(raw, region, cat.category_name);
+  }, [
+    openCategoryId,
+    deferredSearchHits,
+    openCategoryFetched.data,
+    deferredCats,
+    region,
+  ]);
+
+  const openCategoryChannels = useDeferredValue(openCategoryChannelsRaw);
+
   const handleCloseCategory = useCallback(() => setOpenCategoryId(null), []);
 
   return (
     <>
-      {/* Full-screen category overlay */}
-      {openCategoryShelf && (
+      {openCategoryShelfMeta && (
         <TvCategoryView
-          title={openCategoryShelf.title}
-          channels={openCategoryShelf.channels}
-          nowPlayingMap={nowPlayingMap}
+          title={openCategoryShelfMeta.title}
+          channels={openCategoryChannels}
+          nowPlayingMap={searchQuery ? nowPlayingMap : EMPTY_NOW_PLAYING}
           activeStreamId={current?.id}
           creds={creds}
           onPlay={(c) => {
@@ -213,62 +275,80 @@ export function WebLiveBrowse({
       )}
 
       <div className="space-y-6 py-2">
-        {/* Region picker bar */}
         <div className="flex items-center justify-between">
           <p className="text-sm text-(--text-dim)">
-            <span className="font-medium text-(--text)">{allShelves.length}</span>{" "}
-            {allShelves.length === 1 ? "category" : "categories"} in view
+            <span className="font-medium text-(--text)">{visibleShelfCount}</span>{" "}
+            {visibleShelfCount === 1 ? "category" : "categories"} shown
+            {allShelves.length > visibleShelfCount ? (
+              <span className="text-(--text-muted)">
+                {" "}
+                · {allShelves.length - visibleShelfCount} ready
+              </span>
+            ) : null}
+            {searchQuery ? (
+              <span className="text-(--text-muted)"> matching search</span>
+            ) : null}
           </p>
           <WebRegionPicker region={region} onChange={handleRegionChange} />
         </div>
 
-        {/* Shelves */}
-        {renderedShelves.map((shelf) => (
-          <TvShelf
-            key={shelf.id}
-            title={shelf.title}
-            onSeeAll={() => handleOpenCategory(shelf.id)}
-            moreCount={
-              shelf.channels.length > MAX_PER_SHELF
-                ? shelf.channels.length - MAX_PER_SHELF
-                : undefined
-            }
-          >
-            {shelf.channels.slice(0, MAX_PER_SHELF).map((c) => (
-              <MemoCard
-                key={c.stream_id}
-                name={c.name}
-                icon={c.stream_icon}
-                nowPlaying={nowPlayingMap.get(c.stream_id)}
-                active={current?.id === c.stream_id}
-                onClick={() => openChannel(c)}
-              />
-            ))}
-          </TvShelf>
-        ))}
-
-        {hasMore && (
-          <div className="flex justify-center py-2">
-            <button
-              type="button"
-              onClick={() =>
-                setVisibleShelfCount((n) => n + SHELF_LOAD_INCREMENT)
-              }
-              className="inline-flex items-center gap-2 px-6 py-3 rounded-xl border border-(--line) bg-(--bg-2) text-sm font-medium text-(--text-dim) hover:text-(--text) hover:border-(--brand)/40 hover:bg-(--bg-3) transition-colors"
-            >
-              Show more categories ({allShelves.length - visibleShelfCount}{" "}
-              remaining)
-            </button>
+        {searchQuery && allShelves.length === 0 && (
+          <div className="card p-8 sm:p-10 text-center">
+            <p className="text-sm text-(--text-muted) text-pretty max-w-md mx-auto leading-relaxed">
+              No channels match your search in the current region. Try another
+              region or clear the search bar above.
+            </p>
           </div>
         )}
+
+        <LiveShelfList
+          items={allShelves}
+          visibleCount={visibleShelfCount}
+          itemKey={(shelf) => shelf.id}
+          renderItem={renderShelfRow}
+          footer={
+            hasMore ? (
+              <div className="flex justify-center py-2">
+                <button
+                  type="button"
+                  disabled={shelvesBuilding && shelvesReadyToReveal === 0}
+                  onClick={loadMoreShelves}
+                  className="inline-flex items-center gap-2 px-6 py-3 rounded-xl border border-(--line) bg-(--bg-2) text-sm font-medium text-(--text-dim) hover:text-(--text) hover:border-(--brand)/40 hover:bg-(--bg-3) transition-colors disabled:opacity-50"
+                >
+                  {loadingMoreCategories ||
+                  (shelvesBuilding && shelvesReadyToReveal === 0)
+                    ? "Loading categories…"
+                    : shelvesReadyToReveal > 0
+                      ? `Show more categories (${shelvesReadyToReveal} ready)`
+                      : "Show more categories"}
+                </button>
+              </div>
+            ) : null
+          }
+        />
       </div>
     </>
   );
 }
 
-// ---------------------------------------------------------------------------
-// Region picker — compact dropdown for web, consistent with TV version
-// ---------------------------------------------------------------------------
+function webLiveBrowsePropsAreEqual(
+  prev: WebLiveBrowseProps,
+  next: WebLiveBrowseProps
+): boolean {
+  if (prev.categories !== next.categories) return false;
+  if (prev.streams !== next.streams) return false;
+  if (prev.streamById !== next.streamById) return false;
+  if (prev.streamIdsByCategory !== next.streamIdsByCategory) return false;
+  if (prev.countByCategoryId !== next.countByCategoryId) return false;
+  if (prev.creds !== next.creds) return false;
+  if (prev.openChannel !== next.openChannel) return false;
+  if (prev.searchQuery !== next.searchQuery) return false;
+  if (prev.programTitleByStreamId !== next.programTitleByStreamId) return false;
+  if (prev.searchQuery && prev.nowPlayingMap !== next.nowPlayingMap) return false;
+  return true;
+}
+
+export const WebLiveBrowse = memo(WebLiveBrowseInner, webLiveBrowsePropsAreEqual);
 
 function WebRegionPicker({
   region,
@@ -310,7 +390,10 @@ function WebRegionPicker({
             <button
               key={r}
               type="button"
-              onClick={() => { onChange(r); setOpen(false); }}
+              onClick={() => {
+                onChange(r);
+                setOpen(false);
+              }}
               className={`w-full px-4 py-2.5 text-sm text-left transition-colors focus-visible:outline-none focus-visible:bg-(--bg-2) ${
                 region === r
                   ? "bg-(--brand)/15 text-(--text) font-medium"
@@ -325,34 +408,3 @@ function WebRegionPicker({
     </div>
   );
 }
-
-// ---------------------------------------------------------------------------
-// Memoized compact card
-// ---------------------------------------------------------------------------
-
-type MemoCardProps = {
-  name: string;
-  icon?: string;
-  nowPlaying?: string;
-  active: boolean;
-  onClick: () => void;
-};
-
-const MemoCard = memo(function MemoCard({
-  name,
-  icon,
-  nowPlaying,
-  active,
-  onClick,
-}: MemoCardProps) {
-  return (
-    <TvChannelCard
-      variant="web"
-      name={name}
-      icon={icon}
-      nowPlaying={nowPlaying}
-      active={active}
-      onClick={onClick}
-    />
-  );
-});

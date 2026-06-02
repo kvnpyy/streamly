@@ -1,45 +1,78 @@
 "use client";
 
-import { STREAM_PROXY_REQUEST_ID_HEADER } from "@/lib/request-id";
 import { cn, formatTime } from "@/lib/utils";
 import { useShortEPG, useFullEPG, decodeEpgText } from "@/lib/hooks";
 import {
-  type EpgListingLike,
   epgListingsHaveParsableTimes,
   epgProgramRangeUnixSec,
 } from "@/lib/epg-time";
-import { buildImageProxy } from "@/lib/xtream";
+import {
+  buildImageProxy,
+  buildImageProxyAbsolute,
+} from "@/lib/image-proxy";
+import { buildCastMediaDescriptor } from "@/lib/cast-media-url";
+import {
+  appendVodTranscodeHls,
+  buildVodTranscodeRetryUrl,
+  buildVodTranscodeSeekUrl,
+  canVodTranscodeProxyUrl,
+  isVodTranscodeEnabledClient,
+  playbackUrlUsesVodTranscode,
+  vodContainerNeedsServerPrep,
+  warmVodTranscodePlay,
+} from "@/lib/vod-transcode-url";
 import { TvPlayerRemoteHints } from "@/components/TvPlayerRemoteHints";
+import { VodPrepareOverlay } from "@/components/VodPrepareOverlay";
 import { useTvBrowser } from "@/components/TvBrowserProvider";
 import { useAuth } from "@/store/auth";
 import { usePlayer, type PlayerSource } from "@/store/player";
 import { browseAccountKey, usePrefs } from "@/store/preferences";
-import { AnimatePresence, motion } from "framer-motion";
-import Hls, {
-  type ErrorData,
-  type Level,
-  type MediaPlaylist,
-} from "hls.js";
 import {
-  readPreferredPlayerVolume,
-  writePreferredPlayerVolume,
-} from "@/lib/player-volume-pref";
+  buildSortedEpgRows,
+  useTickingClockMs,
+  type PlayerEpgListing,
+} from "@/components/player/PlayerEpgSchedule";
+import { useHlsRuntime } from "@/hooks/use-hls-runtime";
+import { usePlayerCast } from "@/hooks/player/use-player-cast";
+import { usePlayerLiveSupplements } from "@/hooks/player/use-player-live-supplements";
+import { usePlayerPlaybackPipeline } from "@/hooks/player/use-player-playback-pipeline";
+import { usePlayerStallEscalation } from "@/hooks/player/use-player-stall-escalation";
+import { usePlayerVideoEvents } from "@/hooks/player/use-player-video-events";
+import { usePlayerVodResume } from "@/hooks/player/use-player-vod-resume";
+import { PlayerStallOverlay } from "@/components/player/PlayerStallOverlay";
+import { AnimatePresence, motion } from "framer-motion";
+import type Hls from "hls.js";
+import type { Level } from "hls.js";
+import {
+  chromiumWalletExtensionPlaybackHint,
+  isAppleMobileWebKitDevice,
+  isChromiumBasedDesktopBrowser,
+} from "@/lib/browser";
+import {
+  applySoftLiveHlsRecovery,
+  hlsRenditionLabel,
+} from "@/lib/live-hls-playback";
+import {
+  isPictureInPictureSupported,
+  toggleVideoPictureInPicture,
+} from "@/lib/picture-in-picture";
+import { playbackBreadcrumb } from "@/lib/playback-telemetry";
+import { withLiveHlsCompatMse } from "@/lib/stream-url";
 import { safeVideoPlay, voidSafeVideoPlay } from "@/lib/video-play";
-import { isAmazonSilkUserAgent, isTvClassUserAgent } from "@/lib/tv-user-agent";
+import { isAmazonSilkUserAgent } from "@/lib/tv-user-agent";
 import {
   isPlayPauseShortcutKey,
   isPlayerControlKeyboardTarget,
   isRemoteActivateKey,
+  liveChannelFlipKeyDelta,
 } from "@/lib/player-control-target";
+import { isLivingRoomPlaybackClient } from "@/lib/tv-playback-tune";
 import {
-  Cast,
   CalendarClock,
-  Captions,
   Check,
   ChevronUp,
   ChevronDown,
   Copy,
-  ExternalLink,
   Info,
   Maximize2,
   Minimize2,
@@ -49,39 +82,26 @@ import {
   PictureInPicture,
   RotateCcw,
   RotateCw,
-  Settings2,
-  Share2,
   Volume2,
   VolumeX,
   X,
 } from "lucide-react";
-import { useVirtualizer } from "@tanstack/react-virtual";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import dynamic from "next/dynamic";
 
-/**
- * hls.js `startLoad(-1)` on live rewinds the buffer toward the sync target. When errors, stall
- * watchdogs, and `waiting` all call it in quick succession, panels look like they “loop” the same
- * slice forever. User-initiated reload passes `force`.
- */
-const HLS_LIVE_EDGE_RESTART_MIN_MS = 4500;
+const PlayerEpgDrawer = dynamic(
+  () =>
+    import("@/components/player/PlayerEpgDrawer").then((m) => m.PlayerEpgDrawer),
+  { ssr: false }
+);
 
-function tryHlsLiveEdgeRestart(
-  hls: Hls,
-  lastAtMsRef: { current: number },
-  force: boolean
-): boolean {
-  const now = Date.now();
-  if (!force && now - lastAtMsRef.current < HLS_LIVE_EDGE_RESTART_MIN_MS) {
-    return false;
-  }
-  lastAtMsRef.current = now;
-  try {
-    hls.startLoad(-1);
-    return true;
-  } catch {
-    return false;
-  }
-}
+const PlayerControlMenus = dynamic(
+  () =>
+    import("@/components/player/PlayerControlMenus").then(
+      (m) => m.PlayerControlMenus
+    ),
+  { ssr: false }
+);
 
 type SubtitleTrack = {
   id: number; // -1 = off
@@ -89,283 +109,6 @@ type SubtitleTrack = {
   lang?: string;
   source: "hls" | "native";
 };
-
-/** Manifest hints across CODECS, rendition NAME, URI, supplemental codecs — panels often omit AC3 from `audioCodec` until load. */
-function levelTelemetryBlob(level: Level): string {
-  const a = level.attrs;
-  const supplemental = a?.["SUPPLEMENTAL-CODECS"] ?? "";
-  return [
-    level.videoCodec ?? "",
-    level.audioCodec ?? "",
-    level.codecSet ?? "",
-    level.codecs ?? "",
-    level.name ?? "",
-    level.uri ?? "",
-    a?.CODECS ?? "",
-    a?.AUDIO ?? "",
-    supplemental,
-  ]
-    .join(" ")
-    .toLowerCase();
-}
-
-/** User-facing rendition label when `height` is missing (avoids duplicate “Auto” rows on iOS). */
-function hlsRenditionLabel(level: Level, index: number): string {
-  const nm = (level.name ?? "").trim();
-  if (nm) return nm;
-  if (level.height) return `${level.height}p`;
-  if (level.width) return `${Math.round(level.width)}p`;
-  if (level.bitrate) return `${Math.round(level.bitrate / 1000)} kbps`;
-  return `Stream ${index + 1}`;
-}
-
-/** Chromium can't play AC-3/E-AC-3 over MSE; IPTV often starts on AAC then ABR bumps into AC-3 variants. */
-function levelDeclaresDolbyDigital(level: Level): boolean {
-  const blob = levelTelemetryBlob(level);
-  return (
-    blob.includes("ac-3") ||
-    blob.includes("ac3") ||
-    blob.includes("ec-3") ||
-    blob.includes("ec3") ||
-    blob.includes("eac3") ||
-    blob.includes("dolby") ||
-    blob.includes("atmos") ||
-    blob.includes("ac-4") ||
-    blob.includes("ac4")
-  );
-}
-
-/** DTS* packaged audio is frequently unusable over Chromium MSE for IPTV (same class of failures as Dolby). */
-function levelDeclaresDts(level: Level): boolean {
-  const blob = levelTelemetryBlob(level);
-  return (
-    blob.includes("dts") ||
-    blob.includes("dtsc") ||
-    blob.includes("dtsh") ||
-    blob.includes("dtsx")
-  );
-}
-
-function levelDeclaresNonPreferredChromePackagedAudio(level: Level): boolean {
-  return levelDeclaresDolbyDigital(level) || levelDeclaresDts(level);
-}
-
-/** Drop multivariant renditions that advertise DD/EAC3 when at least one rendition without them remains. */
-function stripDolbyLevelsIfSaferAlternativesExist(
-  hls: Pick<Hls, "levels" | "removeLevel">
-) {
-  const levels = hls.levels;
-  if (!levels?.length || levels.length <= 1) return;
-
-  const badIdx: number[] = [];
-  levels.forEach((lv, i) => {
-    if (levelDeclaresDolbyDigital(lv)) badIdx.push(i);
-  });
-  if (badIdx.length === 0 || badIdx.length >= levels.length) return;
-
-  [...badIdx].sort((a, b) => b - a).forEach((i) => {
-    if (hls.levels.length > 1) hls.removeLevel(i);
-  });
-}
-
-/** Same pattern as Dolby — strip DTS-only variants when an AAC-friendly ladder remains. */
-function stripDtsLevelsIfSaferAlternativesExist(
-  hls: Pick<Hls, "levels" | "removeLevel">
-) {
-  const levels = hls.levels;
-  if (!levels?.length || levels.length <= 1) return;
-
-  const badIdx: number[] = [];
-  levels.forEach((lv, i) => {
-    if (levelDeclaresDts(lv)) badIdx.push(i);
-  });
-  if (badIdx.length === 0 || badIdx.length >= levels.length) return;
-
-  [...badIdx].sort((a, b) => b - a).forEach((i) => {
-    if (hls.levels.length > 1) hls.removeLevel(i);
-  });
-}
-
-function levelDeclaresHevc(level: Level): boolean {
-  const blob = levelTelemetryBlob(level);
-  return (
-    blob.includes("hevc") ||
-    blob.includes("hvc1") ||
-    blob.includes("hev1") ||
-    blob.includes("h265") ||
-    blob.includes("dvhe") ||
-    blob.includes("dvh1") ||
-    blob.includes("dovi")
-  );
-}
-
-/** Fire TV / TV browsers often lack HEVC in MSE — drop HEVC ladders when an H.264 ladder remains. */
-function stripHevcLevelsIfSaferAlternativesExist(
-  hls: Pick<Hls, "levels" | "removeLevel">
-) {
-  const levels = hls.levels;
-  if (!levels?.length || levels.length <= 1) return;
-
-  const badIdx: number[] = [];
-  levels.forEach((lv, i) => {
-    if (levelDeclaresHevc(lv)) badIdx.push(i);
-  });
-  if (badIdx.length === 0 || badIdx.length >= levels.length) return;
-
-  [...badIdx].sort((a, b) => b - a).forEach((i) => {
-    if (hls.levels.length > 1) hls.removeLevel(i);
-  });
-}
-
-/** Prefer the smallest safe rendition first so MSE gets a decodable variant before ABR climbs. */
-function indexOfLowestSafeLevel(levels: Level[]): number {
-  if (!levels?.length) return -1;
-  let best = 0;
-  let bestMetric = Infinity;
-  levels.forEach((lv, i) => {
-    if (
-      levelDeclaresHevc(lv) ||
-      levelDeclaresNonPreferredChromePackagedAudio(lv)
-    )
-      return;
-    const h = lv.height || 0;
-    const metric =
-      h > 0 ? h : typeof lv.bitrate === "number" && lv.bitrate > 0 ? lv.bitrate / 1e6 : Infinity;
-    if (metric < bestMetric) {
-      bestMetric = metric;
-      best = i;
-    }
-  });
-  if (!Number.isFinite(bestMetric)) {
-    return 0;
-  }
-  return best;
-}
-
-/** Highest ladder index that still avoids advertised HEVC/Dolby rungs — caps ABR when manifests lie or strips miss a variant. */
-function maxSafeLevelIndex(levels: Level[]): number {
-  if (!levels?.length) return -1;
-  let max = -1;
-  for (let i = 0; i < levels.length; i++) {
-    const lv = levels[i];
-    if (
-      !levelDeclaresHevc(lv) &&
-      !levelDeclaresNonPreferredChromePackagedAudio(lv)
-    ) {
-      max = i;
-    }
-  }
-  return max;
-}
-
-/** After repeated fragment/level failures or stalls, cap ABR lower or drop the top ladder rung. */
-function tryCapAbrLower(hls: Hls) {
-  const levels = hls.levels;
-  if (!levels?.length || levels.length <= 1) return;
-  try {
-    const capRaw = hls.autoLevelCapping;
-    const cap =
-      typeof capRaw === "number" && capRaw >= 0 ? capRaw : levels.length - 1;
-    if (cap > 0) {
-      hls.autoLevelCapping = cap - 1;
-      if (!hls.autoLevelEnabled) {
-        const cur = hls.currentLevel;
-        if (typeof cur === "number" && cur > cap - 1) {
-          hls.currentLevel = cap - 1;
-        }
-      }
-      return;
-    }
-    const hi = levels.length - 1;
-    if (hi > 0) hls.removeLevel(hi);
-  } catch {
-    /* noop */
-  }
-}
-
-/** Prefer AAC/mp4a alternate audio when the manifest lists multiple EXT-X-MEDIA audio tracks. */
-function preferBrowserFriendlyAudioTrack(hls: Pick<Hls, "audioTracks" | "audioTrack">) {
-  const tracks = hls.audioTracks;
-  if (!tracks?.length) return;
-
-  const rank = (codec: string | undefined) => {
-    const c = (codec ?? "").toLowerCase();
-    if (c.includes("mp4a") || c.includes("aac")) return 0;
-    if (c.includes("opus")) return 1;
-    if (c.includes("ec-3") || c.includes("eac3") || c.includes("ac-3") || c.includes("ac3"))
-      return 4;
-    if (c.includes("dts")) return 4;
-    return 2;
-  };
-
-  let best = 0;
-  let bestR = rank(tracks[0].audioCodec);
-  for (let i = 1; i < tracks.length; i++) {
-    const r = rank(tracks[i].audioCodec);
-    if (r < bestR) {
-      bestR = r;
-      best = i;
-    }
-  }
-
-  try {
-    hls.audioTrack = best;
-  } catch {
-    /* noop */
-  }
-}
-
-/** Live is always treated as HLS. VOD may be HLS if the URL or proxied `u=` upstream ends with .m3u8. */
-function playbackUrlIsHls(url: string, kindIsLive: boolean): boolean {
-  if (kindIsLive) return true;
-  if (url.includes("type=hls")) return true;
-  if (/\.m3u8($|[?#])/i.test(url)) return true;
-  try {
-    const origin =
-      typeof window !== "undefined" ? window.location.origin : "http://localhost";
-    const parsed = new URL(url, origin);
-    const upstream = parsed.searchParams.get("u");
-    if (!upstream) return false;
-    const decoded = decodeURIComponent(upstream);
-    return /\.m3u8($|[?#])/i.test(decoded) || decoded.includes(".m3u8");
-  } catch {
-    return false;
-  }
-}
-
-/** Stable key for persisted VOD resume (`accountKey|movie|streamId`). */
-function vodResumeStorageKey(
-  accountKey: string | undefined,
-  current: PlayerSource | null
-): string | null {
-  if (!accountKey || !current || current.kind === "live") return null;
-  const sid = current.streamId ?? current.id;
-  return `${accountKey}|${current.kind}|${sid}`;
-}
-
-/**
- * Real iPhone/iPad WebKit, including:
- * - “Request Desktop Website” (UA looks like Mac + Safari, but multi‑touch).
- * - iPadOS reporting as MacIntel + touch.
- *
- * If this returns false on a phone, we may pick **hls.js** (MSE). On iOS, live sync + seeks
- * against a short native DVR window causes the same ~30s to repeat. So this must be broad.
- */
-function isAppleMobileWebKitDevice(): boolean {
-  if (typeof navigator === "undefined") return false;
-  const ua = navigator.userAgent || "";
-  if (/iPhone|iPod|iPad/.test(ua)) return true;
-  if (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1) return true;
-  if (
-    typeof document !== "undefined" &&
-    "ontouchend" in document &&
-    navigator.maxTouchPoints > 1 &&
-    /Macintosh|Mac OS X/.test(ua)
-  ) {
-    return true;
-  }
-  return false;
-}
 
 /**
  * Brave on iPhone/iPad (WKWebView). Apple only wires reliable native video fullscreen to Safari;
@@ -375,193 +118,6 @@ function isBraveOnAppleMobile(): boolean {
   if (typeof navigator === "undefined") return false;
   if (!isAppleMobileWebKitDevice()) return false;
   return /\bBrave\b/i.test(navigator.userAgent || "");
-}
-
-/**
- * Safari (incl. macOS) and WKWebView that use AVFoundation for inline `application/vnd.apple.mpegurl`.
- * Excludes Chromium-class UAs so Mac Chrome/Edge/Brave still use the seek/hop path only when they
- * somehow hit native HLS (they normally use hls.js).
- */
-function isSafariFamilyWithoutChromium(): boolean {
-  if (typeof navigator === "undefined") return false;
-  const ua = navigator.userAgent || "";
-  if (/\bChrom(?:e|ium)\b|\bEdg\//i.test(ua)) return false;
-  if (/\bCriOS\b|\bFxiOS\b/i.test(ua)) return false;
-  return /\bSafari\//i.test(ua);
-}
-
-const CAST_SENDER_SCRIPT_SRC =
-  "https://www.gstatic.com/cv/js/sender/v1/cast_sender.js?loadCastFramework=1";
-
-/**
- * Chromecast **Web Sender** only runs in Chromium-class desktop/Android browsers.
- * iOS browsers (incl. Chrome), Safari, and Firefox never get a working Cast framework here—avoid infinite “loading…”.
- */
-function shouldAttemptChromecastSenderLoad(): boolean {
-  if (typeof navigator === "undefined") return false;
-  if (isAppleMobileWebKitDevice()) return false;
-  const ua = navigator.userAgent || "";
-  if (/\bFirefox\b/i.test(ua)) return false;
-  if (/\bSafari\b/i.test(ua) && !/\bChrom(?:e|ium)\b/i.test(ua)) return false;
-  return (
-    /\bChrom(?:e|ium)\//i.test(ua) ||
-    /\bEdg\//i.test(ua) ||
-    /\bOPR\//i.test(ua) ||
-    /\bBrave\b/i.test(ua)
-  );
-}
-
-/** Desktop Chromium-based browsers (Brave, Chrome, Edge, Opera, Arc…) — strict MSE codec limits vs Safari/Firefox. */
-function isChromiumBasedDesktopBrowser(): boolean {
-  if (typeof navigator === "undefined") return false;
-  const ua = navigator.userAgent || "";
-  if (/Android|webOS|iPhone|iPad|iPod|Mobile\b/i.test(ua)) return false;
-  const isFirefox = /\bFirefox\//.test(ua);
-  const isSafariDesktop =
-    /\bSafari\//.test(ua) &&
-    !/\bChrome\//.test(ua) &&
-    !/\bChromium\//.test(ua) &&
-    !/\bEdg\//.test(ua);
-  const isChromium =
-    /\bChrome\//.test(ua) ||
-    /\bChromium\//.test(ua) ||
-    /\bEdg\//.test(ua) ||
-    /\bBrave\//.test(ua) ||
-    /\bOPR\//.test(ua);
-  return isChromium && !isFirefox && !isSafariDesktop;
-}
-
-/** Shared hls.js tuning for all IPTV HLS (live + VOD) on Chromium/Firefox; live adds sync/edge options only. */
-function buildIptvHlsJsConfig(opts: {
-  isLive: boolean;
-  mobileLike: boolean;
-  livingRoomLike?: boolean;
-  silkLike?: boolean;
-}) {
-  const { isLive, mobileLike, livingRoomLike = false, silkLike = false } = opts;
-  const tightBuffers = mobileLike;
-
-  const timeouts = silkLike ? 42_000 : 25_000;
-  const manifestRetry = silkLike ? 10 : 8;
-  const fragRetry = silkLike ? 20 : 14;
-
-  /** Desktop/laptop live: deeper buffer + gentler live-sync so hours-long viewing survives jitter and CDN hiccups (vs Safari native direct play). */
-  const marathonDesktopLive =
-    isLive && !tightBuffers && !livingRoomLike && !silkLike;
-
-  let maxBuf = tightBuffers ? 45 : 62;
-  let maxMaxBuf = tightBuffers ? 220 : 480;
-  let backBuf = tightBuffers ? 90 : 120;
-  let abrUp = 0.55;
-  let maxHoleLive = 0.55;
-  let maxHoleVod = 0.45;
-
-  if (marathonDesktopLive) {
-    maxBuf = 120;
-    maxMaxBuf = 720;
-    backBuf = 180;
-    /* Slower ABR uphill reduces jumps into alternate codecs on Brave / Chromium (PPV feeds often mis-declare rungs). */
-    abrUp = Math.min(abrUp, 0.36);
-    maxHoleLive = Math.max(maxHoleLive, 0.62);
-  }
-
-  if (livingRoomLike && tightBuffers) {
-    maxBuf = 36;
-    maxMaxBuf = 160;
-    backBuf = 72;
-    abrUp = 0.42;
-    maxHoleLive = 0.72;
-    maxHoleVod = 0.52;
-  }
-
-  if (silkLike && tightBuffers) {
-    maxBuf = Math.min(maxBuf, 28);
-    maxMaxBuf = Math.min(maxMaxBuf, 110);
-    backBuf = Math.min(backBuf, 52);
-    abrUp = Math.min(abrUp, 0.34);
-    maxHoleLive = Math.min(maxHoleLive + 0.07, 0.82);
-    maxHoleVod = Math.min(maxHoleVod + 0.07, 0.6);
-  }
-
-  let liveSyncCount = isLive
-    ? livingRoomLike
-      ? 8
-      : marathonDesktopLive
-        ? 14
-        : tightBuffers
-          ? 6
-          : 5
-    : 3;
-  if (isLive && silkLike) liveSyncCount += 2;
-
-  return {
-    lowLatencyMode: false,
-    /* Always cap live to `<video>` size so desktop ABR doesn’t sprint straight to max rungs (where providers often park HEVC / AC‑3). */
-    capLevelToPlayerSize: isLive || livingRoomLike || silkLike,
-    enableWorker: !isLive && !livingRoomLike && !silkLike,
-    manifestLoadingTimeOut: timeouts,
-    levelLoadingTimeOut: timeouts,
-    fragLoadingTimeOut: timeouts,
-    appendErrorMaxRetry: silkLike ? 6 : 4,
-    useMediaCapabilities: false,
-    abrBandWidthUpFactor: abrUp,
-    backBufferLength: backBuf,
-    maxBufferLength: maxBuf,
-    maxMaxBufferLength: maxMaxBuf,
-    maxBufferHole: isLive ? maxHoleLive : maxHoleVod,
-    nudgeMaxRetry: silkLike ? 18 : 14,
-    nudgeOffset: silkLike ? 0.14 : 0.12,
-    highBufferWatchdogPeriod: silkLike ? 4.5 : 3,
-    manifestLoadingMaxRetry: manifestRetry,
-    levelLoadingMaxRetry: manifestRetry,
-    fragLoadingMaxRetry: fragRetry,
-    startFragPrefetch: !silkLike,
-    liveSyncDurationCount: liveSyncCount,
-    ...(silkLike ? { maxFragLookUpTolerance: 0.48 } : {}),
-    ...(marathonDesktopLive ? { liveSyncMode: "buffered" as const } : {}),
-    ...(isLive
-      ? {
-          liveDurationInfinity: true,
-          maxLiveSyncPlaybackRate: marathonDesktopLive
-            ? 1.03
-            : silkLike && livingRoomLike
-              ? 1.03
-              : silkLike
-                ? 1.04
-                : livingRoomLike
-                  ? 1.05
-                  : tightBuffers
-                    ? 1.06
-                    : 1.08,
-          liveSyncOnStallIncrease:
-            marathonDesktopLive || silkLike || livingRoomLike ? 1 : 2,
-          initialLiveManifestSize:
-            marathonDesktopLive ? 4 : mobileLike || livingRoomLike || silkLike ? 2 : 3,
-        }
-      : {}),
-  };
-}
-
-/**
- * iPhone/iPad **live** when `MediaSource` works: hls.js manages buffer/sync more predictably than
- * native `<video src>` for many IPTV feeds (fewer ~30s DVR / decoder freezes). Keep playback rate at 1.0
- * and stay farther from the live edge to reduce fight-with-manifest behavior.
- */
-function buildAppleMobileLiveHlsConfig() {
-  const base = buildIptvHlsJsConfig({ isLive: true, mobileLike: true });
-  return {
-    ...base,
-    maxLiveSyncPlaybackRate: 1,
-    liveSyncOnStallIncrease: 0,
-    liveSyncDurationCount: 10,
-    maxBufferLength: 52,
-    maxMaxBufferLength: 200,
-    backBufferLength: 100,
-    maxBufferHole: 0.65,
-    nudgeOffset: 0.08,
-    nudgeMaxRetry: 12,
-    initialLiveManifestSize: 3,
-  };
 }
 
 /** iOS WebKit — native video fullscreen; Fullscreen API on a div often unsupported on iPhone. */
@@ -599,198 +155,48 @@ function swallowControlPointer(e: React.SyntheticEvent) {
   e.stopPropagation();
 }
 
-/** Xtream `epg_listings` row (short + simpleDataTable). */
-type PlayerEpgListing = EpgListingLike & {
-  id: string | number;
-  title?: string;
-  description?: string;
-};
+const flipControlActivateGateMs = 350;
+let lastFlipControlActivateAt = 0;
 
-type PlayerEpgScheduleRow = {
-  id: string | number;
-  startMs: number;
-  endMs: number;
-  title: string;
-  description?: string;
-};
-
-function buildSortedEpgRows(listings: PlayerEpgListing[]): PlayerEpgScheduleRow[] {
-  const out: PlayerEpgScheduleRow[] = [];
-  for (const p of listings) {
-    const range = epgProgramRangeUnixSec(p);
-    if (!range) continue;
-    out.push({
-      id: p.id,
-      startMs: range.start * 1000,
-      endMs: range.end * 1000,
-      title: typeof p.title === "string" ? p.title : "",
-      description: typeof p.description === "string" ? p.description : undefined,
-    });
+/** TV browsers often skip `click`; pointer-up + OK still zaps immediately. */
+function activateFlipControl(
+  e: React.SyntheticEvent,
+  action: () => void
+) {
+  e.stopPropagation();
+  if ("preventDefault" in e && typeof e.preventDefault === "function") {
+    e.preventDefault();
   }
-  out.sort((a, b) => a.startMs - b.startMs);
-  return out;
-}
-
-/** Virtualized schedule — avoids mounting hundreds of DOM nodes when full multi-day EPG loads. */
-function PlayerScheduleVirtualList({
-  drawerOpen,
-  rows,
-  clockMs,
-}: {
-  drawerOpen: boolean;
-  rows: PlayerEpgScheduleRow[];
-  clockMs: number;
-}) {
-  const parentRef = useRef<HTMLDivElement>(null);
-  const didScrollToNowRef = useRef(false);
-
-  const virtualizer = useVirtualizer({
-    count: rows.length,
-    getScrollElement: () => parentRef.current,
-    estimateSize: () => 102,
-    overscan: 12,
-    measureElement:
-      typeof document !== "undefined"
-        ? (el) => el.getBoundingClientRect().height
-        : undefined,
-  });
-
-  useEffect(() => {
-    if (!drawerOpen) {
-      didScrollToNowRef.current = false;
-      return;
-    }
-    if (didScrollToNowRef.current || rows.length === 0) return;
-    const idx = rows.findIndex(
-      (r) => r.startMs <= clockMs && r.endMs > clockMs
-    );
-    const id = window.requestAnimationFrame(() => {
-      if (idx >= 0) {
-        virtualizer.scrollToIndex(idx, { align: "center" });
-      }
-      didScrollToNowRef.current = true;
-    });
-    return () => window.cancelAnimationFrame(id);
-  }, [drawerOpen, rows, clockMs, virtualizer]);
-
-  return (
-    <div
-      ref={parentRef}
-      className="flex-1 min-h-0 overflow-y-auto px-4 pb-4"
-      style={{ WebkitOverflowScrolling: "touch" }}
-    >
-      <div
-        className="relative w-full"
-        style={{ height: virtualizer.getTotalSize() }}
-      >
-        {virtualizer.getVirtualItems().map((vi) => {
-          const row = rows[vi.index]!;
-          const onAir = row.startMs <= clockMs && row.endMs > clockMs;
-          return (
-            <div
-              key={vi.key}
-              data-index={vi.index}
-              ref={virtualizer.measureElement}
-              className="absolute left-0 top-0 w-full pb-3"
-              style={{ transform: `translateY(${vi.start}px)` }}
-            >
-              <div
-                className={cn(
-                  "rounded-xl p-3 border",
-                  onAir
-                    ? "border-(--brand)/50 bg-(--brand)/10"
-                    : "border-white/10 bg-white/5"
-                )}
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <div className="text-[11px] text-white/70 tabular-nums">
-                    {new Date(row.startMs).toLocaleTimeString([], {
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    })}{" "}
-                    –{" "}
-                    {new Date(row.endMs).toLocaleTimeString([], {
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    })}
-                  </div>
-                  {onAir && (
-                    <span className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-(--brand)/40 text-white">
-                      On air
-                    </span>
-                  )}
-                </div>
-                <div className="text-sm text-white mt-1 font-medium">
-                  {decodeEpgText(row.title)}
-                </div>
-                {row.description ? (
-                  <div className="text-xs text-white/60 mt-1 line-clamp-3">
-                    {decodeEpgText(row.description)}
-                  </div>
-                ) : null}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-/** Wall clock for EPG “now” — driven from effects so render stays pure of Date.now(). */
-function useTickingClockMs(intervalMs: number | null, resyncKey: unknown) {
-  const [clockMs, setClockMs] = useState(0);
-
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- timer-driven wall clock for EPG boundaries
-    setClockMs(Date.now());
-  }, [resyncKey]);
-
-  useEffect(() => {
-    if (intervalMs == null) return;
-    const iv = setInterval(() => {
-      setClockMs(Date.now());
-    }, intervalMs);
-    return () => clearInterval(iv);
-  }, [intervalMs]);
-
-  return clockMs;
-}
-
-declare global {
-  interface Window {
-    __onGCastApiAvailable?: (available: boolean) => void;
-    cast?: {
-      framework: {
-        CastContext: {
-          getInstance: () => {
-            setOptions: (o: unknown) => void;
-            requestSession: () => Promise<unknown>;
-          };
-        };
-        CastContextEventType: { CAST_STATE_CHANGED: string };
-      };
-    };
-    chrome?: {
-      cast?: {
-        AutoJoinPolicy: { ORIGIN_SCOPED: string };
-        media: {
-          DEFAULT_MEDIA_RECEIVER_APP_ID: string;
-          StreamType?: { LIVE: number; BUFFERED: number };
-          MediaInfo: new (url: string, contentType: string) => unknown;
-          LoadRequest: new (mediaInfo: unknown) => unknown;
-        };
-      };
-    };
-  }
+  const now = Date.now();
+  if (now - lastFlipControlActivateAt < flipControlActivateGateMs) return;
+  lastFlipControlActivateAt = now;
+  action();
 }
 
 export function PlayerOverlay() {
   const { current, open, close, flip, playlist, index } = usePlayer();
+  const hlsRuntime = useHlsRuntime(open);
   const tvBrowser = useTvBrowser();
+  const livingRoomPlayback = useMemo(() => {
+    if (tvBrowser) return true;
+    if (typeof navigator === "undefined") return false;
+    return isLivingRoomPlaybackClient(navigator.userAgent);
+  }, [tvBrowser]);
   const silkLikeClient = useMemo(() => {
     if (typeof navigator === "undefined") return false;
     return isAmazonSilkUserAgent(navigator.userAgent || "");
+  }, []);
+  const mobileLikeViewport = useMemo(() => {
+    if (typeof window === "undefined") return false;
+    return (
+      tvBrowser ||
+      silkLikeClient ||
+      window.matchMedia("(max-width: 768px)").matches
+    );
+  }, [tvBrowser, silkLikeClient]);
+  const chromiumDesktopClient = useMemo(() => {
+    if (typeof navigator === "undefined") return false;
+    return isChromiumBasedDesktopBrowser();
   }, []);
   const canFlip = !!playlist && playlist.items.length > 1;
   /** Live channel flip or series episode flip (↑/↓ and toolbar buttons). */
@@ -808,14 +214,30 @@ export function PlayerOverlay() {
     startTime: number;
     moved: boolean;
   } | null>(null);
-  const hlsRef = useRef<Hls | null>(null);
+  const hlsRef = useRef<InstanceType<typeof Hls> | null>(null);
+  /** ffprobe duration for in-progress VOD transcode HLS (video.duration is often NaN until encode finishes). */
+  const vodDurationHintRef = useRef(0);
+  /** Absolute timeline: where the current HLS playlist begins in the source file. */
+  const vodStartOffsetRef = useRef(0);
+  /** How many seconds of media exist in the current transcode playlist. */
+  const vodEncodedSecRef = useRef(0);
+  const vodSeekRestartTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null
+  );
+  const [vodTotalSec, setVodTotalSec] = useState(0);
   /** Throttles automatic `startLoad(-1)` storms on live HLS (see `tryHlsLiveEdgeRestart`). */
   const hlsLiveEdgeRestartGateRef = useRef(0);
+  /** Bumped on Try again — stale defer timers / old hls handlers must not re-show the overlay. */
+  const livePlaybackRecoveryGenRef = useRef(0);
+  /** Live Try again: first tap soft-reloads; second tap full pipeline reset. */
+  const liveTryAgainStrikeRef = useRef(0);
+  /** After recovery, suppress fatal overlays while MSE restabilizes (stops 2s re-error loop). */
+  const livePlaybackErrorSuppressUntilRef = useRef(0);
+  const cancelLiveMediaErrorDeferRef = useRef<() => void>(() => {});
   /** Desktop Chromium live defaults to lowest safe rendition; set true when user picks Quality → Auto. */
   const userChoseAutoHlsQualityRef = useRef(false);
   /** After user opens Quality once, stop re-pinning lowest-safe on each manifest refresh. */
   const userTouchedHlsQualityRef = useRef(false);
-
   const [isPlaying, setIsPlaying] = useState(false);
   const [duration, setDuration] = useState(0);
   const [time, setTime] = useState(0);
@@ -823,14 +245,25 @@ export function PlayerOverlay() {
   const [muted, setMuted] = useState(false);
   const [volume, setVolume] = useState(1);
   const [showControls, setShowControls] = useState(true);
+  const showControlsRef = useRef(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   /** Latest `/api/stream` correlation id (frag/manifest XHR or VOD probe); shown on fatal playback errors for support. */
   const [streamSupportRequestId, setStreamSupportRequestId] = useState<
     string | null
   >(null);
+  const streamSupportRequestIdRef = useRef<string | null>(null);
   const [needsTapToPlay, setNeedsTapToPlay] = useState(false);
   const [stalled, setStalled] = useState(false);
+  /** Overrides `current.url` when falling back to server HLS transcode for MKV/HEVC VOD. */
+  const [vodPlaybackUrl, setVodPlaybackUrl] = useState<string | null>(null);
+  const [vodTranscodeBoost, setVodTranscodeBoost] = useState(false);
+  const [videoHasFrame, setVideoHasFrame] = useState(false);
+  const [vodPrepStartedAt, setVodPrepStartedAt] = useState<number | null>(null);
+  const [vodPrepProgress, setVodPrepProgress] = useState(8);
+  const [playbackRetryKey, setPlaybackRetryKey] = useState(0);
+  const vodTriedTranscodeRef = useRef(false);
+  const vodPrepKickRef = useRef<AbortController | null>(null);
   const [levels, setLevels] = useState<Level[]>([]);
   const [currentLevel, setCurrentLevel] = useState<number>(-1);
   const [subtitles, setSubtitles] = useState<SubtitleTrack[]>([]);
@@ -854,9 +287,20 @@ export function PlayerOverlay() {
     isFsRef.current = isFs;
   }, [isFs]);
   const [isPip, setIsPip] = useState(false);
+  const [pipReady, setPipReady] = useState(false);
   /** Live: Safari sometimes decodes audio but paints no picture (poster glitch, audio-only variant, or codec/compositor edge case). */
   const [liveAudioNoPicture, setLiveAudioNoPicture] = useState(false);
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** Hide timer must read latest playback/panel state — stale `isPlaying` in closures kept TV controls visible during series. */
+  const isPlayingRef = useRef(isPlaying);
+  const playerPanelsOpenRef = useRef(false);
+  useEffect(() => {
+    isPlayingRef.current = isPlaying;
+  }, [isPlaying]);
+  useEffect(() => {
+    playerPanelsOpenRef.current =
+      showSettings || showSubs || showShare || showEpg;
+  }, [showSettings, showSubs, showShare, showEpg]);
   const stallTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const probeFetchRef = useRef<AbortController | null>(null);
   const fragLoadDowngradeRef = useRef(0);
@@ -864,21 +308,24 @@ export function PlayerOverlay() {
   const [flipPing, setFlipPing] = useState(0);
 
   const doFlip = useCallback(
-    (delta: number) => {
+    (delta: number, immediate = false) => {
       if (!canFlip) return;
-      flip(delta);
+      flip(delta, immediate ? { immediate: true } : undefined);
       setFlipPing((n) => n + 1);
       if (flipOverlayTimer.current) clearTimeout(flipOverlayTimer.current);
       flipOverlayTimer.current = setTimeout(() => setFlipPing(0), 1400);
     },
     [canFlip, flip]
   );
+  const flipControlClass = livingRoomPlayback
+    ? "grid size-12 place-items-center rounded-xl bg-white/15 hover:bg-white/25 active:bg-white/30 text-white transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/80"
+    : "grid size-9 place-items-center rounded-lg bg-white/10 hover:bg-white/20 active:bg-white/25 text-white transition-colors";
 
   const isLive = current?.kind === "live";
   const creds = useAuth((s) => s.creds);
   const liveStreamId = isLive ? current?.id : undefined;
-  /** Header “Now:” only needs a small window — avoids giant parallel fetch while watching. */
-  const epgShort = useShortEPG(liveStreamId, 24);
+  /** Header “Now:” only while player is open — no background EPG when overlay is closed. */
+  const epgShort = useShortEPG(liveStreamId, 24, open && !!liveStreamId);
   /** Full multi-day grid only when Schedule drawer is open (was freezing main thread + layout). */
   const epgFull = useFullEPG(liveStreamId, !!liveStreamId && showEpg);
 
@@ -919,11 +366,11 @@ export function PlayerOverlay() {
     (epgFull.isFetching || epgShort.isLoading);
 
   const clockMs = useTickingClockMs(
-    open && isLive ? 60_000 : null,
-    open && isLive ? epgHeaderListings : null
+    open && isLive && showEpg ? 60_000 : null,
+    open && isLive && showEpg ? epgHeaderListings : null
   );
 
-  // Build the upstream (direct, non-proxied) URL for casting/share
+  /** Provider URL for copy/open-in-VLC (not used for Chromecast). */
   const directUrl = useMemo(() => {
     if (!current || !creds) return null;
     const base = creds.server.replace(/\/+$/, "");
@@ -935,11 +382,284 @@ export function PlayerOverlay() {
     return `${base}/${current.kind}/${creds.username}/${creds.password}/${streamId}.${ext}`;
   }, [current, creds]);
 
+  const castMedia = useMemo(() => {
+    if (!current || typeof window === "undefined") return null;
+    return buildCastMediaDescriptor({
+      origin: window.location.origin,
+      current,
+      isLive,
+      proxyPlaybackUrl: vodPlaybackUrl ?? current.url,
+    });
+  }, [current, isLive, vodPlaybackUrl]);
+
   /** Same-origin poster via /api/img — avoids CORS when panel logos are raw http(s) URLs. */
   const posterSrc = useMemo(
     () => (current?.poster ? buildImageProxy(current.poster) : undefined),
     [current]
   );
+
+  const activePlaybackUrl = vodPlaybackUrl ?? current?.url ?? "";
+  const usesTranscodePlayback = useMemo(
+    () => playbackUrlUsesVodTranscode(activePlaybackUrl),
+    [activePlaybackUrl]
+  );
+  /** Prep UI from first frame of open — not only after transcode URL is active (avoids long black screen on native probe). */
+  const vodPrepEligible = useMemo(() => {
+    if (!open || !current || isLive) return false;
+    if (!isVodTranscodeEnabledClient()) return false;
+    return (
+      usesTranscodePlayback ||
+      vodTranscodeBoost ||
+      vodContainerNeedsServerPrep(current.containerExt)
+    );
+  }, [
+    open,
+    current,
+    isLive,
+    usesTranscodePlayback,
+    vodTranscodeBoost,
+  ]);
+  const showVodPrepare =
+    vodPrepEligible && !videoHasFrame && !error;
+  const quickVodPlayerOpen = vodPrepEligible && !videoHasFrame;
+
+  useEffect(() => {
+    vodStartOffsetRef.current = 0;
+    vodEncodedSecRef.current = 0;
+    queueMicrotask(() => {
+      setVideoHasFrame(false);
+      setVodPrepProgress(8);
+      if (!vodPrepEligible) {
+        setVodPrepStartedAt(null);
+        return;
+      }
+      setVodPrepStartedAt((prev) => prev ?? Date.now());
+    });
+  }, [current?.url, vodPlaybackUrl, vodPrepEligible]);
+
+  /** Slow server encode — nudge bar; hard fail only if decode never starts. */
+  useEffect(() => {
+    if (!showVodPrepare || !vodPrepStartedAt) return;
+    const slowId = window.setTimeout(() => {
+      setVodPrepProgress((p) => Math.max(p, 22));
+    }, 12_000);
+    const failId = window.setTimeout(() => {
+      void (async () => {
+        const v = videoRef.current;
+        if (v && v.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) return;
+        const manifestUrl = vodPlaybackUrl ?? current?.url ?? "";
+        if (playbackUrlUsesVodTranscode(manifestUrl)) {
+          try {
+            const res = await fetch(manifestUrl, { credentials: "same-origin" });
+            const body = (await res.text()).trim().slice(0, 220);
+            if (res.status === 503) {
+              setError(
+                body ||
+                  "Server is busy preparing other videos. Wait a minute, then try again."
+              );
+              return;
+            }
+            if (res.status === 502 || res.status === 404) {
+              setError(
+                body ||
+                  "Could not prepare this file for browser playback. Try again or use a native IPTV app."
+              );
+              return;
+            }
+          } catch {
+            /* noop */
+          }
+        }
+        setError(
+          "This episode is taking unusually long to prepare. Check your connection, then try Play again — or use a native IPTV app for MKV files."
+        );
+      })();
+    }, 90_000);
+    return () => {
+      window.clearTimeout(slowId);
+      window.clearTimeout(failId);
+    };
+  }, [showVodPrepare, vodPrepStartedAt, current?.url, vodPlaybackUrl]);
+
+  /** After Try again: surface a clear error instead of an endless prep/spinner loop. */
+  useEffect(() => {
+    if (!showVodPrepare || playbackRetryKey === 0) return;
+    const failMs = 55_000;
+    const failId = window.setTimeout(() => {
+      const v = videoRef.current;
+      if (v && v.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) return;
+      setError(
+        "Still couldn't start transcoded playback. Your provider may be slow or blocking the file — wait a minute, then try again, or use a native IPTV app for MKV files."
+      );
+    }, failMs);
+    return () => window.clearTimeout(failId);
+  }, [showVodPrepare, playbackRetryKey, current?.url, vodPlaybackUrl]);
+
+  const applyVodDurationHint = useCallback((sec: number) => {
+    if (!Number.isFinite(sec) || sec <= 1) return;
+    vodDurationHintRef.current = sec;
+    setVodTotalSec(sec);
+    setDuration((d) => (d > sec * 0.95 ? d : sec));
+  }, []);
+
+  const applyVodTranscodeTimelineHints = useCallback(
+    (hints: { startOffset?: number; encoded?: number }) => {
+      if (hints.startOffset != null && hints.startOffset >= 0) {
+        vodStartOffsetRef.current = hints.startOffset;
+      }
+      if (hints.encoded != null && hints.encoded > 0) {
+        vodEncodedSecRef.current = hints.encoded;
+      }
+    },
+    []
+  );
+
+  const transcodeSeekNeedsServerRestart = useCallback((absoluteSec: number) => {
+    const off = vodStartOffsetRef.current;
+    const encoded = vodEncodedSecRef.current;
+    const relative = absoluteSec - off;
+    if (relative < -1) return true;
+    if (encoded < 2) return absoluteSec > 2;
+    return relative >= encoded - 2;
+  }, []);
+
+  const restartTranscodeAtSeek = useCallback(
+    (absoluteSec: number) => {
+      if (!current || current.kind === "live") return;
+      const active = vodPlaybackUrl ?? current.url;
+      const url = buildVodTranscodeSeekUrl(active, current.url, absoluteSec, {
+        compatMse: tvBrowser || silkLikeClient,
+      });
+      if (!url) return;
+
+      vodTriedTranscodeRef.current = true;
+      setVodTranscodeBoost(true);
+      vodStartOffsetRef.current = Math.max(0, Math.floor(absoluteSec));
+      vodEncodedSecRef.current = 0;
+      setVodPrepProgress(8);
+      setVodPrepStartedAt(Date.now());
+      setVideoHasFrame(false);
+      setError(null);
+      setTime(Math.max(0, absoluteSec));
+
+      const v = videoRef.current;
+      if (v) {
+        try {
+          if (hlsRef.current) {
+            hlsRef.current.stopLoad();
+            hlsRef.current.destroy();
+            hlsRef.current = null;
+          }
+          v.pause();
+          v.removeAttribute("src");
+          v.load();
+        } catch {
+          /* noop */
+        }
+      }
+
+      setVodPlaybackUrl(url);
+      setPlaybackRetryKey((k) => k + 1);
+    },
+    [current, tvBrowser, silkLikeClient, vodPlaybackUrl]
+  );
+
+  const retryPlayback = useCallback(() => {
+    setError(null);
+    setStreamSupportRequestId(null);
+    setVideoHasFrame(false);
+    setVodPrepProgress(8);
+    setVodPrepStartedAt(Date.now());
+    setStalled(false);
+    setNeedsTapToPlay(false);
+
+    vodPrepKickRef.current?.abort();
+    vodPrepKickRef.current = null;
+
+    const v = videoRef.current;
+    if (v) {
+      try {
+        if (hlsRef.current) {
+          hlsRef.current.stopLoad();
+          hlsRef.current.destroy();
+          hlsRef.current = null;
+        }
+        v.pause();
+        v.removeAttribute("src");
+        v.load();
+      } catch {
+        /* noop */
+      }
+    }
+
+    if (current && current.kind !== "live" && isVodTranscodeEnabledClient()) {
+      const active = vodPlaybackUrl ?? current.url;
+      const retryUrl = buildVodTranscodeRetryUrl(active, current.url, {
+        compatMse: tvBrowser || silkLikeClient,
+      });
+      if (retryUrl) {
+        vodTriedTranscodeRef.current = true;
+        setVodTranscodeBoost(true);
+        setVodPlaybackUrl(retryUrl);
+        setLoading(false);
+        const kick = new AbortController();
+        vodPrepKickRef.current = kick;
+        void fetch(retryUrl, {
+          credentials: "same-origin",
+          cache: "no-store",
+          signal: kick.signal,
+        }).catch(() => {});
+      } else if (
+        vodContainerNeedsServerPrep(current.containerExt) &&
+        canVodTranscodeProxyUrl(current.url)
+      ) {
+        vodTriedTranscodeRef.current = true;
+        setVodTranscodeBoost(true);
+        const url = appendVodTranscodeHls(current.url, {
+          compatMse: tvBrowser || silkLikeClient,
+          resetCache: true,
+        });
+        setVodPlaybackUrl(url);
+        setLoading(false);
+        const kick = new AbortController();
+        vodPrepKickRef.current = kick;
+        void fetch(url, {
+          credentials: "same-origin",
+          cache: "no-store",
+          signal: kick.signal,
+        }).catch(() => {});
+      } else {
+        setLoading(true);
+      }
+    } else {
+      setLoading(true);
+    }
+
+    setPlaybackRetryKey((k) => k + 1);
+  }, [current, tvBrowser, silkLikeClient, vodPlaybackUrl]);
+
+  const requestVodTranscodeFallback = useCallback((): boolean => {
+    if (!current || current.kind === "live") return false;
+    if (vodTriedTranscodeRef.current) return false;
+    if (!isVodTranscodeEnabledClient()) return false;
+    if (!canVodTranscodeProxyUrl(current.url)) return false;
+    vodTriedTranscodeRef.current = true;
+    setVodTranscodeBoost(true);
+    setVodPlaybackUrl(
+      appendVodTranscodeHls(current.url, {
+        compatMse: tvBrowser || silkLikeClient,
+      })
+    );
+    setError(null);
+    setStalled(false);
+    setLoading(true);
+    return true;
+  }, [current, tvBrowser, silkLikeClient]);
+
+  const requestVodTranscodeFallbackRef = useRef(requestVodTranscodeFallback);
+  useEffect(() => {
+    requestVodTranscodeFallbackRef.current = requestVodTranscodeFallback;
+  }, [requestVodTranscodeFallback]);
 
   // Body scroll lock
   useEffect(() => {
@@ -951,6 +671,39 @@ export function PlayerOverlay() {
     };
   }, [open]);
 
+  useEffect(() => {
+    if (!open || !current) {
+      vodTriedTranscodeRef.current = false;
+      queueMicrotask(() => {
+        setVodPlaybackUrl(null);
+        setVodTranscodeBoost(false);
+      });
+      return;
+    }
+    const preferServerTranscode =
+      isVodTranscodeEnabledClient() &&
+      vodContainerNeedsServerPrep(current.containerExt) &&
+      canVodTranscodeProxyUrl(current.url);
+    queueMicrotask(() => {
+      if (preferServerTranscode) {
+        vodTriedTranscodeRef.current = true;
+        setVodTranscodeBoost(true);
+        warmVodTranscodePlay(current.url, {
+          compatMse: tvBrowser || silkLikeClient,
+        });
+        setVodPlaybackUrl(
+          appendVodTranscodeHls(current.url, {
+            compatMse: tvBrowser || silkLikeClient,
+          })
+        );
+      } else {
+        setVodPlaybackUrl(current.url);
+        setVodTranscodeBoost(false);
+        vodTriedTranscodeRef.current = false;
+      }
+    });
+  }, [open, current, tvBrowser, silkLikeClient]);
+
   // iOS / older WebKit: redundant playsinline attrs avoid fullscreen-only decode paths.
   useEffect(() => {
     if (!open || !current) return;
@@ -960,1088 +713,111 @@ export function PlayerOverlay() {
     v.setAttribute("webkit-playsinline", "true");
   }, [open, current]);
 
-  // Setup video element + HLS pipeline
-  useEffect(() => {
-    if (!open || !current) return;
-    const video = videoRef.current;
-    if (!video) return;
+  usePlayerPlaybackPipeline({
+    open,
+    current,
+    isLive,
+    creds,
+    vodPlaybackUrl,
+    playbackRetryKey,
+    chromiumDesktopClient,
+    tvBrowser,
+    silkLikeClient,
+    hlsRuntime,
+    videoRef,
+    hlsRef,
+    streamSupportRequestIdRef,
+    liveTryAgainStrikeRef,
+    fragLoadDowngradeRef,
+    probeFetchRef,
+    vodDurationHintRef,
+    vodStartOffsetRef,
+    vodEncodedSecRef,
+    hlsLiveEdgeRestartGateRef,
+    livePlaybackRecoveryGenRef,
+    livePlaybackErrorSuppressUntilRef,
+    userChoseAutoHlsQualityRef,
+    userTouchedHlsQualityRef,
+    vodPrepKickRef,
+    vodSeekRestartTimerRef,
+    stallTimer,
+    requestVodTranscodeFallbackRef,
+    setError,
+    setStreamSupportRequestId,
+    setNeedsTapToPlay,
+    setStalled,
+    setTime,
+    setDuration,
+    setVodTotalSec,
+    setLevels,
+    setCurrentLevel,
+    setSubtitles,
+    setActiveSubtitle,
+    setLiveAudioNoPicture,
+    setLoading,
+    setVolume,
+    setVideoHasFrame,
+    setVodPrepProgress,
+    applyVodDurationHint,
+    applyVodTranscodeTimelineHints,
+  });
 
-    setError(null);
-    setStreamSupportRequestId(null);
-    setNeedsTapToPlay(false);
-    setStalled(false);
-    setLoading(true);
-    setTime(0);
-    setDuration(0);
-    setLevels([]);
-    setCurrentLevel(-1);
-    setSubtitles([]);
-    setActiveSubtitle(-1);
-    setLiveAudioNoPicture(false);
-    userChoseAutoHlsQualityRef.current = false;
-    userTouchedHlsQualityRef.current = false;
+  usePlayerVodResume({
+    open,
+    current,
+    isLive,
+    creds,
+    vodPlaybackUrl,
+    vodTotalSec,
+    videoRef,
+    hlsRef,
+    vodDurationHintRef,
+    vodStartOffsetRef,
+    vodEncodedSecRef,
+    restartTranscodeAtSeek,
+  });
 
-    let cancelled = false;
-    fragLoadDowngradeRef.current = 0;
-    probeFetchRef.current?.abort();
-    probeFetchRef.current = new AbortController();
-    const probeSignal = probeFetchRef.current.signal;
-    const url = current.url;
+  usePlayerLiveSupplements({
+    open,
+    current,
+    chromiumDesktopClient,
+    silkLikeClient,
+    mobileLikeViewport,
+    videoRef,
+    hlsRef,
+    playlist,
+    index,
+  });
 
-    const preferredVol = readPreferredPlayerVolume();
-    if (preferredVol != null) {
-      video.volume = preferredVol;
-      queueMicrotask(() => setVolume(preferredVol));
-    }
-
-    const cleanupHls = () => {
-      if (hlsRef.current) {
-        try {
-          hlsRef.current.stopLoad();
-        } catch {
-          /* noop */
-        }
-        try {
-          hlsRef.current.destroy();
-        } catch {
-          /* noop */
-        }
-        hlsRef.current = null;
-      }
-    };
-
-    cleanupHls();
-    hlsLiveEdgeRestartGateRef.current = 0;
-
-    const tryAutoplay = async () => {
-      if (cancelled) return;
-      try {
-        await safeVideoPlay(video);
-      } catch {
-        if (cancelled) return;
-        // Autoplay rejected (usually because audio isn't allowed).
-        // Try muted autoplay as a fallback.
-        try {
-          video.muted = true;
-          await safeVideoPlay(video);
-          // Show a hint so the user can tap to unmute.
-          setNeedsTapToPlay(true);
-        } catch {
-          if (!cancelled) setNeedsTapToPlay(true);
-        }
-      }
-    };
-
-    const isHls = playbackUrlIsHls(url, isLive);
-
-    const canNativeHls =
-      typeof video.canPlayType === "function" &&
-      video.canPlayType("application/vnd.apple.mpegurl") !== "";
-    const useNativeAppleHls =
-      isHls && (canNativeHls || isAppleMobileWebKitDevice());
-
-    /**
-     * iPhone/iPad live: **native** `<video src=m3u8>` (AVFoundation) is the default — it usually handles
-     * provider muxed AAC/AC‑3 and variant ladders better than hls.js over **MSE** on WebKit.
-     * Set `NEXT_PUBLIC_IOS_LIVE_USE_HLSJS=1` to force hls.js (legacy workaround for some native DVR edge cases).
-     */
-    const appleMobileLiveMse =
-      typeof process !== "undefined" &&
-      process.env.NEXT_PUBLIC_IOS_LIVE_USE_HLSJS === "1" &&
-      isLive &&
-      isHls &&
-      isAppleMobileWebKitDevice() &&
-      Hls.isSupported();
-
-    const livingRoomLike =
-      typeof navigator !== "undefined" &&
-      isTvClassUserAgent(navigator.userAgent || "");
-
-    const silkLike =
-      typeof navigator !== "undefined" &&
-      isAmazonSilkUserAgent(navigator.userAgent || "");
-
-    const mobileLike =
-      typeof window !== "undefined" &&
-      (livingRoomLike ||
-        silkLike ||
-        window.matchMedia("(max-width: 640px)").matches ||
-        window.matchMedia("(pointer: coarse)").matches);
-
-    const unsupportedBrowserAudioMsg = livingRoomLike || silkLike
-      ? "This channel’s audio (often AC-3/E-AC-3) isn’t supported in the Amazon Silk / TV browser player. Try another channel, use Chromecast, or watch with a native IPTV app on the same device if available."
-      : "This channel uses audio (often AC-3/EAC-3) that Chromium-based browsers cannot decode in a web player. Try Safari on Mac or iPhone, your provider's native app, or Chromecast.";
-
-    const isLikelyUnsupportedAudioCodecError = (data: ErrorData): boolean => {
-      const d = data.details;
-      return (
-        d === Hls.ErrorDetails.BUFFER_ADD_CODEC_ERROR ||
-        d === Hls.ErrorDetails.BUFFER_INCOMPATIBLE_CODECS_ERROR ||
-        d === Hls.ErrorDetails.MANIFEST_INCOMPATIBLE_CODECS_ERROR ||
-        (d === Hls.ErrorDetails.BUFFER_APPEND_ERROR &&
-          data.sourceBufferName === "audio")
-      );
-    };
-
-    /** VOD only: Range probe before assigning src (live skips). Returns false if probe failed hard. */
-    const probeVodThenPlayNative = async (): Promise<boolean> => {
-      if (!isLive) {
-        try {
-          const probe = await fetch(url, {
-            method: "GET",
-            headers: { Range: "bytes=0-0" },
-            cache: "no-store",
-            signal: probeSignal,
-          });
-          if (cancelled) return false;
-          const rid = probe.headers.get(STREAM_PROXY_REQUEST_ID_HEADER);
-          if (rid) setStreamSupportRequestId(rid);
-          if (probe.status === 404 || probe.status === 410) {
-            setError("This episode isn't available from your provider.");
-            setLoading(false);
-            return false;
-          }
-          if (probe.status >= 400) {
-            setError(
-              probe.status === 403
-                ? "Your provider blocked this request. Try another episode or try again later."
-                : `Provider returned ${probe.status}. The file may be offline or temporarily unavailable.`
-            );
-            setLoading(false);
-            return false;
-          }
-        } catch (e) {
-          if (cancelled || (e instanceof DOMException && e.name === "AbortError"))
-            return false;
-          /* fall through — let <video> try */
-        }
-      }
-      if (cancelled) return false;
-      video.src = url;
-      void tryAutoplay();
-      return true;
-    };
-
-    // Native WebKit: VOD + Apple live fallback when MSE/hls.js isn’t available (older iOS, unsupported codecs).
-    // Apple mobile **live** + MSE: use hls.js — smoother IPTV experience than native `<video>` alone.
-    if (useNativeAppleHls && !appleMobileLiveMse) {
-      void probeVodThenPlayNative();
-    } else if (
-      isHls &&
-      Hls.isSupported() &&
-      (!isAppleMobileWebKitDevice() || isLive)
-    ) {
-      let mediaRecoverAttempts = 0;
-      let audioCodecFallbackTried = false;
-      let swapAudioCodecTried = false;
-      let audioAppendRecoveryAttempts = 0;
-
-      const chromiumLiveQualityLockEligible =
-        isLive &&
-        !livingRoomLike &&
-        !silkLike &&
-        !appleMobileLiveMse &&
-        !mobileLike &&
-        isChromiumBasedDesktopBrowser();
-
-      /**
-       * Live playlists refresh and ABR climbs — re-apply filters so we don't drift into HEVC/Dolby variants Chromium can't decode over MSE.
-       * Desktop Chromium: pin lowest-safe **once on MANIFEST_PARSED only** — repeating `currentLevel=` on every `MANIFEST_LOADED`/recovery thrashed MSE and produced bogus codec errors.
-       */
-      const stabilizeBrowserFriendlyCodecs = (opts?: {
-        pinChromiumLowQuality?: boolean;
-      }) => {
-        if (cancelled) return;
-        stripHevcLevelsIfSaferAlternativesExist(hls);
-        stripDolbyLevelsIfSaferAlternativesExist(hls);
-        stripDtsLevelsIfSaferAlternativesExist(hls);
-        preferBrowserFriendlyAudioTrack(hls);
-
-        const desktopMseLiveTune =
-          isLive &&
-          !livingRoomLike &&
-          !silkLike &&
-          !appleMobileLiveMse &&
-          hls.levels?.length;
-
-        if (desktopMseLiveTune) {
-          try {
-            const maxSafe = maxSafeLevelIndex(hls.levels);
-            if (maxSafe >= 0) {
-              hls.autoLevelCapping = maxSafe;
-            }
-          } catch {
-            /* noop */
-          }
-        }
-
-        if (
-          opts?.pinChromiumLowQuality &&
-          chromiumLiveQualityLockEligible &&
-          hls.levels?.length &&
-          !userChoseAutoHlsQualityRef.current &&
-          !userTouchedHlsQualityRef.current
-        ) {
-          try {
-            const low = indexOfLowestSafeLevel(hls.levels);
-            if (low >= 0 && hls.manualLevel !== low) {
-              hls.currentLevel = low;
-              setCurrentLevel(low);
-            }
-          } catch {
-            /* noop */
-          }
-        }
-
-        if ((livingRoomLike || silkLike) && hls.levels?.length) {
-          try {
-            const startIdx = indexOfLowestSafeLevel(hls.levels);
-            if (startIdx >= 0) {
-              hls.startLevel = startIdx;
-            }
-          } catch {
-            /* noop */
-          }
-        }
-      };
-
-      const baseHlsConfig = appleMobileLiveMse
-        ? buildAppleMobileLiveHlsConfig()
-        : buildIptvHlsJsConfig({ isLive, mobileLike, livingRoomLike, silkLike });
-      const hlsConfig = {
-        ...baseHlsConfig,
-        xhrSetup(xhr: XMLHttpRequest, reqUrl: string) {
-          if (!reqUrl.includes("/api/stream")) return;
-          xhr.addEventListener("load", function onLoad() {
-            xhr.removeEventListener("load", onLoad);
-            if (cancelled) return;
-            const rid = xhr.getResponseHeader(STREAM_PROXY_REQUEST_ID_HEADER);
-            if (rid) setStreamSupportRequestId(rid);
-          });
-        },
-      };
-      const hls = new Hls(hlsConfig);
-      hlsRef.current = hls;
-      hls.loadSource(url);
-      hls.attachMedia(video);
-
-      /** Fatal `NETWORK_ERROR` streak — reset whenever data actually flows (Safari otherwise accumulates transient fatals). */
-      let consecutiveNetworkErrors = 0;
-      const resetNetErrStreak = () => {
-        consecutiveNetworkErrors = 0;
-      };
-
-      /** Intentionally no periodic `startLoad(-1)` — it fights hls.js live playlist refresh and causes visible black/rebuffer loops on many panels. */
-
-      hls.on(Hls.Events.MANIFEST_PARSED, () => {
-        if (cancelled) return;
-        resetNetErrStreak();
-        stabilizeBrowserFriendlyCodecs({ pinChromiumLowQuality: true });
-        setLevels(hls.levels);
-        if (userChoseAutoHlsQualityRef.current) {
-          setCurrentLevel(-1);
-        } else if (!chromiumLiveQualityLockEligible) {
-          setCurrentLevel(-1);
-        }
-        // Pull subtitle tracks from HLS manifest
-        const subs = hls.subtitleTracks as MediaPlaylist[] | undefined;
-        if (subs && subs.length) {
-          setSubtitles(
-            subs.map((t, i) => ({
-              id: i,
-              label: t.name || t.lang || `Track ${i + 1}`,
-              lang: t.lang,
-              source: "hls" as const,
-            }))
-          );
-          hls.subtitleTrack = -1;
-        }
-        void tryAutoplay();
-      });
-
-      hls.on(Hls.Events.SUBTITLE_TRACKS_UPDATED, (_e, data) => {
-        if (cancelled) return;
-        const subs = data.subtitleTracks || [];
-        setSubtitles(
-          subs.map((t, i) => ({
-            id: i,
-            label: t.name || t.lang || `Track ${i + 1}`,
-            lang: t.lang,
-            source: "hls" as const,
-          }))
-        );
-      });
-
-      hls.on(Hls.Events.AUDIO_TRACKS_UPDATED, () => {
-        if (cancelled) return;
-        preferBrowserFriendlyAudioTrack(hls);
-      });
-
-      /** Master manifest refresh (common on live IPTV) can append new renditions after playback starts. */
-      hls.on(Hls.Events.MANIFEST_LOADED, () => {
-        if (cancelled) return;
-        resetNetErrStreak();
-        if (!isLive) return;
-        stabilizeBrowserFriendlyCodecs();
-        setLevels(hls.levels);
-      });
-
-      hls.on(Hls.Events.AUDIO_TRACK_SWITCHED, () => {
-        if (cancelled) return;
-        preferBrowserFriendlyAudioTrack(hls);
-      });
-
-      hls.on(Hls.Events.LEVEL_SWITCHED, (_e, data) => {
-        if (!cancelled) setCurrentLevel(hls.autoLevelEnabled ? -1 : data.level);
-        preferBrowserFriendlyAudioTrack(hls);
-        const idx = data.level;
-        const lv = hls.levels[idx];
-        if (!lv || cancelled) return;
-        if (
-          levelDeclaresHevc(lv) ||
-          levelDeclaresNonPreferredChromePackagedAudio(lv)
-        ) {
-          const safeIdx = indexOfLowestSafeLevel(hls.levels);
-          if (
-            safeIdx >= 0 &&
-            safeIdx !== idx &&
-            !levelDeclaresHevc(hls.levels[safeIdx]) &&
-            !levelDeclaresNonPreferredChromePackagedAudio(hls.levels[safeIdx])
-          ) {
-            try {
-              hls.currentLevel = safeIdx;
-            } catch {
-              /* noop */
-            }
-          }
-        }
-      });
-
-      hls.on(Hls.Events.FRAG_LOADED, resetNetErrStreak);
-      hls.on(Hls.Events.LEVEL_LOADED, resetNetErrStreak);
-
-      hls.on(Hls.Events.ERROR, (_e, data) => {
-        if (!data.fatal) {
-          // BUFFER_APPEND_ERROR fires in tight loops on bad audio tracks — recover once before fatal MEDIA_ERROR.
-          if (data.details === Hls.ErrorDetails.BUFFER_APPEND_ERROR) {
-            const audioBuf =
-              data.sourceBufferName === "audio" ||
-              data.sourceBufferName === "audiovideo";
-            // Never call full stabilize here — stripping levels + re-pinning quality mid-playback caused transient MEDIA_ERROR; Try again only ran startLoad().
-            if (isLive && audioBuf && audioAppendRecoveryAttempts < 3) {
-              audioAppendRecoveryAttempts += 1;
-              preferBrowserFriendlyAudioTrack(hls);
-              const tracks = hls.audioTracks;
-              const cur = hls.audioTrack;
-              if (tracks.length > 1 && cur >= 0) {
-                for (let i = 0; i < tracks.length; i++) {
-                  if (i === cur) continue;
-                  try {
-                    hls.audioTrack = i;
-                    break;
-                  } catch {
-                    /* try next */
-                  }
-                }
-              }
-              try {
-                hls.startLoad(-1);
-              } catch {
-                /* noop */
-              }
-            }
-            return;
-          }
-          // Repeated frag/level transport errors → step ABR down (live + VOD).
-          const bumpDetails = [
-            Hls.ErrorDetails.BUFFER_FULL_ERROR,
-            Hls.ErrorDetails.FRAG_LOAD_ERROR,
-            Hls.ErrorDetails.FRAG_LOAD_TIMEOUT,
-            Hls.ErrorDetails.LEVEL_LOAD_ERROR,
-            Hls.ErrorDetails.LEVEL_LOAD_TIMEOUT,
-          ];
-          const fragish = bumpDetails.includes(data.details);
-          if (fragish) {
-            fragLoadDowngradeRef.current += 1;
-            if (fragLoadDowngradeRef.current >= 6) {
-              fragLoadDowngradeRef.current = 0;
-              tryCapAbrLower(hls);
-            }
-          }
-          // Let hls.js handle stalls/nudges internally — redundant `startLoad(-1)` often flashes black / resets buffer.
-          if (isLive) {
-            const bumpReload = bumpDetails.includes(data.details);
-            if (bumpReload) {
-              tryHlsLiveEdgeRestart(
-                hls,
-                hlsLiveEdgeRestartGateRef,
-                false
-              );
-            }
-          } else if (fragish) {
-            try {
-              hls.startLoad(-1);
-            } catch {
-              /* noop */
-            }
-          }
-          if (process.env.NODE_ENV !== "production") {
-            console.warn("[hls] error", data.type, data.details, data);
-          }
-          return;
-        }
-
-        if (process.env.NODE_ENV !== "production") {
-          console.warn("[hls] fatal", data.type, data.details, data);
-        }
-
-        switch (data.type) {
-          case Hls.ErrorTypes.NETWORK_ERROR:
-            consecutiveNetworkErrors += 1;
-            {
-              const touchyClient =
-                mobileLike || isAppleMobileWebKitDevice();
-              const maxFatalNet = touchyClient
-                ? isLive
-                  ? 22
-                  : 14
-                : isLive
-                  ? 7
-                  : 8;
-              if (consecutiveNetworkErrors >= maxFatalNet) {
-                setError(
-                  "Couldn't reach this stream. The channel may be offline or your provider blocked the request."
-                );
-                cleanupHls();
-              } else {
-                hls.startLoad();
-              }
-            }
-            break;
-          case Hls.ErrorTypes.MEDIA_ERROR:
-            if (isLikelyUnsupportedAudioCodecError(data)) {
-              const tracks = hls.audioTracks;
-              const cur = hls.audioTrack;
-              if (!audioCodecFallbackTried && tracks.length > 1 && cur >= 0) {
-                audioCodecFallbackTried = true;
-                let switched = false;
-                for (let i = 0; i < tracks.length; i++) {
-                  if (i === cur) continue;
-                  try {
-                    hls.audioTrack = i;
-                    hls.recoverMediaError();
-                    switched = true;
-                    break;
-                  } catch {
-                    /* try next alternate */
-                  }
-                }
-                if (switched) break;
-              }
-              if (!swapAudioCodecTried) {
-                swapAudioCodecTried = true;
-                try {
-                  hls.swapAudioCodec();
-                  hls.recoverMediaError();
-                  break;
-                } catch {
-                  /* fall through */
-                }
-              }
-              setError(unsupportedBrowserAudioMsg);
-              cleanupHls();
-              break;
-            }
-            if (mediaRecoverAttempts >= (isLive ? 4 : 2)) {
-              setError(
-                "Playback failed after repeated media errors. This stream may use unsupported audio/video in your browser."
-              );
-              cleanupHls();
-              break;
-            }
-            mediaRecoverAttempts += 1;
-            try {
-              hls.recoverMediaError();
-            } catch {
-              setError(
-                "Media error: this stream isn't playable in the browser."
-              );
-              cleanupHls();
-            }
-            break;
-          default:
-            setError("Playback failed. Try a different channel.");
-            cleanupHls();
-        }
-      });
-    } else if (!isHls) {
-      // Direct progressive file (mp4/mkv via proxy) — same VOD probe as native HLS path.
-      void probeVodThenPlayNative();
-    } else {
-      queueMicrotask(() =>
-        setError("Your browser cannot play this stream.")
-      );
-    }
-
-    // Stall watchdog: if almost nothing has buffered after a timeout, surface a hint.
-    // Live copy suggests provider issues; VOD often means unsupported codec/container on mobile.
-    if (stallTimer.current) clearTimeout(stallTimer.current);
-    const vodProgressivePlayback =
-      !isLive && !playbackUrlIsHls(url, isLive);
-    const stallMs = vodProgressivePlayback
-      ? 26_000
-      : silkLike
-        ? 18_000
-        : 12_000;
-    stallTimer.current = setTimeout(() => {
-      if (cancelled) return;
-      const v = videoRef.current;
-      if (!v) return;
-      const hasBuffer = v.buffered.length > 0 && v.buffered.end(0) > 0.1;
-      if (!hasBuffer && !v.error) {
-        setStalled(true);
-      }
-    }, stallMs);
-
-    return () => {
-      if (video && creds && current && current.kind !== "live") {
-        const key = vodResumeStorageKey(browseAccountKey(creds), current);
-        const t = video.currentTime;
-        const d = video.duration;
-        if (key && t > 12 && d && Number.isFinite(d) && t < d - 45) {
-          usePrefs.getState().saveVodResume(key, t);
-        }
-      }
-      cancelled = true;
-      probeFetchRef.current?.abort();
-      if (stallTimer.current) clearTimeout(stallTimer.current);
-      cleanupHls();
-      try {
-        video.pause();
-        video.removeAttribute("src");
-        video.load();
-      } catch {
-        /* noop */
-      }
-    };
-  }, [open, current, isLive, creds]);
-
-  /** VOD: resume + periodic save of playback position. */
-  useEffect(() => {
-    if (!open || !current || isLive || !creds) return;
-    const video = videoRef.current;
-    if (!video) return;
-    const key = vodResumeStorageKey(browseAccountKey(creds), current);
-    if (!key) return;
-    const target = usePrefs.getState().getVodResume(key);
-    if (target == null || target < 15) return;
-
-    let disposed = false;
-    let lastPersist = 0;
-
-    const trySeek = () => {
-      if (disposed) return;
-      const d = video.duration;
-      if (!d || !Number.isFinite(d) || d < 30) return;
-      if (target >= d - 25) return;
-      try {
-        video.currentTime = target;
-      } catch {
-        /* noop */
-      }
-    };
-
-    const onMeta = () => trySeek();
-    const onEnded = () => usePrefs.getState().clearVodResume(key);
-    const onTime = () => {
-      const t = video.currentTime;
-      const d = video.duration;
-      if (!d || !Number.isFinite(d) || t < 12 || t > d - 45 || t - lastPersist < 7)
-        return;
-      lastPersist = t;
-      usePrefs.getState().saveVodResume(key, t);
-    };
-
-    video.addEventListener("loadedmetadata", onMeta);
-    video.addEventListener("ended", onEnded);
-    video.addEventListener("timeupdate", onTime);
-    const raf = requestAnimationFrame(() => trySeek());
-    return () => {
-      disposed = true;
-      cancelAnimationFrame(raf);
-      video.removeEventListener("loadedmetadata", onMeta);
-      video.removeEventListener("ended", onEnded);
-      video.removeEventListener("timeupdate", onTime);
-    };
-  }, [open, current, isLive, creds]);
-
-  /** After several `waiting` events, cap ABR / drop top ladder rung (hls.js paths). */
-  useEffect(() => {
-    if (!open || !current) return;
-    /** iOS Safari + hls.js: `waiting` fires often at the live edge; `startLoad(-1)` here caused fatal NETWORK_ERROR loops ~1min in. */
-    if (isAppleMobileWebKitDevice()) return;
-    const video = videoRef.current;
-    if (!video) return;
-    const win = { n: 0, t0: 0 };
-    const onWaiting = () => {
-      const now = Date.now();
-      if (now - win.t0 > 20_000) {
-        win.n = 0;
-        win.t0 = now;
-      }
-      win.n += 1;
-      const h = hlsRef.current;
-      if (!h?.levels?.length || win.n < 3) return;
-      win.n = 0;
-      tryCapAbrLower(h);
-      tryHlsLiveEdgeRestart(h, hlsLiveEdgeRestartGateRef, false);
-    };
-    const reset = () => {
-      win.n = 0;
-      win.t0 = Date.now();
-    };
-    video.addEventListener("waiting", onWaiting);
-    video.addEventListener("playing", reset);
-    video.addEventListener("seeked", reset);
-    return () => {
-      video.removeEventListener("waiting", onWaiting);
-      video.removeEventListener("playing", reset);
-      video.removeEventListener("seeked", reset);
-    };
-  }, [open, current]);
-
-  /** Warm playlist neighbors so channel flips reuse hot TLS/CDN connections (manifest is small). */
-  useEffect(() => {
-    if (!open || !playlist || playlist.items.length < 2 || index < 0) return;
-    if (silkLikeClient) return;
-    const items = playlist.items;
-    const n = items.length;
-    const warm = (i: number) => {
-      const u = items[i]?.url;
-      if (!u) return;
-      const ac = new AbortController();
-      const kill = setTimeout(() => ac.abort(), 12000);
-      fetch(u, { cache: "no-store", signal: ac.signal })
-        .catch(() => {})
-        .finally(() => clearTimeout(kill));
-    };
-    warm((index + 1) % n);
-    warm((index - 1 + n) % n);
-  }, [open, playlist, index, current?.url, silkLikeClient]);
-
-  /**
-   * Live native HLS can wedge after long runs; refreshing when returning to the tab often matches
-   * “flip channel” recovery. Skip on iPhone/iPad native — visibility flicker + reload replays the
-   * short DVR window and looks like a loop.
-   */
-  useEffect(() => {
-    if (!open || !current || current.kind !== "live") return;
-    let hiddenAt = 0;
-    const onVis = () => {
-      if (document.visibilityState === "hidden") {
-        hiddenAt = Date.now();
-        return;
-      }
-      if (
-        document.visibilityState === "visible" &&
-        hiddenAt > 0 &&
-        Date.now() - hiddenAt > 5000 &&
-        !hlsRef.current &&
-        videoRef.current &&
-        current.url
-      ) {
-        if (isAppleMobileWebKitDevice()) {
-          hiddenAt = 0;
-          return;
-        }
-        const v = videoRef.current;
-        const u = current.url;
-        try {
-          v.pause();
-          v.removeAttribute("src");
-          v.load();
-          v.src = u;
-          voidSafeVideoPlay(v);
-        } catch {
-          /* noop */
-        }
-      }
-    };
-    document.addEventListener("visibilitychange", onVis);
-    return () => document.removeEventListener("visibilitychange", onVis);
-  }, [open, current]);
-
-  // Video event listeners
-  useEffect(() => {
-    const v = videoRef.current;
-    if (!v) return;
-    let volPersistTimer: ReturnType<typeof setTimeout> | null = null;
-    const schedulePersistPreferredVolume = (vol: number) => {
-      if (volPersistTimer) clearTimeout(volPersistTimer);
-      volPersistTimer = setTimeout(() => {
-        volPersistTimer = null;
-        writePreferredPlayerVolume(vol);
-      }, 400);
-    };
-
-    const isLiveStream = current?.kind === "live";
-    let liveKickTimer: ReturnType<typeof setTimeout> | null = null;
-    /** `window.setTimeout` id — avoids DOM vs `@types/node` Timeout mismatch. */
-    let liveMediaErrorDeferTimer: number | null = null;
-    const liveProgress = { lastCt: -1, stuckSince: 0 };
-    let lastLowBufferKick = 0;
-    let nativeStallKicks = 0;
-    /** Throttle React state from `timeupdate` on phones — many setState/s hurt WebKit during live IPTV. */
-    let lastAppleMobileUiFlush = 0;
-
-    const cancelLiveKickTimer = () => {
-      if (liveKickTimer) {
-        clearTimeout(liveKickTimer);
-        liveKickTimer = null;
-      }
-    };
-
-    const cancelLiveMediaErrorDefer = () => {
-      if (liveMediaErrorDeferTimer) {
-        clearTimeout(liveMediaErrorDeferTimer);
-        liveMediaErrorDeferTimer = null;
-      }
-    };
-
-    /** Chromium (hls.js): restart loading. Safari/WebKit (native HLS): nudge toward live edge — was missing before. */
-    const kickLivePlayback = () => {
-      const vv = videoRef.current;
-      if (!vv || vv.paused || vv.error) return;
-      const hls = hlsRef.current;
-      if (hls) {
-        try {
-          /**
-           * Live MSE: do not micro-seek inside `buffered` here — hls.js live sync immediately pulls
-           * `currentTime` back toward the playlist edge, which users describe as playing forward a
-           * few seconds then snapping back. Prefer a throttled `startLoad(-1)` only.
-           */
-          if (
-            tryHlsLiveEdgeRestart(hls, hlsLiveEdgeRestartGateRef, false)
-          ) {
-            voidSafeVideoPlay(vv);
-          }
-        } catch {
-          try {
-            hls.recoverMediaError();
-          } catch {
-            /* noop */
-          }
-        }
-        return;
-      }
-      /**
-       * Native WebKit HLS (iPhone **and** Safari on Mac): seek-to-live-edge + buffer micro-seeks
-       * fight AVFoundation’s sliding timeline on IPTV — same snap-back and short-loop reports as
-       * the ~30s iPhone DVR case. Only nudge `play()`; `reloadNativeLiveSource` still exists after
-       * repeated stall kicks.
-       */
-      if (
-        isAppleMobileWebKitDevice() ||
-        isSafariFamilyWithoutChromium()
-      ) {
-        voidSafeVideoPlay(vv);
-        return;
-      }
-      try {
-        if (vv.seekable?.length) {
-          const idx = vv.seekable.length - 1;
-          const end = vv.seekable.end(idx);
-          const start = vv.seekable.start(idx);
-          if (Number.isFinite(end) && end > start + 0.25) {
-            const target = Math.min(Math.max(end - 3.5, start + 0.05), end - 0.1);
-            if (target > vv.currentTime + 0.12) {
-              vv.currentTime = target;
-              voidSafeVideoPlay(vv);
-              return;
-            }
-          }
-        }
-      } catch {
-        /* seek on live can throw */
-      }
-      try {
-        if (vv.buffered.length > 0) {
-          const end = vv.buffered.end(vv.buffered.length - 1);
-          const ahead = end - vv.currentTime;
-          if (ahead >= 0 && ahead < 2.8) {
-            const hop = Math.min(end - 0.08, vv.currentTime + Math.max(0.35, ahead * 0.65));
-            if (hop > vv.currentTime && hop <= end) {
-              vv.currentTime = hop;
-              voidSafeVideoPlay(vv);
-              return;
-            }
-          }
-        }
-      } catch {
-        /* noop */
-      }
-      voidSafeVideoPlay(vv);
-    };
-
-    const reloadNativeLiveSource = () => {
-      const vv = videoRef.current;
-      const url = current?.url;
-      if (!vv || !url || current?.kind !== "live") return;
-      try {
-        vv.pause();
-        vv.removeAttribute("src");
-        vv.load();
-        vv.src = url;
-        voidSafeVideoPlay(vv);
-      } catch {
-        /* noop */
-      }
-    };
-
-    const kickLiveIfBufferLow = () => {
-      const vv = videoRef.current;
-      if (!vv) return;
-      const ahead =
-        vv.buffered.length > 0
-          ? vv.buffered.end(vv.buffered.length - 1) - vv.currentTime
-          : 0;
-      const threshold = hlsRef.current ? 2.4 : 4.5;
-      if (ahead < threshold) kickLivePlayback();
-    };
-
-    const stripPosterForWebKit = () => {
-      try {
-        v.removeAttribute("poster");
-      } catch {
-        /* noop */
-      }
-    };
-
-    const onPlay = () => {
-      setIsPlaying(true);
-      setLoading(false);
-      setNeedsTapToPlay(false);
-      setStalled(false);
-      stripPosterForWebKit();
-      if (v.videoWidth > 0) setLiveAudioNoPicture(false);
-    };
-    const onPause = () => setIsPlaying(false);
-    const onWaiting = () => {
-      setLoading(true);
-      if (!isLiveStream) return;
-      /** Native iOS: no seek-kicks, no `waiting`→reload (normal rebuffering would interrupt constantly). */
-      if (!hlsRef.current && isAppleMobileWebKitDevice()) return;
-      cancelLiveKickTimer();
-      liveKickTimer = setTimeout(() => {
-        liveKickTimer = null;
-        kickLiveIfBufferLow();
-      }, 2600);
-    };
-    const onPlaying = () => {
-      setLoading(false);
-      setStalled(false);
-      stripPosterForWebKit();
-      if (v.videoWidth > 0) setLiveAudioNoPicture(false);
-      cancelLiveKickTimer();
-      cancelLiveMediaErrorDefer();
-      if (isLiveStream) {
-        liveProgress.lastCt = -1;
-        liveProgress.stuckSince = 0;
-      }
-    };
-    const onTime = () => {
-      const nativeAppleLive =
-        isLiveStream &&
-        !hlsRef.current &&
-        isAppleMobileWebKitDevice();
-
-      const flushUi = () => {
-        setTime(v.currentTime);
-        const buf = v.buffered;
-        if (buf.length) setBuffered(buf.end(buf.length - 1));
-      };
-      if (isAppleMobileWebKitDevice() && isLiveStream) {
-        const nowMs = performance.now();
-        if (nowMs - lastAppleMobileUiFlush >= 280) {
-          lastAppleMobileUiFlush = nowMs;
-          flushUi();
-        }
-      } else {
-        flushUi();
-      }
-
-      if (
-        isLiveStream &&
-        !v.paused &&
-        v.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA &&
-        v.currentTime > 6 &&
-        v.videoWidth === 0 &&
-        v.videoHeight === 0
-      ) {
-        setLiveAudioNoPicture(true);
-      } else if (v.videoWidth > 0) {
-        setLiveAudioNoPicture(false);
-      }
-
-      if (
-        !nativeAppleLive &&
-        isLiveStream &&
-        !v.paused &&
-        !v.error &&
-        v.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA
-      ) {
-        let ahead = 999;
-        if (v.buffered.length > 0) {
-          ahead = v.buffered.end(v.buffered.length - 1) - v.currentTime;
-        }
-        const nowMs = performance.now();
-        const lowAheadKick =
-          hlsRef.current != null ? ahead < 0.48 : ahead < 1.05;
-        const lowKickCooldownMs = hlsRef.current != null ? 9000 : 4200;
-        if (
-          lowAheadKick &&
-          nowMs - lastLowBufferKick > lowKickCooldownMs
-        ) {
-          lastLowBufferKick = nowMs;
-          kickLivePlayback();
-        }
-      }
-
-      if (!isLiveStream || v.paused) return;
-      if (nativeAppleLive) return;
-
-      const ct = v.currentTime;
-      const now = performance.now();
-      if (liveProgress.lastCt < 0) {
-        liveProgress.lastCt = ct;
-        liveProgress.stuckSince = now;
-        return;
-      }
-      if (Math.abs(ct - liveProgress.lastCt) > 0.2) {
-        nativeStallKicks = 0;
-        liveProgress.lastCt = ct;
-        liveProgress.stuckSince = now;
-        return;
-      }
-      const stuckThresholdMs =
-        hlsRef.current != null ? 16_000 : isAppleMobileWebKitDevice() ? 3800 : 6500;
-      if (now - liveProgress.stuckSince > stuckThresholdMs) {
-        liveProgress.stuckSince = now;
-        liveProgress.lastCt = ct;
-        nativeStallKicks += 1;
-        kickLivePlayback();
-        if (!hlsRef.current && nativeStallKicks >= 5) {
-          nativeStallKicks = 0;
-          reloadNativeLiveSource();
-        }
-      }
-    };
-    const onMeta = () => {
-      setDuration(v.duration);
-      if (v.videoWidth > 0) setLiveAudioNoPicture(false);
-    };
-
-    const onLoadedData = () => {
-      if (v.videoWidth > 0) setLiveAudioNoPicture(false);
-    };
-    const onVol = () => {
-      setMuted(v.muted);
-      setVolume(v.volume);
-      schedulePersistPreferredVolume(v.volume);
-    };
-    const onErr = () => {
-      if (!v.error) return;
-      const code = v.error.code;
-      const vodProgressive =
-        current &&
-        (current.kind === "movie" || current.kind === "series") &&
-        !playbackUrlIsHls(current.url, false);
-      const braveIosVod =
-        vodProgressive && isBraveOnAppleMobile();
-      const liveAppleNativeWebKit =
-        current?.kind === "live" &&
-        isAppleMobileWebKitDevice() &&
-        !hlsRef.current;
-      const liveMidPlayHint =
-        current?.kind === "live"
-          ? liveAppleNativeWebKit
-            ? " iPhone Safari still uses WebKit for this page—some feeds are HEVC-only, use odd audio layouts, or work only in a native IPTV/VLC app."
-            : " Common when the feed bumps to Dolby or HEVC—Brave and Chrome only handle AAC plus H.264 reliably over MSE here. Use Try again below, Chromecast, or your provider's app."
-          : "";
-      const braveIosVodHint =
-        " On iPhone, Safari and Brave share the same in-page limits for many MKV/HEVC/Dolby files—VLC/Infuse or your provider's app is the reliable path.";
-      const map: Record<number, string> = {
-        1: "Playback was aborted.",
-        2: "Network error fetching the stream.",
-        3: vodProgressive
-          ? braveIosVod
-            ? `This movie or episode uses codecs or a container mobile browsers can't play in-page (very common with MKV, or MP4 with HEVC/AC‑3).${braveIosVodHint} Or copy the stream link from Share → open in VLC.`
-            : "This episode or movie uses codecs or a container in-browser players can't decode (common with MKV, HEVC, or DTS from Xtream). Safari and Brave share many of the same limits—try your provider's native app, VLC/TiviMate, or another encode labeled MP4 / H.264 / AAC if available."
-          : `The stream is corrupt or in an unsupported codec.${liveMidPlayHint}`,
-        4: vodProgressive
-          ? braveIosVod
-            ? `The file format isn't playable here (often MKV, or MP4 with codecs WebKit won't decode).${braveIosVodHint}`
-            : "The file uses a format or codec this web player can't play (often MKV or HEVC). That usually isn't a bug: desktop browsers often can't handle what IPTV apps stream fine. Use a native IPTV player or VLC, or pick an MP4 release if your provider lists one."
-          : `This stream uses a format or codec your browser can't play here (common on some PPV / event feeds). Try Chromecast, Safari, or your provider's native app.${liveMidPlayHint}`,
-      };
-
-      const hlsNow = hlsRef.current;
-      /** Same recovery as Try again — transient MSE hiccups clear without nuking UX if we defer surfacing codec errors. */
-      if (
-        isLiveStream &&
-        hlsNow &&
-        (code === 3 || code === 4)
-      ) {
-        cancelLiveMediaErrorDefer();
-        tryHlsLiveEdgeRestart(
-          hlsNow,
-          hlsLiveEdgeRestartGateRef,
-          false
-        );
-        voidSafeVideoPlay(v);
-        const persistedCode = code;
-        liveMediaErrorDeferTimer = window.setTimeout(() => {
-          liveMediaErrorDeferTimer = null;
-          const vv = videoRef.current;
-          if (!vv?.error || vv.error.code !== persistedCode) return;
-          setError(map[persistedCode] || `Playback error (${persistedCode}).`);
-        }, 950);
-        return;
-      }
-
-      setError(map[code] || `Playback error (${code}).`);
-    };
-    const onEnter = () => setIsPip(true);
-    const onLeave = () => setIsPip(false);
-
-    v.addEventListener("play", onPlay);
-    v.addEventListener("pause", onPause);
-    v.addEventListener("waiting", onWaiting);
-    v.addEventListener("playing", onPlaying);
-    v.addEventListener("timeupdate", onTime);
-    v.addEventListener("loadedmetadata", onMeta);
-    v.addEventListener("loadeddata", onLoadedData);
-    v.addEventListener("volumechange", onVol);
-    v.addEventListener("error", onErr);
-    v.addEventListener("enterpictureinpicture", onEnter);
-    v.addEventListener("leavepictureinpicture", onLeave);
-    return () => {
-      if (volPersistTimer) clearTimeout(volPersistTimer);
-      cancelLiveKickTimer();
-      cancelLiveMediaErrorDefer();
-      v.removeEventListener("play", onPlay);
-      v.removeEventListener("pause", onPause);
-      v.removeEventListener("waiting", onWaiting);
-      v.removeEventListener("playing", onPlaying);
-      v.removeEventListener("timeupdate", onTime);
-      v.removeEventListener("loadedmetadata", onMeta);
-      v.removeEventListener("loadeddata", onLoadedData);
-      v.removeEventListener("volumechange", onVol);
-      v.removeEventListener("error", onErr);
-      v.removeEventListener("enterpictureinpicture", onEnter);
-      v.removeEventListener("leavepictureinpicture", onLeave);
-    };
-  }, [open, current]);
+  usePlayerVideoEvents({
+    open,
+    current,
+    videoRef,
+    hlsRef,
+    usesTranscodePlayback,
+    vodTotalSec,
+    vodDurationHintRef,
+    vodStartOffsetRef,
+    mobileLikeViewport,
+    chromiumDesktopClient,
+    cancelLiveMediaErrorDeferRef,
+    livePlaybackErrorSuppressUntilRef,
+    requestVodTranscodeFallbackRef,
+    setIsPlaying,
+    setNeedsTapToPlay,
+    setLoading,
+    setStalled,
+    setTime,
+    setBuffered,
+    setMuted,
+    setVolume,
+    setError,
+    setLiveAudioNoPicture,
+    setVideoHasFrame,
+    setVodPrepProgress,
+    setIsPip,
+    applyVodDurationHint,
+  });
 
   // Native subtitle track detection (e.g. mp4 with embedded subs)
   useEffect(() => {
@@ -2070,16 +846,81 @@ export function PlayerOverlay() {
     else v.pause();
   }, []);
 
-  const seek = useCallback(
-    (delta: number) => {
+  const getPlaybackDuration = useCallback(() => {
+    if (isLive) return 0;
+    if (vodTotalSec > 1) return vodTotalSec;
+    const v = videoRef.current;
+    const hint = vodDurationHintRef.current;
+    const vd = v?.duration;
+    if (Number.isFinite(vd) && vd && vd > 1 && vd < 86400) return vd;
+    if (hint > 1) return hint;
+    return duration > 1 && Number.isFinite(duration) ? duration : 0;
+  }, [isLive, vodTotalSec, duration]);
+
+  const seekVideoTo = useCallback(
+    (absoluteSeconds: number) => {
       const v = videoRef.current;
       if (!v || isLive) return;
-      v.currentTime = Math.max(
-        0,
-        Math.min((v.duration || 0) - 0.5, v.currentTime + delta)
-      );
+      const dur = getPlaybackDuration();
+      if (!dur || !Number.isFinite(dur)) return;
+      const absolute = Math.max(0, Math.min(dur - 0.25, absoluteSeconds));
+
+      if (usesTranscodePlayback && transcodeSeekNeedsServerRestart(absolute)) {
+        if (vodSeekRestartTimerRef.current) {
+          clearTimeout(vodSeekRestartTimerRef.current);
+        }
+        vodSeekRestartTimerRef.current = setTimeout(() => {
+          vodSeekRestartTimerRef.current = null;
+          restartTranscodeAtSeek(absolute);
+        }, 320);
+        setTime(absolute);
+        return;
+      }
+
+      const off = vodStartOffsetRef.current;
+      const relative = usesTranscodePlayback
+        ? Math.max(0, absolute - off)
+        : absolute;
+      const hls = hlsRef.current;
+      if (hls && usesTranscodePlayback) {
+        try {
+          hls.startLoad(relative);
+        } catch {
+          /* noop */
+        }
+      }
+      try {
+        v.currentTime = relative;
+      } catch {
+        /* noop */
+      }
+      requestAnimationFrame(() => {
+        try {
+          if (Math.abs(v.currentTime - relative) > 0.5) {
+            v.currentTime = relative;
+          }
+        } catch {
+          /* noop */
+        }
+      });
+      setTime(absolute);
+      voidSafeVideoPlay(v);
     },
-    [isLive]
+    [
+      isLive,
+      getPlaybackDuration,
+      usesTranscodePlayback,
+      transcodeSeekNeedsServerRestart,
+      restartTranscodeAtSeek,
+    ]
+  );
+
+  const seek = useCallback(
+    (delta: number) => {
+      if (isLive) return;
+      seekVideoTo(time + delta);
+    },
+    [isLive, seekVideoTo, time]
   );
 
   const setMute = useCallback((m: boolean) => {
@@ -2095,13 +936,28 @@ export function PlayerOverlay() {
     if (val > 0 && v.muted) v.muted = false;
   }, []);
 
-  const onSeekChange = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      const v = videoRef.current;
-      if (!v || isLive || !v.duration) return;
-      v.currentTime = (parseFloat(e.target.value) / 100) * v.duration;
+  const onSeekInput = useCallback(
+    (e: React.FormEvent) => {
+      if (isLive) return;
+      const el = e.currentTarget;
+      if (!(el instanceof HTMLInputElement)) return;
+      const dur = getPlaybackDuration();
+      if (!dur) return;
+      setTime((parseFloat(el.value) / 100) * dur);
     },
-    [isLive]
+    [isLive, getPlaybackDuration]
+  );
+
+  const onSeekCommit = useCallback(
+    (e: React.SyntheticEvent) => {
+      if (isLive) return;
+      const el = e.currentTarget;
+      if (!(el instanceof HTMLInputElement)) return;
+      const dur = getPlaybackDuration();
+      if (!dur) return;
+      seekVideoTo((parseFloat(el.value) / 100) * dur);
+    },
+    [isLive, getPlaybackDuration, seekVideoTo]
   );
 
   /**
@@ -2139,17 +995,9 @@ export function PlayerOverlay() {
     }
 
     const artwork: MediaImage[] = [];
-    const p = current.poster?.trim();
-    if (p) {
-      try {
-        const href =
-          p.startsWith("http://") || p.startsWith("https://")
-            ? p
-            : new URL(p, window.location.origin).href;
-        artwork.push({ src: href, sizes: "512x512", type: "image/jpeg" });
-      } catch {
-        /* invalid poster URL */
-      }
+    const href = buildImageProxyAbsolute(current.poster);
+    if (href) {
+      artwork.push({ src: href, sizes: "512x512", type: "image/jpeg" });
     }
 
     try {
@@ -2328,18 +1176,32 @@ export function PlayerOverlay() {
       } as AddEventListenerOptions);
   }, [open, showControls, fullscreenGestureToggle]);
 
-  const togglePip = useCallback(async () => {
+  const togglePip = useCallback(() => {
+    void toggleVideoPictureInPicture(videoRef.current);
+  }, []);
+
+  useEffect(() => {
+    if (!open) {
+      queueMicrotask(() => setPipReady(false));
+      return;
+    }
     const v = videoRef.current;
     if (!v) return;
-    if (document.pictureInPictureElement) {
-      await document.exitPictureInPicture();
-    } else if (
-      (v as HTMLVideoElement & { requestPictureInPicture?: () => Promise<void> })
-        .requestPictureInPicture
-    ) {
-      await v.requestPictureInPicture();
-    }
-  }, []);
+
+    const sync = () => {
+      setPipReady(isPictureInPictureSupported(v) && v.readyState >= 1);
+    };
+    sync();
+    const onEmptied = () => setPipReady(false);
+    v.addEventListener("loadedmetadata", sync);
+    v.addEventListener("loadeddata", sync);
+    v.addEventListener("emptied", onEmptied);
+    return () => {
+      v.removeEventListener("loadedmetadata", sync);
+      v.removeEventListener("loadeddata", sync);
+      v.removeEventListener("emptied", onEmptied);
+    };
+  }, [open, current?.url, current?.id]);
 
   useEffect(() => {
     const onFs = () => {
@@ -2412,18 +1274,66 @@ export function PlayerOverlay() {
     });
   };
 
+  const controlsHideDelayMs =
+    tvBrowser || silkLikeClient ? 22_000 : 3000;
+
+  const scheduleControlsHide = useCallback(() => {
+    if (hideTimer.current) clearTimeout(hideTimer.current);
+    hideTimer.current = setTimeout(() => {
+      if (
+        isPlayingRef.current &&
+        !playerPanelsOpenRef.current
+      ) {
+        setShowControls(false);
+      }
+    }, controlsHideDelayMs);
+  }, [controlsHideDelayMs]);
+
+  useEffect(() => {
+    showControlsRef.current = showControls;
+  }, [showControls]);
+
   // Auto-hide controls (longer on TV — remotes rarely trigger mousemove)
   const wakeControls = useCallback(() => {
     setShowControls(true);
-    if (hideTimer.current) clearTimeout(hideTimer.current);
-    const hideMs =
-      tvBrowser || silkLikeClient ? 22_000 : 3000;
-    hideTimer.current = setTimeout(() => {
-      if (isPlaying && !showSettings && !showSubs && !showShare && !showEpg) {
-        setShowControls(false);
-      }
-    }, hideMs);
-  }, [isPlaying, showSettings, showSubs, showShare, showEpg, tvBrowser, silkLikeClient]);
+    scheduleControlsHide();
+  }, [scheduleControlsHide]);
+
+  /** Windows Chrome/Brave: mousemove fires hundreds of times/sec — throttle UI wake. */
+  const pointerWakeGateRef = useRef(0);
+  const onPlayerPointerActivity = useCallback(() => {
+    const now = performance.now();
+    if (chromiumDesktopClient && now - pointerWakeGateRef.current < 500) {
+      if (showControlsRef.current) scheduleControlsHide();
+      return;
+    }
+    pointerWakeGateRef.current = now;
+    wakeControls();
+  }, [chromiumDesktopClient, scheduleControlsHide, wakeControls]);
+
+  /** Series/movies often start playing after the first hide timer (loading, MKV probe). */
+  useEffect(() => {
+    if (!open || !isPlaying) return;
+    scheduleControlsHide();
+  }, [open, isPlaying, scheduleControlsHide]);
+
+  const playerImmersive =
+    isPlaying &&
+    !showControls &&
+    !showSettings &&
+    !showSubs &&
+    !showShare &&
+    !showEpg;
+
+  useEffect(() => {
+    const root = document.documentElement;
+    if (open && playerImmersive && (tvBrowser || silkLikeClient)) {
+      root.classList.add("player-immersive");
+      return () => root.classList.remove("player-immersive");
+    }
+    root.classList.remove("player-immersive");
+    return undefined;
+  }, [open, playerImmersive, tvBrowser, silkLikeClient]);
 
   const onVodGesturePointerDown = useCallback(
     (e: React.PointerEvent<HTMLDivElement>) => {
@@ -2431,8 +1341,8 @@ export function PlayerOverlay() {
       const v = videoRef.current;
       const strip = vodGestureStripRef.current;
       if (!v || !strip) return;
-      const dur = v.duration;
-      if (!Number.isFinite(dur) || dur < 2) return;
+      const dur = getPlaybackDuration();
+      if (!dur || !Number.isFinite(dur) || dur < 2) return;
       strip.setPointerCapture(e.pointerId);
       vodScrubPointerRef.current = {
         pointerId: e.pointerId,
@@ -2442,7 +1352,7 @@ export function PlayerOverlay() {
       };
       wakeControls();
     },
-    [isLive, wakeControls]
+    [isLive, wakeControls, getPlaybackDuration]
   );
 
   const onVodGesturePointerMove = useCallback(
@@ -2452,20 +1362,17 @@ export function PlayerOverlay() {
       const v = videoRef.current;
       const strip = vodGestureStripRef.current;
       if (!v || !strip) return;
-      const dur = v.duration;
-      if (!Number.isFinite(dur) || dur <= 0) return;
+      const dur = getPlaybackDuration();
+      if (!dur || !Number.isFinite(dur) || dur <= 0) return;
       const dx = e.clientX - s.startX;
       if (Math.abs(dx) > 10) s.moved = true;
       if (!s.moved) return;
       const w = strip.getBoundingClientRect().width || 1;
       const frac = dx / w;
-      v.currentTime = Math.max(
-        0,
-        Math.min(dur - 0.5, s.startTime + frac * dur * 0.45)
-      );
+      setTime(Math.max(0, Math.min(dur - 0.25, s.startTime + frac * dur)));
       wakeControls();
     },
-    [wakeControls]
+    [wakeControls, getPlaybackDuration]
   );
 
   const onVodGesturePointerUp = useCallback(
@@ -2480,11 +1387,23 @@ export function PlayerOverlay() {
           /* not captured */
         }
       }
-      if (!s.moved) togglePlay();
+      if (s.moved) {
+        const dur = getPlaybackDuration();
+        if (dur && Number.isFinite(dur)) {
+          const strip = vodGestureStripRef.current;
+          const w = strip?.getBoundingClientRect().width || 1;
+          const frac = (e.clientX - s.startX) / w;
+          seekVideoTo(
+            Math.max(0, Math.min(dur - 0.25, s.startTime + frac * dur))
+          );
+        }
+      } else {
+        togglePlay();
+      }
       vodScrubPointerRef.current = null;
       wakeControls();
     },
-    [togglePlay, wakeControls]
+    [togglePlay, wakeControls, getPlaybackDuration, seekVideoTo]
   );
 
   const onVodGesturePointerCancel = useCallback(
@@ -2563,7 +1482,7 @@ export function PlayerOverlay() {
         togglePlay();
       }
 
-      if (tvBrowser) {
+      if (livingRoomPlayback) {
         const k = e.key;
         if (
           k === "AudioVolumeUp" ||
@@ -2581,29 +1500,18 @@ export function PlayerOverlay() {
           wakeControls();
           return;
         }
-        if (
-          flipWithArrowKeys &&
-          (k === "MediaTrackNext" || k === "MediaTrackPrevious")
-        ) {
+      }
+
+      if (flipWithArrowKeys) {
+        const zap = liveChannelFlipKeyDelta(e.key, e.keyCode);
+        if (zap !== null) {
           e.preventDefault();
-          doFlip(k === "MediaTrackNext" ? 1 : -1);
+          doFlip(zap);
           wakeControls();
           return;
         }
-      }
-
-      if (flipWithArrowKeys && (e.key === "ArrowUp" || e.key === "PageUp")) {
-        e.preventDefault();
-        doFlip(-1);
       } else if (
-        flipWithArrowKeys &&
-        (e.key === "ArrowDown" || e.key === "PageDown")
-      ) {
-        e.preventDefault();
-        doFlip(1);
-      } else if (
-        tvBrowser &&
-        !flipWithArrowKeys &&
+        livingRoomPlayback &&
         (e.key === "ArrowUp" || e.key === "PageUp")
       ) {
         e.preventDefault();
@@ -2613,8 +1521,7 @@ export function PlayerOverlay() {
           if (v.volume > 0) v.muted = false;
         }
       } else if (
-        tvBrowser &&
-        !flipWithArrowKeys &&
+        livingRoomPlayback &&
         (e.key === "ArrowDown" || e.key === "PageDown")
       ) {
         e.preventDefault();
@@ -2635,7 +1542,7 @@ export function PlayerOverlay() {
       }
       if (e.key.toLowerCase() === "m") setMute(!muted);
       if (e.key.toLowerCase() === "f") fullscreenGestureToggle();
-      if (e.key.toLowerCase() === "p") togglePip();
+      if (e.key.toLowerCase() === "p" && (pipReady || isPip)) togglePip();
       wakeControls();
     }
     window.addEventListener("keydown", onKey);
@@ -2649,11 +1556,13 @@ export function PlayerOverlay() {
     muted,
     fullscreenGestureToggle,
     togglePip,
+    pipReady,
+    isPip,
     wakeControls,
     isLive,
     flipWithArrowKeys,
     doFlip,
-    tvBrowser,
+    livingRoomPlayback,
   ]);
 
   /**
@@ -2691,8 +1600,19 @@ export function PlayerOverlay() {
     };
   }, [open, close]);
 
-  const progress = duration > 0 ? (time / duration) * 100 : 0;
-  const bufferedProgress = duration > 0 ? (buffered / duration) * 100 : 0;
+  const effectiveVodDuration =
+    isLive || vodTotalSec <= 1
+      ? isLive
+        ? 0
+        : duration > 1 && Number.isFinite(duration)
+          ? duration
+          : 0
+      : vodTotalSec;
+
+  const progress =
+    effectiveVodDuration > 0 ? (time / effectiveVodDuration) * 100 : 0;
+  const bufferedProgress =
+    effectiveVodDuration > 0 ? (buffered / effectiveVodDuration) * 100 : 0;
 
   const qualityLabel = useMemo(() => {
     if (currentLevel === -1) return "Auto";
@@ -2701,254 +1621,16 @@ export function PlayerOverlay() {
     return hlsRenditionLabel(l, currentLevel);
   }, [currentLevel, levels]);
 
-  // Cast: Chromecast Web Sender SDK (loads when player/share opens; resilient to script races + unsupported browsers)
-  type CastSenderUiState =
-    | "inactive"
-    | "loading"
-    | "ready"
-    | "unsupported"
-    | "failed";
-  const [castSenderState, setCastSenderState] =
-    useState<CastSenderUiState>("inactive");
-  const [castActionMessage, setCastActionMessage] = useState<string | null>(
-    null
-  );
+  const onCastStarted = useCallback(() => setShowShare(false), []);
 
-  useEffect(() => {
-    if (!open) {
-      setCastSenderState("inactive");
-      setCastActionMessage(null);
-      return;
-    }
-    if (typeof window === "undefined") return;
-    if (silkLikeClient && !showShare) return;
-
-    if (!shouldAttemptChromecastSenderLoad()) {
-      setCastSenderState("unsupported");
-      return;
-    }
-
-    let cancelled = false;
-    let pollTimer: number | null = null;
-    let giveUpTimer: number | null = null;
-    let completed = false;
-
-    const clearTimers = () => {
-      if (pollTimer != null) {
-        window.clearInterval(pollTimer);
-        pollTimer = null;
-      }
-      if (giveUpTimer != null) {
-        window.clearTimeout(giveUpTimer);
-        giveUpTimer = null;
-      }
-    };
-
-    const fail = () => {
-      if (cancelled || completed) return;
-      completed = true;
-      clearTimers();
-      setCastSenderState("failed");
-    };
-
-    const succeed = () => {
-      if (cancelled || completed) return;
-      completed = true;
-      clearTimers();
-      setCastSenderState("ready");
-    };
-
-    let castOptionsApplied = false;
-
-    const tryInitCastOptions = (): boolean => {
-      try {
-        const fw = window.cast?.framework;
-        const chromeCast = window.chrome?.cast;
-        if (!fw || !chromeCast?.media?.DEFAULT_MEDIA_RECEIVER_APP_ID) {
-          return false;
-        }
-        if (!castOptionsApplied) {
-          fw.CastContext.getInstance().setOptions({
-            receiverApplicationId:
-              chromeCast.media.DEFAULT_MEDIA_RECEIVER_APP_ID,
-            autoJoinPolicy: chromeCast.AutoJoinPolicy?.ORIGIN_SCOPED,
-          });
-          castOptionsApplied = true;
-        }
-        return true;
-      } catch {
-        return false;
-      }
-    };
-
-    const tryComplete = () => {
-      if (cancelled || completed) return;
-      if (window.cast?.framework && tryInitCastOptions()) succeed();
-    };
-
-    if (window.cast?.framework && tryInitCastOptions()) {
-      succeed();
-      return () => {
-        cancelled = true;
-      };
-    }
-
-    setCastSenderState("loading");
-
-    pollTimer = window.setInterval(() => {
-      tryComplete();
-    }, 200);
-
-    giveUpTimer = window.setTimeout(() => {
-      if (cancelled || completed) return;
-      clearTimers();
-      if (window.cast?.framework && tryInitCastOptions()) succeed();
-      else fail();
-    }, 14_000);
-
-    const prevGCastCb = window.__onGCastApiAvailable;
-    window.__onGCastApiAvailable = (available: boolean) => {
-      try {
-        prevGCastCb?.(available);
-      } catch {
-        /* noop */
-      }
-      if (cancelled || completed) return;
-      if (!available) {
-        fail();
-        return;
-      }
-      queueMicrotask(tryComplete);
-    };
-
-    const existing = document.querySelector<HTMLScriptElement>(
-      `script[src="${CAST_SENDER_SCRIPT_SRC}"]`
-    );
-    if (existing) {
-      existing.addEventListener("load", tryComplete, { once: true });
-      queueMicrotask(tryComplete);
-      if (existing.dataset.castSenderLoaded === "1") queueMicrotask(tryComplete);
-    } else {
-      const s = document.createElement("script");
-      s.src = CAST_SENDER_SCRIPT_SRC;
-      s.async = true;
-      s.addEventListener("load", () => {
-        s.dataset.castSenderLoaded = "1";
-        tryComplete();
-      });
-      document.head.appendChild(s);
-    }
-
-    return () => {
-      cancelled = true;
-      clearTimers();
-      window.__onGCastApiAvailable = prevGCastCb;
-    };
-  }, [open, showShare, silkLikeClient]);
-
-  const cast = useCallback(async () => {
-    if (!directUrl) return;
-    setCastActionMessage(null);
-    try {
-      const ctx = window.cast?.framework?.CastContext?.getInstance?.();
-      if (!ctx) {
-        setCastActionMessage(
-          "Cast isn’t ready yet. Wait a moment, refresh the page, or use Copy stream URL."
-        );
-        window.setTimeout(() => setCastActionMessage(null), 8000);
-        return;
-      }
-      await ctx.requestSession();
-      const ChromeMedia = window.chrome?.cast?.media;
-      if (!ChromeMedia?.MediaInfo || !ChromeMedia.LoadRequest) {
-        setCastActionMessage(
-          "This browser doesn’t expose Chromecast media APIs. Try Chrome or Edge, or copy the stream URL."
-        );
-        window.setTimeout(() => setCastActionMessage(null), 8000);
-        return;
-      }
-
-      const vodIsHlsManifest =
-        !isLive && /\.m3u8($|[?#])/i.test(directUrl);
-      const contentType = isLive
-        ? "application/x-mpegURL"
-        : vodIsHlsManifest
-          ? "application/x-mpegURL"
-          : current?.containerExt === "mp4"
-            ? "video/mp4"
-            : current?.containerExt === "mkv"
-              ? "video/x-matroska"
-              : "video/mp4";
-
-      const mediaInfo = new ChromeMedia.MediaInfo(
-        directUrl,
-        contentType
-      ) as {
-        streamType?: number;
-        metadata?: { type: number; title?: string };
-      };
-      if (ChromeMedia.StreamType) {
-        mediaInfo.streamType = isLive
-          ? ChromeMedia.StreamType.LIVE
-          : ChromeMedia.StreamType.BUFFERED;
-      }
-      try {
-        const title = current?.title ?? "Stream";
-        const CM = ChromeMedia as typeof ChromeMedia & {
-          MetadataType?: { GENERIC: number };
-          GenericMediaMetadata?: new () => { type: number; title?: string };
-        };
-        if (CM.MetadataType && CM.GenericMediaMetadata) {
-          const meta = new CM.GenericMediaMetadata();
-          meta.type = CM.MetadataType.GENERIC;
-          meta.title = title;
-          mediaInfo.metadata = meta;
-        }
-      } catch {
-        /* metadata optional */
-      }
-
-      const request = new ChromeMedia.LoadRequest(mediaInfo);
-      const session = (
-        window.cast?.framework.CastContext.getInstance() as unknown as {
-          getCurrentSession: () => {
-            loadMedia: (r: unknown) => Promise<void>;
-          } | null;
-        }
-      ).getCurrentSession?.();
-      if (!session) {
-        setCastActionMessage(
-          "No Cast session. Pick your Chromecast or Google TV again, or copy the stream URL."
-        );
-        window.setTimeout(() => setCastActionMessage(null), 8000);
-        return;
-      }
-      await session.loadMedia(request);
-      setShowShare(false);
-    } catch (err) {
-      const code =
-        err &&
-        typeof err === "object" &&
-        "code" in err &&
-        typeof (err as { code: unknown }).code === "string"
-          ? (err as { code: string }).code
-          : err &&
-              typeof err === "object" &&
-              "code" in err &&
-              typeof (err as { code: unknown }).code === "number"
-            ? String((err as { code: number }).code)
-            : null;
-      setCastActionMessage(
-        code
-          ? `Cast failed (${code}). Try again, use another receiver, or copy the stream URL for VLC on your TV.`
-          : "Cast failed. Try again, move to the same Wi‑Fi as your TV, or copy the stream URL for VLC / your provider app."
-      );
-      window.setTimeout(() => setCastActionMessage(null), 9000);
-      if (process.env.NODE_ENV !== "production") {
-        console.warn("Cast failed", err);
-      }
-    }
-  }, [directUrl, isLive, current, setShowShare]);
+  const { castSenderState, castActionMessage, cast } = usePlayerCast({
+    open,
+    showShare,
+    silkLikeClient,
+    castMedia,
+    current,
+    onCastStarted,
+  });
 
   const copyDirectUrl = useCallback(async () => {
     if (!directUrl) return;
@@ -2975,14 +1657,12 @@ export function PlayerOverlay() {
   const reloadLiveStream = useCallback(() => {
     if (current?.kind !== "live") return;
     const el = videoRef.current;
-    const url = current.url;
+    const url = withLiveHlsCompatMse(current.url, true);
     if (!el || !url) return;
     const hls = hlsRef.current;
     try {
       if (hls) {
-        hls.stopLoad();
-        tryHlsLiveEdgeRestart(hls, hlsLiveEdgeRestartGateRef, true);
-        voidSafeVideoPlay(el);
+        applySoftLiveHlsRecovery(hls, el, hlsLiveEdgeRestartGateRef);
         return;
       }
       el.pause();
@@ -2994,6 +1674,82 @@ export function PlayerOverlay() {
       /* noop */
     }
   }, [current]);
+
+  const chromiumPlaybackHint = useMemo(
+    () => chromiumWalletExtensionPlaybackHint(),
+    []
+  );
+
+  /**
+   * Try again — live: soft hls.js reload first (one tap, keeps pipeline warm).
+   * Second tap on the same channel does a full pipeline reset.
+   */
+  const recoverPlaybackFromError = useCallback(() => {
+    livePlaybackRecoveryGenRef.current += 1;
+    livePlaybackErrorSuppressUntilRef.current = performance.now() + 12_000;
+    cancelLiveMediaErrorDeferRef.current();
+
+    setError(null);
+    streamSupportRequestIdRef.current = null;
+    setStreamSupportRequestId(null);
+    setStalled(false);
+    setNeedsTapToPlay(false);
+    setLoading(true);
+
+    if (current?.kind === "live") {
+      liveTryAgainStrikeRef.current += 1;
+      const useFullReinit = liveTryAgainStrikeRef.current >= 2;
+      const el = videoRef.current;
+      const hls = hlsRef.current;
+      if (!useFullReinit && hls && el) {
+        try {
+          applySoftLiveHlsRecovery(hls, el, hlsLiveEdgeRestartGateRef);
+          playbackBreadcrumb("try_again_soft", { channelId: current.id });
+          return;
+        } catch {
+          /* fall through to full reinit */
+        }
+      }
+      playbackBreadcrumb("try_again_full", { channelId: current.id });
+      liveTryAgainStrikeRef.current = 0;
+      if (el) {
+        try {
+          el.pause();
+          el.removeAttribute("src");
+          el.load();
+        } catch {
+          /* noop */
+        }
+      }
+      if (hlsRef.current) {
+        try {
+          hlsRef.current.stopLoad();
+          hlsRef.current.destroy();
+        } catch {
+          /* noop */
+        }
+        hlsRef.current = null;
+      }
+      userChoseAutoHlsQualityRef.current = false;
+      userTouchedHlsQualityRef.current = false;
+      setPlaybackRetryKey((k) => k + 1);
+      return;
+    }
+    retryPlayback();
+  }, [current, retryPlayback]);
+
+  usePlayerStallEscalation({
+    open,
+    stalled,
+    isLive,
+    current,
+    videoRef,
+    onAutoRecover: recoverPlaybackFromError,
+    setStalled,
+    setLoading,
+    setError,
+    extensionHint: chromiumPlaybackHint,
+  });
 
   // EPG: derive now-playing for live
   const nowEpg = useMemo(() => {
@@ -3012,23 +1768,48 @@ export function PlayerOverlay() {
       {open && current && (
         <motion.div
           key="player"
-          initial={{ opacity: 0 }}
+          initial={
+            quickVodPlayerOpen || mobileLikeViewport || chromiumDesktopClient
+              ? false
+              : { opacity: 0 }
+          }
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          transition={{ duration: 0.18 }}
-          className="fixed inset-0 z-[60] bg-black/90 backdrop-blur-sm flex flex-col sm:flex-row items-stretch sm:items-center justify-center p-0 sm:p-6 min-h-0 touch-manipulation"
+          transition={{
+            duration:
+              quickVodPlayerOpen || mobileLikeViewport || chromiumDesktopClient
+                ? 0
+                : 0.18,
+          }}
+          className="fixed inset-0 z-[60] bg-black flex flex-col sm:flex-row items-stretch sm:items-center justify-center p-0 sm:p-6 min-h-0 touch-manipulation"
         >
           <motion.div
-            initial={{ scale: 0.96, y: 20 }}
+            initial={
+              quickVodPlayerOpen || mobileLikeViewport || chromiumDesktopClient
+                ? false
+                : { scale: 0.96, y: 20 }
+            }
             animate={{ scale: 1, y: 0 }}
-            exit={{ scale: 0.96, y: 20 }}
-            transition={{ duration: 0.22, ease: [0.2, 0.8, 0.2, 1] }}
+            exit={
+              quickVodPlayerOpen || mobileLikeViewport || chromiumDesktopClient
+                ? undefined
+                : { scale: 0.96, y: 20 }
+            }
+            transition={{
+              duration:
+                quickVodPlayerOpen || mobileLikeViewport || chromiumDesktopClient
+                  ? 0
+                  : 0.22,
+              ease: [0.2, 0.8, 0.2, 1],
+            }}
             ref={containerRef}
-            onMouseMove={wakeControls}
-            onClick={() => wakeControls()}
+            onMouseMove={onPlayerPointerActivity}
+            onClick={onPlayerPointerActivity}
             className={cn(
               "relative isolate bg-black w-full max-w-[1400px] flex-1 min-h-0 sm:flex-none sm:aspect-video max-h-[100dvh] sm:max-h-[calc(100vh-3rem)] rounded-none sm:rounded-2xl overflow-hidden border border-white/10 shadow-[0_40px_120px_rgba(0,0,0,0.7)]",
-              "select-none"
+              "select-none",
+              chromiumDesktopClient && "player-chromium-live-surface",
+              playerImmersive && (tvBrowser || silkLikeClient) && "player-immersive-surface"
             )}
           >
             {isBraveOnAppleMobile() && !dismissBraveFullscreenBanner && (
@@ -3065,22 +1846,45 @@ export function PlayerOverlay() {
               </div>
             )}
 
+            {showVodPrepare && posterSrc ? (
+              <div
+                className="absolute inset-0 z-[5] bg-cover bg-center scale-105"
+                style={{ backgroundImage: `url("${posterSrc}")` }}
+                aria-hidden
+              />
+            ) : null}
+
             <video
               ref={videoRef}
-              poster={isLive ? undefined : posterSrc}
+              poster={isLive || showVodPrepare ? undefined : posterSrc}
               playsInline
               preload={
                 silkLikeClient ? "metadata" : isLive ? "auto" : "metadata"
               }
               autoPlay
               onClick={togglePlay}
-              className="size-full max-h-[100dvh] object-contain bg-black cursor-pointer [transform:translateZ(0)] will-change-transform"
+              className={cn(
+                "size-full max-h-[100dvh] object-contain bg-black",
+                showVodPrepare && "opacity-0 transition-opacity duration-300",
+                !showVodPrepare && "opacity-100",
+                playerImmersive && (tvBrowser || silkLikeClient)
+                  ? "cursor-none"
+                  : "cursor-pointer"
+              )}
+            />
+
+            <VodPrepareOverlay
+              visible={showVodPrepare}
+              title={current.title}
+              subtitle={current.subtitle}
+              poster={posterSrc}
+              startedAtMs={vodPrepStartedAt}
+              progress={vodPrepProgress}
             />
 
             {!isLive &&
               !error &&
-              Number.isFinite(duration) &&
-              duration > 2 && (
+              effectiveVodDuration > 2 && (
                 <div
                   ref={vodGestureStripRef}
                   className="absolute bottom-0 left-0 right-0 z-[3] h-[30%] max-h-52 cursor-ew-resize touch-none select-none"
@@ -3100,9 +1904,13 @@ export function PlayerOverlay() {
                 </div>
               )}
 
-            {/* Loading spinner */}
+            {/* Loading spinner (hidden during server-prep overlay) */}
             <AnimatePresence>
-              {loading && !error && !needsTapToPlay && !stalled && (
+              {loading &&
+                !showVodPrepare &&
+                !error &&
+                !needsTapToPlay &&
+                !stalled && (
                 <motion.div
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
@@ -3152,31 +1960,16 @@ export function PlayerOverlay() {
               </button>
             )}
 
-            {/* Stalled: live vs VOD — VOD often stalls when WebKit can&apos;t decode MKV/HEVC, not &quot;offline&quot;. */}
-            {stalled && !error && (
-              <div className="absolute inset-x-0 bottom-24 mx-auto max-w-md px-4">
-                <div className="glass rounded-xl px-4 py-3 text-center">
-                  <div className="text-white text-sm font-medium">
-                    Still loading…
-                  </div>
-                  <div className="text-white/70 text-xs mt-1">
-                    {isLive ? (
-                      <>
-                        This channel may be offline at the provider. Try a
-                        different one if it doesn&apos;t start in a moment.
-                      </>
-                    ) : (
-                      <>
-                        Movies and series can be slow to start on mobile, or
-                        the file may use codecs this browser can&apos;t play
-                        (MKV, HEVC, Dolby). Safari on iPhone doesn&apos;t change
-                        that for most Xtream files—try VLC/Infuse or your
-                        provider&apos;s app if nothing starts.
-                      </>
-                    )}
-                  </div>
-                </div>
-              </div>
+            {stalled && !error && !showVodPrepare && (
+              <PlayerStallOverlay
+                isLive={isLive}
+                vodTranscodeBoost={vodTranscodeBoost}
+                extensionHint={chromiumPlaybackHint}
+                copied={copied}
+                hasDirectUrl={!!directUrl}
+                onTryAgain={() => recoverPlaybackFromError()}
+                onCopyUrl={() => void copyDirectUrl()}
+              />
             )}
 
             {/* Safari / WebKit: audio decoding but no video surface (poster/HLS/compositor or audio-only variant). */}
@@ -3204,34 +1997,32 @@ export function PlayerOverlay() {
                     Unable to play
                   </div>
                   <div className="text-white/85 text-base">{error}</div>
+                  {chromiumPlaybackHint ? (
+                    <p className="text-white/55 text-xs mt-3 leading-snug">
+                      {chromiumPlaybackHint}
+                    </p>
+                  ) : null}
                   {streamSupportRequestId ? (
                     <div className="text-white/45 text-xs mt-3 font-mono break-all">
                       Reference: {streamSupportRequestId}
                     </div>
                   ) : null}
-                  <div className="mt-5 flex gap-2 justify-center">
+                  <div className="mt-5 flex flex-wrap gap-2 justify-center">
                     <button
-                      onClick={() => {
-                        setError(null);
-                        setLoading(true);
-                        const v = videoRef.current;
-                        if (!v) return;
-                        if (current?.kind === "live" && hlsRef.current) {
-                          reloadLiveStream();
-                          return;
-                        }
-                        if (hlsRef.current) {
-                          hlsRef.current.startLoad();
-                          voidSafeVideoPlay(v);
-                          return;
-                        }
-                        v.load();
-                        voidSafeVideoPlay(v);
-                      }}
+                      onClick={() => recoverPlaybackFromError()}
                       className="px-4 py-2 rounded-lg btn-brand text-sm"
                     >
                       Try again
                     </button>
+                    {directUrl ? (
+                      <button
+                        type="button"
+                        onClick={() => void copyDirectUrl()}
+                        className="px-4 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-white text-sm"
+                      >
+                        {copied ? "Copied" : "Copy stream URL"}
+                      </button>
+                    ) : null}
                     <button
                       onClick={close}
                       className="px-4 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-white text-sm"
@@ -3282,9 +2073,18 @@ export function PlayerOverlay() {
                     {flipWithArrowKeys && (
                       <>
                         <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            doFlip(-1);
+                          type="button"
+                          data-player-controls=""
+                          onPointerUp={(e) => {
+                            if (e.button !== 0) return;
+                            activateFlipControl(e, () => doFlip(-1, true));
+                          }}
+                          onClick={(e) =>
+                            activateFlipControl(e, () => doFlip(-1, true))
+                          }
+                          onKeyDown={(e) => {
+                            if (!isRemoteActivateKey(e.key)) return;
+                            activateFlipControl(e, () => doFlip(-1, true));
                           }}
                           aria-label={
                             playlist?.kind === "series"
@@ -3296,14 +2096,25 @@ export function PlayerOverlay() {
                               ? "Previous episode (↑)"
                               : "Previous channel (↑)"
                           }
-                          className="grid size-9 place-items-center rounded-lg bg-white/10 hover:bg-white/20 active:bg-white/25 text-white transition-colors"
+                          className={flipControlClass}
                         >
-                          <ChevronUp className="size-4" />
+                          <ChevronUp
+                            className={livingRoomPlayback ? "size-5" : "size-4"}
+                          />
                         </button>
                         <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            doFlip(1);
+                          type="button"
+                          data-player-controls=""
+                          onPointerUp={(e) => {
+                            if (e.button !== 0) return;
+                            activateFlipControl(e, () => doFlip(1, true));
+                          }}
+                          onClick={(e) =>
+                            activateFlipControl(e, () => doFlip(1, true))
+                          }
+                          onKeyDown={(e) => {
+                            if (!isRemoteActivateKey(e.key)) return;
+                            activateFlipControl(e, () => doFlip(1, true));
                           }}
                           aria-label={
                             playlist?.kind === "series"
@@ -3315,9 +2126,11 @@ export function PlayerOverlay() {
                               ? "Next episode (↓)"
                               : "Next channel (↓)"
                           }
-                          className="grid size-9 place-items-center rounded-lg bg-white/10 hover:bg-white/20 active:bg-white/25 text-white transition-colors"
+                          className={flipControlClass}
                         >
-                          <ChevronDown className="size-4" />
+                          <ChevronDown
+                            className={livingRoomPlayback ? "size-5" : "size-4"}
+                          />
                         </button>
                         <div className="w-px h-5 bg-white/15 mx-0.5 shrink-0" />
                       </>
@@ -3364,7 +2177,7 @@ export function PlayerOverlay() {
                   transition={{ duration: 0.18, ease: [0.2, 0.8, 0.2, 1] }}
                   className="pointer-events-none absolute top-20 sm:top-24 left-1/2 -translate-x-1/2 z-20 max-w-[90%]"
                 >
-                  <div className="flex items-start gap-3 px-4 py-2.5 rounded-2xl bg-black/70 backdrop-blur-md border border-white/15 shadow-xl">
+                  <div className="flex items-start gap-3 px-4 py-2.5 rounded-2xl bg-black/80 border border-white/15 shadow-xl">
                     <div className="text-[11px] font-mono text-white/60 tabular-nums shrink-0 pt-0.5">
                       {index + 1} / {playlist?.items.length}
                     </div>
@@ -3384,47 +2197,16 @@ export function PlayerOverlay() {
               )}
             </AnimatePresence>
 
-            {/* EPG drawer */}
+            {/* EPG drawer — code-split until user opens schedule */}
             <AnimatePresence>
               {showEpg && isLive && (
-                <motion.div
-                  initial={{ x: "100%", opacity: 0 }}
-                  animate={{ x: 0, opacity: 1 }}
-                  exit={{ x: "100%", opacity: 0 }}
-                  transition={{ ease: [0.2, 0.8, 0.2, 1], duration: 0.25 }}
-                  className="absolute right-0 top-0 bottom-0 w-full sm:w-[360px] bg-black/85 backdrop-blur-md border-l border-white/10 z-10 flex flex-col overflow-hidden min-h-0"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <div className="sticky top-0 z-[1] shrink-0 bg-black/70 backdrop-blur px-4 py-3 flex items-center justify-between border-b border-white/10">
-                    <div className="text-white font-semibold text-sm">
-                      Schedule
-                    </div>
-                    <button
-                      onClick={() => setShowEpg(false)}
-                      className="size-8 grid place-items-center rounded-lg hover:bg-white/10 text-white/80"
-                      aria-label="Close schedule"
-                    >
-                      <X className="size-4" />
-                    </button>
-                  </div>
-                  {epgScheduleLoading && (
-                    <div className="px-4 py-3 text-white/60 text-sm shrink-0">
-                      Loading…
-                    </div>
-                  )}
-                  {!epgScheduleLoading && epgDrawerRows.length === 0 && (
-                    <div className="px-4 py-3 text-white/60 text-sm shrink-0">
-                      No EPG data for this channel.
-                    </div>
-                  )}
-                  {epgDrawerRows.length > 0 && (
-                    <PlayerScheduleVirtualList
-                      drawerOpen={showEpg}
-                      rows={epgDrawerRows}
-                      clockMs={clockMs}
-                    />
-                  )}
-                </motion.div>
+                <PlayerEpgDrawer
+                  show={showEpg}
+                  loading={epgScheduleLoading}
+                  rows={epgDrawerRows}
+                  clockMs={clockMs}
+                  onClose={() => setShowEpg(false)}
+                />
               )}
             </AnimatePresence>
 
@@ -3467,7 +2249,9 @@ export function PlayerOverlay() {
                         max={100}
                         step={0.1}
                         value={progress}
-                        onChange={onSeekChange}
+                        onInput={onSeekInput}
+                        onChange={onSeekCommit}
+                        onPointerUp={onSeekCommit}
                         aria-label="Seek"
                         className="relative w-full appearance-none bg-transparent h-5 cursor-pointer
                                   [&::-webkit-slider-thumb]:appearance-none
@@ -3556,7 +2340,7 @@ export function PlayerOverlay() {
                           LIVE
                         </span>
                       ) : (
-                        `${formatTime(time)} / ${formatTime(duration)}`
+                        `${formatTime(time)} / ${formatTime(effectiveVodDuration)}`
                       )}
                     </div>
 
@@ -3575,298 +2359,44 @@ export function PlayerOverlay() {
                         </button>
                       )}
 
-                      {/* Subtitles */}
-                      {subtitles.length > 0 && (
-                        <div className="relative">
-                          <button
-                            onClick={() => {
-                              setShowSubs((s) => !s);
-                              setShowSettings(false);
-                              setShowShare(false);
-                            }}
-                            aria-label="Subtitles"
-                            className={cn(
-                              "size-9 grid place-items-center rounded-lg hover:bg-white/10",
-                              showSubs && "bg-white/15",
-                              activeSubtitle !== -1 && "text-(--brand-2)"
-                            )}
-                          >
-                            <Captions className="size-4" />
-                          </button>
-                          <AnimatePresence>
-                            {showSubs && (
-                              <motion.div
-                                initial={{ opacity: 0, y: 6 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                exit={{ opacity: 0, y: 6 }}
-                                className="absolute right-0 bottom-11 w-56 glass rounded-xl p-1.5 overflow-hidden max-h-72 overflow-y-auto"
-                              >
-                                <div className="px-3 py-2 text-[11px] uppercase tracking-wider text-white/50">
-                                  Subtitles
-                                </div>
-                                <button
-                                  onClick={() => {
-                                    switchSubtitle(-1);
-                                    setShowSubs(false);
-                                  }}
-                                  className={cn(
-                                    "w-full text-left px-3 py-2 rounded-lg text-sm hover:bg-white/10 flex items-center justify-between",
-                                    activeSubtitle === -1 && "bg-white/10"
-                                  )}
-                                >
-                                  Off
-                                  {activeSubtitle === -1 && (
-                                    <Check className="size-3.5" />
-                                  )}
-                                </button>
-                                {subtitles.map((s) => (
-                                  <button
-                                    key={s.id}
-                                    onClick={() => {
-                                      switchSubtitle(s.id);
-                                      setShowSubs(false);
-                                    }}
-                                    className={cn(
-                                      "w-full text-left px-3 py-2 rounded-lg text-sm hover:bg-white/10 flex items-center justify-between",
-                                      activeSubtitle === s.id && "bg-white/10"
-                                    )}
-                                  >
-                                    <span className="truncate">
-                                      {s.label}
-                                      {s.lang && (
-                                        <span className="text-white/40 ml-1.5">
-                                          {s.lang}
-                                        </span>
-                                      )}
-                                    </span>
-                                    {activeSubtitle === s.id && (
-                                      <Check className="size-3.5 shrink-0" />
-                                    )}
-                                  </button>
-                                ))}
-                              </motion.div>
-                            )}
-                          </AnimatePresence>
-                        </div>
-                      )}
-
-                      {/* Quality / settings */}
-                      <div className="relative">
-                        <button
-                          onClick={() => {
-                            setShowSettings((s) => !s);
-                            setShowSubs(false);
-                            setShowShare(false);
-                          }}
-                          aria-label="Settings"
-                          className="h-9 px-2.5 grid grid-flow-col place-items-center gap-1.5 rounded-lg hover:bg-white/10 text-xs"
-                        >
-                          <Settings2 className="size-4" />
-                          <span className="hidden sm:inline">{qualityLabel}</span>
-                        </button>
-                        <AnimatePresence>
-                          {showSettings && (
-                            <motion.div
-                              initial={{ opacity: 0, y: 6 }}
-                              animate={{ opacity: 1, y: 0 }}
-                              exit={{ opacity: 0, y: 6 }}
-                              className="absolute right-0 bottom-11 w-56 glass rounded-xl p-1.5 overflow-hidden max-h-72 overflow-y-auto"
-                            >
-                              <div className="px-3 py-2 text-[11px] uppercase tracking-wider text-white/50">
-                                Quality
-                              </div>
-                              {levels.length > 1 &&
-                                typeof navigator !== "undefined" &&
-                                isChromiumBasedDesktopBrowser() && (
-                                  <div className="px-3 pb-2 text-[11px] text-white/45 leading-snug">
-                                    Brave and Chrome default to the safest rung to reduce
-                                    Dolby/HEVC drop-outs. Pick Auto or higher for more bitrate
-                                    (riskier on some channels).
-                                  </div>
-                                )}
-                              <button
-                                onClick={() => {
-                                  switchLevel(-1);
-                                  setShowSettings(false);
-                                }}
-                                className={cn(
-                                  "w-full text-left px-3 py-2 rounded-lg text-sm hover:bg-white/10 flex items-center justify-between",
-                                  currentLevel === -1 && "bg-white/10"
-                                )}
-                              >
-                                Auto
-                                {currentLevel === -1 && (
-                                  <Check className="size-3.5" />
-                                )}
-                              </button>
-                              {levels.length === 0 && (
-                                <div className="px-3 py-2 text-xs text-white/40">
-                                  Single quality stream
-                                </div>
-                              )}
-                              {levels
-                                .map((l, i) => ({ l, i }))
-                                .sort(
-                                  (a, b) =>
-                                    (b.l.height || 0) - (a.l.height || 0)
-                                )
-                                .map(({ l, i }) => (
-                                  <button
-                                    key={i}
-                                    onClick={() => {
-                                      switchLevel(i);
-                                      setShowSettings(false);
-                                    }}
-                                    className={cn(
-                                      "w-full text-left px-3 py-2 rounded-lg text-sm hover:bg-white/10 flex items-center justify-between",
-                                      currentLevel === i && "bg-white/10"
-                                    )}
-                                  >
-                                    <span>
-                                      {(() => {
-                                        const primary = hlsRenditionLabel(l, i);
-                                        const fromBitrateOnly =
-                                          !l.height &&
-                                          !(l.name ?? "").trim() &&
-                                          Boolean(l.bitrate);
-                                        return (
-                                          <>
-                                            {primary}
-                                            {l.bitrate && !fromBitrateOnly ? (
-                                              <span className="text-white/40">
-                                                {" "}
-                                                · {Math.round(l.bitrate / 1000)}kbps
-                                              </span>
-                                            ) : null}
-                                          </>
-                                        );
-                                      })()}
-                                    </span>
-                                    {currentLevel === i && (
-                                      <Check className="size-3.5" />
-                                    )}
-                                  </button>
-                                ))}
-                            </motion.div>
-                          )}
-                        </AnimatePresence>
-                      </div>
-
-                      {/* Cast / Share menu */}
-                      <div className="relative">
-                        <button
-                          onClick={() => {
-                            setShowShare((s) => !s);
-                            setShowSettings(false);
-                            setShowSubs(false);
-                          }}
-                          aria-label="Share"
-                          className={cn(
-                            "size-9 grid place-items-center rounded-lg hover:bg-white/10",
-                            showShare && "bg-white/15"
-                          )}
-                        >
-                          <Share2 className="size-4" />
-                        </button>
-                        <AnimatePresence>
-                          {showShare && (
-                            <motion.div
-                              initial={{ opacity: 0, y: 6 }}
-                              animate={{ opacity: 1, y: 0 }}
-                              exit={{ opacity: 0, y: 6 }}
-                              className="absolute right-0 bottom-11 w-72 glass rounded-xl p-1.5 overflow-hidden"
-                            >
-                              <div className="px-3 py-2 text-[11px] uppercase tracking-wider text-white/50">
-                                Cast & open elsewhere
-                              </div>
-                              <div className="px-3 pb-1 text-[10px] text-white/45 leading-snug">
-                                Cast to TV uses{" "}
-                                <span className="text-white/60">Google Cast</span>{" "}
-                                (Chromecast, Google TV, Cast‑built‑in displays). Roku,
-                                Samsung hubs, and AirPlay need the copied URL or their
-                                own apps.
-                              </div>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  void cast();
-                                }}
-                                disabled={
-                                  castSenderState !== "ready" || !directUrl
-                                }
-                                className="w-full text-left px-3 py-2 rounded-lg text-sm hover:bg-white/10 flex flex-col gap-0.5 disabled:opacity-40 disabled:cursor-not-allowed"
-                              >
-                                <span className="flex items-center gap-2">
-                                  <Cast className="size-4 shrink-0" />
-                                  <span>
-                                    {castSenderState === "ready" &&
-                                      "Cast to TV"}
-                                    {castSenderState === "loading" &&
-                                      "Cast to TV (loading…)"}
-                                    {castSenderState === "unsupported" &&
-                                      "Cast to TV (not in this browser)"}
-                                    {castSenderState === "failed" &&
-                                      "Cast to TV (unavailable)"}
-                                    {castSenderState === "inactive" &&
-                                      "Cast to TV"}
-                                  </span>
-                                </span>
-                                {castSenderState === "unsupported" && (
-                                  <span className="pl-6 text-[11px] text-white/50 leading-snug">
-                                    Use Chrome, Edge, or Brave on a computer or
-                                    Android. On iPhone, copy the URL below.
-                                  </span>
-                                )}
-                                {castSenderState === "failed" && (
-                                  <span className="pl-6 text-[11px] text-white/50 leading-snug">
-                                    Cast didn’t load (blocked network, extension, or
-                                    ad blocker). Refresh or copy the stream URL.
-                                  </span>
-                                )}
-                              </button>
-                              {castActionMessage && (
-                                <div className="mx-2 mb-1 rounded-lg border border-amber-400/25 bg-amber-950/40 px-2.5 py-2 text-[11px] text-amber-50/95 leading-snug">
-                                  {castActionMessage}
-                                </div>
-                              )}
-                              <button
-                                onClick={copyDirectUrl}
-                                className="w-full text-left px-3 py-2 rounded-lg text-sm hover:bg-white/10 flex items-center gap-2"
-                              >
-                                {copied ? (
-                                  <Check className="size-4 text-(--brand-2)" />
-                                ) : (
-                                  <Copy className="size-4" />
-                                )}
-                                {copied ? "Copied!" : "Copy stream URL"}
-                              </button>
-                              {directUrl && (
-                                <a
-                                  href={directUrl}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  onClick={() => setShowShare(false)}
-                                  className="w-full text-left px-3 py-2 rounded-lg text-sm hover:bg-white/10 flex items-center gap-2"
-                                >
-                                  <ExternalLink className="size-4" />
-                                  Open in external player
-                                </a>
-                              )}
-                              <div className="px-3 pt-1 pb-2 text-[10px] text-white/40">
-                                Paste the URL into VLC, IINA, or Infuse to
-                                stream on any device.
-                              </div>
-                            </motion.div>
-                          )}
-                        </AnimatePresence>
-                      </div>
+                      <PlayerControlMenus
+                          hasSubtitles={subtitles.length > 0}
+                          showSubs={showSubs}
+                          setShowSubs={setShowSubs}
+                          showSettings={showSettings}
+                          setShowSettings={setShowSettings}
+                          showShare={showShare}
+                          setShowShare={setShowShare}
+                          subtitles={subtitles}
+                          activeSubtitle={activeSubtitle}
+                          onSwitchSubtitle={switchSubtitle}
+                          levels={levels}
+                          currentLevel={currentLevel}
+                          qualityLabel={qualityLabel}
+                          onSwitchLevel={switchLevel}
+                          castSenderState={castSenderState}
+                          castMedia={castMedia}
+                          onCast={() => void cast()}
+                          castActionMessage={castActionMessage}
+                          copied={copied}
+                          onCopyDirectUrl={() => void copyDirectUrl()}
+                          directUrl={directUrl}
+                        />
 
                       <button
+                        type="button"
                         onClick={togglePip}
+                        disabled={!pipReady && !isPip}
                         aria-label="Picture in picture"
+                        title={
+                          pipReady || isPip
+                            ? "Picture in picture"
+                            : "Available once video has loaded"
+                        }
                         className={cn(
                           "size-9 hidden sm:grid place-items-center rounded-lg hover:bg-white/10",
-                          isPip && "bg-white/10"
+                          isPip && "bg-white/10",
+                          !pipReady && !isPip && "opacity-40 cursor-not-allowed"
                         )}
                       >
                         <PictureInPicture className="size-4" />

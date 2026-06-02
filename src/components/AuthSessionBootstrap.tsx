@@ -2,6 +2,7 @@
 
 import { xtream } from "@/lib/xtream";
 import type { XtreamCredentials } from "@/lib/xtream-types";
+import { scheduleWhenIdle } from "@/lib/defer-idle";
 import { restoreAuthSessionBridge, useAuth } from "@/store/auth";
 import { usePrefs } from "@/store/preferences";
 import { getSession } from "next-auth/react";
@@ -118,9 +119,10 @@ export function AuthSessionBootstrap({ children }: { children: ReactNode }) {
       try {
         let creds = await fetchSessionCreds();
         if (creds) {
-          useAuth.getState().setCreds(creds);
+          const sessionCreds = creds;
+          useAuth.getState().setCreds(sessionCreds);
           finish();
-          void validateAccount(creds);
+          scheduleWhenIdle(() => void validateAccount(sessionCreds), 2_500);
           return;
         }
 
@@ -177,10 +179,11 @@ export function AuthSessionBootstrap({ children }: { children: ReactNode }) {
           typeof creds.username === "string" &&
           typeof creds.password === "string"
         ) {
-          useAuth.getState().setCreds(creds);
+          const activatedCreds = creds;
+          useAuth.getState().setCreds(activatedCreds);
           usePrefs.getState().setActiveSavedProviderAccountId(chosenId);
           finish();
-          void validateAccount(creds);
+          scheduleWhenIdle(() => void validateAccount(activatedCreds), 2_500);
           return;
         }
       } catch {

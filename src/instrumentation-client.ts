@@ -13,6 +13,8 @@ Sentry.init({
   ignoreErrors: [
     /play\(\) request was interrupted by a call to pause\(\)/i,
     /^AbortError:/,
+    /requestPictureInPicture.*Metadata for the video element are not loaded yet/i,
+    /Failed to execute 'requestPictureInPicture'/i,
   ],
   beforeSend(event) {
     const err = event.exception?.values?.[0];
@@ -21,6 +23,12 @@ Sentry.init({
     if (
       type === "AbortError" ||
       /play\(\) request was interrupted/i.test(value)
+    ) {
+      return null;
+    }
+    if (
+      type === "InvalidStateError" &&
+      /requestPictureInPicture|PictureInPicture/i.test(value)
     ) {
       return null;
     }
