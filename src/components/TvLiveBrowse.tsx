@@ -26,6 +26,7 @@ import { fetchLiveShelfPreviews } from "@/lib/live-catalog-shelves";
 import { useQuery } from "@tanstack/react-query";
 import { useLiveCategoryShelves } from "@/hooks/use-live-category-shelves";
 import { useLiveShelfBrowse } from "@/hooks/use-live-shelf-browse";
+import { openLiveShelfChannel } from "@/lib/open-live-shelf-channel";
 import { SHORT_EPG_NOW_PLAYING_LIMIT } from "@/lib/epg-constants";
 import { isLiveShelfEpgEnabled } from "@/lib/live-epg-policy";
 import {
@@ -143,7 +144,7 @@ function TvLiveBrowsePaged({
         activeStreamId={current?.id}
         nowPlayingMap={nowPlayingMap}
         onSeeAll={() => setOpenCategoryId(shelf.id)}
-        onPlay={openChannel}
+        onPlay={(stream, shelf) => openLiveShelfChannel(creds, stream, shelf)}
       />
     ),
     [creds, current?.id, nowPlayingMap, openChannel]
@@ -334,7 +335,7 @@ function TvLiveBrowseFull({
         activeStreamId={current?.id}
         nowPlayingMap={nowPlayingMap}
         onSeeAll={() => setOpenCategoryId(shelf.id)}
-        onPlay={openChannel}
+        onPlay={(stream, shelf) => openLiveShelfChannel(creds, stream, shelf)}
       />
     ),
     [creds, current?.id, nowPlayingMap, openChannel]

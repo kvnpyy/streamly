@@ -19,6 +19,7 @@ import { fetchLiveCategoryChannels } from "@/lib/live-catalog-channels";
 import { fetchLiveShelfPreviews } from "@/lib/live-catalog-shelves";
 import { liveCategoryChannelsQueryOptions } from "@/lib/live-catalog-channels";
 import { WebLiveBrowsePaged } from "@/components/WebLiveBrowsePaged";
+import { openLiveShelfChannel } from "@/lib/open-live-shelf-channel";
 import { useLiveCategoryShelves } from "@/hooks/use-live-category-shelves";
 import { useLiveShelfSearchHits } from "@/hooks/use-live-shelf-search-hits";
 import { useQuery } from "@tanstack/react-query";
@@ -75,8 +76,15 @@ function WebLiveBrowseInner(props: WebLiveBrowseProps) {
 
   const deferredSearch = useDeferredValue(searchQuery);
   const serverCounts = hasLiveServerCategoryCounts(countByCategoryId);
+  const onPagedShelfPlay = useCallback(
+    (c: import("@/lib/xtream-types").LiveStream, shelf?: LiveShelfMeta) => {
+      if (shelf) openLiveShelfChannel(creds, c, shelf);
+    },
+    [creds]
+  );
+
   if (serverCounts && !deferredSearch) {
-    return <WebLiveBrowsePaged creds={creds} openChannel={openChannel} />;
+    return <WebLiveBrowsePaged creds={creds} openChannel={onPagedShelfPlay} />;
   }
 
   return <WebLiveBrowseLegacy {...props} />;
@@ -217,10 +225,10 @@ function WebLiveBrowseLegacy({
         activeStreamId={current?.id}
         nowPlayingMap={EMPTY_NOW_PLAYING}
         onSeeAll={() => handleOpenCategory(shelf.id)}
-        onPlay={openChannel}
+        onPlay={(stream, shelf) => openLiveShelfChannel(creds, stream, shelf)}
       />
     ),
-    [creds, current?.id, openChannel, handleOpenCategory]
+    [creds, current?.id, handleOpenCategory]
   );
 
   const openCategoryShelfMeta = openCategoryId

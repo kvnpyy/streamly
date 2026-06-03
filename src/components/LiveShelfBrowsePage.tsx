@@ -6,10 +6,8 @@ import { LiveCategoryBrowseModal } from "@/components/LiveCategoryBrowseModal";
 import { LiveChannelSearchField } from "@/components/LiveChannelSearchField";
 import { LiveMediaCard } from "@/components/LiveMediaCard";
 import { SectionHeader } from "@/components/SectionHeader";
-import {
-  buildLiveFlipPlaylist,
-  liveStreamToPlayerSource,
-} from "@/lib/live-flip-playlist";
+import { openLiveShelfChannel } from "@/lib/open-live-shelf-channel";
+import type { LiveShelfMeta } from "@/lib/live-category-shelf";
 import { catalogKeys } from "@/lib/catalog-queries";
 import {
   fetchLiveCategoryChannels,
@@ -17,7 +15,6 @@ import {
 import type { SlimLiveCatalog } from "@/lib/slim-live-catalog";
 import { buildLivePlayUrl } from "@/lib/xtream";
 import type { Category, LiveStream, XtreamCredentials } from "@/lib/xtream-types";
-import { usePlayer } from "@/store/player";
 import { usePrefs } from "@/store/preferences";
 import { useQuery, type UseQueryResult } from "@tanstack/react-query";
 import { Layers } from "lucide-react";
@@ -69,23 +66,16 @@ export function LiveShelfBrowsePage({
   tvLivingRoom,
   liveSearchRef,
 }: LiveShelfBrowsePageProps) {
-  const { play } = usePlayer();
   const isFavorite = usePrefs((s) => s.isFavorite);
   const toggleFavorite = usePrefs((s) => s.toggleFavorite);
   const addRecent = usePrefs((s) => s.addRecent);
   const recents = usePrefs((s) => s.recents);
   const [categoryBrowseOpen, setCategoryBrowseOpen] = useState(false);
 
-  const toSource = useCallback(
-    (c: LiveStream) => liveStreamToPlayerSource(creds, c),
-    [creds]
-  );
-
   const shelfOpenChannel = useCallback(
-    (c: LiveStream) => {
-      play(toSource(c), {
-        playlist: buildLiveFlipPlaylist(creds, [c]),
-      });
+    (c: LiveStream, shelf?: LiveShelfMeta) => {
+      if (!shelf) return;
+      openLiveShelfChannel(creds, c, shelf);
       addRecent({
         kind: "live",
         id: c.stream_id,
@@ -96,7 +86,7 @@ export function LiveShelfBrowsePage({
           : {}),
       });
     },
-    [play, addRecent, toSource, creds]
+    [addRecent, creds]
   );
 
   const recentLiveIds = useMemo(

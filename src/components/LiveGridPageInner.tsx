@@ -47,6 +47,7 @@ import {
   buildLiveFlipPlaylist,
   liveStreamToPlayerSource,
 } from "@/lib/live-flip-playlist";
+import { openLiveShelfChannel } from "@/lib/open-live-shelf-channel";
 import { usePlayer } from "@/store/player";
 import { usePrefs } from "@/store/preferences";
 import { nowPlayingTitleFromListings } from "@/lib/hooks";
@@ -472,10 +473,17 @@ export function LiveGridPageInner({ shell }: { shell: LivePageShell }) {
   );
 
   const shelfOpenChannel = useCallback(
-    (c: LiveStream) => {
-      play(toSource(c), {
-        playlist: buildLiveFlipPlaylist(creds, [c]),
-      });
+    (
+      c: LiveStream,
+      shelf?: import("@/lib/live-category-shelf").LiveShelfMeta
+    ) => {
+      if (shelf) {
+        openLiveShelfChannel(creds, c, shelf);
+      } else {
+        play(toSource(c), {
+          playlist: buildLiveFlipPlaylist(creds, [c]),
+        });
+      }
       addRecent({
         kind: "live",
         id: c.stream_id,
@@ -486,7 +494,7 @@ export function LiveGridPageInner({ shell }: { shell: LivePageShell }) {
           : {}),
       });
     },
-    [play, addRecent, toSource, creds]
+    [addRecent, creds, play, toSource]
   );
 
   const [liveDiscoveryReady, setLiveDiscoveryReady] = useState(false);

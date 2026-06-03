@@ -8,8 +8,8 @@ import {
   detectRegionFromTimezone,
   type TvRegion,
 } from "@/lib/geo-continent";
-import { filterStreamsForTvRegion } from "@/lib/live-category-shelf";
 import type { LiveShelfMeta } from "@/lib/live-category-shelf";
+import { openLiveCategoryChannel } from "@/lib/open-live-shelf-channel";
 import { LIVE_LIST_MAX_CHANNELS } from "@/lib/live-guide-limits";
 import { liveCategoryChannelsQueryOptions } from "@/lib/live-catalog-channels";
 import { useLiveShelfBrowse } from "@/hooks/use-live-shelf-browse";
@@ -21,13 +21,16 @@ import { ChevronDown } from "lucide-react";
 import { memo, useCallback, useDeferredValue, useEffect, useRef, useState } from "react";
 
 const MAX_PER_SHELF = 6;
-const INITIAL_SHELF_COUNT = 3;
-const SHELF_LOAD_INCREMENT = 1;
+const INITIAL_SHELF_COUNT = 8;
+const SHELF_LOAD_INCREMENT = 8;
 const EMPTY_NOW_PLAYING = new Map<number, string>();
 
 export type WebLiveBrowsePagedProps = {
   creds: XtreamCredentials;
-  openChannel: (c: import("@/lib/xtream-types").LiveStream) => void;
+  openChannel: (
+    c: import("@/lib/xtream-types").LiveStream,
+    shelf?: LiveShelfMeta
+  ) => void;
 };
 
 function WebLiveBrowsePagedInner({ creds, openChannel }: WebLiveBrowsePagedProps) {
@@ -118,6 +121,21 @@ function WebLiveBrowsePagedInner({ creds, openChannel }: WebLiveBrowsePagedProps
     [loadMoreShelves]
   );
 
+  const loadMoreSentinelRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!hasMore || shelvesBuilding) return;
+    const el = loadMoreSentinelRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) loadMoreShelves();
+      },
+      { rootMargin: "280px" }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [hasMore, shelvesBuilding, loadMoreShelves]);
+
   return (
     <>
       {openCategoryShelfMeta && (
@@ -128,7 +146,10 @@ function WebLiveBrowsePagedInner({ creds, openChannel }: WebLiveBrowsePagedProps
           activeStreamId={activeStreamId}
           creds={creds}
           onPlay={(c) => {
-            openChannel(c);
+            openLiveCategoryChannel(creds, c, openCategoryChannels);
+            if (openCategoryShelfMeta) {
+              openChannel(c, openCategoryShelfMeta);
+            }
             handleCloseCategory();
           }}
           onBack={handleCloseCategory}
@@ -164,7 +185,7 @@ function WebLiveBrowsePagedInner({ creds, openChannel }: WebLiveBrowsePagedProps
           renderItem={renderShelfRow}
           footer={
             hasMore ? (
-              <div className="flex justify-center py-2">
+              <div ref={loadMoreSentinelRef} className="flex justify-center py-2">
                 <button
                   type="button"
                   disabled={shelvesBuilding && shelvesReadyToReveal === 0}

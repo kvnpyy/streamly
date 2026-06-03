@@ -5,10 +5,11 @@ function envEnabled(name: string): boolean {
   return v === "1" || v === "true";
 }
 
-/** When true, home auto-loads movie/series shelves after idle (can freeze large catalogs). */
-export function isHomeAutoRichEnabled(): boolean {
-  return envEnabled("NEXT_PUBLIC_HOME_AUTO_RICH");
+/** When false, home never auto-loads movie/series recommendation shelves. */
+export function isHomeAutoRichDisabled(): boolean {
+  const v = process.env.NEXT_PUBLIC_HOME_AUTO_RICH?.trim();
+  return v === "0" || v === "false";
 }
 
-/** Milliseconds of idle before auto-rich (if enabled). */
-export const HOME_AUTO_RICH_DELAY_MS = 12_000;
+/** Idle delay before auto-loading home recommendations (default on). */
+export const HOME_AUTO_RICH_DELAY_MS = 2_500;

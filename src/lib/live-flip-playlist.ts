@@ -49,6 +49,17 @@ export function liveStreamToPlayerSource(
   };
 }
 
+/** Put the playing channel first so ↑/↓ stay inside the same category. */
+export function orderLiveStreamsForFlip(
+  streams: LiveStream[],
+  streamId: number
+): LiveStream[] {
+  if (streams.length <= 1) return streams;
+  const idx = streams.findIndex((s) => s.stream_id === streamId);
+  if (idx <= 0) return streams;
+  return [...streams.slice(idx), ...streams.slice(0, idx)];
+}
+
 /** Playlist for ↑/↓ and player channel buttons (capped for large providers). */
 export function buildLiveFlipPlaylist(
   creds: XtreamCredentials,
@@ -62,3 +73,6 @@ export function buildLiveFlipPlaylist(
       .map((s) => liveStreamToPlayerSource(creds, s)),
   };
 }
+
+/** Max channels in a category flip list (player ↑/↓ while browsing shelves). */
+export const LIVE_CATEGORY_FLIP_LIMIT = 48;

@@ -20,6 +20,8 @@ export type TvShelfProps = {
    * "there is more" affordance.
    */
   moreCount?: number;
+  /** Web: "+N" sits after the last card in the scroll row (no wide gap on large screens). */
+  morePlacement?: "outside" | "inline";
   className?: string;
   /** Hide the built-in row title (parent provides section chrome). */
   hideTitle?: boolean;
@@ -39,9 +41,11 @@ export const TvShelf = memo(function TvShelf({
   seeAllHref,
   onSeeAll,
   moreCount,
+  morePlacement = "outside",
   className,
   hideTitle = false,
 }: TvShelfProps) {
+  const moreInline = morePlacement === "inline";
   const scrollRef = useRef<HTMLDivElement>(null);
   const moreBtnRef = useRef<HTMLButtonElement>(null);
   const moreLinkRef = useRef<HTMLAnchorElement>(null);
@@ -95,10 +99,10 @@ export const TvShelf = memo(function TvShelf({
         return;
       }
 
-      // Last card + ArrowRight → jump to the "More" button
+      // Last card + ArrowRight → jump to the "+N more" affordance when present
       if (e.key === "ArrowRight") {
         const moreEl = moreBtnRef.current ?? moreLinkRef.current;
-        if (moreEl) {
+        if (moreEl && (moreInline ? container.contains(moreEl) : true)) {
           e.preventDefault();
           moreEl.focus();
         }
@@ -166,13 +170,19 @@ export const TvShelf = memo(function TvShelf({
           ))}
       </div>
 
-      {/* ── Scroll row + external More button ── */}
-      <div className="flex items-stretch gap-2">
-        {/* Horizontal scroll container */}
+      {/* ── Scroll row (+ optional More affordance) ── */}
+      <div
+        className={cn(
+          moreInline ? "min-w-0" : "flex items-stretch gap-1"
+        )}
+      >
         <div
           ref={scrollRef}
           data-tv-shelf-row
-          className="flex-1 min-w-0 flex gap-3 pb-3 scrollbar-hide tv-shelf-scroll"
+          className={cn(
+            "flex gap-3 pb-3 scrollbar-hide tv-shelf-scroll",
+            moreInline ? "min-w-0 overflow-x-auto" : "flex-1 min-w-0"
+          )}
           style={{
             overflowX: "auto",
             overflowY: "visible",
@@ -181,14 +191,50 @@ export const TvShelf = memo(function TvShelf({
           }}
         >
           {children}
+          {moreInline && (onSeeAll || seeAllHref) &&
+            (seeAllHref ? (
+              <Link
+                ref={moreLinkRef}
+                href={seeAllHref}
+                data-tv-card-root
+                aria-label={`See all in ${title}`}
+                className={cn(moreClasses, "shrink-0 mb-0 self-center")}
+              >
+                {typeof moreCount === "number" && moreCount > 0 ? (
+                  <>
+                    <span className="text-sm font-bold text-(--brand) leading-none">
+                      +{moreCount}
+                    </span>
+                    <ChevronRight className="size-5" />
+                  </>
+                ) : (
+                  <ChevronRight className="size-6" />
+                )}
+              </Link>
+            ) : (
+              <button
+                ref={moreBtnRef}
+                type="button"
+                onClick={moreAction ?? onSeeAll}
+                data-tv-card-root
+                aria-label={`See all in ${title}`}
+                className={cn(moreClasses, "shrink-0 mb-0 self-center")}
+              >
+                {typeof moreCount === "number" && moreCount > 0 ? (
+                  <>
+                    <span className="text-sm font-bold text-(--brand) leading-none">
+                      +{moreCount}
+                    </span>
+                    <ChevronRight className="size-5" />
+                  </>
+                ) : (
+                  <ChevronRight className="size-6" />
+                )}
+              </button>
+            ))}
         </div>
 
-        {/*
-         * Always-visible "More" button — sits to the right of the scroll area.
-         * Never scrolls away. TV users see it immediately and can navigate to
-         * it by pressing ArrowRight from the last channel card.
-         */}
-        {(onSeeAll || seeAllHref) &&
+        {!moreInline && (onSeeAll || seeAllHref) &&
           (seeAllHref ? (
             <Link
               ref={moreLinkRef}

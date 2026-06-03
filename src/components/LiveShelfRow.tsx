@@ -6,6 +6,7 @@ import {
   liveShelfRowPropsAreEqual,
   type LiveShelfRowMemoProps,
 } from "@/lib/live-shelf-row-memo";
+import type { LiveShelfMeta } from "@/lib/live-category-shelf";
 import type { LiveStream, XtreamCredentials } from "@/lib/xtream-types";
 import { memo } from "react";
 
@@ -13,7 +14,7 @@ export type LiveShelfRowProps = LiveShelfRowMemoProps & {
   creds: XtreamCredentials;
   variant?: "web" | "tv";
   onSeeAll: () => void;
-  onPlay: (c: LiveStream) => void;
+  onPlay: (c: LiveStream, shelf: LiveShelfMeta) => void;
 };
 
 export const LiveShelfRow = memo(function LiveShelfRow({
@@ -30,6 +31,7 @@ export const LiveShelfRow = memo(function LiveShelfRow({
     <TvShelf
       title={shelf.title}
       onSeeAll={onSeeAll}
+      morePlacement={variant === "web" ? "inline" : "outside"}
       moreCount={
         shelf.total > maxPerShelf ? shelf.total - maxPerShelf : undefined
       }
@@ -40,7 +42,7 @@ export const LiveShelfRow = memo(function LiveShelfRow({
           stream={c}
           credsServer={creds.server}
           active={activeStreamId === c.stream_id}
-          onPlay={onPlay}
+          onPlay={(stream) => onPlay(stream, shelf)}
           variant={variant}
         />
       ))}

@@ -14,8 +14,9 @@ import {
   useState,
 } from "react";
 
-const SHELVES_PER_FETCH = 2;
-const INITIAL_SHELF_COUNT = 3;
+/** Server allows up to 6 categories per shelf-batch request. */
+const SHELVES_PER_FETCH = 6;
+const INITIAL_SHELF_COUNT = 8;
 
 export type UseLiveShelfBrowseOptions = {
   creds: XtreamCredentials;
@@ -145,7 +146,7 @@ export function useLiveShelfBrowse({
       try {
         const built = await fetchBatch(
           0,
-          Math.max(initialVisible + 1, SHELVES_PER_FETCH + 1)
+          Math.max(initialVisible, SHELVES_PER_FETCH * 2)
         );
         if (cancelled || session !== sessionRef.current) return;
         allShelvesRef.current = built;
@@ -178,27 +179,24 @@ export function useLiveShelfBrowse({
     prefetchNext,
   ]);
 
-  const revealOneMore = useCallback(() => {
-    const nextVisible = Math.min(
-      visibleRef.current + loadIncrement,
-      allShelvesRef.current.length
-    );
-    if (nextVisible <= visibleRef.current) return false;
-    visibleRef.current = nextVisible;
-    setVisibleShelfCount(nextVisible);
+  /** Reveal every category already fetched (avoids dozens of "Show more" clicks). */
+  const revealAllBuffered = useCallback(() => {
+    const built = allShelvesRef.current.length;
+    if (visibleRef.current >= built) return false;
+    visibleRef.current = built;
+    setVisibleShelfCount(built);
     return true;
-  }, [loadIncrement]);
+  }, []);
 
-  /** Paint the next shelf on the next frame so click handlers return immediately. */
-  const revealOneMoreDeferred = useCallback(() => {
+  const revealAllBufferedDeferred = useCallback(() => {
     if (typeof requestAnimationFrame === "undefined") {
-      return revealOneMore();
+      return revealAllBuffered();
     }
     requestAnimationFrame(() => {
-      revealOneMore();
+      revealAllBuffered();
     });
     return true;
-  }, [revealOneMore]);
+  }, [revealAllBuffered]);
 
   const loadMoreShelves = useCallback(() => {
     if (!enabled || busyRef.current || bootstrapping) return;
@@ -207,7 +205,7 @@ export function useLiveShelfBrowse({
     const visible = visibleRef.current;
 
     if (visible < built) {
-      revealOneMoreDeferred();
+      revealAllBufferedDeferred();
       return;
     }
 
@@ -216,7 +214,7 @@ export function useLiveShelfBrowse({
     const prefetched = prefetchedRef.current;
     if (prefetched?.length) {
       appendShelves(prefetched);
-      revealOneMoreDeferred();
+      revealAllBufferedDeferred();
       return;
     }
 
@@ -232,7 +230,7 @@ export function useLiveShelfBrowse({
         );
         if (session !== sessionRef.current) return;
         if (shelves.length) appendShelves(shelves);
-        revealOneMoreDeferred();
+        revealAllBufferedDeferred();
       } finally {
         if (session === sessionRef.current) {
           busyRef.current = false;
@@ -243,7 +241,7 @@ export function useLiveShelfBrowse({
   }, [
     enabled,
     bootstrapping,
-    revealOneMoreDeferred,
+    revealAllBufferedDeferred,
     appendShelves,
     fetchBatch,
   ]);

@@ -206,9 +206,9 @@ export function HomePageLight({
       {showRichPrompt && (
         <section className="card p-6 sm:p-8 text-center space-y-3">
           <p className="text-sm text-(--text-muted) max-w-md mx-auto text-pretty">
-            Movie and series recommendations can load your full catalog and may
-            slow down weaker devices. Browse Movies or Series directly, or load
-            shelves here.
+            Movie and series recommendations load automatically in a moment when
+            your device is ready. You can also load them now, or browse Movies
+            and Series directly.
           </p>
           <button
             type="button"

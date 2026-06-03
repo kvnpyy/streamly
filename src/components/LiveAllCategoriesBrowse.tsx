@@ -2,6 +2,7 @@
 
 import { WebLiveBrowse } from "@/components/WebLiveBrowse";
 import { TvLiveBrowse } from "@/components/TvLiveBrowse";
+import type { LiveShelfMeta } from "@/lib/live-category-shelf";
 import type { Category, LiveStream, XtreamCredentials } from "@/lib/xtream-types";
 import type { Favorite } from "@/store/preferences";
 import { memo } from "react";
@@ -13,7 +14,7 @@ export type LiveAllCategoriesBrowseProps = {
   categories: Category[];
   streams: LiveStream[];
   creds: XtreamCredentials;
-  openChannel: (c: LiveStream) => void;
+  openChannel: (c: LiveStream, shelf?: LiveShelfMeta) => void;
   streamIdsByCategory?: Record<string, number[]>;
   countByCategoryId?: Record<string, number>;
   streamById?: Map<number, LiveStream>;
