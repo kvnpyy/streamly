@@ -105,6 +105,7 @@ export function TvCategoryView({
    * Using a ref avoids a stale-closure problem in the scroll handler.
    */
   const scannedIdsRef = useRef<Set<number>>(new Set());
+  const lastScanUpToRef = useRef(0);
   /** Drives incremental scanning: marks how far into `channels` we have scanned. */
   const [scanUpTo, setScanUpTo] = useState(INITIAL_SCAN);
 
@@ -294,23 +295,22 @@ export function TvCategoryView({
     if (!channelsFingerprint) return;
     scannedIdsRef.current = new Set();
     lastScanUpToRef.current = 0;
-    setScanUpTo(INITIAL_SCAN);
-  }, [channelsFingerprint]);
-
-  useEffect(() => {
-    if (!channelsFingerprint) return;
-    void scanFnRef.current(channels.slice(0, INITIAL_SCAN));
+    const initialBatch = channels.slice(0, INITIAL_SCAN);
+    queueMicrotask(() => {
+      setScanUpTo(INITIAL_SCAN);
+      lastScanUpToRef.current = INITIAL_SCAN;
+      void scanFnRef.current(initialBatch);
+    });
   }, [channelsFingerprint, channels]);
 
   // ── Incremental EPG scan as scanUpTo grows ──────────────────────────────
-  // lastScanUpToRef ensures we only scan new territory when scanUpTo advances.
-  const lastScanUpToRef = useRef(0);
   useEffect(() => {
     if (scanUpTo <= lastScanUpToRef.current) return;
-    const start = Math.max(lastScanUpToRef.current, INITIAL_SCAN);
-    lastScanUpToRef.current = scanUpTo;
-    if (start >= scanUpTo) return;
-    void scanFnRef.current(channels.slice(start, scanUpTo));
+    const start = lastScanUpToRef.current;
+    const end = scanUpTo;
+    lastScanUpToRef.current = end;
+    if (start >= end) return;
+    void scanFnRef.current(channels.slice(start, end));
   }, [channels, scanUpTo]);
 
   // ── Scroll handler: expand scan window ─────────────────────────────────
