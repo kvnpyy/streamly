@@ -23,6 +23,14 @@ const PlayerOverlay = dynamic(
   { ssr: false, loading: () => null }
 );
 
+const LiveCategoryOverlayHost = dynamic(
+  () =>
+    import("@/components/LiveCategoryOverlayHost").then((m) => ({
+      default: m.LiveCategoryOverlayHost,
+    })),
+  { ssr: false, loading: () => null }
+);
+
 export function AppShell({ children }: { children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -143,6 +151,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           </div>
         </main>
         <PlayerOverlay />
+        {isLivePage ? <LiveCategoryOverlayHost /> : null}
         <AppVersionBadge />
       </div>
     );
@@ -170,6 +179,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       </main>
       <MobileBottomNav />
       <PlayerOverlay />
+      {isLivePage ? <LiveCategoryOverlayHost /> : null}
       <AppVersionBadge />
     </div>
   );

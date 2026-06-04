@@ -1,6 +1,5 @@
 "use client";
 
-import { TvCategoryView } from "@/components/TvCategoryView";
 import { TvChannelCard } from "@/components/TvChannelCard";
 import { LiveShelfRow } from "@/components/LiveShelfRow";
 import { LiveShelfList } from "@/components/LiveShelfList";
@@ -100,7 +99,7 @@ function TvLiveBrowsePaged({
   const { current } = usePlayer();
   const storedRegion = usePrefs((s) => s.tvRegionFilter);
   const setStoredRegion = usePrefs((s) => s.setTvRegionFilter);
-  const { openCategoryId, openCategory, closeCategory } = useLiveOpenCategory();
+  const { openCategory, closeCategory } = useLiveOpenCategory();
 
   useEffect(() => {
     if (storedRegion === null) {
@@ -130,10 +129,11 @@ function TvLiveBrowsePaged({
 
   const handleRegionChange = useCallback(
     (r: TvRegion) => {
+      closeCategory();
       setStoredRegion(r);
       resetVisible();
     },
-    [setStoredRegion, resetVisible]
+    [closeCategory, setStoredRegion, resetVisible]
   );
 
   const renderShelfRow = useCallback(
@@ -144,23 +144,12 @@ function TvLiveBrowsePaged({
         creds={creds}
         activeStreamId={current?.id}
         nowPlayingMap={nowPlayingMap}
-        onSeeAll={() => openCategory(shelf.id)}
+        onSeeAll={() => openCategory(shelf.id, shelf.title)}
         onPlay={(stream, shelf) => openLiveShelfChannel(creds, stream, shelf)}
       />
     ),
-    [creds, current?.id, nowPlayingMap, openChannel]
+    [creds, current?.id, nowPlayingMap, openCategory]
   );
-
-  const openCategoryFetched = useQuery(
-    liveCategoryChannelsQueryOptions(
-      creds,
-      openCategoryId ?? "all",
-      LIVE_LIST_MAX_CHANNELS,
-      Boolean(openCategoryId)
-    )
-  );
-
-  const openCategoryChannels = useDeferredValue(openCategoryFetched.data ?? []);
 
   const onLoadMore = useCallback(
     (e: React.MouseEvent) => {
@@ -171,24 +160,7 @@ function TvLiveBrowsePaged({
   );
 
   return (
-    <>
-      {openCategoryId && (
-        <TvCategoryView
-          title={allShelves.find((s) => s.id === openCategoryId)?.title ?? "Category"}
-          categoryTitle={
-            allShelves.find((s) => s.id === openCategoryId)?.title ?? "Category"
-          }
-          channels={openCategoryChannels}
-          nowPlayingMap={nowPlayingMap}
-          activeStreamId={current?.id}
-          creds={creds}
-          onPlay={(c) => {
-            openChannel(c);
-          }}
-          onBack={closeCategory}
-        />
-      )}
-      <div className="space-y-10 py-2">
+    <div className="space-y-10 py-2">
         <div className="flex items-center justify-between gap-3">
           <RegionPicker region={region} onChange={handleRegionChange} />
         </div>
@@ -219,7 +191,6 @@ function TvLiveBrowsePaged({
           }
         />
       </div>
-    </>
   );
 }
 
@@ -243,7 +214,7 @@ function TvLiveBrowseFull({
   const parentalUnlocked = usePrefs((s) => s.parentalUnlocked);
   const queryClient = useQueryClient();
 
-  const { openCategoryId, openCategory, closeCategory } = useLiveOpenCategory();
+  const { openCategory, closeCategory } = useLiveOpenCategory();
 
   // Auto-detect region on first visit (storedRegion === null)
   useEffect(() => {
@@ -322,10 +293,11 @@ function TvLiveBrowseFull({
 
   const handleRegionChange = useCallback(
     (r: TvRegion) => {
+      closeCategory();
       setStoredRegion(r);
       resetVisible();
     },
-    [setStoredRegion, resetVisible]
+    [closeCategory, setStoredRegion, resetVisible]
   );
 
   const renderShelfRow = useCallback(
@@ -336,11 +308,11 @@ function TvLiveBrowseFull({
         creds={creds}
         activeStreamId={current?.id}
         nowPlayingMap={nowPlayingMap}
-        onSeeAll={() => openCategory(shelf.id)}
+        onSeeAll={() => openCategory(shelf.id, shelf.title)}
         onPlay={(stream, shelf) => openLiveShelfChannel(creds, stream, shelf)}
       />
     ),
-    [creds, current?.id, nowPlayingMap, openChannel]
+    [creds, current?.id, nowPlayingMap, openCategory]
   );
 
   /** Favourite live channels — pinned shelf at the top. */
@@ -452,44 +424,6 @@ function TvLiveBrowseFull({
     visibleShelfCount,
   ]);
 
-  const openCategoryShelfMeta = openCategoryId
-    ? allShelves.find((s) => s.id === openCategoryId) ?? null
-    : null;
-
-  const openCategoryChannelsRaw = useMemo(() => {
-    if (!openCategoryId) return [];
-    const raw = materializeLiveCategoryStreams({
-      all: serverCounts ? EMPTY_LIVE_STREAMS : deferredStreams,
-      categoryId: openCategoryId,
-      streamIdsByCategory: shelfIdsByCategory ?? streamIdsByCategory,
-      streamById: shelfStreamById ?? catalogStreamById,
-      maxItems: LIVE_LIST_MAX_CHANNELS,
-      allowedCatIds,
-      hideAdult,
-      parentalUnlocked,
-    });
-    const cat = deferredCategories.find(
-      (c) => String(c.category_id) === openCategoryId
-    );
-    if (!cat) return raw;
-    return filterStreamsForTvRegion(raw, region, cat.category_name);
-  }, [
-    openCategoryId,
-    serverCounts,
-    deferredStreams,
-    shelfIdsByCategory,
-    streamIdsByCategory,
-    shelfStreamById,
-    catalogStreamById,
-    deferredCategories,
-    region,
-    allowedCatIds,
-    hideAdult,
-    parentalUnlocked,
-  ]);
-
-  const openCategoryChannels = useDeferredValue(openCategoryChannelsRaw);
-
   if (loading && streams.length === 0) {
     return (
       <div className="px-4 sm:px-6 py-6 space-y-10">
@@ -555,23 +489,6 @@ function TvLiveBrowseFull({
   }
 
   return (
-    <>
-      {/* Category view overlay */}
-      {openCategoryShelfMeta && (
-        <TvCategoryView
-          title={openCategoryShelfMeta.title}
-          categoryTitle={openCategoryShelfMeta.title}
-          channels={openCategoryChannels}
-          nowPlayingMap={nowPlayingMap}
-          activeStreamId={current?.id}
-          creds={creds}
-          onPlay={(c) => {
-            openChannel(c);
-          }}
-          onBack={closeCategory}
-        />
-      )}
-
     <div className="px-4 sm:px-6 pt-4 pb-12 space-y-8">
       {/* ── Page header: title + compact region picker ── */}
       <div className="flex items-center justify-between">
@@ -627,7 +544,6 @@ function TvLiveBrowseFull({
         />
       </TvSpatialGrid>
     </div>
-    </>
   );
 }
 
