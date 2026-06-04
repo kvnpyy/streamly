@@ -87,7 +87,7 @@ export function LiveDiscoveryShelf({
 }: LiveDiscoveryShelfProps) {
   if (loading) {
     const skeleton = (
-      <SkeletonGrid variant="tile" count={tvHome ? 5 : tvLayout ? 6 : 8} />
+      <SkeletonGrid variant="tile" count={tvHome ? 5 : tvLayout ? 6 : 6} />
     );
     if (tvHome) {
       return (
@@ -107,7 +107,16 @@ export function LiveDiscoveryShelf({
   if (items.length === 0) return null;
 
   const cards = items.map((entry) => (
-    <div key={entry.stream.stream_id} className={tvHome ? "tv-home-shelf-card" : undefined}>
+    <div
+      key={entry.stream.stream_id}
+      className={
+        tvHome
+          ? "tv-home-shelf-card"
+          : tvLayout
+            ? undefined
+            : "shrink-0 w-[152px] sm:w-[168px]"
+      }
+    >
       <LiveDiscoveryCard
         entry={entry}
         creds={creds}
@@ -142,7 +151,7 @@ export function LiveDiscoveryShelf({
         </TvSpatialGrid>
       ) : (
         <div
-          className="flex gap-3 overflow-x-auto pb-2 -mx-4 px-4 scrollbar-hide"
+          className="flex items-start gap-3 overflow-x-auto pb-2 -mx-4 px-4 scrollbar-hide"
           style={{ WebkitOverflowScrolling: "touch" }}
         >
           {cards}

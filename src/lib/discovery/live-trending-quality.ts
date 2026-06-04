@@ -1,4 +1,7 @@
+import { parseChannelMeta } from "@/lib/channel-meta";
 import type { ScoredLiveEntry } from "@/lib/discovery/live-scoring";
+import { normalizeDiscoveryTitle } from "@/lib/discovery/normalize-title";
+import { programmeLooksLikeSports } from "@/lib/discovery/sports-keywords";
 import { LIVE_TRENDING_MIN_ITEMS } from "@/lib/discovery/live-trending-on-tv";
 
 const COUNTRY_PREFIX_RE = /^\[?\s*(US|USA|UK|GB|AU|CA|MX|NZ|IE)\s*\]?\s*/i;
@@ -56,4 +59,74 @@ export function shouldShowTrendingOnTvShelf(items: ScoredLiveEntry[]): boolean {
       !programmeLooksLikeStaleRerun(e.programmeTitle)
   );
   return real.length >= LIVE_TRENDING_MIN_ITEMS;
+}
+
+/** One row per on-air title; avoid six HBO feeds for different movies. */
+export function programmeTrendingKey(programmeTitle: string): string {
+  let key = normalizeDiscoveryTitle(programmeTitle);
+  key = key.replace(/\b(season|s\d{1,2}e\d{1,2}|episode|ep)\b.*$/i, "").trim();
+  const words = key.split(/\s+/).filter(Boolean);
+  return words.slice(0, 5).join(" ");
+}
+
+export function networkTrendingKey(channelName: string): string {
+  const meta = parseChannelMeta(channelName);
+  if (meta.network) return meta.network.toUpperCase();
+  const upper = channelName.toUpperCase();
+  const known = [
+    "HBO",
+    "ESPN",
+    "TSN",
+    "CNN",
+    "ABC",
+    "NBC",
+    "CBS",
+    "FOX",
+    "TNT",
+    "TBS",
+    "AMC",
+    "FX",
+    "USA",
+    "CW",
+    "PBS",
+    "NFL",
+    "NBA",
+    "MLB",
+    "NHL",
+  ];
+  for (const net of known) {
+    if (upper.includes(net)) return net;
+  }
+  return normalizeDiscoveryTitle(channelName).slice(0, 20);
+}
+
+/**
+ * Cap shelf size and spread picks across networks (max 1 entertainment feed
+ * per network; up to 2 sports on the same network e.g. ESPN).
+ */
+export function diversifyTrendingOnTvEntries(
+  sorted: ScoredLiveEntry[],
+  limit: number
+): ScoredLiveEntry[] {
+  const seenProgramme = new Set<string>();
+  const networkCounts = new Map<string, number>();
+  const out: ScoredLiveEntry[] = [];
+
+  for (const entry of sorted) {
+    const progKey = programmeTrendingKey(entry.programmeTitle);
+    if (!progKey || seenProgramme.has(progKey)) continue;
+
+    const net = networkTrendingKey(entry.stream.name);
+    const sports = programmeLooksLikeSports(entry.programmeTitle);
+    const netUsed = networkCounts.get(net) ?? 0;
+    const netCap = sports ? 2 : 1;
+    if (netUsed >= netCap) continue;
+
+    seenProgramme.add(progKey);
+    networkCounts.set(net, netUsed + 1);
+    out.push(entry);
+    if (out.length >= limit) break;
+  }
+
+  return out;
 }

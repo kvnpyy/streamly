@@ -117,6 +117,26 @@ describe("buildLiveTrendingOnTv", () => {
     expect(items[0]!.programmeTitle.toLowerCase()).toContain("90 day");
   });
 
+  it("limits shelf to eight diversified picks", () => {
+    const channels = new Map<number, LiveStream>();
+    const snapshots = new Map<number, StreamEpgSnapshot>();
+    const tmdb: TmdbTrendingItem[] = [];
+    for (let i = 0; i < 12; i++) {
+      channels.set(i, stream(i, `Net${i} HD`));
+      snapshots.set(i, { nowTitle: `Unique Show Number ${i}` });
+      tmdb.push({ tmdbId: 100 + i, title: `Unique Show Number ${i}`, popularity: 100 - i });
+    }
+    const items = buildLiveTrendingOnTv(
+      [...channels.keys()],
+      channels,
+      snapshots,
+      tmdb,
+      new Set(),
+      new Set()
+    );
+    expect(items.length).toBeLessThanOrEqual(8);
+  });
+
   it("merges movie and TV trending without duplicate tmdb ids", () => {
     const merged = mergeTmdbTrendingLists(
       [{ tmdbId: 5, title: "A", popularity: 10 }],

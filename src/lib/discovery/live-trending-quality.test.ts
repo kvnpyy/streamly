@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  diversifyTrendingOnTvEntries,
   programmeLooksLikeStaleRerun,
   shouldShowTrendingOnTvShelf,
 } from "@/lib/discovery/live-trending-quality";
@@ -46,5 +47,21 @@ describe("live-trending-quality", () => {
         entry("The Voice", "NBC"),
       ])
     ).toBe(true);
+  });
+
+  it("keeps one pick per network and per programme title", () => {
+    const sorted: ScoredLiveEntry[] = [
+      { ...entry("Euphoria", "[USA] HBO 2 EAST"), score: 90 },
+      { ...entry("A Minecraft Movie", "[USA] HBO 3 EAST"), score: 85 },
+      {
+        ...entry("NBA Finals", "ESPN HD"),
+        score: 80,
+        stream: { ...entry("NBA Finals", "ESPN HD").stream, stream_id: 2 },
+      },
+    ];
+    const out = diversifyTrendingOnTvEntries(sorted, 8);
+    expect(out).toHaveLength(2);
+    expect(out[0]!.programmeTitle).toBe("Euphoria");
+    expect(out[1]!.programmeTitle).toBe("NBA Finals");
   });
 });

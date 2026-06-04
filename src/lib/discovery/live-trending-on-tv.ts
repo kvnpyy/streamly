@@ -6,6 +6,7 @@ import {
 } from "@/lib/discovery/live-scoring";
 import { filterScoredLiveEntries } from "@/lib/discovery/live-quality";
 import {
+  diversifyTrendingOnTvEntries,
   isChannelOnlyListing,
   programmeLooksLikeStaleRerun,
 } from "@/lib/discovery/live-trending-quality";
@@ -18,6 +19,9 @@ export const LIVE_TRENDING_ON_TV_MAX_SCAN = 72;
 
 /** Minimum cards with real programme titles (not channel labels). */
 export const LIVE_TRENDING_MIN_ITEMS = 3;
+
+/** Cards shown in the horizontal Trending on TV shelf (web). */
+export const LIVE_TRENDING_ON_TV_DISPLAY_LIMIT = 8;
 
 function tmdbPopularityBoost(
   popularity: number,
@@ -52,7 +56,7 @@ export function buildLiveTrendingOnTv(
   trending: TmdbTrendingItem[],
   recentIds: Set<number>,
   favIds: Set<number>,
-  limit = 16
+  limit = LIVE_TRENDING_ON_TV_DISPLAY_LIMIT
 ): ScoredLiveEntry[] {
   if (candidateIds.length === 0) return [];
 
@@ -126,10 +130,11 @@ export function buildLiveTrendingOnTv(
     if (!stream || !onAir) continue;
     if (seen.has(streamId)) continue;
 
-    const base = scoreOnNowEntry(stream, onAir, recentIds, favIds);
     const sports = programmeLooksLikeSports(onAir);
-    if (!sports && base < 58) continue;
-    if (sports && base < 48) continue;
+    if (!sports) continue;
+
+    const base = scoreOnNowEntry(stream, onAir, recentIds, favIds);
+    if (base < 48) continue;
 
     pushEntry(
       results,
@@ -137,12 +142,13 @@ export function buildLiveTrendingOnTv(
       stream,
       onAir,
       base,
-      sports ? "Live sports" : undefined
+      "Live sports"
     );
   }
 
   results.sort((a, b) => b.score - a.score);
-  return filterScoredLiveEntries(results).slice(0, limit);
+  const filtered = filterScoredLiveEntries(results);
+  return diversifyTrendingOnTvEntries(filtered, limit);
 }
 
 export function mergeTmdbTrendingLists(
