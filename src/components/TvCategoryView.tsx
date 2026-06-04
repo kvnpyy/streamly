@@ -41,6 +41,8 @@ export type TvCategoryViewProps = {
   onBack: () => void;
   /** When supplied, the overlay self-scans EPG for visible channels on open. */
   creds?: XtreamCredentials;
+  /** Category label for iptv-org region matching (e.g. "USA | Entertainment"). */
+  categoryTitle?: string;
 };
 
 // ---------------------------------------------------------------------------
@@ -80,6 +82,7 @@ export function TvCategoryView({
   onPlay,
   onBack,
   creds,
+  categoryTitle,
 }: TvCategoryViewProps) {
   const listRef = useRef<HTMLDivElement>(null);
   const queryClient = useQueryClient();
@@ -202,7 +205,8 @@ export function TvCategoryView({
         return true;
       });
       if (toScan.length === 0) return;
-      toScan.forEach((c) => scannedIdsRef.current.add(c.stream_id));
+
+      const categoryLine = categoryTitle?.trim() ?? "";
 
       // ── Stage 1: Provider shortEPG ──────────────────────────────────────
       const noProviderEpg: LiveStream[] = [];
@@ -231,6 +235,7 @@ export function TvCategoryView({
             if (epgTitle) {
               setCachedEpgTitle(creds.server, creds.username, c.stream_id, epgTitle);
               setLocalEpg((prev) => new Map(prev).set(c.stream_id, epgTitle));
+              scannedIdsRef.current.add(c.stream_id);
             } else {
               noProviderEpg.push(c);
             }
@@ -244,9 +249,11 @@ export function TvCategoryView({
       if (noProviderEpg.length === 0) return;
       await Promise.all(
         noProviderEpg.map(async (c) => {
-          const country = inferCountryFromCategory(c.name);
-          if (!country) return;
           try {
+            const country =
+              inferCountryFromCategory(categoryLine) ||
+              inferCountryFromCategory(c.name);
+            if (!country) return;
             const params = new URLSearchParams({
               name: c.name,
               country,
@@ -267,20 +274,33 @@ export function TvCategoryView({
             }
           } catch {
             /* silent */
+          } finally {
+            scannedIdsRef.current.add(c.stream_id);
           }
         })
       );
     };
-  }, [creds, queryClient, nowPlayingMap]);
+  }, [creds, queryClient, nowPlayingMap, categoryTitle]);
 
-  // ── Initial EPG scan (first INITIAL_SCAN channels) ─────────────────────
-  // Guard ref prevents a re-run if `channels` identity ever changes.
-  const initialScanDoneRef = useRef(false);
-  useEffect(() => {
-    if (initialScanDoneRef.current) return;
-    initialScanDoneRef.current = true;
-    void scanFnRef.current(channels.slice(0, INITIAL_SCAN));
+  const channelsFingerprint = useMemo(() => {
+    if (channels.length === 0) return "";
+    const n = Math.min(channels.length, 80);
+    let h = `${channels.length}|`;
+    for (let i = 0; i < n; i++) h += `${channels[i]!.stream_id},`;
+    return h;
   }, [channels]);
+
+  useEffect(() => {
+    if (!channelsFingerprint) return;
+    scannedIdsRef.current = new Set();
+    lastScanUpToRef.current = 0;
+    setScanUpTo(INITIAL_SCAN);
+  }, [channelsFingerprint]);
+
+  useEffect(() => {
+    if (!channelsFingerprint) return;
+    void scanFnRef.current(channels.slice(0, INITIAL_SCAN));
+  }, [channelsFingerprint, channels]);
 
   // ── Incremental EPG scan as scanUpTo grows ──────────────────────────────
   // lastScanUpToRef ensures we only scan new territory when scanUpTo advances.

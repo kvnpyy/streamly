@@ -25,6 +25,7 @@ import {
 import { fetchLiveShelfPreviews } from "@/lib/live-catalog-shelves";
 import { useQuery } from "@tanstack/react-query";
 import { useLiveCategoryShelves } from "@/hooks/use-live-category-shelves";
+import { useLiveOpenCategory } from "@/hooks/use-live-open-category";
 import { useLiveShelfBrowse } from "@/hooks/use-live-shelf-browse";
 import { openLiveShelfChannel } from "@/lib/open-live-shelf-channel";
 import { SHORT_EPG_NOW_PLAYING_LIMIT } from "@/lib/epg-constants";
@@ -99,7 +100,7 @@ function TvLiveBrowsePaged({
   const { current } = usePlayer();
   const storedRegion = usePrefs((s) => s.tvRegionFilter);
   const setStoredRegion = usePrefs((s) => s.setTvRegionFilter);
-  const [openCategoryId, setOpenCategoryId] = useState<string | null>(null);
+  const { openCategoryId, openCategory, closeCategory } = useLiveOpenCategory();
 
   useEffect(() => {
     if (storedRegion === null) {
@@ -143,7 +144,7 @@ function TvLiveBrowsePaged({
         creds={creds}
         activeStreamId={current?.id}
         nowPlayingMap={nowPlayingMap}
-        onSeeAll={() => setOpenCategoryId(shelf.id)}
+        onSeeAll={() => openCategory(shelf.id)}
         onPlay={(stream, shelf) => openLiveShelfChannel(creds, stream, shelf)}
       />
     ),
@@ -174,15 +175,17 @@ function TvLiveBrowsePaged({
       {openCategoryId && (
         <TvCategoryView
           title={allShelves.find((s) => s.id === openCategoryId)?.title ?? "Category"}
+          categoryTitle={
+            allShelves.find((s) => s.id === openCategoryId)?.title ?? "Category"
+          }
           channels={openCategoryChannels}
           nowPlayingMap={nowPlayingMap}
           activeStreamId={current?.id}
           creds={creds}
           onPlay={(c) => {
             openChannel(c);
-            setOpenCategoryId(null);
           }}
-          onBack={() => setOpenCategoryId(null)}
+          onBack={closeCategory}
         />
       )}
       <div className="space-y-10 py-2">
@@ -240,8 +243,7 @@ function TvLiveBrowseFull({
   const parentalUnlocked = usePrefs((s) => s.parentalUnlocked);
   const queryClient = useQueryClient();
 
-  /** null = main browse; string = category id of the open category view overlay */
-  const [openCategoryId, setOpenCategoryId] = useState<string | null>(null);
+  const { openCategoryId, openCategory, closeCategory } = useLiveOpenCategory();
 
   // Auto-detect region on first visit (storedRegion === null)
   useEffect(() => {
@@ -334,7 +336,7 @@ function TvLiveBrowseFull({
         creds={creds}
         activeStreamId={current?.id}
         nowPlayingMap={nowPlayingMap}
-        onSeeAll={() => setOpenCategoryId(shelf.id)}
+        onSeeAll={() => openCategory(shelf.id)}
         onPlay={(stream, shelf) => openLiveShelfChannel(creds, stream, shelf)}
       />
     ),
@@ -558,15 +560,15 @@ function TvLiveBrowseFull({
       {openCategoryShelfMeta && (
         <TvCategoryView
           title={openCategoryShelfMeta.title}
+          categoryTitle={openCategoryShelfMeta.title}
           channels={openCategoryChannels}
           nowPlayingMap={nowPlayingMap}
           activeStreamId={current?.id}
           creds={creds}
           onPlay={(c) => {
             openChannel(c);
-            setOpenCategoryId(null);
           }}
-          onBack={() => setOpenCategoryId(null)}
+          onBack={closeCategory}
         />
       )}
 

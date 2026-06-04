@@ -12,6 +12,7 @@ import type { LiveShelfMeta } from "@/lib/live-category-shelf";
 import { openLiveCategoryChannel } from "@/lib/open-live-shelf-channel";
 import { LIVE_LIST_MAX_CHANNELS } from "@/lib/live-guide-limits";
 import { liveCategoryChannelsQueryOptions } from "@/lib/live-catalog-channels";
+import { useLiveOpenCategory } from "@/hooks/use-live-open-category";
 import { useLiveShelfBrowse } from "@/hooks/use-live-shelf-browse";
 import { useShelfNowPlayingMap } from "@/hooks/use-shelf-now-playing";
 import { useQuery } from "@tanstack/react-query";
@@ -45,7 +46,7 @@ function WebLiveBrowsePagedInner({ creds, openChannel }: WebLiveBrowsePagedProps
   const activeStreamId = usePlayer((s) => s.current?.id);
   const storedRegion = usePrefs((s) => s.tvRegionFilter);
   const setStoredRegion = usePrefs((s) => s.setTvRegionFilter);
-  const [openCategoryId, setOpenCategoryId] = useState<string | null>(null);
+  const { openCategoryId, openCategory, closeCategory } = useLiveOpenCategory();
 
   useEffect(() => {
     if (storedRegion === null) {
@@ -82,9 +83,12 @@ function WebLiveBrowsePagedInner({ creds, openChannel }: WebLiveBrowsePagedProps
     [setStoredRegion, resetVisible]
   );
 
-  const handleOpenCategory = useCallback((id: string) => {
-    setOpenCategoryId(id);
-  }, []);
+  const handleOpenCategory = useCallback(
+    (id: string) => {
+      openCategory(id);
+    },
+    [openCategory]
+  );
 
   const shelfEpgChannels = useMemo(
     () =>
@@ -144,8 +148,6 @@ function WebLiveBrowsePagedInner({ creds, openChannel }: WebLiveBrowsePagedProps
     openCategoryFetched.data ?? []
   );
 
-  const handleCloseCategory = useCallback(() => setOpenCategoryId(null), []);
-
   const onLoadMore = useCallback(
     (e: React.MouseEvent) => {
       e.preventDefault();
@@ -174,6 +176,7 @@ function WebLiveBrowsePagedInner({ creds, openChannel }: WebLiveBrowsePagedProps
       {openCategoryShelfMeta && (
         <TvCategoryView
           title={openCategoryShelfMeta.title}
+          categoryTitle={openCategoryShelfMeta.title}
           channels={openCategoryChannels}
           nowPlayingMap={shelfNowPlayingMap}
           activeStreamId={activeStreamId}
@@ -183,9 +186,8 @@ function WebLiveBrowsePagedInner({ creds, openChannel }: WebLiveBrowsePagedProps
             if (openCategoryShelfMeta) {
               openChannel(c, openCategoryShelfMeta);
             }
-            handleCloseCategory();
           }}
-          onBack={handleCloseCategory}
+          onBack={closeCategory}
         />
       )}
 
