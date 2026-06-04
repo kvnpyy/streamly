@@ -91,6 +91,14 @@ export function LiveShelfBrowsePage({
   const [guideReady, setGuideReady] = useState(false);
 
   useEffect(() => {
+    if (storedRegion === null) {
+      setStoredRegion(detectRegionFromTimezone());
+    }
+  }, [storedRegion, setStoredRegion]);
+
+  const tvRegion: TvRegion = storedRegion ?? detectRegionFromTimezone();
+
+  useEffect(() => {
     if (view !== "guide") {
       queueMicrotask(() => setGuideReady(false));
       return;
@@ -103,18 +111,11 @@ export function LiveShelfBrowsePage({
       creds,
       "all",
       LIVE_GUIDE_MAX_CHANNELS,
-      view === "guide" && catalog.isFetched && !catalog.isError
+      view === "guide" && catalog.isFetched && !catalog.isError,
+      tvRegion
     )
   );
   const guideChannels = guideChannelsQuery.data ?? [];
-
-  useEffect(() => {
-    if (storedRegion === null) {
-      setStoredRegion(detectRegionFromTimezone());
-    }
-  }, [storedRegion, setStoredRegion]);
-
-  const tvRegion: TvRegion = storedRegion ?? "All";
 
   const guidePlayChannel = useCallback(
     (c: LiveStream) => {

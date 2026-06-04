@@ -25,6 +25,7 @@ import { filterStreamsForTvRegion } from "@/lib/live-category-shelf";
 import { getShelfCategoriesForRegion } from "@/lib/live-catalog-shelf-category-cache";
 import { getCachedLiveCatalogEntry } from "@/lib/live-catalog-server-cache";
 import { materializeStreamIds } from "@/lib/live-catalog-stream-map";
+import { collectRegionalChannelSample } from "@/lib/live-regional-channel-sample";
 import { lookupStreamIdsForCategory } from "@/lib/live-stream-index";
 import { liveCatalogDiskKey } from "@/lib/xtream-catalog-disk-cache";
 import type { TvRegion } from "@/lib/geo-continent";
@@ -71,6 +72,22 @@ function collectRegionalStreams(
   index: Awaited<ReturnType<typeof getCachedLiveCatalogEntry>>["index"],
   streamById: Awaited<ReturnType<typeof getCachedLiveCatalogEntry>>["streamById"]
 ): LiveStream[] {
+  if (tvRegion !== "All") {
+    const regional = collectRegionalChannelSample(
+      creds,
+      tvRegion,
+      bundle,
+      index,
+      streamById,
+      LIVE_TRENDING_ON_TV_MAX_SCAN,
+      {
+        maxCategories: MAX_CATEGORIES_SAMPLE,
+        perCategory: CHANNELS_PER_CATEGORY,
+      }
+    );
+    if (regional.length > 0) return regional;
+  }
+
   const diskKey = liveCatalogDiskKey(creds);
   const counts = bundle.countByCategoryId ?? {};
   const categories = sortCategoriesForTrendingScan(

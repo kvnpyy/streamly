@@ -200,13 +200,17 @@ export function LiveGridPageInner({ shell }: { shell: LivePageShell }) {
   );
 
   const shouldLoadChannelList = catalog.isFetched && !catalog.isError;
+  const storedTvRegion = usePrefs((s) => s.tvRegionFilter);
+  const tvRegionForChannels: TvRegion =
+    storedTvRegion ?? detectRegionFromTimezone();
 
   const categoryChannelsQuery = useQuery(
     liveCategoryChannelsQueryOptions(
       creds,
       deferredSelected,
       LIVE_LIST_MAX_CHANNELS,
-      shouldLoadChannelList
+      shouldLoadChannelList,
+      deferredSelected === "all" ? tvRegionForChannels : undefined
     )
   );
 
@@ -514,9 +518,7 @@ export function LiveGridPageInner({ shell }: { shell: LivePageShell }) {
 
   const trendingShelfOn = isLiveTrendingShelfEnabled();
   const pageDiscoveryOn = isLivePageDiscoveryEnabled();
-  const storedTvRegion = usePrefs((s) => s.tvRegionFilter);
-  const tvRegionForDiscovery: TvRegion =
-    storedTvRegion ?? detectRegionFromTimezone();
+  const tvRegionForDiscovery = tvRegionForChannels;
   const tmdbQuery = useDiscoveryTmdb(tvRegionForDiscovery);
   const tmdbMerged = useMemo(
     () =>

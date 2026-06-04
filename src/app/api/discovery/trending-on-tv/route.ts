@@ -4,14 +4,11 @@ import {
   type EpgTitleHint,
 } from "@/lib/discovery/trending-on-tv-server";
 import { isLiveTrendingShelfEnabled } from "@/lib/live-epg-policy";
-import type { TvRegion } from "@/lib/geo-continent";
-import { ALL_TV_REGIONS } from "@/lib/geo-continent";
+import { parseTvRegion } from "@/lib/geo-continent";
 import { NextRequest, NextResponse } from "next/server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-const VALID_REGIONS = new Set<string>(ALL_TV_REGIONS);
 
 function readCreds(req: NextRequest) {
   const server = req.headers.get("x-iptv-server");
@@ -19,11 +16,6 @@ function readCreds(req: NextRequest) {
   const password = req.headers.get("x-iptv-password");
   if (!server || !username || !password) return null;
   return { server: server.replace(/\/+$/, ""), username, password };
-}
-
-function parseTvRegion(regionParam: string | null): TvRegion {
-  const trimmed = regionParam?.trim() || "All";
-  return (VALID_REGIONS.has(trimmed) ? trimmed : "All") as TvRegion;
 }
 
 function parsePriorityIds(raw: string | null): number[] {

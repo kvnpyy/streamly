@@ -1,5 +1,7 @@
+import { parseTvRegion } from "@/lib/geo-continent";
 import { getCachedLiveCatalogEntry } from "@/lib/live-catalog-server-cache";
 import { materializeStreamIds } from "@/lib/live-catalog-stream-map";
+import { collectRegionalChannelSample } from "@/lib/live-regional-channel-sample";
 import { lookupStreamIdsForCategory } from "@/lib/live-stream-index";
 import { LIVE_GUIDE_MAX_CHANNELS, LIVE_LIST_MAX_CHANNELS } from "@/lib/live-guide-limits";
 import type { LiveStream } from "@/lib/xtream-types";
@@ -50,6 +52,7 @@ export async function GET(req: NextRequest) {
   );
   const idsParam = req.nextUrl.searchParams.get("ids")?.trim();
   const categoryId = req.nextUrl.searchParams.get("categoryId")?.trim() || "all";
+  const tvRegion = parseTvRegion(req.nextUrl.searchParams.get("region"));
 
   try {
     const { bundle, index, streamById } = await getCachedLiveCatalogEntry(creds);
@@ -72,6 +75,20 @@ export async function GET(req: NextRequest) {
         if (cid === null || String(s.category_id) === cid) out.push(s);
       }
       return NextResponse.json({ streams: out });
+    }
+
+    if (categoryId === "all" && tvRegion !== "All") {
+      const regional = collectRegionalChannelSample(
+        creds,
+        tvRegion,
+        bundle,
+        index,
+        streamById,
+        limit
+      );
+      if (regional.length > 0) {
+        return NextResponse.json({ streams: regional });
+      }
     }
 
     const ids =

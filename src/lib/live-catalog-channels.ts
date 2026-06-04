@@ -1,4 +1,5 @@
 import { catalogKeys } from "@/lib/catalog-queries";
+import type { TvRegion } from "@/lib/geo-continent";
 import { LIVE_GUIDE_MAX_CHANNELS } from "@/lib/live-guide-limits";
 import type { XtreamCredentials } from "@/lib/xtream-types";
 import type { LiveStream } from "@/lib/xtream-types";
@@ -22,6 +23,7 @@ export async function fetchLiveCategoryChannels(
     categoryId: string | "all";
     limit?: number;
     streamIds?: number[];
+    tvRegion?: TvRegion;
     signal?: AbortSignal;
   }
 ): Promise<LiveStream[]> {
@@ -30,6 +32,9 @@ export async function fetchLiveCategoryChannels(
     url.searchParams.set("ids", opts.streamIds.slice(0, 48).join(","));
   } else {
     url.searchParams.set("categoryId", opts.categoryId === "all" ? "all" : String(opts.categoryId));
+    if (opts.categoryId === "all" && opts.tvRegion && opts.tvRegion !== "All") {
+      url.searchParams.set("region", opts.tvRegion);
+    }
   }
   url.searchParams.set("limit", String(opts.limit ?? LIVE_GUIDE_MAX_CHANNELS));
 
@@ -50,12 +55,26 @@ export function liveCategoryChannelsQueryOptions(
   creds: XtreamCredentials,
   categoryId: string | "all",
   limit: number,
-  enabled: boolean
+  enabled: boolean,
+  tvRegion?: TvRegion
 ): UseQueryOptions<LiveStream[], Error> {
+  const regionKey =
+    categoryId === "all" && tvRegion && tvRegion !== "All" ? tvRegion : "";
   return {
-    queryKey: [...catalogKeys.live(creds), "channels", categoryId, limit] as const,
+    queryKey: [
+      ...catalogKeys.live(creds),
+      "channels",
+      categoryId,
+      limit,
+      regionKey,
+    ] as const,
     queryFn: ({ signal }) =>
-      fetchLiveCategoryChannels(creds, { categoryId, limit, signal }),
+      fetchLiveCategoryChannels(creds, {
+        categoryId,
+        limit,
+        tvRegion,
+        signal,
+      }),
     enabled,
     staleTime: 60_000,
     gcTime: 120_000,

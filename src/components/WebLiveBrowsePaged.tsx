@@ -104,11 +104,14 @@ function WebLiveBrowsePagedInner({ creds, openChannel }: WebLiveBrowsePagedProps
     return out;
   }, [allShelves, visibleShelfCount]);
 
+  const shelfEpgEnabled =
+    shelfEpgChannels.length > 0 && !shelvesBuilding;
+
   const shelfNowPlayingMap = useShelfNowPlayingMap(
     creds,
     shelfEpgChannels,
     categoryNameById,
-    shelvesReadyToReveal > 0
+    shelfEpgEnabled
   );
 
   const renderShelfRow = useCallback(

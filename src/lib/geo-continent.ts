@@ -326,3 +326,10 @@ export function categoryMatchesRegion(
   if (catRegion === null) return true; // generic / no prefix
   return catRegion === region;
 }
+
+const VALID_TV_REGIONS = new Set<string>(ALL_TV_REGIONS);
+
+export function parseTvRegion(regionParam: string | null | undefined): TvRegion {
+  const trimmed = regionParam?.trim() || "All";
+  return (VALID_TV_REGIONS.has(trimmed) ? trimmed : "All") as TvRegion;
+}
