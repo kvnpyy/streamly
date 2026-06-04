@@ -98,14 +98,15 @@ export function LiveShelfBrowsePage({
     return scheduleLiveBrowseUiReady(() => setGuideReady(true), 400);
   }, [view]);
 
-  const guideChannelsQuery = useQuery({
-    ...liveCategoryChannelsQueryOptions(
+  const guideChannelsQuery = useQuery(
+    liveCategoryChannelsQueryOptions(
       creds,
       "all",
       LIVE_GUIDE_MAX_CHANNELS,
       view === "guide" && catalog.isFetched && !catalog.isError
-    ),
-  });
+    )
+  );
+  const guideChannels = guideChannelsQuery.data ?? [];
 
   useEffect(() => {
     if (storedRegion === null) {
@@ -323,11 +324,11 @@ export function LiveShelfBrowsePage({
           }
         />
       ) : view === "guide" ? (
-        guideChannelsQuery.isLoading && !guideChannelsQuery.data?.length ? (
+        guideChannelsQuery.isLoading && guideChannels.length === 0 ? (
           <SkeletonGrid variant="tile" count={6} />
         ) : guideReady ? (
           <LiveGuidePanel
-            channels={guideChannelsQuery.data ?? []}
+            channels={guideChannels}
             allCategoriesMode
             categoryNameById={categoryNameById}
             isFavorite={(id) => isFavorite("live", id)}
