@@ -23,6 +23,7 @@ import { EMPTY_LIVE_STREAMS } from "@/lib/live-browse-streams";
 import { prefetchLiveGuideChunk } from "@/lib/guide-chunk-prefetch";
 import { scheduleLiveBrowseUiReady } from "@/lib/live-page-performance";
 import { useLiveDiscoveryEpg } from "@/hooks/use-live-discovery-epg";
+import { useShelfNowPlayingMap } from "@/hooks/use-shelf-now-playing";
 import { useTrendingOnTv } from "@/hooks/use-trending-on-tv";
 import { useDiscoveryTmdb } from "@/hooks/use-discovery-tmdb";
 import { mergeTmdbTrendingLists } from "@/lib/discovery/live-trending-on-tv";
@@ -679,6 +680,20 @@ export function LiveGridPageInner({ shell }: { shell: LivePageShell }) {
     );
   }, [selected, categoryNameById, filteredCats]);
 
+  const categoryListEpgOn =
+    selected !== "all" &&
+    !qTrim &&
+    view === "list" &&
+    categoryFilteredStreams.length > 0;
+
+  const categoryNowPlayingMap = useShelfNowPlayingMap(
+    creds,
+    categoryFilteredStreams,
+    categoryNameById,
+    categoryListEpgOn,
+    Math.min(categoryFilteredStreams.length, 96)
+  );
+
   const liveSearchToolbar = (
     <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full lg:w-auto">
       <div className="flex items-center gap-2 w-full sm:w-auto shrink-0">
@@ -992,12 +1007,15 @@ export function LiveGridPageInner({ shell }: { shell: LivePageShell }) {
                     stream={c}
                     categoryLine={categoryNameById[c.category_id]}
                     knownNowPlaying={
+                      categoryNowPlayingMap.get(c.stream_id) ??
                       nowPlayingMap.get(c.stream_id) ??
                       epgSearchTitleByStreamId.get(c.stream_id)
                     }
                     isFavorite={isFavorite("live", c.stream_id)}
                     onNowPlaying={
-                      isLiveTileEpgEnabled() && displayVisible.length <= 64
+                      isLiveTileEpgEnabled() &&
+                      displayVisible.length <= 64 &&
+                      selected === "all"
                         ? reportNowPlaying(c.stream_id)
                         : undefined
                     }

@@ -36,15 +36,16 @@ export function useShelfNowPlayingMap(
   creds: XtreamCredentials,
   channels: ShelfEpgChannel[],
   categoryNameById: Record<string, string>,
-  enabled = true
+  enabled = true,
+  maxScan = DEFAULT_SCAN_MAX
 ): Map<number, string> {
   const [map, setMap] = useState<Map<number, string>>(() => new Map());
   const active =
     enabled && isLiveShelfEpgEnabled() && channels.length > 0;
 
   const ordered = useMemo(
-    () => orderShelfEpgChannels(channels).slice(0, DEFAULT_SCAN_MAX),
-    [channels]
+    () => orderShelfEpgChannels(channels).slice(0, maxScan),
+    [channels, maxScan]
   );
   const streamKey = ordered.map((c) => c.stream_id).join(",");
 

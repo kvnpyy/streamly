@@ -21,6 +21,7 @@ import { liveCategoryChannelsQueryOptions } from "@/lib/live-catalog-channels";
 import { WebLiveBrowsePaged } from "@/components/WebLiveBrowsePaged";
 import { openLiveShelfChannel } from "@/lib/open-live-shelf-channel";
 import { useLiveCategoryShelves } from "@/hooks/use-live-category-shelves";
+import { useLiveOpenCategory } from "@/hooks/use-live-open-category";
 import { useLiveShelfSearchHits } from "@/hooks/use-live-shelf-search-hits";
 import { useQuery } from "@tanstack/react-query";
 import type { Category, LiveStream, XtreamCredentials } from "@/lib/xtream-types";
@@ -109,7 +110,7 @@ function WebLiveBrowseLegacy({
   const hideAdult = usePrefs((s) => s.hideAdult);
   const parentalUnlocked = usePrefs((s) => s.parentalUnlocked);
 
-  const [openCategoryId, setOpenCategoryId] = useState<string | null>(null);
+  const { openCategoryId, openCategory, closeCategory } = useLiveOpenCategory();
 
   useEffect(() => {
     if (storedRegion === null) {
@@ -211,9 +212,12 @@ function WebLiveBrowseLegacy({
     [setStoredRegion, resetVisible]
   );
 
-  const handleOpenCategory = useCallback((id: string) => {
-    setOpenCategoryId(id);
-  }, []);
+  const handleOpenCategory = useCallback(
+    (id: string) => {
+      openCategory(id);
+    },
+    [openCategory]
+  );
 
   const renderShelfRow = useCallback(
     (shelf: LiveShelfMeta) => (
@@ -263,22 +267,20 @@ function WebLiveBrowseLegacy({
 
   const openCategoryChannels = useDeferredValue(openCategoryChannelsRaw);
 
-  const handleCloseCategory = useCallback(() => setOpenCategoryId(null), []);
-
   return (
     <>
       {openCategoryShelfMeta && (
         <TvCategoryView
           title={openCategoryShelfMeta.title}
+          categoryTitle={openCategoryShelfMeta.title}
           channels={openCategoryChannels}
           nowPlayingMap={searchQuery ? nowPlayingMap : EMPTY_NOW_PLAYING}
           activeStreamId={current?.id}
           creds={creds}
           onPlay={(c) => {
             openChannel(c);
-            handleCloseCategory();
           }}
-          onBack={handleCloseCategory}
+          onBack={closeCategory}
         />
       )}
 
