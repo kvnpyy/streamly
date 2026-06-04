@@ -2,6 +2,7 @@
 
 import type { ScoredLiveEntry } from "@/lib/discovery/live-scoring";
 import { shouldShowTrendingOnTvShelf } from "@/lib/discovery/live-trending-quality";
+import { LIVE_TRENDING_MIN_ITEMS } from "@/lib/discovery/live-trending-on-tv";
 import { isDiscoveryShelvesEnabled } from "@/lib/discovery/feature-flag";
 import {
   listCachedEpgTitlesForAccount,
@@ -128,15 +129,15 @@ export function useTrendingOnTv({
     gcTime: 20 * 60 * 1000,
   });
 
-  const items = toScoredEntries(query.data?.items ?? []);
-  const serverHasItems = (query.data?.items?.length ?? 0) > 0;
-  const quality = shouldShowTrendingOnTvShelf(items);
+  const rawItems = toScoredEntries(query.data?.items ?? []);
+  const quality = shouldShowTrendingOnTvShelf(rawItems);
+  const items = quality ? rawItems : [];
 
   return {
     items,
     tmdbCountry: query.data?.tmdbCountry,
     loading: query.isLoading,
     show: discoveryOn && (query.isLoading || query.isFetched),
-    hasItems: serverHasItems || (quality && items.length > 0),
+    hasItems: items.length >= LIVE_TRENDING_MIN_ITEMS,
   };
 }

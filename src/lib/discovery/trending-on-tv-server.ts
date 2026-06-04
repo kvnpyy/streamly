@@ -15,7 +15,7 @@ import {
   readTmdbTrendingFromDb,
   syncTmdbTrendingToDb,
 } from "@/lib/discovery/tmdb-sync";
-import { fetchNowPlayingTitle } from "@/lib/epg-server-short";
+import { fetchNowPlayingTitleForChannel } from "@/lib/epg-server-short";
 import {
   getBulkServerEpgTitles,
   hydrateServerEpgCache,
@@ -30,11 +30,11 @@ import { liveCatalogDiskKey } from "@/lib/xtream-catalog-disk-cache";
 import type { TvRegion } from "@/lib/geo-continent";
 import type { LiveStream, XtreamCredentials } from "@/lib/xtream-types";
 
-const EPG_CONCURRENCY = 6;
+const EPG_CONCURRENCY = 8;
 const RESPONSE_CACHE_TTL_MS = 10 * 60 * 1000;
-const MAX_CATEGORIES_SAMPLE = 12;
-const CHANNELS_PER_CATEGORY = 6;
-const MAX_HINT_STREAMS = 32;
+const MAX_CATEGORIES_SAMPLE = 20;
+const CHANNELS_PER_CATEGORY = 8;
+const MAX_HINT_STREAMS = 40;
 
 type ResponseCacheEntry = {
   items: ScoredLiveEntry[];
@@ -123,10 +123,20 @@ function mergeChannelsWithHints(
   return [...byId.values()];
 }
 
+function categoryNameForStream(
+  stream: LiveStream,
+  categories: { category_id: string; category_name: string }[]
+): string | undefined {
+  const sid = String(stream.category_id);
+  return categories.find((c) => String(c.category_id) === sid)?.category_name;
+}
+
 async function fillEpgSnapshots(
   creds: XtreamCredentials,
   candidateIds: number[],
-  snapshots: Map<number, StreamEpgSnapshot>
+  snapshots: Map<number, StreamEpgSnapshot>,
+  channelById: Map<number, LiveStream>,
+  categories: { category_id: string; category_name: string }[]
 ): Promise<void> {
   const cached = getBulkServerEpgTitles(creds, candidateIds);
   for (const [streamId, title] of cached) {
@@ -138,7 +148,13 @@ async function fillEpgSnapshots(
     const slice = missing.slice(i, i + EPG_CONCURRENCY);
     await Promise.all(
       slice.map(async (streamId) => {
-        const title = await fetchNowPlayingTitle(creds, streamId);
+        const channel = channelById.get(streamId);
+        if (!channel) return;
+        const title = await fetchNowPlayingTitleForChannel(
+          creds,
+          channel,
+          categoryNameForStream(channel, categories)
+        );
         if (title) snapshots.set(streamId, { nowTitle: title });
       })
     );
@@ -163,10 +179,14 @@ export async function buildTrendingOnTvForAccount(
   if (
     hints.length === 0 &&
     cached &&
-    cached.items.length > 0 &&
     Date.now() - cached.at < RESPONSE_CACHE_TTL_MS
   ) {
-    return { items: cached.items, tmdbCountry, cached: true };
+    const fromCache = shouldShowTrendingOnTvShelf(cached.items)
+      ? cached.items
+      : [];
+    if (fromCache.length > 0) {
+      return { items: fromCache, tmdbCountry, cached: true };
+    }
   }
 
   await hydrateServerEpgCache(creds);
@@ -207,8 +227,25 @@ export async function buildTrendingOnTvForAccount(
   const hintFetchIds = hints
     .map((h) => h.streamId)
     .filter((id) => !snapshots.has(id));
-  await fillEpgSnapshots(creds, hintFetchIds, snapshots);
-  await fillEpgSnapshots(creds, candidateIds, snapshots);
+  const categoryRows = bundle.categories.map((c) => ({
+    category_id: c.category_id,
+    category_name: c.category_name,
+  }));
+
+  await fillEpgSnapshots(
+    creds,
+    hintFetchIds,
+    snapshots,
+    channelById,
+    categoryRows
+  );
+  await fillEpgSnapshots(
+    creds,
+    candidateIds,
+    snapshots,
+    channelById,
+    categoryRows
+  );
 
   let { movieTrending, tvTrending } = await readTmdbTrendingFromDb(tmdbCountry);
   if (

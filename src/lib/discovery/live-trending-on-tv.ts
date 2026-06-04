@@ -5,16 +5,19 @@ import {
   type ScoredLiveEntry,
 } from "@/lib/discovery/live-scoring";
 import { filterScoredLiveEntries } from "@/lib/discovery/live-quality";
-import { isChannelOnlyListing } from "@/lib/discovery/live-trending-quality";
+import {
+  isChannelOnlyListing,
+  programmeLooksLikeStaleRerun,
+} from "@/lib/discovery/live-trending-quality";
 import { programmeLooksLikeSports } from "@/lib/discovery/sports-keywords";
 import type { TmdbTrendingItem } from "@/lib/discovery/types";
 import type { LiveStream } from "@/lib/xtream-types";
 
 /** Channels scanned for the Live TV "Trending on TV" shelf. */
-export const LIVE_TRENDING_ON_TV_MAX_SCAN = 48;
+export const LIVE_TRENDING_ON_TV_MAX_SCAN = 72;
 
 /** Minimum cards with real programme titles (not channel labels). */
-export const LIVE_TRENDING_MIN_ITEMS = 1;
+export const LIVE_TRENDING_MIN_ITEMS = 3;
 
 function tmdbPopularityBoost(
   popularity: number,
@@ -33,6 +36,7 @@ function pushEntry(
 ) {
   if (seen.has(stream.stream_id)) return;
   if (isChannelOnlyListing(programmeTitle, stream.name)) return;
+  if (programmeLooksLikeStaleRerun(programmeTitle)) return;
   seen.add(stream.stream_id);
   out.push({ stream, programmeTitle, score, detail });
 }

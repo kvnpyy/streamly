@@ -7,9 +7,10 @@ export function sortCategoriesForTrendingScan(categories: Category[]): Category[
     if (/\b(sport|nba|nfl|mlb|nhl|espn|ppv|fight|ufc|boxing)\b/.test(n)) {
       return 0;
     }
-    if (/\b(entertain|premium|general|culture|movie|cinema)\b/.test(n)) {
+    if (/\b(entertain|premium|culture|movie|cinema|locals?)\b/.test(n)) {
       return 1;
     }
+    if (/\bgeneral\b/.test(n)) return 4;
     if (/\b(news|kids|religion|adult|xxx)\b/.test(n)) return 3;
     return 2;
   };

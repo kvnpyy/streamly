@@ -56,6 +56,24 @@ describe("buildLiveTrendingOnTv", () => {
     expect(items).toHaveLength(0);
   });
 
+  it("excludes stale rerun sports library slots", () => {
+    const channels = new Map<number, LiveStream>([
+      [3, stream(3, "NFL Network HD")],
+    ]);
+    const snapshots = new Map<number, StreamEpgSnapshot>([
+      [3, { nowTitle: "NFL Classic Games" }],
+    ]);
+    const items = buildLiveTrendingOnTv(
+      [3],
+      channels,
+      snapshots,
+      [],
+      new Set(),
+      new Set()
+    );
+    expect(items).toHaveLength(0);
+  });
+
   it("includes live sports without TMDB match", () => {
     const channels = new Map<number, LiveStream>([
       [9, stream(9, "ESPN HD")],
