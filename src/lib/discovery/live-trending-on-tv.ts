@@ -151,6 +151,34 @@ export function buildLiveTrendingOnTv(
   return diversifyTrendingOnTvEntries(filtered, limit);
 }
 
+/**
+ * When TMDB weekly data does not match guide titles, rank by on-air programme
+ * quality (same scoring as discovery) so the shelf can still populate.
+ */
+export function buildEpgPopularOnTvFallback(
+  candidateIds: number[],
+  channelById: Map<number, LiveStream>,
+  snapshots: Map<number, StreamEpgSnapshot>,
+  recentIds: Set<number>,
+  favIds: Set<number>,
+  limit = LIVE_TRENDING_ON_TV_DISPLAY_LIMIT
+): ScoredLiveEntry[] {
+  const results: ScoredLiveEntry[] = [];
+  const seen = new Set<number>();
+
+  for (const streamId of candidateIds) {
+    const stream = channelById.get(streamId);
+    const onAir = snapshots.get(streamId)?.nowTitle?.trim();
+    if (!stream || !onAir) continue;
+    const score = scoreOnNowEntry(stream, onAir, recentIds, favIds);
+    pushEntry(results, seen, stream, onAir, score);
+  }
+
+  results.sort((a, b) => b.score - a.score);
+  const filtered = filterScoredLiveEntries(results);
+  return diversifyTrendingOnTvEntries(filtered, limit);
+}
+
 export function mergeTmdbTrendingLists(
   movies: TmdbTrendingItem[],
   series: TmdbTrendingItem[]

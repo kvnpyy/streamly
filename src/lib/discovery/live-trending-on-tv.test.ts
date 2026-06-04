@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildEpgPopularOnTvFallback,
   buildLiveTrendingOnTv,
   mergeTmdbTrendingLists,
 } from "@/lib/discovery/live-trending-on-tv";
@@ -9,6 +10,7 @@ import type { LiveStream } from "@/lib/xtream-types";
 
 function stream(id: number, name: string): LiveStream {
   return {
+    num: id,
     stream_id: id,
     name,
     stream_type: "live",
@@ -145,5 +147,29 @@ describe("buildLiveTrendingOnTv", () => {
     expect(merged).toHaveLength(2);
     expect(merged[0]!.tmdbId).toBe(5);
     expect(merged[0]!.popularity).toBe(50);
+  });
+});
+
+describe("buildEpgPopularOnTvFallback", () => {
+  it("fills shelf from guide titles when TMDB list is empty", () => {
+    const channels = new Map<number, LiveStream>([
+      [1, stream(1, "A&E HD")],
+      [2, stream(2, "GAC FAMILY HD")],
+      [3, stream(3, "MAGNOLIA NETWORK HD")],
+    ]);
+    const snapshots = new Map<number, StreamEpgSnapshot>([
+      [1, { nowTitle: "The First 48" }],
+      [2, { nowTitle: "A Charming Valentine" }],
+      [3, { nowTitle: "Fixer Upper" }],
+    ]);
+    const items = buildEpgPopularOnTvFallback(
+      [1, 2, 3],
+      channels,
+      snapshots,
+      new Set(),
+      new Set()
+    );
+    expect(items.length).toBeGreaterThanOrEqual(3);
+    expect(items[0]!.programmeTitle).toBeTruthy();
   });
 });
