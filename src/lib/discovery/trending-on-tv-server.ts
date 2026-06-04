@@ -35,7 +35,8 @@ const EPG_CONCURRENCY = 8;
 const RESPONSE_CACHE_TTL_MS = 10 * 60 * 1000;
 const MAX_CATEGORIES_SAMPLE = 20;
 const CHANNELS_PER_CATEGORY = 8;
-const MAX_HINT_STREAMS = 40;
+/** Channels from browser EPG cache — primary source for trending after shelf browse. */
+const MAX_HINT_STREAMS = 120;
 
 type ResponseCacheEntry = {
   items: ScoredLiveEntry[];
@@ -204,6 +205,10 @@ export async function buildTrendingOnTvForAccount(
     if (fromCache.length > 0) {
       return { items: fromCache, tmdbCountry, cached: true };
     }
+  }
+
+  if (hints.length > 0 && cached && !shouldShowTrendingOnTvShelf(cached.items)) {
+    responseCache.delete(rKey);
   }
 
   await hydrateServerEpgCache(creds);

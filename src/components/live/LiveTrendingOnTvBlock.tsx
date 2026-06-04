@@ -61,7 +61,9 @@ export function LiveTrendingOnTvBlock({
 
   if (!trending.show) return null;
 
-  if (!trending.loading && !trending.hasItems) return null;
+  if (!trending.loading && !trending.warmingUp && !trending.hasItems) {
+    return null;
+  }
 
   return (
     <LiveDiscoveryShelf
@@ -69,7 +71,9 @@ export function LiveTrendingOnTvBlock({
       items={trending.items}
       creds={creds}
       tvLayout={tvLayout}
-      loading={trending.loading && trending.items.length === 0}
+      loading={
+        (trending.loading || trending.warmingUp) && trending.items.length === 0
+      }
       onPlay={playEntry}
       isFavorite={isFavorite}
       onToggleFavorite={(entry) => onToggleFavorite(entry.stream)}

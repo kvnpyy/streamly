@@ -644,7 +644,8 @@ export function LiveGridPageInner({ shell }: { shell: LivePageShell }) {
       trendingOnTv={serverTrendingOnTv.items}
       showTrendingOnTv={serverTrendingOnTv.show}
       trendingOnTvLoading={
-        serverTrendingOnTv.loading && serverTrendingOnTv.items.length === 0
+        (serverTrendingOnTv.loading || serverTrendingOnTv.warmingUp) &&
+        serverTrendingOnTv.items.length === 0
       }
       onNow={liveDiscovery.onNow}
       tonight={liveDiscovery.tonight}

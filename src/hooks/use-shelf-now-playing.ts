@@ -14,7 +14,6 @@ import type { LiveStream, XtreamCredentials } from "@/lib/xtream-types";
 import { useEffect, useMemo, useState } from "react";
 
 const DEFAULT_SCAN_MAX = 48;
-const EMPTY_MAP = new Map<number, string>();
 
 export type ShelfEpgChannel = Pick<
   LiveStream,
@@ -61,7 +60,11 @@ export function useShelfNowPlayingMap(
       const ids = ordered.map((c) => c.stream_id);
       const next = getBulkCachedEpgTitles(creds.server, creds.username, ids);
       if (!cancelled && next.size > 0) {
-        setMap(new Map(next));
+        setMap((prev) => {
+          const merged = new Map(prev);
+          for (const [id, title] of next) merged.set(id, title);
+          return merged;
+        });
       }
 
       const pending = ordered.filter((c) => !next.has(c.stream_id));
@@ -105,5 +108,6 @@ export function useShelfNowPlayingMap(
     };
   }, [active, creds, categoryNameById, ordered, streamKey]);
 
-  return useMemo(() => (active ? map : EMPTY_MAP), [active, map]);
+  // Keep titles visible while loading more shelves (active may flicker off briefly).
+  return useMemo(() => map, [map]);
 }

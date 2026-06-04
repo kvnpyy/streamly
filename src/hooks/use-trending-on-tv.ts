@@ -8,6 +8,7 @@ import {
   listCachedEpgTitlesForAccount,
   whenEpgLocalCacheHydrated,
 } from "@/lib/epg-local-cache";
+import { useEpgCacheReadiness } from "@/hooks/use-epg-cache-readiness";
 import { isLiveTrendingShelfEnabled } from "@/lib/live-epg-policy";
 import type { TvRegion } from "@/lib/geo-continent";
 import type { LiveStream, XtreamCredentials } from "@/lib/xtream-types";
@@ -114,6 +115,14 @@ export function useTrendingOnTv({
     ...favorites.filter((f) => f.kind === "live").map((f) => f.id),
   ];
 
+  const epgCache = useEpgCacheReadiness(
+    creds.server,
+    creds.username,
+    discoveryOn
+  );
+
+  const epgCacheBucket = Math.floor(epgCache.count / 8);
+
   const query = useQuery({
     queryKey: [
       "trending-on-tv",
@@ -121,23 +130,31 @@ export function useTrendingOnTv({
       creds.username,
       tvRegion,
       priorityStreamIds.join(","),
+      epgCacheBucket,
     ] as const,
     queryFn: ({ signal }) =>
       fetchTrendingOnTv(creds, tvRegion, priorityStreamIds, signal),
-    enabled: discoveryOn,
+    enabled: discoveryOn && epgCache.ready,
     staleTime: 8 * 60 * 1000,
     gcTime: 20 * 60 * 1000,
+    placeholderData: (prev) => prev,
   });
 
   const rawItems = toScoredEntries(query.data?.items ?? []);
   const quality = shouldShowTrendingOnTvShelf(rawItems);
   const items = quality ? rawItems : [];
 
+  const loading =
+    epgCache.warmingUp ||
+    (query.isLoading && !query.data) ||
+    (query.isFetching && items.length === 0);
+
   return {
     items,
     tmdbCountry: query.data?.tmdbCountry,
-    loading: query.isLoading,
-    show: discoveryOn && (query.isLoading || query.isFetched),
+    loading,
+    warmingUp: epgCache.warmingUp,
+    show: discoveryOn,
     hasItems: items.length >= LIVE_TRENDING_MIN_ITEMS,
   };
 }

@@ -194,6 +194,22 @@ export function getCachedEpgKnownIds(
 }
 
 /** Recent browser EPG titles for this account (for server trending merge). */
+export function countCachedEpgTitlesForAccount(
+  server: string,
+  username: string
+): number {
+  const store = ensureMemory();
+  const prefix = `${server}|${username}|`;
+  const now = Date.now();
+  let count = 0;
+  for (const [k, entry] of Object.entries(store)) {
+    if (!k.startsWith(prefix)) continue;
+    if (now - entry.at > EPG_CACHE_TTL_MS) continue;
+    count++;
+  }
+  return count;
+}
+
 export function listCachedEpgTitlesForAccount(
   server: string,
   username: string,

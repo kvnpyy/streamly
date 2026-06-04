@@ -128,8 +128,8 @@ export function buildLiveTrendingOnTv(
 
     const base = scoreOnNowEntry(stream, onAir, recentIds, favIds);
     const sports = programmeLooksLikeSports(onAir);
-    if (!sports && base < 62) continue;
-    if (sports && base < 52) continue;
+    if (!sports && base < 58) continue;
+    if (sports && base < 48) continue;
 
     pushEntry(
       results,
