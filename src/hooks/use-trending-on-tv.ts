@@ -9,6 +9,7 @@ import {
   whenEpgLocalCacheHydrated,
 } from "@/lib/epg-local-cache";
 import { useEpgCacheReadiness } from "@/hooks/use-epg-cache-readiness";
+import { TRENDING_ON_TV_RESPONSE_TTL_MS } from "@/lib/epg-constants";
 import { isLiveTrendingShelfEnabled } from "@/lib/live-epg-policy";
 import type { TvRegion } from "@/lib/geo-continent";
 import type { LiveStream, XtreamCredentials } from "@/lib/xtream-types";
@@ -135,8 +136,8 @@ export function useTrendingOnTv({
     queryFn: ({ signal }) =>
       fetchTrendingOnTv(creds, tvRegion, priorityStreamIds, signal),
     enabled: discoveryOn && epgCache.ready,
-    staleTime: 8 * 60 * 1000,
-    gcTime: 20 * 60 * 1000,
+    staleTime: TRENDING_ON_TV_RESPONSE_TTL_MS,
+    gcTime: TRENDING_ON_TV_RESPONSE_TTL_MS * 2,
     placeholderData: (prev) => prev,
   });
 

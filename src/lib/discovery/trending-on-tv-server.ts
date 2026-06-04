@@ -15,6 +15,7 @@ import {
   readTmdbTrendingFromDb,
   syncTmdbTrendingToDb,
 } from "@/lib/discovery/tmdb-sync";
+import { TRENDING_ON_TV_RESPONSE_TTL_MS } from "@/lib/epg-constants";
 import { fetchNowPlayingTitleForChannel } from "@/lib/epg-server-short";
 import {
   getBulkServerEpgTitles,
@@ -32,7 +33,7 @@ import type { TvRegion } from "@/lib/geo-continent";
 import type { LiveStream, XtreamCredentials } from "@/lib/xtream-types";
 
 const EPG_CONCURRENCY = 8;
-const RESPONSE_CACHE_TTL_MS = 10 * 60 * 1000;
+const RESPONSE_CACHE_TTL_MS = TRENDING_ON_TV_RESPONSE_TTL_MS;
 const MAX_CATEGORIES_SAMPLE = 20;
 const CHANNELS_PER_CATEGORY = 8;
 /** Channels from browser EPG cache — primary source for trending after shelf browse. */
