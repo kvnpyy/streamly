@@ -10,7 +10,7 @@ import { lookupStreamIdsForCategory } from "@/lib/live-stream-index";
 import type { TvRegion } from "@/lib/geo-continent";
 import type { LiveStream, XtreamCredentials } from "@/lib/xtream-types";
 import { liveCatalogDiskKey } from "@/lib/xtream-catalog-disk-cache";
-import type { SlimLiveCatalog } from "@/lib/slim-live-catalog";
+import type { LiveCatalogBundle } from "@/lib/xtream";
 
 const DEFAULT_MAX_CATEGORIES = 24;
 const DEFAULT_PER_CATEGORY = 4;
@@ -22,7 +22,7 @@ const DEFAULT_PER_CATEGORY = 4;
 export function collectRegionalChannelSample(
   creds: XtreamCredentials,
   tvRegion: TvRegion,
-  bundle: SlimLiveCatalog,
+  bundle: LiveCatalogBundle,
   index: Record<string, number[]>,
   streamById: Map<number, LiveStream>,
   limit: number,
