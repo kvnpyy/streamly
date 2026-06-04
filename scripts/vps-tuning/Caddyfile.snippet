@@ -1,0 +1,25 @@
+# Production Caddy site block for iptvwebplayer.org
+# Install: sudo cp to /etc/caddy/Caddyfile (backup first), then: sudo caddy validate --config /etc/caddy/Caddyfile && sudo systemctl reload caddy
+
+iptvwebplayer.org {
+	encode gzip zstd
+
+	header {
+		-Server
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "SAMEORIGIN"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+	}
+
+	# Next.js behind Cloudflare — long timeouts for streams / slow provider proxies
+	reverse_proxy 127.0.0.1:3000 {
+		transport http {
+			dial_timeout 10s
+			read_timeout 5m
+			write_timeout 5m
+		}
+		# Disable buffering for live streams (HLS segments, long polls)
+		flush_interval -1
+	}
+}

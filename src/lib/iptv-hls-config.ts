@@ -66,11 +66,12 @@ export function buildIptvHlsJsConfig(opts: {
     maxHoleLive = 0.65;
     maxHoleVod = 0.55;
   } else if (lowLatencyDesktopLive) {
-    maxBuf = 22;
-    maxMaxBuf = 55;
-    backBuf = 36;
-    abrUp = Math.min(abrUp, 0.45);
-    maxHoleLive = 0.45;
+    /** Slightly deeper buffer — ultra-tight sync caused visible forward/back jumps on IPTV. */
+    maxBuf = 28;
+    maxMaxBuf = 72;
+    backBuf = 48;
+    abrUp = Math.min(abrUp, 0.35);
+    maxHoleLive = 0.5;
   }
 
   if (livingRoomLike && tightBuffers) {
@@ -97,14 +98,28 @@ export function buildIptvHlsJsConfig(opts: {
       : livingRoomLike
         ? 6
         : chromiumDesktopLive
-          ? 5
+          ? 6
           : lowLatencyDesktopLive
-            ? 2
+            ? 4
             : tightBuffers
               ? 4
               : 3
     : 3;
   if (isLive && silkLike && !tvLivingRoomLive) liveSyncCount += 1;
+
+  const liveMaxLatencyCount = isLive
+    ? tvLivingRoomLive
+      ? 14
+      : chromiumDesktopLive
+        ? 12
+        : lowLatencyDesktopLive
+          ? 10
+          : livingRoomLike
+            ? 10
+            : tightBuffers
+              ? 9
+              : 8
+    : 7;
 
   return {
     lowLatencyMode: false,
@@ -132,43 +147,20 @@ export function buildIptvHlsJsConfig(opts: {
     ...(isLive
       ? {
           liveDurationInfinity: true,
-          liveMaxLatencyDurationCount: chromiumDesktopLive
-            ? 10
-            : tvLivingRoomLive
-              ? 12
-              : lowLatencyDesktopLive
-                ? 4
-                : livingRoomLike
-                  ? 10
-                  : tightBuffers
-                    ? 8
-                    : 7,
-          maxLiveSyncPlaybackRate:
-            chromiumDesktopLive || tvLivingRoomLive
-              ? 1
-              : lowLatencyDesktopLive
-                ? 1.15
-                : silkLike && livingRoomLike
-                  ? 1.03
-                  : silkLike
-                    ? 1.04
-                    : livingRoomLike
-                      ? 1.05
-                      : tightBuffers
-                        ? 1.06
-                        : 1.08,
-          liveSyncOnStallIncrease:
-            chromiumDesktopLive || lowLatencyDesktopLive || tvLivingRoomLive
-              ? 0
-              : silkLike || livingRoomLike
-                ? 1
-                : 2,
+          /** Stay ~N segments behind live — higher = fewer hard sync jumps. */
+          liveMaxLatencyDurationCount: liveMaxLatencyCount,
+          /**
+           * Never speed up video to chase the live edge (users report “skipping forward”).
+           * Never widen the sync target on stall (causes snap-back / backward jumps).
+           */
+          maxLiveSyncPlaybackRate: 1,
+          liveSyncOnStallIncrease: 0,
           initialLiveManifestSize: chromiumDesktopLive
             ? 2
             : tvLivingRoomLive
               ? 2
               : lowLatencyDesktopLive
-                ? 1
+                ? 2
                 : mobileLike || livingRoomLike || silkLike
                   ? 2
                   : 2,
@@ -182,16 +174,16 @@ export function buildAppleMobileLiveHlsConfig() {
   const base = buildIptvHlsJsConfig({ isLive: true, mobileLike: true });
   return {
     ...base,
-    maxLiveSyncPlaybackRate: 1.06,
+    maxLiveSyncPlaybackRate: 1,
     liveSyncOnStallIncrease: 0,
-    liveSyncDurationCount: 3,
-    liveMaxLatencyDurationCount: 7,
+    liveSyncDurationCount: 4,
+    liveMaxLatencyDurationCount: 9,
     maxBufferLength: 32,
     maxMaxBufferLength: 88,
     backBufferLength: 56,
     maxBufferHole: 0.55,
-    nudgeOffset: 0.08,
-    nudgeMaxRetry: 10,
+    nudgeOffset: 0.06,
+    nudgeMaxRetry: 8,
     initialLiveManifestSize: 2,
   };
 }

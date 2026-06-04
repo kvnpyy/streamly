@@ -612,9 +612,7 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
       hls.on(Hls.Events.LEVELS_UPDATED, () => {
         if (cancelled || !isLive) return;
         publishLevels(hls.levels);
-        if (!liveManifestStabilizeLocked) {
-          runStabilizeBrowserFriendlyCodecs();
-        }
+        /** Re-filtering codec rungs on every playlist tick changes ABR mid-play → visible time jumps. */
       });
 
       hls.on(Hls.Events.AUDIO_TRACK_SWITCHED, () => {

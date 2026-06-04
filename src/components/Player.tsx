@@ -49,6 +49,7 @@ import {
   isChromiumBasedDesktopBrowser,
 } from "@/lib/browser";
 import {
+  applyGentleLiveHlsRecovery,
   applySoftLiveHlsRecovery,
   hlsRenditionLabel,
 } from "@/lib/live-hls-playback";
@@ -1738,13 +1739,35 @@ export function PlayerOverlay() {
     retryPlayback();
   }, [current, retryPlayback]);
 
+  /**
+   * Stall watchdog only — gentle nudge without `startLoad(-1)` or full pipeline reset
+   * (those caused visible forward/backward jumps during otherwise OK playback).
+   */
+  const autoRecoverLiveStall = useCallback(() => {
+    if (current?.kind !== "live") return;
+    const el = videoRef.current;
+    if (!el) return;
+    livePlaybackErrorSuppressUntilRef.current = performance.now() + 8_000;
+    setStalled(false);
+    const hls = hlsRef.current;
+    if (hls) {
+      try {
+        applyGentleLiveHlsRecovery(hls, el);
+      } catch {
+        voidSafeVideoPlay(el);
+      }
+      return;
+    }
+    voidSafeVideoPlay(el);
+  }, [current?.kind, videoRef, hlsRef]);
+
   usePlayerStallEscalation({
     open,
     stalled,
     isLive,
     current,
     videoRef,
-    onAutoRecover: recoverPlaybackFromError,
+    onAutoRecover: autoRecoverLiveStall,
     setStalled,
     setLoading,
     setError,

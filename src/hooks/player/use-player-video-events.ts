@@ -2,10 +2,7 @@
 
 import { useEffect, type Dispatch, type RefObject, type SetStateAction } from "react";
 import type Hls from "hls.js";
-import {
-  isAppleMobileWebKitDevice,
-  isSafariFamilyWithoutChromium,
-} from "@/lib/browser";
+import { isAppleMobileWebKitDevice } from "@/lib/browser";
 import {
   applyGentleLiveHlsRecovery,
   LIVE_PLAYBACK_ERROR_GRACE_MS,
@@ -142,51 +139,10 @@ export function usePlayerVideoEvents(p: UsePlayerVideoEventsParams) {
         return;
       }
       /**
-       * Native WebKit HLS (iPhone **and** Safari on Mac): seek-to-live-edge + buffer micro-seeks
-       * fight AVFoundation’s sliding timeline on IPTV — same snap-back and short-loop reports as
-       * the ~30s iPhone DVR case. Only nudge `play()`; `reloadNativeLiveSource` still exists after
-       * repeated stall kicks.
+       * Native `<video>` HLS (mostly iPhone/iPad): manual seeks toward “live edge” or inside the
+       * buffer fight AVFoundation’s sliding IPTV window — users see forward/backward jumps.
+       * Let the demuxer catch up; only nudge `play()`. Full reload stays a last resort below.
        */
-      if (
-        isAppleMobileWebKitDevice() ||
-        isSafariFamilyWithoutChromium()
-      ) {
-        voidSafeVideoPlay(vv);
-        return;
-      }
-      try {
-        if (vv.seekable?.length) {
-          const idx = vv.seekable.length - 1;
-          const end = vv.seekable.end(idx);
-          const start = vv.seekable.start(idx);
-          if (Number.isFinite(end) && end > start + 0.25) {
-            const target = Math.min(Math.max(end - 3.5, start + 0.05), end - 0.1);
-            if (target > vv.currentTime + 0.12) {
-              vv.currentTime = target;
-              voidSafeVideoPlay(vv);
-              return;
-            }
-          }
-        }
-      } catch {
-        /* seek on live can throw */
-      }
-      try {
-        if (vv.buffered.length > 0) {
-          const end = vv.buffered.end(vv.buffered.length - 1);
-          const ahead = end - vv.currentTime;
-          if (ahead >= 0 && ahead < 2.8) {
-            const hop = Math.min(end - 0.08, vv.currentTime + Math.max(0.35, ahead * 0.65));
-            if (hop > vv.currentTime && hop <= end) {
-              vv.currentTime = hop;
-              voidSafeVideoPlay(vv);
-              return;
-            }
-          }
-        }
-      } catch {
-        /* noop */
-      }
       voidSafeVideoPlay(vv);
     };
 
@@ -215,8 +171,9 @@ export function usePlayerVideoEvents(p: UsePlayerVideoEventsParams) {
         vv.buffered.length > 0
           ? vv.buffered.end(vv.buffered.length - 1) - vv.currentTime
           : 0;
-      const threshold = hlsRef.current ? 2.4 : 4.5;
-      if (ahead < threshold) kickLivePlayback();
+      /** hls.js manages its own live edge — native-only nudge when buffer is critically low. */
+      const threshold = hlsRef.current ? 0 : 4.5;
+      if (!hlsRef.current && ahead < threshold) kickLivePlayback();
     };
 
     const stripPosterForWebKit = () => {
@@ -339,16 +296,13 @@ export function usePlayerVideoEvents(p: UsePlayerVideoEventsParams) {
         }
         const nowMs = performance.now();
         const usingHlsJs = hlsRef.current != null;
-        const lowAheadKick = usingHlsJs
-          ? ahead < 0.12 && v.readyState < HTMLMediaElement.HAVE_FUTURE_DATA
-          : ahead < 1.05;
-        const lowKickCooldownMs = usingHlsJs ? 18_000 : 5200;
-        if (
-          lowAheadKick &&
-          nowMs - lastLowBufferKick > lowKickCooldownMs
-        ) {
+        /** hls.js: never manual-seek on low buffer — live sync handles it; seeks cause jumps. */
+        const lowAheadKick =
+          !usingHlsJs && ahead < 1.05 && v.readyState < HTMLMediaElement.HAVE_FUTURE_DATA;
+        const lowKickCooldownMs = 12_000;
+        if (lowAheadKick && nowMs - lastLowBufferKick > lowKickCooldownMs) {
           lastLowBufferKick = nowMs;
-          if (!usingHlsJs) kickLivePlayback();
+          kickLivePlayback();
         }
       }
 
@@ -370,23 +324,31 @@ export function usePlayerVideoEvents(p: UsePlayerVideoEventsParams) {
       }
       const usingHlsJs = hlsRef.current != null;
       const stuckThresholdMs = usingHlsJs
-        ? 28_000
+        ? 32_000
         : isAppleMobileWebKitDevice()
-          ? 3800
-          : 6500;
+          ? 4500
+          : 9000;
       if (now - liveProgress.stuckSince > stuckThresholdMs) {
         liveProgress.stuckSince = now;
         liveProgress.lastCt = ct;
         nativeStallKicks += 1;
         if (usingHlsJs) {
-          try {
-            hlsRef.current?.recoverMediaError();
-          } catch {
-            /* noop */
+          const hls = hlsRef.current;
+          if (hls) {
+            try {
+              applyGentleLiveHlsRecovery(hls, v);
+            } catch {
+              try {
+                hls.recoverMediaError();
+              } catch {
+                /* noop */
+              }
+              voidSafeVideoPlay(v);
+            }
           }
         } else {
           kickLivePlayback();
-          if (nativeStallKicks >= 5) {
+          if (nativeStallKicks >= 8) {
             nativeStallKicks = 0;
             reloadNativeLiveSource();
           }
