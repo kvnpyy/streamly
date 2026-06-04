@@ -11,6 +11,7 @@ import type { LiveShelfMeta } from "@/lib/live-category-shelf";
 import { useLiveOpenCategory } from "@/hooks/use-live-open-category";
 import { useLiveShelfBrowse } from "@/hooks/use-live-shelf-browse";
 import { useShelfNowPlayingMap } from "@/hooks/use-shelf-now-playing";
+import { useLiveBrowseUi } from "@/store/live-browse-ui";
 import type { XtreamCredentials } from "@/lib/xtream-types";
 import { usePlayer } from "@/store/player";
 import { usePrefs } from "@/store/preferences";
@@ -41,6 +42,7 @@ function WebLiveBrowsePagedInner({ creds, openChannel }: WebLiveBrowsePagedProps
   const storedRegion = usePrefs((s) => s.tvRegionFilter);
   const setStoredRegion = usePrefs((s) => s.setTvRegionFilter);
   const { openCategory, closeCategory } = useLiveOpenCategory();
+  const setShelfEpgHints = useLiveBrowseUi((s) => s.setShelfEpgHints);
 
   useEffect(() => {
     if (storedRegion === null) {
@@ -109,6 +111,22 @@ function WebLiveBrowsePagedInner({ creds, openChannel }: WebLiveBrowsePagedProps
     categoryNameById,
     shelfEpgChannels.length > 0
   );
+
+  useEffect(() => {
+    const hints: Array<{ streamId: number; title: string }> = [];
+    for (const shelf of allShelves.slice(0, visibleShelfCount)) {
+      for (const c of shelf.preview) {
+        const title = shelfNowPlayingMap.get(c.stream_id);
+        if (title) hints.push({ streamId: c.stream_id, title });
+      }
+    }
+    setShelfEpgHints(hints);
+  }, [
+    allShelves,
+    visibleShelfCount,
+    shelfNowPlayingMap,
+    setShelfEpgHints,
+  ]);
 
   const renderShelfRow = useCallback(
     (shelf: LiveShelfMeta) => (

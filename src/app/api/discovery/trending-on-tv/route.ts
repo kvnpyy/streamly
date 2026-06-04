@@ -66,6 +66,16 @@ async function handleTrendingOnTv(
       priorityStreamIds,
       epgHints,
     });
+    const debug =
+      process.env.NODE_ENV === "development" ||
+      process.env.NEXT_PUBLIC_DISCOVERY_DEBUG === "1"
+        ? {
+            hintCount: epgHints.length,
+            itemCount: result.items.length,
+            cached: result.cached,
+            tmdbCountry: result.tmdbCountry,
+          }
+        : undefined;
     return NextResponse.json(
       {
         enabled: true,
@@ -80,6 +90,7 @@ async function handleTrendingOnTv(
           icon: e.stream.stream_icon,
           directSource: e.stream.direct_source,
         })),
+        ...(debug ? { _debug: debug } : {}),
       },
       {
         headers: {

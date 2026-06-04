@@ -17,6 +17,7 @@
     "db:push": "drizzle-kit push",
     "db:backup": "bash scripts/backup-sqlite.sh",
     "discovery:sync-tmdb": "npx tsx scripts/sync-tmdb-trending.ts",
+    "discovery:diagnose-trending": "npx tsx scripts/diagnose-trending-on-tv.ts",
     "discovery:sync-sports": "npx tsx scripts/sync-sports-events.ts",
     "test": "vitest run",
     "test:watch": "vitest",

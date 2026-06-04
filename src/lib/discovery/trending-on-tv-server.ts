@@ -3,6 +3,7 @@ import "server-only";
 import {
   buildEpgPopularOnTvFallback,
   buildLiveTrendingOnTv,
+  LIVE_TRENDING_MIN_ITEMS,
   LIVE_TRENDING_ON_TV_MAX_SCAN,
   mergeTmdbTrendingLists,
 } from "@/lib/discovery/live-trending-on-tv";
@@ -37,8 +38,36 @@ const EPG_CONCURRENCY = 8;
 const RESPONSE_CACHE_TTL_MS = TRENDING_ON_TV_RESPONSE_TTL_MS;
 const MAX_CATEGORIES_SAMPLE = 20;
 const CHANNELS_PER_CATEGORY = 8;
+/** Cap provider EPG fetches per request (serverless time limits). */
+const MAX_EPG_FETCH_PER_REQUEST = 28;
 /** Channels from browser EPG cache — primary source for trending after shelf browse. */
 const MAX_HINT_STREAMS = 120;
+
+function allIdsWithSnapshots(
+  candidateIds: number[],
+  snapshots: Map<number, StreamEpgSnapshot>
+): number[] {
+  const ids = new Set(candidateIds);
+  for (const id of snapshots.keys()) ids.add(id);
+  return [...ids];
+}
+
+function tryEpgFallback(
+  candidateIds: number[],
+  channelById: Map<number, LiveStream>,
+  snapshots: Map<number, StreamEpgSnapshot>,
+  recentIds: Set<number>,
+  favIds: Set<number>
+): ScoredLiveEntry[] {
+  const fallback = buildEpgPopularOnTvFallback(
+    allIdsWithSnapshots(candidateIds, snapshots),
+    channelById,
+    snapshots,
+    recentIds,
+    favIds
+  );
+  return shouldShowTrendingOnTvShelf(fallback) ? fallback : [];
+}
 
 type ResponseCacheEntry = {
   items: ScoredLiveEntry[];
@@ -163,7 +192,9 @@ async function fillEpgSnapshots(
     snapshots.set(streamId, { nowTitle: title });
   }
 
-  const missing = candidateIds.filter((id) => !snapshots.has(id));
+  const missing = candidateIds
+    .filter((id) => !snapshots.has(id))
+    .slice(0, MAX_EPG_FETCH_PER_REQUEST);
   for (let i = 0; i < missing.length; i += EPG_CONCURRENCY) {
     const slice = missing.slice(i, i + EPG_CONCURRENCY);
     await Promise.all(
@@ -234,6 +265,30 @@ export async function buildTrendingOnTvForAccount(
     if (s) channelById.set(streamId, s);
   }
 
+  const recentIds = new Set<number>();
+  const favIds = new Set<number>();
+  for (const id of opts?.priorityStreamIds ?? []) {
+    recentIds.add(id);
+  }
+
+  const snapshots = new Map<number, StreamEpgSnapshot>();
+  mergeEpgHintsIntoSnapshots(snapshots, hints);
+
+  if (hints.length >= LIVE_TRENDING_MIN_ITEMS) {
+    const hintIds = hints
+      .map((h) => h.streamId)
+      .filter((id) => channelById.has(id));
+    const quick = tryEpgFallback(hintIds, channelById, snapshots, recentIds, favIds);
+    if (quick.length > 0) {
+      responseCache.set(rKey, {
+        items: quick,
+        tmdbCountry,
+        at: Date.now(),
+      });
+      return { items: quick, tmdbCountry, cached: false };
+    }
+  }
+
   const candidateIds = pickLiveDiscoveryCandidateIds(
     [...channelById.values()],
     [],
@@ -244,9 +299,6 @@ export async function buildTrendingOnTvForAccount(
       ...hints.slice(0, MAX_HINT_STREAMS).map((h) => h.streamId),
     ]
   );
-
-  const snapshots = new Map<number, StreamEpgSnapshot>();
-  mergeEpgHintsIntoSnapshots(snapshots, hints);
 
   const hintFetchIds = hints
     .map((h) => h.streamId)
@@ -282,12 +334,6 @@ export async function buildTrendingOnTvForAccount(
   }
   const tmdbMerged = mergeTmdbTrendingLists(movieTrending, tvTrending);
 
-  const recentIds = new Set<number>();
-  const favIds = new Set<number>();
-  for (const id of opts?.priorityStreamIds ?? []) {
-    recentIds.add(id);
-  }
-
   const built = buildLiveTrendingOnTv(
     candidateIds,
     channelById,
@@ -299,16 +345,13 @@ export async function buildTrendingOnTvForAccount(
   let items = shouldShowTrendingOnTvShelf(built) ? built : [];
 
   if (items.length === 0) {
-    const fallback = buildEpgPopularOnTvFallback(
+    items = tryEpgFallback(
       candidateIds,
       channelById,
       snapshots,
       recentIds,
       favIds
     );
-    if (shouldShowTrendingOnTvShelf(fallback)) {
-      items = fallback;
-    }
   }
 
   if (items.length > 0) {

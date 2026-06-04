@@ -131,8 +131,14 @@ export async function syncTmdbTrendingToDb(
 export async function readTmdbTrendingFromDb(
   region = "US"
 ): Promise<{ movieTrending: TmdbTrendingItem[]; tvTrending: TmdbTrendingItem[]; syncedAt: Date | null }> {
-  const db = getDb();
-  const rows = await db.select().from(discoveryTmdbCache);
+  let rows: (typeof discoveryTmdbCache.$inferSelect)[];
+  try {
+    const db = getDb();
+    rows = await db.select().from(discoveryTmdbCache);
+  } catch (err) {
+    console.warn("[tmdb] readTrendingFromDb skipped:", err);
+    return { movieTrending: [], tvTrending: [], syncedAt: null };
+  }
 
   const pick = (mediaType: "movie" | "tv") => {
     const code = region.toUpperCase();
