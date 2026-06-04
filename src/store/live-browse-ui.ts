@@ -8,10 +8,16 @@ import { create } from "zustand";
  */
 type LiveBrowseUiState = {
   openCategoryId: string | null;
-  setOpenCategoryId: (id: string | null) => void;
+  openCategoryTitle: string | null;
+  openCategory: (id: string, title: string) => void;
+  closeCategory: () => void;
 };
 
 export const useLiveBrowseUi = create<LiveBrowseUiState>((set) => ({
   openCategoryId: null,
-  setOpenCategoryId: (id) => set({ openCategoryId: id }),
+  openCategoryTitle: null,
+  openCategory: (id, title) =>
+    set({ openCategoryId: id, openCategoryTitle: title }),
+  closeCategory: () =>
+    set({ openCategoryId: null, openCategoryTitle: null }),
 }));

@@ -1,6 +1,5 @@
 "use client";
 
-import { TvCategoryView } from "@/components/TvCategoryView";
 import { LiveShelfList } from "@/components/LiveShelfList";
 import { LiveShelfRow } from "@/components/LiveShelfRow";
 import {
@@ -14,10 +13,8 @@ import {
   EMPTY_LIVE_STREAMS,
   hasLiveServerCategoryCounts,
 } from "@/lib/live-browse-streams";
-import { LIVE_LIST_MAX_CHANNELS } from "@/lib/live-guide-limits";
 import { fetchLiveCategoryChannels } from "@/lib/live-catalog-channels";
 import { fetchLiveShelfPreviews } from "@/lib/live-catalog-shelves";
-import { liveCategoryChannelsQueryOptions } from "@/lib/live-catalog-channels";
 import { WebLiveBrowsePaged } from "@/components/WebLiveBrowsePaged";
 import { openLiveShelfChannel } from "@/lib/open-live-shelf-channel";
 import { useLiveCategoryShelves } from "@/hooks/use-live-category-shelves";
@@ -110,7 +107,7 @@ function WebLiveBrowseLegacy({
   const hideAdult = usePrefs((s) => s.hideAdult);
   const parentalUnlocked = usePrefs((s) => s.parentalUnlocked);
 
-  const { openCategoryId, openCategory, closeCategory } = useLiveOpenCategory();
+  const { openCategory, closeCategory } = useLiveOpenCategory();
 
   useEffect(() => {
     if (storedRegion === null) {
@@ -206,15 +203,16 @@ function WebLiveBrowseLegacy({
 
   const handleRegionChange = useCallback(
     (r: TvRegion) => {
+      closeCategory();
       setStoredRegion(r);
       resetVisible();
     },
-    [setStoredRegion, resetVisible]
+    [closeCategory, setStoredRegion, resetVisible]
   );
 
   const handleOpenCategory = useCallback(
-    (id: string) => {
-      openCategory(id);
+    (shelf: LiveShelfMeta) => {
+      openCategory(shelf.id, shelf.title);
     },
     [openCategory]
   );
@@ -228,63 +226,15 @@ function WebLiveBrowseLegacy({
         variant="web"
         activeStreamId={current?.id}
         nowPlayingMap={EMPTY_NOW_PLAYING}
-        onSeeAll={() => handleOpenCategory(shelf.id)}
+        onSeeAll={() => handleOpenCategory(shelf)}
         onPlay={(stream, shelf) => openLiveShelfChannel(creds, stream, shelf)}
       />
     ),
     [creds, current?.id, handleOpenCategory]
   );
 
-  const openCategoryShelfMeta = openCategoryId
-    ? allShelves.find((s) => s.id === openCategoryId) ?? null
-    : null;
-
-  const openCategoryFetched = useQuery(
-    liveCategoryChannelsQueryOptions(
-      creds,
-      openCategoryId ?? "all",
-      LIVE_LIST_MAX_CHANNELS,
-      Boolean(openCategoryId)
-    )
-  );
-
-  const openCategoryChannelsRaw = useMemo(() => {
-    if (!openCategoryId) return [];
-    const raw =
-      deferredSearchHits?.get(openCategoryId) ??
-      openCategoryFetched.data ??
-      [];
-    const cat = deferredCats.find((c) => String(c.category_id) === openCategoryId);
-    if (!cat) return raw;
-    return filterStreamsForTvRegion(raw, region, cat.category_name);
-  }, [
-    openCategoryId,
-    deferredSearchHits,
-    openCategoryFetched.data,
-    deferredCats,
-    region,
-  ]);
-
-  const openCategoryChannels = useDeferredValue(openCategoryChannelsRaw);
-
   return (
-    <>
-      {openCategoryShelfMeta && (
-        <TvCategoryView
-          title={openCategoryShelfMeta.title}
-          categoryTitle={openCategoryShelfMeta.title}
-          channels={openCategoryChannels}
-          nowPlayingMap={searchQuery ? nowPlayingMap : EMPTY_NOW_PLAYING}
-          activeStreamId={current?.id}
-          creds={creds}
-          onPlay={(c) => {
-            openChannel(c);
-          }}
-          onBack={closeCategory}
-        />
-      )}
-
-      <div className="space-y-6 py-2">
+    <div className="space-y-6 py-2">
         <div className="flex items-center justify-between">
           <p className="text-sm text-(--text-dim)">
             <span className="font-medium text-(--text)">{visibleShelfCount}</span>{" "}
@@ -337,7 +287,6 @@ function WebLiveBrowseLegacy({
           }
         />
       </div>
-    </>
   );
 }
 

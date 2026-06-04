@@ -1,6 +1,5 @@
 "use client";
 
-import { TvCategoryView } from "@/components/TvCategoryView";
 import { LiveShelfList } from "@/components/LiveShelfList";
 import { LiveShelfRow } from "@/components/LiveShelfRow";
 import {
@@ -9,13 +8,9 @@ import {
   type TvRegion,
 } from "@/lib/geo-continent";
 import type { LiveShelfMeta } from "@/lib/live-category-shelf";
-import { openLiveCategoryChannel } from "@/lib/open-live-shelf-channel";
-import { LIVE_LIST_MAX_CHANNELS } from "@/lib/live-guide-limits";
-import { liveCategoryChannelsQueryOptions } from "@/lib/live-catalog-channels";
 import { useLiveOpenCategory } from "@/hooks/use-live-open-category";
 import { useLiveShelfBrowse } from "@/hooks/use-live-shelf-browse";
 import { useShelfNowPlayingMap } from "@/hooks/use-shelf-now-playing";
-import { useQuery } from "@tanstack/react-query";
 import type { XtreamCredentials } from "@/lib/xtream-types";
 import { usePlayer } from "@/store/player";
 import { usePrefs } from "@/store/preferences";
@@ -23,7 +18,6 @@ import { ChevronDown } from "lucide-react";
 import {
   memo,
   useCallback,
-  useDeferredValue,
   useEffect,
   useMemo,
   useRef,
@@ -46,7 +40,7 @@ function WebLiveBrowsePagedInner({ creds, openChannel }: WebLiveBrowsePagedProps
   const activeStreamId = usePlayer((s) => s.current?.id);
   const storedRegion = usePrefs((s) => s.tvRegionFilter);
   const setStoredRegion = usePrefs((s) => s.setTvRegionFilter);
-  const { openCategoryId, openCategory, closeCategory } = useLiveOpenCategory();
+  const { openCategory, closeCategory } = useLiveOpenCategory();
 
   useEffect(() => {
     if (storedRegion === null) {
@@ -77,15 +71,16 @@ function WebLiveBrowsePagedInner({ creds, openChannel }: WebLiveBrowsePagedProps
 
   const handleRegionChange = useCallback(
     (r: TvRegion) => {
+      closeCategory();
       setStoredRegion(r);
       resetVisible();
     },
-    [setStoredRegion, resetVisible]
+    [closeCategory, setStoredRegion, resetVisible]
   );
 
   const handleOpenCategory = useCallback(
-    (id: string) => {
-      openCategory(id);
+    (shelf: LiveShelfMeta) => {
+      openCategory(shelf.id, shelf.title);
     },
     [openCategory]
   );
@@ -124,28 +119,11 @@ function WebLiveBrowsePagedInner({ creds, openChannel }: WebLiveBrowsePagedProps
         variant="web"
         activeStreamId={activeStreamId}
         nowPlayingMap={shelfNowPlayingMap}
-        onSeeAll={() => handleOpenCategory(shelf.id)}
+        onSeeAll={() => handleOpenCategory(shelf)}
         onPlay={openChannel}
       />
     ),
     [creds, activeStreamId, openChannel, handleOpenCategory, shelfNowPlayingMap]
-  );
-
-  const openCategoryShelfMeta = openCategoryId
-    ? allShelves.find((s) => s.id === openCategoryId) ?? null
-    : null;
-
-  const openCategoryFetched = useQuery(
-    liveCategoryChannelsQueryOptions(
-      creds,
-      openCategoryId ?? "all",
-      LIVE_LIST_MAX_CHANNELS,
-      Boolean(openCategoryId)
-    )
-  );
-
-  const openCategoryChannels = useDeferredValue(
-    openCategoryFetched.data ?? []
   );
 
   const onLoadMore = useCallback(
@@ -172,26 +150,7 @@ function WebLiveBrowsePagedInner({ creds, openChannel }: WebLiveBrowsePagedProps
   }, [hasMore, shelvesBuilding, loadMoreShelves]);
 
   return (
-    <>
-      {openCategoryShelfMeta && (
-        <TvCategoryView
-          title={openCategoryShelfMeta.title}
-          categoryTitle={openCategoryShelfMeta.title}
-          channels={openCategoryChannels}
-          nowPlayingMap={shelfNowPlayingMap}
-          activeStreamId={activeStreamId}
-          creds={creds}
-          onPlay={(c) => {
-            openLiveCategoryChannel(creds, c, openCategoryChannels);
-            if (openCategoryShelfMeta) {
-              openChannel(c, openCategoryShelfMeta);
-            }
-          }}
-          onBack={closeCategory}
-        />
-      )}
-
-      <div className="space-y-6 py-2">
+    <div className="space-y-6 py-2">
         <div className="flex items-center justify-between">
           <p className="text-sm text-(--text-dim)">
             <span className="font-medium text-(--text)">{visibleShelfCount}</span>{" "}
@@ -239,7 +198,6 @@ function WebLiveBrowsePagedInner({ creds, openChannel }: WebLiveBrowsePagedProps
           }
         />
       </div>
-    </>
   );
 }
 
