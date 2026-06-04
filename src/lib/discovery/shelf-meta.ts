@@ -75,6 +75,15 @@ export const DISCOVERY_SHELF_META: Record<string, DiscoveryShelfMeta> = {
     kind: "live",
     seeAllHref: "/app/live",
   },
+  live_trending_on_tv: {
+    id: "live_trending_on_tv",
+    title: "Trending on TV",
+    eyebrow: "From your programme guide",
+    signal:
+      "Shows airing now that match TMDB weekly search interest in your region",
+    kind: "live",
+    seeAllHref: "/app/live",
+  },
   live_on_now: {
     id: "live_on_now",
     title: "On now",

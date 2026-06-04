@@ -1,7 +1,9 @@
 "use client";
 
 import { isDiscoveryShelvesEnabled } from "@/lib/discovery/feature-flag";
+import { resolveTmdbCountry } from "@/lib/discovery/tmdb-region";
 import type { DiscoveryShelvesApiResponse } from "@/lib/discovery/types";
+import type { TvRegion } from "@/lib/geo-continent";
 import { useQuery } from "@tanstack/react-query";
 
 async function fetchDiscoveryShelves(
@@ -18,11 +20,18 @@ async function fetchDiscoveryShelves(
   return res.json() as Promise<DiscoveryShelvesApiResponse>;
 }
 
-export function useDiscoveryTmdb(region = "US") {
+/** Pass a `TvRegion` or ISO country code (`US`, `GB`, …). */
+export function useDiscoveryTmdb(tvRegionOrCountry?: TvRegion | string | null) {
+  const tmdbCountry =
+    typeof tvRegionOrCountry === "string" &&
+    /^[A-Z]{2,3}$/i.test(tvRegionOrCountry.trim()) &&
+    !tvRegionOrCountry.includes(" ")
+      ? tvRegionOrCountry.trim().toUpperCase()
+      : resolveTmdbCountry({ tvRegion: tvRegionOrCountry as TvRegion | null });
   const enabled = isDiscoveryShelvesEnabled();
   return useQuery({
-    queryKey: ["discovery-shelves", region],
-    queryFn: ({ signal }) => fetchDiscoveryShelves(region, signal),
+    queryKey: ["discovery-shelves", tmdbCountry],
+    queryFn: ({ signal }) => fetchDiscoveryShelves(tmdbCountry, signal),
     enabled,
     staleTime: 30 * 60 * 1000,
     gcTime: 60 * 60 * 1000,

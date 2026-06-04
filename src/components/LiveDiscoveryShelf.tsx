@@ -7,6 +7,7 @@ import { TvShelf } from "@/components/TvShelf";
 import { TvSpatialGrid } from "@/components/TvSpatialGrid";
 import type { DiscoveryShelfMeta } from "@/lib/discovery/types";
 import type { ScoredLiveEntry } from "@/lib/discovery/live-scoring";
+import { isChannelOnlyListing } from "@/lib/discovery/live-trending-quality";
 import type { XtreamCredentials } from "@/lib/xtream-types";
 import { prefetchLiveStreamManifest } from "@/lib/live-stream-prefetch";
 import { buildLivePlayUrl } from "@/lib/xtream";
@@ -41,18 +42,25 @@ function LiveDiscoveryCard({
   tvHome?: boolean;
 }) {
   const url = buildLivePlayUrl(creds, entry.stream);
-  const subtitle = tvHome
-    ? `▶ ${entry.programmeTitle}`
-  : entry.detail
-      ? `▶ ${entry.programmeTitle} · ${entry.detail}`
-      : `▶ ${entry.programmeTitle}`;
+  const channelOnly = isChannelOnlyListing(
+    entry.programmeTitle,
+    entry.stream.name
+  );
+  const headline = channelOnly ? entry.stream.name : entry.programmeTitle;
+  const subtitle = channelOnly
+    ? entry.detail
+    : tvHome
+      ? `▶ ${entry.stream.name}`
+      : entry.detail
+        ? `▶ ${entry.stream.name} · ${entry.detail}`
+        : `▶ ${entry.stream.name}`;
 
   return (
     <ChannelArtworkCard
-      channelName={entry.stream.name}
+      channelName={headline}
       icon={entry.stream.stream_icon}
       panelServer={creds.server}
-      programmeTitle={entry.programmeTitle}
+      programmeTitle={channelOnly ? undefined : entry.programmeTitle}
       subtitle={subtitle}
       aspect="video"
       badge="Live"

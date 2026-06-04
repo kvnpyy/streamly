@@ -27,6 +27,8 @@ function signalForReason(reason: RegionalTrendReason): string {
       return "Finale on your guide now";
     case "on_now_hype":
       return "On your guide now";
+    case "tmdb_on_tv":
+      return "TMDB search interest · on your guide now";
     case "tonight_prime":
       return "Prime time on your guide tonight";
     case "catalog_top_movie":
@@ -48,8 +50,12 @@ function normalizePopularity(values: number[]): (v: number, i: number) => number
   };
 }
 
-function liveReason(entry: ScoredLiveEntry, slot: "on_now" | "tonight" | "sports"): RegionalTrendReason {
+function liveReason(
+  entry: ScoredLiveEntry,
+  slot: "on_now" | "tonight" | "sports" | "tmdb_tv"
+): RegionalTrendReason {
   const title = entry.programmeTitle || "";
+  if (slot === "tmdb_tv") return "tmdb_on_tv";
   if (FINALE_RE.test(title)) return "finale";
   if (slot === "tonight") return "tonight_prime";
   if (slot === "sports") {
@@ -64,7 +70,7 @@ function pushLive(
   out: RegionalTrendingCard[],
   seen: Set<string>,
   entry: ScoredLiveEntry,
-  slot: "on_now" | "tonight" | "sports",
+  slot: "on_now" | "tonight" | "sports" | "tmdb_tv",
   scoreBoost = 0
 ) {
   const id = entry.stream.stream_id;
@@ -170,6 +176,10 @@ export function buildRegionalTrending(
   for (const entry of input.sportsEvents.slice(0, 8)) {
     const boost = entry.detail?.toLowerCase().includes("ufc") ? 12 : 0;
     pushLive(candidates, seen, entry, "sports", 20 + boost);
+  }
+
+  for (const entry of (input.trendingOnTv ?? []).slice(0, 10)) {
+    pushLive(candidates, seen, entry, "tmdb_tv", 22);
   }
 
   for (const entry of input.onNow.slice(0, 10)) {

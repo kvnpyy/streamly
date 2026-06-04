@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  bestTmdbMatchForTitle,
   catalogTitleEntriesFromMovies,
   matchTmdbTrendingToCatalog,
 } from "@/lib/discovery/tmdb-match";
@@ -11,6 +12,15 @@ describe("normalizeDiscoveryTitle", () => {
     expect(normalizeDiscoveryTitle("US: Inception (2010) HD")).toBe(
       "inception 2010"
     );
+  });
+});
+
+describe("bestTmdbMatchForTitle", () => {
+  it("matches fuzzy programme titles to TMDB trending", () => {
+    const match = bestTmdbMatchForTitle("90 Day Fiance: Happily Ever After", [
+      { tmdbId: 1, title: "90 Day Fiancé", popularity: 100 },
+    ]);
+    expect(match?.item.tmdbId).toBe(1);
   });
 });
 

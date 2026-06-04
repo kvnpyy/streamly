@@ -1,6 +1,7 @@
 import type { NextConfig } from "next";
 import { withSentryConfig } from "@sentry/nextjs";
-import { readFileSync } from "node:fs";
+import { execSync } from "node:child_process";
+import { existsSync, readFileSync } from "node:fs";
 import os from "node:os";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -22,6 +23,33 @@ const publicAppVersion =
   process.env.NEXT_PUBLIC_APP_VERSION?.trim() ||
   packageVersion.version ||
   "0.0.0";
+
+function resolveBuildSha(): string {
+  const fromEnv = process.env.NEXT_PUBLIC_BUILD_SHA?.trim();
+  if (fromEnv) return fromEnv;
+  const metaPath = path.join(projectRoot, "build-meta.json");
+  if (existsSync(metaPath)) {
+    try {
+      const meta = JSON.parse(readFileSync(metaPath, "utf8")) as {
+        sha?: string;
+      };
+      if (meta.sha?.trim()) return meta.sha.trim();
+    } catch {
+      /* ignore */
+    }
+  }
+  try {
+    return execSync("git rev-parse --short HEAD", {
+      cwd: projectRoot,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+  } catch {
+    return "";
+  }
+}
+
+const publicBuildSha = resolveBuildSha();
 
 function ipv4LanAddresses(): string[] {
   const out: string[] = [];
@@ -81,6 +109,7 @@ const noStoreDocument = [
 const nextConfig: NextConfig = {
   env: {
     NEXT_PUBLIC_APP_VERSION: publicAppVersion,
+    NEXT_PUBLIC_BUILD_SHA: publicBuildSha,
   },
   // Produces a self-contained build in .next/standalone — required for the
   // Dockerfile. Has no effect on `npm start` (bare Node) deployments.

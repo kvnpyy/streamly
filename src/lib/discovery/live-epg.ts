@@ -1,6 +1,6 @@
 import type { EpgListingLike } from "@/lib/epg-time";
 import { epgProgramRangeUnixSec } from "@/lib/epg-time";
-import { decodeEpgText, nowPlayingTitleFromListings } from "@/lib/hooks";
+import { decodeEpgText, nowPlayingTitleFromListings } from "@/lib/epg-text";
 
 /** Local wall-clock prime-time window for “Tonight” shelves (6:00 PM – 11:30 PM). */
 export function localPrimeTimeWindowSec(nowSec: number): {

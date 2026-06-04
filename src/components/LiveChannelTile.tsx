@@ -5,6 +5,7 @@ import {
   inferCountryFromCategory,
   parseChannelMeta,
 } from "@/lib/channel-meta";
+import { getCachedEpgTitle } from "@/lib/epg-local-cache";
 import { isLiveTileEpgEnabled } from "@/lib/live-epg-policy";
 import {
   decodeEpgText,
@@ -13,7 +14,8 @@ import {
   useNow,
 } from "@/lib/hooks";
 import { epgProgramRangeUnixSec } from "@/lib/epg-time";
-import { useEffect, useMemo } from "react";
+import { useAuth } from "@/store/auth";
+import { useEffect, useMemo, useState } from "react";
 
 type LiveChannelTileProps = Omit<
   ChannelTileProps,
@@ -67,14 +69,20 @@ export function LiveChannelTile({
   const countryCode =
     inferCountryFromCategory(categoryLine || "") ||
     fallbackMeta.countryCode;
+  const creds = useAuth((s) => s.creds);
+  const [cachedTitle] = useState<string | null>(() =>
+    creds
+      ? getCachedEpgTitle(creds.server, creds.username, streamId)
+      : null
+  );
   const [ref, inView] = useInView<HTMLDivElement>("250px");
-  const skipEpg =
+  const skipNetworkEpg =
     Boolean(knownNowPlaying?.trim()) || !isLiveTileEpgEnabled();
   const { programs, isLoading, isResolved, skipped, sourceIsExternal } =
     useChannelEPG({
       streamId,
       hasEpgChannelId,
-      enabled: inView && !skipEpg,
+      enabled: inView && !skipNetworkEpg,
       channelName: rest.name,
       country: countryCode,
       shortLimit: 2,
@@ -128,7 +136,8 @@ export function LiveChannelTile({
     };
   }, [programs, now]);
 
-  const displayNowPlaying = knownNowPlaying?.trim() || nowPlaying;
+  const displayNowPlaying =
+    knownNowPlaying?.trim() || nowPlaying || cachedTitle || undefined;
 
   useEffect(() => {
     if (onNowPlaying) onNowPlaying(displayNowPlaying);
@@ -136,6 +145,7 @@ export function LiveChannelTile({
 
   const noScheduleAvailable =
     !displayNowPlaying &&
+    !cachedTitle &&
     (skipped || (isResolved && programs.length === 0));
 
   return (

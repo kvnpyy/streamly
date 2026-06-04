@@ -4,11 +4,12 @@ import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/store/auth";
 import { xtream } from "@/lib/xtream";
 import {
-  type EpgListingLike,
   epgListingsHaveParsableTimes,
   epgListingsOverlapWindow,
-  epgProgramRangeUnixSec,
 } from "@/lib/epg-time";
+import { nowPlayingTitleFromListings } from "@/lib/epg-text";
+import { setCachedEpgTitle } from "@/lib/epg-local-cache";
+import { runGuideExternalEpgFetch } from "@/lib/epg-fetch-limiter";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 /**
@@ -68,12 +69,16 @@ export function useExternalEPG(opts: {
   enabled: boolean;
   /** Max programmes returned (Guide uses more than tiles). Clamped server-side. */
   programmeLimit?: number;
+  /** Serialize iptv-org fetches (programme guide rows). */
+  guideThrottled?: boolean;
 }) {
-  const { channelName, country, enabled, programmeLimit = 8 } = opts;
+  const { channelName, country, enabled, programmeLimit = 8, guideThrottled } =
+    opts;
   const lim = Math.max(1, Math.min(48, programmeLimit || 8));
   return useQuery({
-    queryKey: ["ext-epg", country, channelName, lim],
+    queryKey: ["ext-epg", country, channelName, lim, guideThrottled ? 1 : 0],
     queryFn: async ({ signal }) => {
+      const run = async () => {
       const params = new URLSearchParams({
         name: channelName!,
         country: country!,
@@ -101,6 +106,8 @@ export function useExternalEPG(opts: {
         matched_name?: string | null;
         error?: string;
       };
+      };
+      return guideThrottled ? runGuideExternalEpgFetch(run) : run();
     },
     enabled: enabled && !!channelName && !!country,
     staleTime: 5 * 60_000,
@@ -108,22 +115,15 @@ export function useExternalEPG(opts: {
   });
 }
 
-/** Extra programmes when using short EPG as Guide fallback (12h grid needs depth). */
-const GUIDE_SHORT_FALLBACK_LIMIT = 96;
-const GUIDE_EXTERNAL_PROGRAMME_LIMIT = 40;
+/** Short EPG depth for the 12h guide grid (keep payloads small). */
+const GUIDE_SHORT_FALLBACK_LIMIT = 24;
+const GUIDE_EXTERNAL_PROGRAMME_LIMIT = 32;
 
 /**
- * Guide-specific EPG pipeline:
- * - **`get_simple_data_table`** + **`get_short_epg`** run **in parallel** (panels
- *   often only populate one — waiting sequentially hid short data).
- * - **iptv-org** runs **in parallel whenever country + name are known** so rows
- *   don’t sit blank until both provider calls finish.
- * - Provider rows win only if **at least one entry has parseable times**; panels
- *   often return non-empty `epg_listings` with junk timestamps — that used to
- *   block iptv-org entirely.
- * - If **`viewportSec`** is set and provider rows never overlap that window
- *   (wrong timezone / stale listings), we **still use iptv-org** so the grid
- *   isn’t blank while parsable junk blocks the fallback.
+ * Guide-specific EPG pipeline (sequential + throttled):
+ * - Short provider EPG first; full table only if short has no parseable times.
+ * - iptv-org only after provider calls settle and only when still needed.
+ * - Rows pass `epgEnabled: false` until in the scrollport.
  */
 export function useGuideChannelEPG(opts: {
   streamId: number;
@@ -140,25 +140,24 @@ export function useGuideChannelEPG(opts: {
   const { streamId, channelName, country, viewportSec, epgEnabled = true } =
     opts;
 
-  const full = useFullEPG(streamId, epgEnabled);
   const short = useShortEPG(streamId, GUIDE_SHORT_FALLBACK_LIMIT, epgEnabled);
+  const shortListings =
+    short.status === "success" ? (short.data?.epg_listings ?? []) : [];
+  const shortParsable = epgListingsHaveParsableTimes(shortListings);
+
+  const fullEnabled = epgEnabled && short.isFetched && !shortParsable;
+  const full = useFullEPG(streamId, fullEnabled);
 
   const mergedProvider = useMemo(() => {
     const fromFull =
       full.status === "success" ? (full.data?.epg_listings ?? []) : [];
-    const fromShort =
-      short.status === "success" ? (short.data?.epg_listings ?? []) : [];
     if (epgListingsHaveParsableTimes(fromFull)) return fromFull;
-    if (epgListingsHaveParsableTimes(fromShort)) return fromShort;
+    if (shortParsable) return shortListings;
     return [];
-  }, [full.status, full.data, short.status, short.data]);
+  }, [full.status, full.data, shortParsable, shortListings]);
 
-  const ext = useExternalEPG({
-    channelName,
-    country,
-    programmeLimit: GUIDE_EXTERNAL_PROGRAMME_LIMIT,
-    enabled: epgEnabled && !!channelName && !!country,
-  });
+  const providerSettled =
+    short.isFetched && (!fullEnabled || full.isFetched);
 
   const providerOverlapsViewport = useMemo(() => {
     if (!viewportSec || mergedProvider.length === 0) return true;
@@ -168,6 +167,19 @@ export function useGuideChannelEPG(opts: {
       viewportSec.hi
     );
   }, [mergedProvider, viewportSec]);
+
+  const ext = useExternalEPG({
+    channelName,
+    country,
+    programmeLimit: GUIDE_EXTERNAL_PROGRAMME_LIMIT,
+    guideThrottled: true,
+    enabled:
+      epgEnabled &&
+      providerSettled &&
+      !!channelName &&
+      !!country &&
+      (mergedProvider.length === 0 || !providerOverlapsViewport),
+  });
 
   const extRows = ext.data?.epg_listings;
 
@@ -197,11 +209,12 @@ export function useGuideChannelEPG(opts: {
   ]);
 
   const needsExt =
+    epgEnabled &&
     !!channelName &&
     !!country &&
     (mergedProvider.length === 0 || !providerOverlapsViewport);
 
-  const providerResolved = full.isFetched && short.isFetched;
+  const providerResolved = providerSettled;
   const extSettled =
     !needsExt || ext.isFetched || ext.isError;
 
@@ -226,8 +239,8 @@ export function useGuideChannelEPG(opts: {
   if (!epgEnabled) {
     return {
       programs: [],
-      isLoading: true,
-      isResolved: false,
+      isLoading: false,
+      isResolved: true,
       sourceIsExternal: false,
       matchedName: null,
     };
@@ -273,6 +286,8 @@ export function useChannelEPG(opts: {
     country,
     shortLimit = 6,
   } = opts;
+  const creds = useAuth((s) => s.creds);
+  const now = useNow(60_000);
   const canFetchProvider =
     enabled && !!streamId && hasEpgChannelId !== false;
   const short = useShortEPG(canFetchProvider ? streamId : undefined, shortLimit);
@@ -328,6 +343,21 @@ export function useChannelEPG(opts: {
     !(short.isSuccess && shortParsable && shortList.length > 0);
   const needsExtTile =
     providerExhausted && !!channelName && !!country;
+
+  const resolvedNowTitle = useMemo(() => {
+    if (!programs.length) return undefined;
+    return nowPlayingTitleFromListings(programs, now);
+  }, [programs, now]);
+
+  useEffect(() => {
+    if (!creds || !streamId || !resolvedNowTitle?.trim()) return;
+    setCachedEpgTitle(
+      creds.server,
+      creds.username,
+      streamId,
+      resolvedNowTitle
+    );
+  }, [creds, streamId, resolvedNowTitle]);
 
   return {
     programs,
@@ -419,41 +449,4 @@ export function useInViewWithin<T extends HTMLElement>(
   return [ref, inView];
 }
 
-/** Decode IPTV EPG titles (provider often base64-encodes them). */
-export function decodeEpgText(s: string | undefined | null): string {
-  if (!s) return "";
-  // Heuristic: base64 strings only contain A–Z a–z 0–9 + / =, are usually
-  // not sentences with spaces. Try to decode and detect mojibake.
-  if (/^[A-Za-z0-9+/=\s]+$/.test(s) && s.length % 4 === 0 && s.length > 8) {
-    try {
-      const decoded =
-        typeof atob !== "undefined"
-          ? decodeURIComponent(escape(atob(s)))
-          : Buffer.from(s, "base64").toString("utf-8");
-      // Reject if decoded contains lots of non-printable characters
-      const printable = decoded.replace(/[^\x20-\x7E\u00A0-\uFFFF]/g, "");
-      if (printable.length / decoded.length > 0.85) return decoded;
-    } catch {
-      /* not base64 */
-    }
-  }
-  return s;
-}
-
-/** Resolve current programme title from Xtream-style listings (shared by tiles + live search batch). */
-export function nowPlayingTitleFromListings(
-  listings: EpgListingLike[],
-  nowUnixSec: number
-): string | undefined {
-  let current = listings.find((p) => {
-    const r = epgProgramRangeUnixSec(p);
-    return r !== null && r.start <= nowUnixSec && nowUnixSec < r.end;
-  });
-  if (!current) {
-    current = listings.find(
-      (p) => Number((p as { now_playing?: unknown }).now_playing) === 1
-    );
-  }
-  const raw = (current as { title?: string } | undefined)?.title;
-  return raw ? decodeEpgText(raw) : undefined;
-}
+export { decodeEpgText, nowPlayingTitleFromListings } from "@/lib/epg-text";

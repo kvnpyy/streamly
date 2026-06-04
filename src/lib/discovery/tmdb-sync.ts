@@ -42,13 +42,20 @@ function mapTmdbResults(
 
 async function fetchTrending(
   mediaType: "movie" | "tv",
-  token: string
+  token: string,
+  region: string
 ): Promise<TmdbTrendingItem[]> {
   const path =
     mediaType === "movie"
       ? "/trending/movie/week"
       : "/trending/tv/week";
-  const res = await fetch(`${TMDB_BASE}${path}`, {
+  const url = new URL(`${TMDB_BASE}${path}`);
+  const code = region.toUpperCase();
+  url.searchParams.set("region", code);
+  const language =
+    code === "GB" ? "en-GB" : code === "AU" ? "en-AU" : code === "MX" ? "es-MX" : "en-US";
+  url.searchParams.set("language", language);
+  const res = await fetch(url.toString(), {
     headers: { Authorization: `Bearer ${token}` },
     next: { revalidate: 0 },
   });
@@ -74,9 +81,10 @@ export async function syncTmdbTrendingToDb(
 
   const db = getDb();
   const syncedAt = new Date();
+  const tmdbRegion = region.toUpperCase();
   const [movies, tv] = await Promise.all([
-    fetchTrending("movie", token),
-    fetchTrending("tv", token),
+    fetchTrending("movie", token, tmdbRegion),
+    fetchTrending("tv", token, tmdbRegion),
   ]);
 
   const write = async (mediaType: "movie" | "tv", items: TmdbTrendingItem[]) => {
@@ -127,9 +135,8 @@ export async function readTmdbTrendingFromDb(
   const rows = await db.select().from(discoveryTmdbCache);
 
   const pick = (mediaType: "movie" | "tv") => {
-    const row =
-      rows.find((r) => r.id === `${mediaType}:${region}`) ??
-      rows.find((r) => r.mediaType === mediaType);
+    const code = region.toUpperCase();
+    const row = rows.find((r) => r.id === `${mediaType}:${code}`);
     if (!row) return { items: [] as TmdbTrendingItem[], syncedAt: null as Date | null };
     try {
       const payload = JSON.parse(row.payloadJson) as TmdbTrendingCachePayload;

@@ -36,3 +36,31 @@ export function runEpgFetch<T>(fn: () => Promise<T>): Promise<T> {
     drainQueue();
   });
 }
+
+/** iptv-org guide lookups can download multi-MB country files — cap concurrency. */
+const GUIDE_EXT_MAX = 2;
+let guideExtActive = 0;
+const guideExtWaiters: Array<() => void> = [];
+
+function drainGuideExtQueue() {
+  while (guideExtActive < GUIDE_EXT_MAX && guideExtWaiters.length > 0) {
+    guideExtActive++;
+    const start = guideExtWaiters.shift()!;
+    start();
+  }
+}
+
+export function runGuideExternalEpgFetch<T>(fn: () => Promise<T>): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const start = () => {
+      void fn()
+        .then(resolve, reject)
+        .finally(() => {
+          guideExtActive -= 1;
+          drainGuideExtQueue();
+        });
+    };
+    guideExtWaiters.push(start);
+    drainGuideExtQueue();
+  });
+}

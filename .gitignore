@@ -26,6 +26,9 @@
 # VPS upstream / live-catalog disk cache
 .cache/
 
+# auto-written on deploy (version + git sha for NEXT_PUBLIC_*)
+/build-meta.json
+
 # misc
 .DS_Store
 *.pem

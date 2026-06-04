@@ -3,6 +3,11 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
+if [ "${SKIP_VERSION_BUMP:-}" != "1" ]; then
+  echo "==> semver bump (conventional commits since last v* tag)"
+  node scripts/bump-version.mjs
+fi
+
 echo "==> eslint"
 npm run lint
 

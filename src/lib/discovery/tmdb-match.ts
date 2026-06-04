@@ -69,6 +69,50 @@ function titleSimilarity(a: string, b: string): number {
 
 const MATCH_THRESHOLD = 0.72;
 
+function foldAccents(s: string): string {
+  return s.normalize("NFD").replace(/\p{M}/gu, "");
+}
+
+export type TmdbTitleMatch = {
+  item: TmdbTrendingItem;
+  similarity: number;
+};
+
+/**
+ * Best TMDB trending row for a programme or channel title (live EPG matching).
+ */
+export function bestTmdbMatchForTitle(
+  title: string,
+  trending: TmdbTrendingItem[]
+): TmdbTitleMatch | null {
+  const normTitle = foldAccents(normalizeDiscoveryTitle(title));
+  if (!normTitle || trending.length === 0) return null;
+
+  let best: TmdbTitleMatch | null = null;
+  for (const item of trending) {
+    const normTmdb = foldAccents(normalizeDiscoveryTitle(item.title));
+    const normOrig = item.originalTitle
+      ? foldAccents(normalizeDiscoveryTitle(item.originalTitle))
+      : "";
+    let score = Math.max(
+      titleSimilarity(normTitle, normTmdb),
+      normOrig ? titleSimilarity(normTitle, normOrig) : 0
+    );
+    if (normTmdb.length >= 8 && normTitle.includes(normTmdb)) {
+      score = Math.max(score, 0.88);
+    }
+    if (normTitle.length >= 8 && normTmdb.includes(normTitle)) {
+      score = Math.max(score, 0.82);
+    }
+    const year = extractYear(title);
+    if (year && item.year && year === item.year) score += 0.12;
+    if (score >= MATCH_THRESHOLD && (!best || score > best.similarity)) {
+      best = { item, similarity: score };
+    }
+  }
+  return best;
+}
+
 /**
  * Map TMDB trending rows to Xtream IDs. Unmatched items are omitted (v1 policy).
  */

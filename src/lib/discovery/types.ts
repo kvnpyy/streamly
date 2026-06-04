@@ -13,6 +13,7 @@ export type DiscoveryShelfId =
   | "live_tonight"
   | "live_sports_events"
   | "live_sports_on_guide"
+  | "live_trending_on_tv"
   | "home_regional_trending";
 
 export type DiscoveryMediaKind = "movie" | "series" | "live";

@@ -3,10 +3,13 @@ import {
   xtreamCatalogCacheControlHeader,
 } from "@/lib/xtream-catalog-cache";
 import { enforceXtreamAuthProbeCaptcha } from "@/lib/xtream-captcha";
+import { snapshotFromListings } from "@/lib/discovery/live-epg";
+import { setServerEpgTitle } from "@/lib/epg-server-title-cache";
 import {
   EMPTY_XTREAM_EPG,
   isXtreamEpgAction,
 } from "@/lib/xtream-epg-actions";
+import { extractXtreamEpgPayload } from "@/lib/xtream";
 import {
   getXtreamUpstreamCached,
   setXtreamUpstreamCached,
@@ -25,6 +28,19 @@ function readCreds(req: NextRequest) {
   const password = req.headers.get("x-iptv-password");
   if (!server || !username || !password) return null;
   return { server: server.replace(/\/+$/, ""), username, password };
+}
+
+function warmServerEpgFromPayload(
+  creds: { server: string; username: string; password: string },
+  streamId: number,
+  json: unknown
+): void {
+  const payload = extractXtreamEpgPayload(json);
+  const listings = payload?.epg_listings;
+  if (!listings?.length) return;
+  const snap = snapshotFromListings(listings, Math.floor(Date.now() / 1000));
+  const title = snap.nowTitle?.trim();
+  if (title) setServerEpgTitle(creds, streamId, title);
 }
 
 export async function GET(req: NextRequest) {
@@ -62,6 +78,12 @@ export async function GET(req: NextRequest) {
     if (hit) {
       try {
         const json = JSON.parse(hit);
+        if (epgAction && creds) {
+          const streamId = Number(cacheParams.stream_id);
+          if (Number.isFinite(streamId) && streamId > 0) {
+            warmServerEpgFromPayload(creds, streamId, json);
+          }
+        }
         const headers = new Headers();
         if (isXtreamCatalogCacheAction(action)) {
           headers.set("Cache-Control", xtreamCatalogCacheControlHeader());
@@ -103,6 +125,12 @@ export async function GET(req: NextRequest) {
       const json = JSON.parse(text);
       if (cacheableUpstream) {
         setXtreamUpstreamCached(upstreamCacheKey, text, action);
+      }
+      if (epgAction && creds) {
+        const streamId = Number(cacheParams.stream_id);
+        if (Number.isFinite(streamId) && streamId > 0) {
+          warmServerEpgFromPayload(creds, streamId, json);
+        }
       }
       const headers = new Headers();
       if (isXtreamCatalogCacheAction(action)) {

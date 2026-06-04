@@ -4,5 +4,10 @@ export function getAppVersionLabel(): string {
     typeof process !== "undefined"
       ? process.env.NEXT_PUBLIC_APP_VERSION?.trim()
       : "";
-  return v ? `v${v.replace(/^v/i, "")}` : "vdev";
+  const sha =
+    typeof process !== "undefined"
+      ? process.env.NEXT_PUBLIC_BUILD_SHA?.trim()
+      : "";
+  const base = v ? `v${v.replace(/^v/i, "")}` : "vdev";
+  return sha ? `${base}+${sha}` : base;
 }

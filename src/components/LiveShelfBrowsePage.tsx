@@ -1,24 +1,37 @@
 "use client";
 
+import { LiveGuidePanel } from "@/components/live/LiveGuidePanel";
+import { LiveTrendingOnTvBlock } from "@/components/live/LiveTrendingOnTvBlock";
 import { WebLiveBrowsePaged } from "@/components/WebLiveBrowsePaged";
+import { SkeletonGrid } from "@/components/SectionHeader";
 import { LiveShelfNameSearch } from "@/components/LiveShelfNameSearch";
 import { LiveCategoryBrowseModal } from "@/components/LiveCategoryBrowseModal";
 import { LiveChannelSearchField } from "@/components/LiveChannelSearchField";
 import { LiveMediaCard } from "@/components/LiveMediaCard";
 import { SectionHeader } from "@/components/SectionHeader";
+import { liveStreamToPlayerSource } from "@/lib/live-flip-playlist";
 import { openLiveShelfChannel } from "@/lib/open-live-shelf-channel";
 import type { LiveShelfMeta } from "@/lib/live-category-shelf";
 import { catalogKeys } from "@/lib/catalog-queries";
+import { prefetchLiveGuideChunk } from "@/lib/guide-chunk-prefetch";
 import {
   fetchLiveCategoryChannels,
+  liveCategoryChannelsQueryOptions,
 } from "@/lib/live-catalog-channels";
+import { LIVE_GUIDE_MAX_CHANNELS } from "@/lib/live-guide-limits";
+import { scheduleLiveBrowseUiReady } from "@/lib/live-page-performance";
 import type { SlimLiveCatalog } from "@/lib/slim-live-catalog";
+import {
+  detectRegionFromTimezone,
+  type TvRegion,
+} from "@/lib/geo-continent";
 import { buildLivePlayUrl } from "@/lib/xtream";
 import type { Category, LiveStream, XtreamCredentials } from "@/lib/xtream-types";
+import { usePlayer } from "@/store/player";
 import { usePrefs } from "@/store/preferences";
 import { useQuery, type UseQueryResult } from "@tanstack/react-query";
 import { Layers } from "lucide-react";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 type ViewMode = "list" | "guide";
 
@@ -66,11 +79,57 @@ export function LiveShelfBrowsePage({
   tvLivingRoom,
   liveSearchRef,
 }: LiveShelfBrowsePageProps) {
+  const { play } = usePlayer();
   const isFavorite = usePrefs((s) => s.isFavorite);
   const toggleFavorite = usePrefs((s) => s.toggleFavorite);
   const addRecent = usePrefs((s) => s.addRecent);
   const recents = usePrefs((s) => s.recents);
+  const favorites = usePrefs((s) => s.favorites);
+  const storedRegion = usePrefs((s) => s.tvRegionFilter);
+  const setStoredRegion = usePrefs((s) => s.setTvRegionFilter);
   const [categoryBrowseOpen, setCategoryBrowseOpen] = useState(false);
+  const [guideReady, setGuideReady] = useState(false);
+
+  useEffect(() => {
+    if (view !== "guide") {
+      queueMicrotask(() => setGuideReady(false));
+      return;
+    }
+    return scheduleLiveBrowseUiReady(() => setGuideReady(true), 400);
+  }, [view]);
+
+  const guideChannelsQuery = useQuery({
+    ...liveCategoryChannelsQueryOptions(
+      creds,
+      "all",
+      LIVE_GUIDE_MAX_CHANNELS,
+      view === "guide" && catalog.isFetched && !catalog.isError
+    ),
+  });
+
+  useEffect(() => {
+    if (storedRegion === null) {
+      setStoredRegion(detectRegionFromTimezone());
+    }
+  }, [storedRegion, setStoredRegion]);
+
+  const tvRegion: TvRegion = storedRegion ?? "All";
+
+  const guidePlayChannel = useCallback(
+    (c: LiveStream) => {
+      play(liveStreamToPlayerSource(creds, c));
+      addRecent({
+        kind: "live",
+        id: c.stream_id,
+        name: c.name,
+        icon: c.stream_icon,
+        ...(c.direct_source?.trim()
+          ? { meta: { direct_source: c.direct_source.trim() } }
+          : {}),
+      });
+    },
+    [addRecent, creds, play]
+  );
 
   const shelfOpenChannel = useCallback(
     (c: LiveStream, shelf?: LiveShelfMeta) => {
@@ -219,6 +278,34 @@ export function LiveShelfBrowsePage({
           </div>
         </section>
       )}
+      {!qTrim && catalog.isFetched && !catalog.isError && (
+        <LiveTrendingOnTvBlock
+          creds={creds}
+          tvRegion={tvRegion}
+          recents={recents}
+          favorites={favorites}
+          onRecent={(stream) =>
+            addRecent({
+              kind: "live",
+              id: stream.stream_id,
+              name: stream.name,
+              icon: stream.stream_icon,
+              ...(stream.direct_source?.trim()
+                ? { meta: { direct_source: stream.direct_source.trim() } }
+                : {}),
+            })
+          }
+          isFavorite={(id) => isFavorite("live", id)}
+          onToggleFavorite={(c) =>
+            toggleFavorite({
+              kind: "live",
+              id: c.stream_id,
+              name: c.name,
+              icon: c.stream_icon,
+            })
+          }
+        />
+      )}
       {qTrim ? (
         <LiveShelfNameSearch
           creds={creds}
@@ -235,6 +322,28 @@ export function LiveShelfBrowsePage({
             })
           }
         />
+      ) : view === "guide" ? (
+        guideChannelsQuery.isLoading && !guideChannelsQuery.data?.length ? (
+          <SkeletonGrid variant="tile" count={6} />
+        ) : guideReady ? (
+          <LiveGuidePanel
+            channels={guideChannelsQuery.data ?? []}
+            allCategoriesMode
+            categoryNameById={categoryNameById}
+            isFavorite={(id) => isFavorite("live", id)}
+            onToggleFavorite={(c) =>
+              toggleFavorite({
+                kind: "live",
+                id: c.stream_id,
+                name: c.name,
+                icon: c.stream_icon,
+              })
+            }
+            onPlay={guidePlayChannel}
+          />
+        ) : (
+          <SkeletonGrid variant="tile" count={6} />
+        )
       ) : catalog.isFetched && !catalog.isError ? (
         <WebLiveBrowsePaged creds={creds} openChannel={shelfOpenChannel} />
       ) : null}
@@ -269,6 +378,8 @@ function ViewToggle({
       </button>
       <button
         type="button"
+        onPointerEnter={prefetchLiveGuideChunk}
+        onFocus={prefetchLiveGuideChunk}
         onClick={() => setView("guide")}
         className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
           view === "guide"

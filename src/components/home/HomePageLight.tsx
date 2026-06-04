@@ -3,7 +3,6 @@
 import { HomeRecentTile } from "@/components/home/HomeRecentTile";
 import { TvHomeLight } from "@/components/home/TvHomeLight";
 import { SectionHeader } from "@/components/SectionHeader";
-import { TvSpatialGrid } from "@/components/TvSpatialGrid";
 import { welcomeDisplayName } from "@/lib/welcome-display-name";
 import { useLivingRoomHomeLayout } from "@/lib/use-living-room-home-layout";
 import { buildLivePlayUrl } from "@/lib/xtream";
@@ -50,7 +49,7 @@ export function HomePageLight({
   const isFavorite = usePrefs((s) => s.isFavorite);
   const addRecent = usePrefs((s) => s.addRecent);
 
-  const recentSlice = useMemo(() => recents.slice(0, 12), [recents]);
+  const recentSlice = useMemo(() => recents.slice(0, 6), [recents]);
 
   if (livingRoomHome) {
     return (
@@ -144,62 +143,68 @@ export function HomePageLight({
             eyebrow="Pick up where you left off"
             title="Continue watching"
           />
-          <TvSpatialGrid className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
-            {recentSlice.map((r) =>
-              r.kind === "live" ? (
-                <HomeRecentTile
-                  key={`live-${r.id}`}
-                  recent={r}
-                  badge="Live"
-                  isFavorite={isFavorite("live", r.id)}
-                  onToggleFavorite={() =>
-                    toggleFavorite({
-                      kind: "live",
-                      id: r.id,
-                      name: r.name,
-                      icon: r.icon,
-                    })
-                  }
-                  onPlay={() => {
-                    play({
-                      kind: "live",
-                      id: r.id,
-                      title: r.name,
-                      poster: r.icon,
-                      url: buildLivePlayUrl(creds, {
-                        stream_id: r.id,
-                        direct_source:
-                          typeof r.meta?.direct_source === "string"
-                            ? r.meta.direct_source
-                            : undefined,
-                      }),
-                    });
-                    addRecent(r);
-                  }}
-                />
-              ) : (
-                <HomeRecentTile
-                  key={`${r.kind}-${r.id}`}
-                  recent={r}
-                  badge={r.kind === "movie" ? "Movie" : "Series"}
-                  href={
-                    r.kind === "movie"
-                      ? `/app/movies/${r.id}`
-                      : `/app/series/${r.id}`
-                  }
-                  isFavorite={isFavorite(r.kind, r.id)}
-                  onToggleFavorite={() =>
-                    toggleFavorite({
-                      kind: r.kind,
-                      id: r.id,
-                      name: r.name,
-                      icon: r.icon,
-                    })
-                  }
-                />
-              )
-            )}
-          </TvSpatialGrid>
+          <div
+            className="flex gap-3 overflow-x-auto pb-2 -mx-4 px-4 scrollbar-hide"
+            style={{ WebkitOverflowScrolling: "touch" }}
+          >
+            {recentSlice.map((r) => (
+              <div
+                key={r.kind === "live" ? `live-${r.id}` : `${r.kind}-${r.id}`}
+                className="shrink-0 w-28 sm:w-32"
+              >
+                {r.kind === "live" ? (
+                  <HomeRecentTile
+                    recent={r}
+                    badge="Live"
+                    isFavorite={isFavorite("live", r.id)}
+                    onToggleFavorite={() =>
+                      toggleFavorite({
+                        kind: "live",
+                        id: r.id,
+                        name: r.name,
+                        icon: r.icon,
+                      })
+                    }
+                    onPlay={() => {
+                      play({
+                        kind: "live",
+                        id: r.id,
+                        title: r.name,
+                        poster: r.icon,
+                        url: buildLivePlayUrl(creds, {
+                          stream_id: r.id,
+                          direct_source:
+                            typeof r.meta?.direct_source === "string"
+                              ? r.meta.direct_source
+                              : undefined,
+                        }),
+                      });
+                      addRecent(r);
+                    }}
+                  />
+                ) : (
+                  <HomeRecentTile
+                    recent={r}
+                    badge={r.kind === "movie" ? "Movie" : "Series"}
+                    href={
+                      r.kind === "movie"
+                        ? `/app/movies/${r.id}`
+                        : `/app/series/${r.id}`
+                    }
+                    isFavorite={isFavorite(r.kind, r.id)}
+                    onToggleFavorite={() =>
+                      toggleFavorite({
+                        kind: r.kind,
+                        id: r.id,
+                        name: r.name,
+                        icon: r.icon,
+                      })
+                    }
+                  />
+                )}
+              </div>
+            ))}
+          </div>
         </section>
       )}
 

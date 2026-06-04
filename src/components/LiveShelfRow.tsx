@@ -41,6 +41,7 @@ export const LiveShelfRow = memo(function LiveShelfRow({
           key={c.stream_id}
           stream={c}
           credsServer={creds.server}
+          nowPlaying={nowPlayingMap.get(c.stream_id)}
           active={activeStreamId === c.stream_id}
           onPlay={(stream) => onPlay(stream, shelf)}
           variant={variant}

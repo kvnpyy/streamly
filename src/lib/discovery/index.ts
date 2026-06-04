@@ -3,6 +3,8 @@ export {
   getDiscoveryRegion,
   discoveryRegionDisplayName,
   regionalTrendingShelfTitle,
+  resolveTmdbCountry,
+  tvRegionToTmdbCountry,
 } from "@/lib/discovery/discovery-region";
 export {
   appendCatalogFallbacks,
@@ -40,8 +42,14 @@ export {
   buildTopRatedSeries,
 } from "@/lib/discovery/scoring";
 export {
+  buildLiveTrendingOnTv,
+  LIVE_TRENDING_ON_TV_MAX_SCAN,
+  mergeTmdbTrendingLists,
+} from "@/lib/discovery/live-trending-on-tv";
+export {
   catalogTitleEntriesFromMovies,
   catalogTitleEntriesFromSeries,
+  bestTmdbMatchForTitle,
   matchTmdbTrendingToCatalog,
 } from "@/lib/discovery/tmdb-match";
 export type {

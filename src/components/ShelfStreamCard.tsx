@@ -8,12 +8,14 @@ import { memo, useCallback } from "react";
 export const ShelfStreamCard = memo(function ShelfStreamCard({
   stream,
   credsServer,
+  nowPlaying,
   active,
   onPlay,
   variant = "web",
 }: {
   stream: LiveStream;
   credsServer: string;
+  nowPlaying?: string;
   active: boolean;
   onPlay: (c: LiveStream) => void;
   variant?: "web" | "tv";
@@ -26,6 +28,7 @@ export const ShelfStreamCard = memo(function ShelfStreamCard({
       name={stream.name}
       icon={stream.stream_icon}
       panelServer={credsServer}
+      nowPlaying={nowPlaying}
       active={active}
       onClick={onClick}
     />

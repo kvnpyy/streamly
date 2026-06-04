@@ -1,6 +1,10 @@
 "use client";
 
 import {
+  buildLiveTrendingOnTv,
+  LIVE_TRENDING_ON_TV_MAX_SCAN,
+} from "@/lib/discovery/live-trending-on-tv";
+import {
   LIVE_DISCOVERY_EPG_CONCURRENCY,
   LIVE_DISCOVERY_MAX_SCAN,
   LIVE_DISCOVERY_MIN_ITEMS,
@@ -9,6 +13,7 @@ import {
   scoreTonightEntry,
   type ScoredLiveEntry,
 } from "@/lib/discovery/live-scoring";
+import type { TmdbTrendingItem } from "@/lib/discovery/types";
 import { filterScoredLiveEntries } from "@/lib/discovery/live-quality";
 import { pickLiveDiscoveryCandidateIds } from "@/lib/discovery/live-candidates";
 import {
@@ -40,8 +45,10 @@ import { isTvClassUserAgent } from "@/lib/tv-user-agent";
 import { SHORT_EPG_NOW_PLAYING_LIMIT } from "@/lib/epg-constants";
 import {
   isLiveDiscoveryEpgNetworkEnabled,
+  isLiveTrendingShelfEnabled,
   LIVE_DISCOVERY_NETWORK_CAP,
 } from "@/lib/live-epg-policy";
+import { shouldShowTrendingOnTvShelf } from "@/lib/discovery/live-trending-quality";
 import {
   getBulkCachedEpgTitles,
   setCachedEpgTitlesBatch,
@@ -67,6 +74,8 @@ type UseLiveDiscoveryEpgOpts = {
   livingRoom?: boolean;
   /** Scan these stream IDs before the rest (e.g. trending shelf channels). */
   priorityStreamIds?: number[];
+  /** TMDB weekly trending (movies + series) for "Trending on TV" ranking. */
+  tmdbTrending?: TmdbTrendingItem[];
 };
 
 function seedSnapshotsFromCache(
@@ -95,6 +104,7 @@ export function useLiveDiscoveryEpg({
   deferMs: deferMsOverride,
   livingRoom = false,
   priorityStreamIds = [],
+  tmdbTrending = [],
 }: UseLiveDiscoveryEpgOpts) {
   const queryClient = useQueryClient();
   const discoveryOn = isDiscoveryShelvesEnabled();
@@ -174,14 +184,15 @@ export function useLiveDiscoveryEpg({
     });
 
     const networkOn = isLiveDiscoveryEpgNetworkEnabled();
-    const priorityOnly = priorityStreamIds.slice(0, LIVE_DISCOVERY_NETWORK_CAP);
+    const networkCap = LIVE_DISCOVERY_NETWORK_CAP;
+    const priorityOnly = priorityStreamIds.slice(0, networkCap);
     const scanIds = networkOn
       ? [
           ...new Set([
             ...priorityOnly,
             ...candidateIds.slice(0, fastScanCount),
           ]),
-        ].slice(0, Math.min(fastScanCount, LIVE_DISCOVERY_NETWORK_CAP))
+        ].slice(0, Math.min(fastScanCount, networkCap))
       : [];
     const bulkCached = getBulkCachedEpgTitles(
       creds.server,
@@ -411,7 +422,34 @@ export function useLiveDiscoveryEpg({
   const showSportsOnGuide =
     sportsOnGuide.length >= minSportsItems && !showSportsEvents;
 
+  const trendingOnTv = useMemo(() => {
+    if (!active || !isLiveTrendingShelfEnabled()) return [];
+    const scanCap = Math.min(maxScan, LIVE_TRENDING_ON_TV_MAX_SCAN);
+    const ids = candidateIds.slice(0, scanCap);
+    return buildLiveTrendingOnTv(
+      ids,
+      channelById,
+      snapshots,
+      tmdbTrending,
+      recentIds,
+      favIds
+    );
+  }, [
+    active,
+    candidateIds,
+    maxScan,
+    channelById,
+    snapshots,
+    tmdbTrending,
+    recentIds,
+    favIds,
+  ]);
+
+  const showTrendingOnTv = shouldShowTrendingOnTvShelf(trendingOnTv);
+
   return {
+    trendingOnTv,
+    showTrendingOnTv,
     onNow,
     tonight,
     sportsEvents: sportsMatched,

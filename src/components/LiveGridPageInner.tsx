@@ -20,8 +20,13 @@ import {
 } from "@/lib/live-catalog-channels";
 import { catalogKeys } from "@/lib/catalog-queries";
 import { EMPTY_LIVE_STREAMS } from "@/lib/live-browse-streams";
+import { prefetchLiveGuideChunk } from "@/lib/guide-chunk-prefetch";
 import { scheduleLiveBrowseUiReady } from "@/lib/live-page-performance";
 import { useLiveDiscoveryEpg } from "@/hooks/use-live-discovery-epg";
+import { useTrendingOnTv } from "@/hooks/use-trending-on-tv";
+import { useDiscoveryTmdb } from "@/hooks/use-discovery-tmdb";
+import { mergeTmdbTrendingLists } from "@/lib/discovery/live-trending-on-tv";
+import { detectRegionFromTimezone, type TvRegion } from "@/lib/geo-continent";
 import { SHORT_EPG_NOW_PLAYING_LIMIT } from "@/lib/epg-constants";
 import { shortEpgQueryOptions } from "@/lib/epg-query-options";
 import { setCachedEpgTitlesBatch } from "@/lib/epg-local-cache";
@@ -59,6 +64,7 @@ import {
   isLivePageDiscoveryEnabled,
   isLiveProgrammeSearchEnabled,
   isLiveTileEpgEnabled,
+  isLiveTrendingShelfEnabled,
 } from "@/lib/live-epg-policy";
 import { usePlayerOpen } from "@/lib/use-player-open";
 import type { LivePageShell } from "@/hooks/use-live-page-shell";
@@ -141,7 +147,7 @@ export function LiveGridPageInner({ shell }: { shell: LivePageShell }) {
       queueMicrotask(() => setGuideReady(false));
       return;
     }
-    return scheduleLiveBrowseUiReady(() => setGuideReady(true), 60);
+    return scheduleLiveBrowseUiReady(() => setGuideReady(true), 400);
   }, [view]);
 
   const [nowPlayingMap, setNowPlayingMap] = useState<Map<number, string>>(
@@ -193,29 +199,28 @@ export function LiveGridPageInner({ shell }: { shell: LivePageShell }) {
     []
   );
 
-  const channelListLimit =
-    view === "guide" ? LIVE_GUIDE_MAX_CHANNELS : LIVE_LIST_MAX_CHANNELS;
-
-  const shouldLoadChannelList =
-    
-    catalog.isFetched &&
-    !catalog.isError;
+  const shouldLoadChannelList = catalog.isFetched && !catalog.isError;
 
   const categoryChannelsQuery = useQuery(
     liveCategoryChannelsQueryOptions(
       creds,
       deferredSelected,
-      channelListLimit,
+      LIVE_LIST_MAX_CHANNELS,
       shouldLoadChannelList
     )
   );
 
   const categoryFilteredStreams = useMemo(() => {
-    return categoryChannelsQuery.data ?? EMPTY_LIVE_STREAMS;
-  }, [categoryChannelsQuery.data]);
+    const rows = categoryChannelsQuery.data ?? EMPTY_LIVE_STREAMS;
+    if (view === "guide") {
+      return rows.slice(0, LIVE_GUIDE_MAX_CHANNELS);
+    }
+    return rows;
+  }, [categoryChannelsQuery.data, view]);
 
   const channelsLoading =
-    categoryChannelsQuery.isLoading || categoryChannelsQuery.isFetching;
+    categoryChannelsQuery.isLoading ||
+    (categoryChannelsQuery.isFetching && !categoryChannelsQuery.data?.length);
 
   const deferredBrowseCategories = useDeferredValue(sortedFilteredCats);
   const streamsForShelfBrowse = EMPTY_LIVE_STREAMS;
@@ -283,6 +288,7 @@ export function LiveGridPageInner({ shell }: { shell: LivePageShell }) {
 
   useEffect(() => {
     if (!programmeSearchOn) return;
+    if (view !== "list") return;
     if (playerOpen) return;
     if (!programmeSearchQLower || scanCandidateIds.length === 0) {
       queueMicrotask(() => {
@@ -395,6 +401,7 @@ export function LiveGridPageInner({ shell }: { shell: LivePageShell }) {
     // so we don't restart a full EPG scan on every guide title tick.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional snapshot on query change
   }, [
+    view,
     playerOpen,
     programmeSearchQLower,
     scanCandidateIds,
@@ -505,9 +512,24 @@ export function LiveGridPageInner({ shell }: { shell: LivePageShell }) {
     return () => clearTimeout(t);
   }, [tvLivingRoom]);
 
+  const trendingShelfOn = isLiveTrendingShelfEnabled();
+  const pageDiscoveryOn = isLivePageDiscoveryEnabled();
+  const storedTvRegion = usePrefs((s) => s.tvRegionFilter);
+  const tvRegionForDiscovery: TvRegion =
+    storedTvRegion ?? detectRegionFromTimezone();
+  const tmdbQuery = useDiscoveryTmdb(tvRegionForDiscovery);
+  const tmdbMerged = useMemo(
+    () =>
+      mergeTmdbTrendingLists(
+        tmdbQuery.data?.movieTrending ?? [],
+        tmdbQuery.data?.tvTrending ?? []
+      ),
+    [tmdbQuery.data?.movieTrending, tmdbQuery.data?.tvTrending]
+  );
+
   /** Discovery EPG only on "All" grid/guide — never while a single category is open. */
   const discoveryEpgEnabled =
-    isLivePageDiscoveryEnabled() &&
+    (pageDiscoveryOn || trendingShelfOn) &&
     !qTrim &&
     view === "list" &&
     !streams.isLoading &&
@@ -528,6 +550,22 @@ export function LiveGridPageInner({ shell }: { shell: LivePageShell }) {
           typeof navigator !== "undefined" ? navigator.userAgent : ""
         )
       : 0,
+    tmdbTrending: tmdbMerged,
+  });
+
+  const trendingOnTvShelfEnabled =
+    trendingShelfOn &&
+    !qTrim &&
+    view === "list" &&
+    selected === "all" &&
+    !streams.isLoading;
+
+  const serverTrendingOnTv = useTrendingOnTv({
+    creds,
+    tvRegion: tvRegionForDiscovery,
+    recents,
+    favorites,
+    enabled: trendingOnTvShelfEnabled,
   });
 
   const toggleLiveStreamFavorite = useCallback(
@@ -591,7 +629,8 @@ export function LiveGridPageInner({ shell }: { shell: LivePageShell }) {
       );
   }, [recents, recentStreamsQuery.data]);
 
-  const liveDiscoveryBlocks = discoveryEpgEnabled ? (
+  const liveDiscoveryBlocks =
+    discoveryEpgEnabled || trendingOnTvShelfEnabled ? (
     <LiveDiscoverySections
       creds={creds}
       channels={categoryFilteredStreams}
@@ -600,16 +639,21 @@ export function LiveGridPageInner({ shell }: { shell: LivePageShell }) {
       hideAdult={hideAdult}
       parentalUnlocked={parentalUnlocked}
       tvLayout={tvLivingRoom}
+      trendingOnTv={serverTrendingOnTv.items}
+      showTrendingOnTv={serverTrendingOnTv.show}
+      trendingOnTvLoading={
+        serverTrendingOnTv.loading && serverTrendingOnTv.items.length === 0
+      }
       onNow={liveDiscovery.onNow}
       tonight={liveDiscovery.tonight}
       sportsEvents={liveDiscovery.sportsEvents}
       sportsOnGuide={liveDiscovery.sportsOnGuide}
-      showOnNow={liveDiscovery.showOnNow}
-      showTonight={liveDiscovery.showTonight}
-      showSportsEvents={liveDiscovery.showSportsEvents}
-      showSportsOnGuide={liveDiscovery.showSportsOnGuide}
-      loading={liveDiscovery.loading}
-      sportsLoading={liveDiscovery.sportsLoading}
+      showOnNow={pageDiscoveryOn && liveDiscovery.showOnNow}
+      showTonight={pageDiscoveryOn && liveDiscovery.showTonight}
+      showSportsEvents={pageDiscoveryOn && liveDiscovery.showSportsEvents}
+      showSportsOnGuide={pageDiscoveryOn && liveDiscovery.showSportsOnGuide}
+      loading={pageDiscoveryOn && liveDiscovery.loading}
+      sportsLoading={pageDiscoveryOn && liveDiscovery.sportsLoading}
       showFeaturedFallback={liveRecentStreams.length === 0}
       onPlay={openChannel}
       isFavorite={(id) => isFavorite("live", id)}
@@ -648,6 +692,7 @@ export function LiveGridPageInner({ shell }: { shell: LivePageShell }) {
           view={view}
           setView={setViewMode}
           pending={viewSwitchPending}
+          onGuideIntent={prefetchLiveGuideChunk}
         />
       </div>
       <LiveChannelSearchField
@@ -1019,10 +1064,12 @@ function GridViewToggle({
   view,
   setView,
   pending = false,
+  onGuideIntent,
 }: {
   view: "list" | "guide";
   setView: (v: "list" | "guide") => void;
   pending?: boolean;
+  onGuideIntent?: () => void;
 }) {
   const items = [
     { value: "list" as const, label: "List", icon: <LayoutList className="size-3.5" /> },
@@ -1040,6 +1087,10 @@ function GridViewToggle({
           key={i.value}
           type="button"
           disabled={pending}
+          onPointerEnter={
+            i.value === "guide" ? onGuideIntent : undefined
+          }
+          onFocus={i.value === "guide" ? onGuideIntent : undefined}
           onClick={() => setView(i.value)}
           aria-label={`${i.label} view`}
           className={cn(

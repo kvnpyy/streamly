@@ -1,5 +1,6 @@
 "use client";
 
+import { HomeRegionalTrendingSection } from "@/components/home/HomeRegionalTrendingSection";
 import { MediaCard } from "@/components/MediaCard";
 import { TvSpatialGrid } from "@/components/TvSpatialGrid";
 import { SectionHeader, SkeletonGrid } from "@/components/SectionHeader";
@@ -14,7 +15,7 @@ import { buildTopRatedMovies, buildNewSeries } from "@/lib/discovery";
 import { DISCOVERY_SHELF_META } from "@/lib/discovery/shelf-meta";
 import { useLivingRoomHomeLayout } from "@/lib/use-living-room-home-layout";
 import { xtream } from "@/lib/xtream";
-import type { SeriesItem, VodStream } from "@/lib/xtream-types";
+import type { LiveStream, SeriesItem, VodStream } from "@/lib/xtream-types";
 import { useAuth } from "@/store/auth";
 import { usePrefs } from "@/store/preferences";
 import { useQuery } from "@tanstack/react-query";
@@ -30,6 +31,8 @@ export function HomePageRich() {
     toggleFavorite,
     hideAdult,
     parentalUnlocked,
+    recents,
+    favorites,
   } = usePrefs();
 
   const [catalogFetchReady, setCatalogFetchReady] = useState(false);
@@ -122,6 +125,20 @@ export function HomePageRich() {
     },
     [toggleFavorite]
   );
+  const toggleFavoriteLive = useCallback(
+    (stream: LiveStream) => {
+      toggleFavorite({
+        kind: "live",
+        id: stream.stream_id,
+        name: stream.name,
+        icon: stream.stream_icon,
+        ...(stream.direct_source?.trim()
+          ? { meta: { direct_source: stream.direct_source.trim() } }
+          : {}),
+      });
+    },
+    [toggleFavorite]
+  );
 
   const topRatedMovies = useMemo(
     () =>
@@ -163,6 +180,20 @@ export function HomePageRich() {
   if (livingRoomHome) {
     return (
       <div className="tv-home tv-home--rich space-y-8 pt-6">
+        <HomeRegionalTrendingSection
+          creds={creds}
+          movies={vod.data}
+          series={series.data}
+          vodLoading={vod.isLoading || series.isLoading}
+          recents={recents}
+          favorites={favorites}
+          hideAdult={hideAdult}
+          parentalUnlocked={parentalUnlocked}
+          isFavorite={isFavorite}
+          toggleFavoriteMovie={toggleFavoriteMovie}
+          toggleFavoriteSeries={toggleFavoriteSeries}
+          toggleFavoriteLive={toggleFavoriteLive}
+        />
         {(vod.isLoading || topRatedMovieStreams.length > 0) && (
           <TvHomeRow
             title={DISCOVERY_SHELF_META.vod_top_rated_movies.title}
@@ -246,6 +277,20 @@ export function HomePageRich() {
 
   return (
     <div className="space-y-10 pt-4 border-t border-white/5">
+      <HomeRegionalTrendingSection
+        creds={creds}
+        movies={vod.data}
+        series={series.data}
+        vodLoading={vod.isLoading || series.isLoading}
+        recents={recents}
+        favorites={favorites}
+        hideAdult={hideAdult}
+        parentalUnlocked={parentalUnlocked}
+        isFavorite={isFavorite}
+        toggleFavoriteMovie={toggleFavoriteMovie}
+        toggleFavoriteSeries={toggleFavoriteSeries}
+        toggleFavoriteLive={toggleFavoriteLive}
+      />
       <section>
         <SectionHeader
           eyebrow={DISCOVERY_SHELF_META.vod_top_rated_movies.eyebrow}

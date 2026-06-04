@@ -72,6 +72,24 @@ describe("buildRegionalTrending", () => {
     });
     expect(items.filter((c) => c.key === "live:9")).toHaveLength(1);
   });
+
+  it("prefers TMDB-on-TV entries over duplicate on-now rows", () => {
+    const tmdbTv = liveEntry(4, "TLC US", "90 Day Fiancé", 95);
+    const onNow = liveEntry(4, "TLC US", "90 Day Fiancé", 70);
+    const items = buildRegionalTrending({
+      region: "US",
+      tmdbMovies: [],
+      tmdbSeries: [],
+      tmdbMoviePopularity: [],
+      tmdbSeriesPopularity: [],
+      sportsEvents: [],
+      trendingOnTv: [tmdbTv],
+      onNow: [onNow],
+      tonight: [],
+    });
+    expect(items.filter((c) => c.key === "live:4")).toHaveLength(1);
+    expect(items.find((c) => c.key === "live:4")?.reason).toBe("tmdb_on_tv");
+  });
 });
 
 describe("appendCatalogFallbacks", () => {

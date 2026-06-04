@@ -8,7 +8,14 @@ describe("getAppVersionLabel", () => {
 
   it("formats package version with v prefix", () => {
     vi.stubEnv("NEXT_PUBLIC_APP_VERSION", "0.1.0");
+    vi.stubEnv("NEXT_PUBLIC_BUILD_SHA", "");
     expect(getAppVersionLabel()).toBe("v0.1.0");
+  });
+
+  it("appends build sha when set", () => {
+    vi.stubEnv("NEXT_PUBLIC_APP_VERSION", "0.2.0");
+    vi.stubEnv("NEXT_PUBLIC_BUILD_SHA", "abc1234");
+    expect(getAppVersionLabel()).toBe("v0.2.0+abc1234");
   });
 
   it("strips duplicate v prefix", () => {

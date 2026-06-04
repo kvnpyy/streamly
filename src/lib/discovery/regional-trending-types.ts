@@ -9,6 +9,7 @@ export type RegionalTrendReason =
   | "sports_main"
   | "sports_card"
   | "on_now_hype"
+  | "tmdb_on_tv"
   | "tonight_prime"
   | "finale"
   | "catalog_top_movie"
@@ -42,6 +43,8 @@ export type RegionalTrendingBuildInput = {
   tmdbMoviePopularity: number[];
   tmdbSeriesPopularity: number[];
   sportsEvents: ScoredLiveEntry[];
+  /** EPG → TMDB matches airing now (boosted in cross-type shelf). */
+  trendingOnTv?: ScoredLiveEntry[];
   onNow: ScoredLiveEntry[];
   tonight: ScoredLiveEntry[];
   limit?: number;

@@ -227,7 +227,7 @@ export function useLivePageShell(
 
   const shelfBrowseActive =
     selected === "all" &&
-    view === "list" &&
+    (view === "list" || view === "guide") &&
     !streams.isLoading &&
     sortedFilteredCats.length > 0;
 

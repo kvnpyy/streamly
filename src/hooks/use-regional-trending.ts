@@ -16,7 +16,8 @@ import {
   buildTmdbTrendingSeries,
   isDiscoveryShelvesEnabled,
 } from "@/lib/discovery";
-import { getDiscoveryRegion } from "@/lib/discovery/discovery-region";
+import { resolveTmdbCountry } from "@/lib/discovery/tmdb-region";
+import type { TvRegion } from "@/lib/geo-continent";
 import type { ScoredLiveEntry } from "@/lib/discovery/live-scoring";
 import type { RegionalTrendingCard } from "@/lib/discovery/regional-trending-types";
 import type { LiveStream, SeriesItem, VodStream } from "@/lib/xtream-types";
@@ -32,6 +33,7 @@ type UseRegionalTrendingOpts = {
   recents?: RecentItem[];
   favorites?: Favorite[];
   sportsEvents: ScoredLiveEntry[];
+  trendingOnTv?: ScoredLiveEntry[];
   onNow: ScoredLiveEntry[];
   tonight: ScoredLiveEntry[];
   epgLoading?: boolean;
@@ -41,6 +43,8 @@ type UseRegionalTrendingOpts = {
   isFavorite: (kind: "movie" | "series" | "live", id: number) => boolean;
   toggleFavoriteMovie: (m: VodStream, mid: number) => void;
   toggleFavoriteSeries: (s: SeriesItem, sid: number) => void;
+  /** TV browse continent — drives TMDB country code. */
+  tvRegion?: TvRegion | null;
   region?: string;
   enabled?: boolean;
   livingRoom?: boolean;
@@ -69,6 +73,7 @@ export function useRegionalTrending({
   movies,
   series,
   sportsEvents,
+  trendingOnTv = [],
   onNow,
   tonight,
   epgLoading = false,
@@ -78,18 +83,22 @@ export function useRegionalTrending({
   isFavorite,
   toggleFavoriteMovie,
   toggleFavoriteSeries,
-  region = getDiscoveryRegion(),
+  tvRegion = null,
+  region: regionOverride,
   enabled = true,
   livingRoom = false,
 }: UseRegionalTrendingOpts) {
+  const tmdbCountry =
+    regionOverride?.trim().toUpperCase() ||
+    resolveTmdbCountry({ tvRegion });
   const discoveryOn = isDiscoveryShelvesEnabled() && enabled;
-  const discovery = useDiscoveryTmdb(region);
+  const discovery = useDiscoveryTmdb(tvRegion);
   const minItems = livingRoom ? tvRegionalTrendingMinItems() : undefined;
 
   const safeOpts = { hideAdult, parentalUnlocked };
 
   return useMemo(() => {
-    const meta = regionalTrendingShelfMeta(region);
+    const meta = regionalTrendingShelfMeta(tmdbCountry);
     if (!discoveryOn) {
       return {
         items: [],
@@ -138,12 +147,13 @@ export function useRegionalTrending({
 
     let items = filterTrendingCards(
       buildRegionalTrending({
-        region,
+        region: tmdbCountry,
         tmdbMovies,
         tmdbSeries,
         tmdbMoviePopularity,
         tmdbSeriesPopularity,
         sportsEvents,
+        trendingOnTv,
         onNow,
         tonight,
         limit: livingRoom ? 10 : 14,
@@ -216,6 +226,7 @@ export function useRegionalTrending({
     movies,
     series,
     sportsEvents,
+    trendingOnTv,
     onNow,
     tonight,
     epgLoading,
@@ -225,7 +236,8 @@ export function useRegionalTrending({
     isFavorite,
     toggleFavoriteMovie,
     toggleFavoriteSeries,
-    region,
+    tmdbCountry,
+    tvRegion,
     livingRoom,
     minItems,
     discovery.data,

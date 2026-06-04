@@ -101,8 +101,8 @@ export function LiveGuide({
     count: visibleChannels.length,
     getScrollElement: () => scrollerRef.current,
     estimateSize: () => ROW_PX,
-    /** Fewer off-screen rows = fewer EPG hooks + lighter scroll (was 14). */
-    overscan: 5,
+    /** Fewer off-screen rows = fewer EPG hooks + lighter scroll. */
+    overscan: 2,
     getItemKey: (index) =>
       visibleChannels[index]?.stream_id ?? `idx:${index}`,
   });
@@ -468,7 +468,9 @@ function GuideRow({
     });
   }, [allPrograms, viewportSec]);
 
-  const noEpg = isResolved && programs.length === 0 && !isLoading;
+  const showEpgLoading = guideEpgOn && isLoading;
+  const noEpg =
+    (guideEpgOn ? isResolved : true) && programs.length === 0 && !showEpgLoading;
 
   const setRowNode = useCallback(
     (el: HTMLDivElement | null) => {
@@ -573,11 +575,11 @@ function GuideRow({
           aria-hidden
         />
 
-        {isLoading && (
+        {showEpgLoading && (
           <div className="absolute inset-y-2 left-2 right-2 rounded-lg skeleton" />
         )}
 
-        {noEpg && !isLoading && (
+        {noEpg && !showEpgLoading && (
           <button
             type="button"
             onClick={() => onPlay(channel)}

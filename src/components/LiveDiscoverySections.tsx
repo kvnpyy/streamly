@@ -20,6 +20,9 @@ type LiveDiscoverySectionsProps = {
   favorites: Favorite[];
   hideAdult: boolean;
   parentalUnlocked: boolean;
+  trendingOnTv?: ScoredLiveEntry[];
+  showTrendingOnTv?: boolean;
+  trendingOnTvLoading?: boolean;
   onNow: ScoredLiveEntry[];
   tonight: ScoredLiveEntry[];
   sportsEvents?: ScoredLiveEntry[];
@@ -48,6 +51,9 @@ export function LiveDiscoverySections({
   favorites,
   hideAdult,
   parentalUnlocked,
+  trendingOnTv = [],
+  showTrendingOnTv = false,
+  trendingOnTvLoading = false,
   onNow,
   tonight,
   sportsEvents = [],
@@ -91,6 +97,19 @@ export function LiveDiscoverySections({
 
   return (
     <>
+      {(showTrendingOnTv || trendingOnTvLoading) && (
+        <LiveDiscoveryShelf
+          meta={DISCOVERY_SHELF_META.live_trending_on_tv}
+          items={trendingOnTv}
+          creds={creds}
+          tvLayout={layout}
+          tvHome={tvHome}
+          loading={trendingOnTvLoading && trendingOnTv.length === 0}
+          onPlay={playEntry}
+          isFavorite={isFavorite}
+          onToggleFavorite={toggleEntry}
+        />
+      )}
       {(showOnNow || loading) && (
         <LiveDiscoveryShelf
           meta={DISCOVERY_SHELF_META.live_on_now}

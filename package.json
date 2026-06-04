@@ -1,6 +1,6 @@
 {
   "name": "iptv-player",
-  "version": "0.1.0",
+  "version": "0.1.5",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -9,6 +9,8 @@
     "start": "next start -p ${PORT:-3000} -H 127.0.0.1",
     "start:lan": "next start -p ${PORT:-3000} -H 0.0.0.0",
     "lint": "eslint",
+    "version:bump": "node scripts/bump-version.mjs",
+    "version:bump:dry": "node scripts/bump-version.mjs --dry-run",
     "predeploy": "bash scripts/pre-deploy-check.sh",
     "deploy:vps": "npm run predeploy && bash scripts/vps-push-deploy.sh",
     "deploy:vps:quick": "bash scripts/vps-push-deploy.sh --quick",

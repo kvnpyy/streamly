@@ -13,17 +13,25 @@ import { openLiveCategoryChannel } from "@/lib/open-live-shelf-channel";
 import { LIVE_LIST_MAX_CHANNELS } from "@/lib/live-guide-limits";
 import { liveCategoryChannelsQueryOptions } from "@/lib/live-catalog-channels";
 import { useLiveShelfBrowse } from "@/hooks/use-live-shelf-browse";
+import { useShelfNowPlayingMap } from "@/hooks/use-shelf-now-playing";
 import { useQuery } from "@tanstack/react-query";
 import type { XtreamCredentials } from "@/lib/xtream-types";
 import { usePlayer } from "@/store/player";
 import { usePrefs } from "@/store/preferences";
 import { ChevronDown } from "lucide-react";
-import { memo, useCallback, useDeferredValue, useEffect, useRef, useState } from "react";
+import {
+  memo,
+  useCallback,
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 const MAX_PER_SHELF = 6;
 const INITIAL_SHELF_COUNT = 8;
 const SHELF_LOAD_INCREMENT = 8;
-const EMPTY_NOW_PLAYING = new Map<number, string>();
 
 export type WebLiveBrowsePagedProps = {
   creds: XtreamCredentials;
@@ -78,6 +86,31 @@ function WebLiveBrowsePagedInner({ creds, openChannel }: WebLiveBrowsePagedProps
     setOpenCategoryId(id);
   }, []);
 
+  const shelfEpgChannels = useMemo(
+    () =>
+      allShelves
+        .slice(0, visibleShelfCount)
+        .flatMap((s) => s.preview),
+    [allShelves, visibleShelfCount]
+  );
+
+  const categoryNameById = useMemo(() => {
+    const out: Record<string, string> = {};
+    for (const shelf of allShelves.slice(0, visibleShelfCount)) {
+      for (const c of shelf.preview) {
+        out[c.category_id] = shelf.title;
+      }
+    }
+    return out;
+  }, [allShelves, visibleShelfCount]);
+
+  const shelfNowPlayingMap = useShelfNowPlayingMap(
+    creds,
+    shelfEpgChannels,
+    categoryNameById,
+    shelvesReadyToReveal > 0
+  );
+
   const renderShelfRow = useCallback(
     (shelf: LiveShelfMeta) => (
       <LiveShelfRow
@@ -86,12 +119,12 @@ function WebLiveBrowsePagedInner({ creds, openChannel }: WebLiveBrowsePagedProps
         creds={creds}
         variant="web"
         activeStreamId={activeStreamId}
-        nowPlayingMap={EMPTY_NOW_PLAYING}
+        nowPlayingMap={shelfNowPlayingMap}
         onSeeAll={() => handleOpenCategory(shelf.id)}
         onPlay={openChannel}
       />
     ),
-    [creds, activeStreamId, openChannel, handleOpenCategory]
+    [creds, activeStreamId, openChannel, handleOpenCategory, shelfNowPlayingMap]
   );
 
   const openCategoryShelfMeta = openCategoryId
@@ -142,7 +175,7 @@ function WebLiveBrowsePagedInner({ creds, openChannel }: WebLiveBrowsePagedProps
         <TvCategoryView
           title={openCategoryShelfMeta.title}
           channels={openCategoryChannels}
-          nowPlayingMap={EMPTY_NOW_PLAYING}
+          nowPlayingMap={shelfNowPlayingMap}
           activeStreamId={activeStreamId}
           creds={creds}
           onPlay={(c) => {

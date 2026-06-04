@@ -3,6 +3,7 @@
  * Avoids synchronous JSON.parse of huge localStorage blobs on Library first paint.
  */
 
+import { EPG_CACHE_TTL_MS } from "@/lib/epg-constants";
 import {
   idbForEachBatch,
   idbPutEntries,
@@ -11,7 +12,7 @@ import {
   type EpgCacheEntry,
 } from "@/lib/epg-idb";
 
-export const EPG_CACHE_TTL_MS = 30 * 60 * 1000;
+export { EPG_CACHE_TTL_MS } from "@/lib/epg-constants";
 const FLUSH_MS = 800;
 const MEMORY_MAX_KEYS = 5_000;
 const IDB_HYDRATE_BATCH = 400;
@@ -20,6 +21,7 @@ type Store = Record<string, EpgCacheEntry>;
 
 let memory: Store | null = null;
 let diskHydrateStarted = false;
+let hydratePromise: Promise<void> | null = null;
 let flushTimer: ReturnType<typeof setTimeout> | null = null;
 const dirtyKeys = new Set<string>();
 
@@ -49,36 +51,44 @@ function ensureMemory(): Store {
   return memory;
 }
 
+async function hydrateFromDisk(): Promise<void> {
+  if (!isIndexedDbAvailable()) return;
+  try {
+    await migrateLegacyLocalStorageEpg();
+    await idbForEachBatch(IDB_HYDRATE_BATCH, async (batch) => {
+      if (!memory) memory = {};
+      const now = Date.now();
+      for (const [k, entry] of batch) {
+        if (now - entry.at <= EPG_CACHE_TTL_MS) {
+          memory[k] = entry;
+        }
+      }
+      pruneExpired(memory, now);
+      trimMemory(memory);
+    });
+  } catch {
+    /* idb blocked / private mode */
+  }
+}
+
 /** Hydrate memory from IndexedDB (and migrate legacy LS once) off the critical path. */
 function scheduleDiskHydrate(): void {
   if (diskHydrateStarted || typeof window === "undefined") return;
   diskHydrateStarted = true;
+  void whenEpgLocalCacheHydrated();
+}
 
-  const run = async () => {
-    if (!isIndexedDbAvailable()) return;
-    try {
-      await migrateLegacyLocalStorageEpg();
-      await idbForEachBatch(IDB_HYDRATE_BATCH, async (batch) => {
-        if (!memory) memory = {};
-        const now = Date.now();
-        for (const [k, entry] of batch) {
-          if (now - entry.at <= EPG_CACHE_TTL_MS) {
-            memory[k] = entry;
-          }
-        }
-        pruneExpired(memory, now);
-        trimMemory(memory);
-      });
-    } catch {
-      /* idb blocked / private mode */
-    }
-  };
-
-  if (typeof requestIdleCallback !== "undefined") {
-    requestIdleCallback(() => void run(), { timeout: 3_000 });
-  } else {
-    window.setTimeout(() => void run(), 150);
+/**
+ * Resolves once IndexedDB titles are merged into memory (or IDB is unavailable).
+ * Await before server calls that need browser EPG hints.
+ */
+export function whenEpgLocalCacheHydrated(): Promise<void> {
+  if (typeof window === "undefined") return Promise.resolve();
+  ensureMemory();
+  if (!hydratePromise) {
+    hydratePromise = hydrateFromDisk();
   }
+  return hydratePromise;
 }
 
 function scheduleFlush(): void {
@@ -181,4 +191,29 @@ export function getCachedEpgKnownIds(
     if (entry && now - entry.at <= EPG_CACHE_TTL_MS) known.add(id);
   }
   return known;
+}
+
+/** Recent browser EPG titles for this account (for server trending merge). */
+export function listCachedEpgTitlesForAccount(
+  server: string,
+  username: string,
+  maxEntries = 600
+): Array<{ streamId: number; title: string }> {
+  const store = ensureMemory();
+  const prefix = `${server}|${username}|`;
+  const now = Date.now();
+  const rows: Array<{ streamId: number; title: string; at: number }> = [];
+
+  for (const [k, entry] of Object.entries(store)) {
+    if (!k.startsWith(prefix)) continue;
+    if (now - entry.at > EPG_CACHE_TTL_MS) continue;
+    const streamId = Number(k.slice(prefix.length));
+    if (!Number.isFinite(streamId) || streamId <= 0) continue;
+    rows.push({ streamId, title: entry.title, at: entry.at });
+  }
+
+  rows.sort((a, b) => b.at - a.at);
+  return rows
+    .slice(0, maxEntries)
+    .map(({ streamId, title }) => ({ streamId, title }));
 }

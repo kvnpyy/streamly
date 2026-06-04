@@ -7,12 +7,11 @@ const REGION_DISPLAY: Record<string, string> = {
   NZ: "New Zealand",
 };
 
-/** Region code for discovery caches (TMDB / sports). */
-export function getDiscoveryRegion(): string {
-  const fromPublic = process.env.NEXT_PUBLIC_DISCOVERY_REGION?.trim();
-  if (fromPublic) return fromPublic.toUpperCase();
-  return "US";
-}
+export {
+  getDiscoveryRegion,
+  resolveTmdbCountry,
+  tvRegionToTmdbCountry,
+} from "@/lib/discovery/tmdb-region";
 
 export function discoveryRegionDisplayName(region: string): string {
   const code = region.trim().toUpperCase();
