@@ -4,7 +4,7 @@ import {
   type EpgTitleHint,
 } from "@/lib/discovery/trending-on-tv-server";
 import { isLiveTrendingShelfEnabled } from "@/lib/live-epg-policy";
-import { parseTvRegion } from "@/lib/geo-continent";
+import { parseTvRegion, type TvRegion } from "@/lib/geo-continent";
 import { NextRequest, NextResponse } from "next/server";
 
 export const runtime = "nodejs";
