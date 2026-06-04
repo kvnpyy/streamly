@@ -135,27 +135,27 @@ export function useTrendingOnTv({
     ] as const,
     queryFn: ({ signal }) =>
       fetchTrendingOnTv(creds, tvRegion, priorityStreamIds, signal),
-    enabled: discoveryOn && epgCache.ready,
+    enabled: discoveryOn,
     staleTime: TRENDING_ON_TV_RESPONSE_TTL_MS,
     gcTime: TRENDING_ON_TV_RESPONSE_TTL_MS * 2,
+    retry: 2,
     placeholderData: (prev) => prev,
   });
 
   const rawItems = toScoredEntries(query.data?.items ?? []);
-  const quality = shouldShowTrendingOnTvShelf(rawItems);
-  const items = quality ? rawItems : [];
+  const items = shouldShowTrendingOnTvShelf(rawItems) ? rawItems : [];
 
   const loading =
-    epgCache.warmingUp ||
     (query.isLoading && !query.data) ||
-    (query.isFetching && items.length === 0);
+    (query.isFetching && items.length === 0 && !query.isError);
 
   return {
     items,
     tmdbCountry: query.data?.tmdbCountry,
     loading,
-    warmingUp: epgCache.warmingUp,
+    warmingUp: epgCache.warmingUp && items.length === 0 && !query.isError,
     show: discoveryOn,
     hasItems: items.length >= LIVE_TRENDING_MIN_ITEMS,
+    isError: query.isError,
   };
 }

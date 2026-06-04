@@ -1,6 +1,7 @@
 import "server-only";
 
 import {
+  buildEpgPopularOnTvFallback,
   buildLiveTrendingOnTv,
   LIVE_TRENDING_ON_TV_MAX_SCAN,
   mergeTmdbTrendingLists,
@@ -281,15 +282,34 @@ export async function buildTrendingOnTvForAccount(
   }
   const tmdbMerged = mergeTmdbTrendingLists(movieTrending, tvTrending);
 
+  const recentIds = new Set<number>();
+  const favIds = new Set<number>();
+  for (const id of opts?.priorityStreamIds ?? []) {
+    recentIds.add(id);
+  }
+
   const built = buildLiveTrendingOnTv(
     candidateIds,
     channelById,
     snapshots,
     tmdbMerged,
-    new Set(),
-    new Set()
+    recentIds,
+    favIds
   );
-  const items = shouldShowTrendingOnTvShelf(built) ? built : [];
+  let items = shouldShowTrendingOnTvShelf(built) ? built : [];
+
+  if (items.length === 0) {
+    const fallback = buildEpgPopularOnTvFallback(
+      candidateIds,
+      channelById,
+      snapshots,
+      recentIds,
+      favIds
+    );
+    if (shouldShowTrendingOnTvShelf(fallback)) {
+      items = fallback;
+    }
+  }
 
   if (items.length > 0) {
     responseCache.set(rKey, { items, tmdbCountry, at: Date.now() });
