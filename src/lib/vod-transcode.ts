@@ -25,8 +25,37 @@ export function isVodTranscodeEnabledServer(): boolean {
   return process.env.STREAM_VOD_TRANSCODE === "1";
 }
 
+let resolvedFfmpegBin: string | null = null;
+
+function ffmpegPathCandidates(): string[] {
+  const out: string[] = [];
+  const configured = process.env.STREAM_FFMPEG_PATH?.trim();
+  if (configured) out.push(configured);
+  out.push("/usr/bin/ffmpeg", "ffmpeg");
+  return [...new Set(out)];
+}
+
 function ffmpegPath(): string {
-  return process.env.STREAM_FFMPEG_PATH?.trim() || "ffmpeg";
+  return resolvedFfmpegBin ?? ffmpegPathCandidates()[0] ?? "ffmpeg";
+}
+
+function probeFfmpegBinary(bin: string): Promise<boolean> {
+  return new Promise<boolean>((resolve) => {
+    const p = spawn(bin, ["-version"], { stdio: "ignore" });
+    p.on("error", () => resolve(false));
+    p.on("close", (code) => resolve(code === 0));
+  });
+}
+
+async function resolveFfmpegBinary(): Promise<string | null> {
+  if (resolvedFfmpegBin) return resolvedFfmpegBin;
+  for (const candidate of ffmpegPathCandidates()) {
+    if (await probeFfmpegBinary(candidate)) {
+      resolvedFfmpegBin = candidate;
+      return candidate;
+    }
+  }
+  return null;
 }
 
 function cacheRoot(): string {
@@ -65,16 +94,8 @@ function transcodeMaxHeight(): number {
   return Number.isFinite(n) && n >= 360 && n <= 1080 ? n : 540;
 }
 
-let cachedFfmpegOk: boolean | null = null;
-
 async function ffmpegAvailable(): Promise<boolean> {
-  if (cachedFfmpegOk != null) return cachedFfmpegOk;
-  cachedFfmpegOk = await new Promise<boolean>((resolve) => {
-    const p = spawn(ffmpegPath(), ["-version"], { stdio: "ignore" });
-    p.on("error", () => resolve(false));
-    p.on("close", (code) => resolve(code === 0));
-  });
-  return cachedFfmpegOk;
+  return (await resolveFfmpegBinary()) != null;
 }
 
 function upstreamReferer(upstreamUrl: string): string {

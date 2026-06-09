@@ -74,6 +74,7 @@ rsync -az --delete \
   --exclude .git \
   --exclude data \
   --exclude .env \
+  --exclude .env.local \
   --exclude '.DS_Store' \
   --exclude '._*' \
   "$PROJECT_DIR/" "${TARGET}:${REMOTE_STAGE}/"
@@ -84,12 +85,14 @@ set -euo pipefail
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
 if [ -f "${REMOTE_DIR}/.env" ]; then sudo cp -a "${REMOTE_DIR}/.env" "$TMP/.env"; fi
+if [ -f "${REMOTE_DIR}/.env.local" ]; then sudo cp -a "${REMOTE_DIR}/.env.local" "$TMP/.env.local"; fi
 if [ -d "${REMOTE_DIR}/data" ]; then sudo cp -a "${REMOTE_DIR}/data" "$TMP/data"; fi
 # sudo cp -a preserves stream ownership — chown so the EXIT trap can rm the temp dir as this user.
 sudo chown -R "$(id -un):$(id -gn)" "$TMP"
 sudo rsync -aO --delete "${REMOTE_STAGE}/" "${REMOTE_DIR}/"
 sudo chown -R stream:stream "${REMOTE_DIR}"
 if [ -f "$TMP/.env" ]; then sudo cp -a "$TMP/.env" "${REMOTE_DIR}/.env" && sudo chown stream:stream "${REMOTE_DIR}/.env"; fi
+if [ -f "$TMP/.env.local" ]; then sudo cp -a "$TMP/.env.local" "${REMOTE_DIR}/.env.local" && sudo chown stream:stream "${REMOTE_DIR}/.env.local"; fi
 if [ -d "$TMP/data" ]; then sudo rm -rf "${REMOTE_DIR}/data" && sudo cp -a "$TMP/data" "${REMOTE_DIR}/data" && sudo chown -R stream:stream "${REMOTE_DIR}/data"; fi
 MERGE
 
