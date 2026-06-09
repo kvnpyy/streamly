@@ -17,6 +17,7 @@ import crypto from "crypto";
 import fs from "fs";
 import fsp from "fs/promises";
 import path from "path";
+import { validateVodUpstreamReadable } from "@/lib/vod-transcode-upstream";
 
 const IPTV_UA_VOD = "VLC/3.0.20 LibVLC/3.0.20";
 const MANIFEST_NAME = "index.m3u8";
@@ -774,6 +775,21 @@ async function cancelSiblingTranscodeJobs(
   );
 }
 
+/** One-connection IPTV accounts: only one upstream pull can succeed at a time. */
+async function cancelOtherUpstreamTranscodeJobs(
+  upstream: string,
+  keepKey: string
+): Promise<void> {
+  const victims: Array<{ key: string; dir: string }> = [];
+  for (const [key, job] of jobs.entries()) {
+    if (key === keepKey || job.upstream === upstream) continue;
+    victims.push({ key, dir: job.dir });
+  }
+  await Promise.all(
+    victims.map(({ key, dir }) => wipeTranscodeJobDir(dir, key))
+  );
+}
+
 async function ensureJobLocked(
   upstream: string,
   opts?: { resetCache?: boolean; seekSec?: number }
@@ -784,6 +800,8 @@ async function ensureJobLocked(
 
   if (startOffsetSec > 0) {
     await cancelSiblingTranscodeJobs(upstream, key);
+  } else {
+    await cancelOtherUpstreamTranscodeJobs(upstream, key);
   }
 
   if (opts?.resetCache) {
@@ -888,6 +906,15 @@ async function beginTranscodeJob(job: TranscodeJob): Promise<void> {
       job.error =
         "Server is busy preparing other videos. Try again in a moment.";
       notifyWaiters(job, false);
+      return;
+    }
+
+    const upstreamErr = await validateVodUpstreamReadable(job.upstream);
+    if (upstreamErr) {
+      job.state = "failed";
+      job.error = upstreamErr;
+      notifyWaiters(job, false);
+      drainTranscodeQueue();
       return;
     }
 

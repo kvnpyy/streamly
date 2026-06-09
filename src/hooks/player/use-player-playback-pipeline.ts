@@ -505,6 +505,25 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
             streamSupportRequestIdRef.current = rid;
             setStreamSupportRequestId(rid);
           }
+            if (
+              vodTranscodeHls &&
+              !reqUrl.includes("media=") &&
+              xhr.status >= 400
+            ) {
+              const body = xhr.responseText?.trim().slice(0, 240);
+              if (xhr.status === 503) {
+                surfacePlaybackError(
+                  body ||
+                    "Server is busy preparing other videos. Wait a minute, then try again."
+                );
+              } else {
+                surfacePlaybackError(
+                  body ||
+                    "Could not prepare this file for browser playback. If your IPTV plan allows only one stream, close other players and try again."
+                );
+              }
+              return;
+            }
             if (vodTranscodeHls && !reqUrl.includes("media=")) {
               setVodPrepProgress((p) => Math.max(p, 34));
             }
@@ -532,8 +551,10 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
 
       /** Fatal `NETWORK_ERROR` streak — reset whenever data actually flows (Safari otherwise accumulates transient fatals). */
       let consecutiveNetworkErrors = 0;
+      let transcodeManifestSoftRetries = 0;
       const resetNetErrStreak = () => {
         consecutiveNetworkErrors = 0;
+        transcodeManifestSoftRetries = 0;
       };
 
       /** Intentionally no periodic `startLoad(-1)` — it fights hls.js live playlist refresh and causes visible black/rebuffer loops on many panels. */
@@ -796,6 +817,23 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
                 Hls.ErrorDetails.LEVEL_LOAD_TIMEOUT,
               ].includes(data.details);
             if (softManifestReload) {
+              transcodeManifestSoftRetries += 1;
+              if (transcodeManifestSoftRetries >= 8) {
+                void fetch(url, { credentials: "same-origin", cache: "no-store" })
+                  .then(async (res) => {
+                    const body = (await res.text()).trim().slice(0, 240);
+                    surfacePlaybackError(
+                      body ||
+                        "Could not prepare transcoded playback. If your IPTV plan allows only one stream, close other players and try again."
+                    );
+                  })
+                  .catch(() => {
+                    surfacePlaybackError(
+                      "Could not prepare transcoded playback. Tap Try again — or use a native IPTV app for MKV files."
+                    );
+                  });
+                break;
+              }
               try {
                 hls.startLoad(0);
               } catch {
