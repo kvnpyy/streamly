@@ -255,7 +255,9 @@ export function PlayerOverlay() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [duration, setDuration] = useState(0);
   const [time, setTime] = useState(0);
-  playbackTimeRef.current = time;
+  useEffect(() => {
+    playbackTimeRef.current = time;
+  }, [time]);
   const [buffered, setBuffered] = useState(0);
   const [muted, setMuted] = useState(false);
   const [volume, setVolume] = useState(1);
@@ -620,22 +622,20 @@ export function PlayerOverlay() {
   useEffect(() => {
     if (!vodSeekInFlight) return;
     if (error) {
-      setVodSeekInFlight(false);
-      setVodSeekTargetSec(null);
+      queueMicrotask(() => {
+        setVodSeekInFlight(false);
+        setVodSeekTargetSec(null);
+      });
       return;
     }
     if (videoHasFrame) {
-      setVodSeekInFlight(false);
-      setVodSeekTargetSec(null);
-      setLoading(false);
+      queueMicrotask(() => {
+        setVodSeekInFlight(false);
+        setVodSeekTargetSec(null);
+        setLoading(false);
+      });
     }
   }, [vodSeekInFlight, videoHasFrame, error]);
-
-  useEffect(() => {
-    if (open) return;
-    setVodSeekInFlight(false);
-    setVodSeekTargetSec(null);
-  }, [open]);
 
   const retryPlayback = useCallback(() => {
     setError(null);
@@ -750,6 +750,8 @@ export function PlayerOverlay() {
       queueMicrotask(() => {
         setVodPlaybackUrl(null);
         setVodTranscodeBoost(false);
+        setVodSeekInFlight(false);
+        setVodSeekTargetSec(null);
       });
       return;
     }
