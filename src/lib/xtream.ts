@@ -21,6 +21,7 @@ import {
   normalizeLiveStreamsPayload,
   normalizeLiveStreamsPayloadAsync,
 } from "./xtream-live-catalog";
+import { parsePositiveRouteId } from "./utils";
 import { yieldToMain } from "./yield-to-main";
 import { resolveProviderMediaUrl } from "./image-proxy";
 
@@ -390,6 +391,82 @@ async function fetchSeriesCatalogBundle(
   return (await parseCatalogJson(text)) as import("@/lib/vod-catalog-bundle").SeriesCatalogBundle;
 }
 
+const MAX_SERIES_CATALOG_ITEMS = 20_000;
+
+/**
+ * Many panels return an empty list for `get_series` without `category_id`.
+ * If so, merge by fetching each series category (deduped by series_id).
+ */
+async function fetchSeriesStreamsCatalogMerged(
+  c: XtreamCredentials,
+  signal?: AbortSignal
+): Promise<{ categories: Category[]; streams: SeriesItem[] }> {
+  if (!seriesCatalogServerDisabled()) {
+    try {
+      const bundle = await fetchSeriesCatalogBundle(c, signal);
+      return { categories: bundle.categories, streams: bundle.streams };
+    } catch (e) {
+      if (signal?.aborted) throw e;
+      /* fall through to browser merge */
+    }
+  }
+
+  const categories = normalizeCategoriesPayload(
+    await call<unknown>(c, { action: "get_series_categories" }, signal)
+  );
+  if (!categories.length) {
+    return { categories: [], streams: [] };
+  }
+
+  const rawAll = await call<unknown>(c, { action: "get_series" }, signal);
+  const direct = Array.isArray(rawAll) ? (rawAll as SeriesItem[]) : [];
+  const filteredDirect = direct.filter(
+    (s) => parsePositiveRouteId(s.series_id) != null
+  );
+  if (filteredDirect.length > 0) {
+    return {
+      categories,
+      streams: filteredDirect.slice(0, MAX_SERIES_CATALOG_ITEMS),
+    };
+  }
+
+  const merged: SeriesItem[] = [];
+  const seen = new Set<number>();
+  const CATEGORY_FETCH_CONCURRENCY = 4;
+  for (let i = 0; i < categories.length; i += CATEGORY_FETCH_CONCURRENCY) {
+    if (signal?.aborted) {
+      throw new DOMException("Aborted", "AbortError");
+    }
+    if (merged.length >= MAX_SERIES_CATALOG_ITEMS) break;
+
+    const slice = categories.slice(i, i + CATEGORY_FETCH_CONCURRENCY);
+    const settled = await Promise.allSettled(
+      slice.map((cat) =>
+        call<unknown>(
+          c,
+          { action: "get_series", category_id: cat.category_id },
+          signal
+        )
+      )
+    );
+
+    for (const r of settled) {
+      if (r.status !== "fulfilled") continue;
+      const rows = Array.isArray(r.value) ? (r.value as SeriesItem[]) : [];
+      for (const row of rows) {
+        const id = parsePositiveRouteId(row.series_id);
+        if (id == null || seen.has(id)) continue;
+        seen.add(id);
+        merged.push(row);
+        if (merged.length >= MAX_SERIES_CATALOG_ITEMS) break;
+      }
+    }
+    await yieldToMain();
+  }
+
+  return { categories, streams: merged };
+}
+
 /**
  * Many panels return an empty list for `get_live_streams` without `category_id`.
  * If so, merge streams by fetching each live category (deduped by stream_id).
@@ -580,23 +657,12 @@ export const xtream = {
     );
   },
   async seriesCatalogBundle(c: XtreamCredentials, signal?: AbortSignal) {
-    if (!seriesCatalogServerDisabled()) {
-      try {
-        return await fetchSeriesCatalogBundle(c, signal);
-      } catch (e) {
-        if (signal?.aborted) throw e;
-      }
-    }
-    const categories = normalizeCategoriesPayload(
-      await call<unknown>(c, { action: "get_series_categories" }, signal)
-    );
-    const streams = await call<SeriesItem[]>(
+    const { categories, streams } = await fetchSeriesStreamsCatalogMerged(
       c,
-      { action: "get_series" },
       signal
     );
     const { bundleSeriesWithIndex } = await import("@/lib/vod-catalog-bundle");
-    return bundleSeriesWithIndex(categories, streams ?? []);
+    return bundleSeriesWithIndex(categories, streams);
   },
   vodInfo(c: XtreamCredentials, vodId: number, signal?: AbortSignal) {
     return call<VodInfo>(c, { action: "get_vod_info", vod_id: vodId }, signal);

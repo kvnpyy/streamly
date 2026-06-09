@@ -3,7 +3,7 @@ import {
   canVodTranscodeProxyUrl,
   isVodTranscodeEnabledClient,
   playbackUrlUsesVodTranscode,
-  vodContainerNeedsServerPrep,
+  vodNeedsServerTranscodePrep,
 } from "@/lib/vod-transcode-url";
 import type { PlayerSource } from "@/store/player";
 
@@ -52,7 +52,7 @@ export function buildCastMediaDescriptor(opts: {
   if (!isLive && isVodTranscodeEnabledClient()) {
     const needsTranscode =
       playbackUrlUsesVodTranscode(proxyPlaybackUrl) ||
-      (vodContainerNeedsServerPrep(current.containerExt) &&
+      (vodNeedsServerTranscodePrep(current.containerExt, current.url) &&
         canVodTranscodeProxyUrl(current.url));
     if (needsTranscode) {
       proxyPath = playbackUrlUsesVodTranscode(proxyPlaybackUrl)

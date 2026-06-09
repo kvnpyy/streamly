@@ -5,6 +5,7 @@ import { VirtualMediaCatalogGrid } from "@/components/VirtualMediaCatalogGrid";
 import { DiscoveryShelf } from "@/components/DiscoveryShelf";
 import { MediaShelf } from "@/components/MediaShelf";
 import { useCatalogPageReady } from "@/hooks/use-catalog-page-ready";
+import { useCatalogPlay } from "@/hooks/use-catalog-play";
 import { useMovieDiscoveryShelves } from "@/hooks/use-vod-discovery-shelves";
 import { isDiscoveryShelvesEnabled } from "@/lib/discovery";
 import { MobileCategoryRail } from "@/components/MobileCategoryRail";
@@ -69,6 +70,7 @@ function MoviesPageInner({
     recents,
     favorites,
   } = usePrefs();
+  const { playMovie, movieDetailHref, enrichMovieShelfItems } = useCatalogPlay();
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -326,8 +328,26 @@ function MoviesPageInner({
     }
   );
 
-  const topRatedItems = discovery.topRated;
-  const newlyAddedItems = discovery.newlyAdded;
+  const topRatedItems = useMemo(
+    () => enrichMovieShelfItems(discovery.topRated, movies.data),
+    [discovery.topRated, movies.data, enrichMovieShelfItems]
+  );
+  const newlyAddedItems = useMemo(
+    () => enrichMovieShelfItems(discovery.newlyAdded, movies.data),
+    [discovery.newlyAdded, movies.data, enrichMovieShelfItems]
+  );
+  const forYouItems = useMemo(
+    () => enrichMovieShelfItems(discovery.forYou, movies.data),
+    [discovery.forYou, movies.data, enrichMovieShelfItems]
+  );
+  const trendingItems = useMemo(
+    () => enrichMovieShelfItems(discovery.trending, movies.data),
+    [discovery.trending, movies.data, enrichMovieShelfItems]
+  );
+  const playableRecentMovies = useMemo(
+    () => enrichMovieShelfItems(recentMovieItems, movies.data),
+    [recentMovieItems, movies.data, enrichMovieShelfItems]
+  );
 
   const genreShelves = useMemo(
     () =>
@@ -426,23 +446,23 @@ function MoviesPageInner({
       {/* ── Discovery shelves (hidden when user has active filters) ── */}
       {showDiscovery && (
         <div className="space-y-6">
-          {recentMovieItems.length > 0 && (
+          {playableRecentMovies.length > 0 && (
             <MediaShelf
               eyebrow="Pick up where you left off"
               title="Continue Watching"
-              items={recentMovieItems}
+              items={playableRecentMovies}
             />
           )}
-          {discoveryOn && discovery.forYou.length > 0 && (
+          {discoveryOn && forYouItems.length > 0 && (
             <DiscoveryShelf
               meta={discovery.meta.vod_for_you_movies}
-              items={discovery.forYou}
+              items={forYouItems}
             />
           )}
-          {discoveryOn && discovery.trending.length > 0 && (
+          {discoveryOn && trendingItems.length > 0 && (
             <DiscoveryShelf
               meta={discovery.meta.vod_trending_movies}
-              items={discovery.trending}
+              items={trendingItems}
               loading={discovery.trendingLoading}
             />
           )}
@@ -463,7 +483,7 @@ function MoviesPageInner({
               key={shelf.categoryId}
               eyebrow="Browse by genre"
               title={shelf.title}
-              items={shelf.items}
+              items={enrichMovieShelfItems(shelf.items, movies.data)}
               seeAllHref={`/app/movies?category=${encodeURIComponent(shelf.categoryId)}`}
             />
           ))}
@@ -514,24 +534,28 @@ function MoviesPageInner({
           maxItems={400}
           itemKey={(m) => m.stream_id}
           revision={gridRevision}
-          renderItem={(m) => (
-            <MediaCard
-              href={`/app/movies/${m.stream_id}`}
-              poster={m.stream_icon}
-              title={m.name}
-              subtitle={m.year}
-              rating={m.rating}
-              isFavorite={isFavorite("movie", m.stream_id)}
-              onToggleFavorite={() =>
-                toggleFavorite({
-                  kind: "movie",
-                  id: m.stream_id,
-                  name: m.name,
-                  icon: m.stream_icon,
-                })
-              }
-            />
-          )}
+          renderItem={(m) => {
+            const href = movieDetailHref(m);
+            return (
+              <MediaCard
+                onClick={() => playMovie(m)}
+                detailHref={href}
+                poster={m.stream_icon}
+                title={m.name}
+                subtitle={m.year}
+                rating={m.rating}
+                isFavorite={isFavorite("movie", m.stream_id)}
+                onToggleFavorite={() =>
+                  toggleFavorite({
+                    kind: "movie",
+                    id: m.stream_id,
+                    name: m.name,
+                    icon: m.stream_icon,
+                  })
+                }
+              />
+            );
+          }}
           footer={
             visible.length > 600 ? (
               <div className="text-center text-xs text-(--text-muted) py-3">

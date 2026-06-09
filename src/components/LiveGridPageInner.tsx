@@ -27,7 +27,11 @@ import { useShelfNowPlayingMap } from "@/hooks/use-shelf-now-playing";
 import { useTrendingOnTv } from "@/hooks/use-trending-on-tv";
 import { useDiscoveryTmdb } from "@/hooks/use-discovery-tmdb";
 import { mergeTmdbTrendingLists } from "@/lib/discovery/live-trending-on-tv";
-import { detectRegionFromTimezone, type TvRegion } from "@/lib/geo-continent";
+import {
+  coerceTvRegion,
+  detectRegionFromTimezone,
+  type TvRegion,
+} from "@/lib/geo-continent";
 import { SHORT_EPG_NOW_PLAYING_LIMIT } from "@/lib/epg-constants";
 import { shortEpgQueryOptions } from "@/lib/epg-query-options";
 import { setCachedEpgTitlesBatch } from "@/lib/epg-local-cache";
@@ -203,7 +207,7 @@ export function LiveGridPageInner({ shell }: { shell: LivePageShell }) {
   const shouldLoadChannelList = catalog.isFetched && !catalog.isError;
   const storedTvRegion = usePrefs((s) => s.tvRegionFilter);
   const tvRegionForChannels: TvRegion =
-    storedTvRegion ?? detectRegionFromTimezone();
+    coerceTvRegion(storedTvRegion) ?? detectRegionFromTimezone();
 
   const categoryChannelsQuery = useQuery(
     liveCategoryChannelsQueryOptions(

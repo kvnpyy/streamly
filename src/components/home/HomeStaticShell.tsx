@@ -61,7 +61,7 @@ export function HomeStaticShell() {
         <QuickLink
           href="/app/favorites"
           icon={<Sparkles className="size-4" />}
-          label="Favorites"
+          label="My List"
           accent="text-(--danger)"
         />
       </div>

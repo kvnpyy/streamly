@@ -15,7 +15,7 @@ import type { LiveStream, XtreamCredentials } from "@/lib/xtream-types";
 import type { Favorite, RecentItem } from "@/store/preferences";
 import { useLiveBrowseUi, type ShelfEpgHint } from "@/store/live-browse-ui";
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 export type TrendingOnTvApiItem = {
   streamId: number;
@@ -34,6 +34,16 @@ type TrendingOnTvResponse = {
   items: TrendingOnTvApiItem[];
   _debug?: Record<string, unknown>;
 };
+
+/** Do not show another region's shelf while a new region query loads. */
+export function trendingOnTvPlaceholderData(
+  previousData: TrendingOnTvResponse | undefined,
+  previousQueryKey: readonly unknown[] | undefined,
+  tvRegion: TvRegion
+): TrendingOnTvResponse | undefined {
+  const prevRegion = previousQueryKey?.[3];
+  return prevRegion === tvRegion ? previousData : undefined;
+}
 
 function mergeEpgHints(
   ...groups: Array<Array<{ streamId: number; title: string }>>
@@ -140,14 +150,19 @@ export function useTrendingOnTv({
 
   /** Wait for shelf rows to publish EPG hints (Trending mounts above shelves in the DOM). */
   const [shelfWaitDone, setShelfWaitDone] = useState(false);
+  const prevRegionRef = useRef(tvRegion);
   useEffect(() => {
+    if (prevRegionRef.current !== tvRegion) {
+      prevRegionRef.current = tvRegion;
+      setShelfWaitDone(false);
+    }
     if (shelfEpgHints.length >= LIVE_TRENDING_MIN_ITEMS) {
       queueMicrotask(() => setShelfWaitDone(true));
       return;
     }
     const t = setTimeout(() => setShelfWaitDone(true), 2_500);
     return () => clearTimeout(t);
-  }, [shelfEpgHints.length]);
+  }, [tvRegion, shelfEpgHints.length]);
 
   const epgCache = useEpgCacheReadiness(
     creds.server,
@@ -187,10 +202,15 @@ export function useTrendingOnTv({
     staleTime: TRENDING_ON_TV_RESPONSE_TTL_MS,
     gcTime: TRENDING_ON_TV_RESPONSE_TTL_MS * 2,
     retry: 2,
-    placeholderData: (prev) => prev,
+    placeholderData: (prev, prevQuery) =>
+      trendingOnTvPlaceholderData(prev, prevQuery?.queryKey, tvRegion),
   });
 
-  const items = toScoredEntries(query.data?.items ?? []);
+  const regionMismatch =
+    query.data != null && query.data.tvRegion !== tvRegion;
+  const items = regionMismatch
+    ? []
+    : toScoredEntries(query.data?.items ?? []);
 
   if (
     process.env.NODE_ENV === "development" &&
@@ -202,6 +222,7 @@ export function useTrendingOnTv({
 
   const loading =
     !shelfWaitDone ||
+    regionMismatch ||
     (query.isLoading && !query.data) ||
     (query.isFetching && items.length === 0 && !query.isError);
 

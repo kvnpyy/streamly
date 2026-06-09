@@ -120,8 +120,7 @@ export default function SettingsPage() {
       <section className="card p-5">
         <h3 className="text-base font-semibold mb-3">Data</h3>
         <div className="text-sm text-(--text-dim)">
-          {favorites.length} favorite{favorites.length === 1 ? "" : "s"} ·{" "}
-          {recents.length} recent
+          {favorites.length} in My List · {recents.length} in continue watching
         </div>
         <div className="flex flex-wrap gap-2 mt-4">
           <button
@@ -129,7 +128,7 @@ export default function SettingsPage() {
             onClick={clearRecents}
             className="min-h-11 px-4 rounded-lg bg-(--bg-3) border border-(--line) hover:border-(--line-2) text-sm inline-flex items-center justify-center"
           >
-            Clear recents
+            Clear continue watching
           </button>
           <button
             type="button"

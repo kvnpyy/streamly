@@ -67,6 +67,7 @@ export function LiveTrendingOnTvBlock({
 
   return (
     <LiveDiscoveryShelf
+      key={tvRegion}
       meta={DISCOVERY_SHELF_META.live_trending_on_tv}
       items={trending.items}
       creds={creds}

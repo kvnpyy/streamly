@@ -8,20 +8,29 @@ import {
 } from "@/lib/utils";
 import { useTvBrowser } from "@/components/TvBrowserProvider";
 import { proxiedCssBackground } from "@/lib/image-proxy";
+import {
+  findSeriesResumeTarget,
+  seriesEpisodeRecentMeta,
+} from "@/lib/continue-watching";
+import { MY_LIST_LABEL } from "@/lib/my-list";
 import { buildImageProxy, buildSeriesEpisodePlayUrl, xtream } from "@/lib/xtream";
+import { inferVodContainerExtFromProxyUrl } from "@/lib/vod-transcode-url";
 import { warmVodTranscodePlay } from "@/lib/vod-transcode-url";
 import type { SeriesEpisode } from "@/lib/xtream-types";
 import { useAuth } from "@/store/auth";
 import { usePlayer, type PlayerPlaylist } from "@/store/player";
-import { usePrefs } from "@/store/preferences";
+import { browseAccountKey, usePrefs } from "@/store/preferences";
 import { useQuery } from "@tanstack/react-query";
 import { CastGallery } from "@/components/CastGallery";
+import { SimilarTitlesShelf } from "@/components/SimilarTitlesShelf";
 import { VirtualEpisodeList } from "@/components/VirtualEpisodeList";
 import { GenreChips } from "@/components/GenreChips";
+import { seriesCatalogQueryOptions } from "@/lib/series-catalog-query";
+import { pickSimilarSeries } from "@/lib/similar-titles";
 import { ArrowLeft, Heart, Play, Star } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 
 function SeriesDetailSkeleton() {
   return (
@@ -48,8 +57,19 @@ export default function SeriesDetail() {
   const creds = useAuth((s) => s.creds);
   const { play } = usePlayer();
   const tvBrowser = useTvBrowser();
-  const { isFavorite, toggleFavorite, addRecent } = usePrefs();
+  const {
+    isFavorite,
+    toggleFavorite,
+    addRecent,
+    vodResumeSec,
+    hideAdult,
+    parentalUnlocked,
+  } = usePrefs();
   const [imgErr, setImgErr] = useState(false);
+  const accountKey = useMemo(
+    () => (creds ? browseAccountKey(creds) : ""),
+    [creds]
+  );
 
   const info = useQuery({
     queryKey: ["series-info", creds?.server, creds?.username, seriesId],
@@ -58,6 +78,30 @@ export default function SeriesDetail() {
     retry: 2,
     retryDelay: (n) => Math.min(1000 * 2 ** n, 8000),
   });
+
+  const seriesCatalog = useQuery({
+    ...seriesCatalogQueryOptions(
+      creds!,
+      Boolean(creds && seriesId != null && info.data)
+    ),
+  });
+
+  const similarSeries = useMemo(() => {
+    const meta = info.data?.info;
+    if (!meta || seriesId == null) return [];
+    return pickSimilarSeries(
+      seriesCatalog.data?.streams,
+      seriesId,
+      meta.genre,
+      { hideAdult, parentalUnlocked }
+    );
+  }, [
+    info.data,
+    seriesCatalog.data?.streams,
+    seriesId,
+    hideAdult,
+    parentalUnlocked,
+  ]);
 
   const seasons = useMemo(() => {
     if (!info.data) return [] as string[];
@@ -97,6 +141,18 @@ export default function SeriesDetail() {
     return out;
   }, [info.data]);
 
+  const resumeTarget = useMemo(() => {
+    if (!accountKey || seriesId == null || orderedEpisodes.length === 0) {
+      return null;
+    }
+    return findSeriesResumeTarget(
+      accountKey,
+      seriesId,
+      orderedEpisodes,
+      vodResumeSec
+    );
+  }, [accountKey, seriesId, orderedEpisodes, vodResumeSec]);
+
   const episodePlaylist = useMemo((): PlayerPlaylist | null => {
     if (!creds || seriesId == null) return null;
     const data = info.data;
@@ -104,7 +160,11 @@ export default function SeriesDetail() {
     const show = data.info;
     if (!show?.name) return null;
     const items = orderedEpisodes.slice(0, 500).map(({ season, ep }) => {
-      const ext = ep.container_extension || "mkv";
+      const playUrl = buildSeriesEpisodePlayUrl(creds, ep);
+      const ext = inferVodContainerExtFromProxyUrl(
+        playUrl,
+        ep.container_extension || "mkv"
+      );
       return {
         kind: "series" as const,
         id: seriesId,
@@ -112,12 +172,45 @@ export default function SeriesDetail() {
         title: show.name,
         subtitle: `S${season} · E${ep.episode_num} — ${ep.title}`,
         poster: buildImageProxy(ep.info?.movie_image || show.cover),
-        url: buildSeriesEpisodePlayUrl(creds, ep),
+        url: playUrl,
         containerExt: ext,
       };
     });
     return { kind: "series", items };
   }, [info.data, orderedEpisodes, seriesId, creds]);
+
+  const playEpisode = useCallback(
+    (season: string, ep: SeriesEpisode) => {
+      const show = info.data?.info;
+      if (!creds || seriesId == null || !show?.name) return;
+      const playUrl = buildSeriesEpisodePlayUrl(creds, ep);
+      const ext = inferVodContainerExtFromProxyUrl(
+        playUrl,
+        ep.container_extension || "mkv"
+      );
+      play(
+        {
+          kind: "series",
+          id: seriesId,
+          streamId: parseInt(ep.id, 10),
+          title: show.name,
+          subtitle: `S${season} · E${ep.episode_num} — ${ep.title}`,
+          poster: buildImageProxy(ep.info?.movie_image || show.cover),
+          url: playUrl,
+          containerExt: ext,
+        },
+        episodePlaylist ? { playlist: episodePlaylist } : undefined
+      );
+      addRecent({
+        kind: "series",
+        id: seriesId,
+        name: show.name,
+        icon: show.cover,
+        meta: seriesEpisodeRecentMeta(season, ep),
+      });
+    },
+    [creds, seriesId, info.data, play, episodePlaylist, addRecent]
+  );
 
   if (!creds) {
     return <SeriesDetailSkeleton />;
@@ -275,8 +368,30 @@ export default function SeriesDetail() {
             fallbackNames={meta.cast}
           />
 
-          <div className="mt-7 flex items-center gap-2">
+          <div className="mt-7 flex flex-wrap items-center gap-2">
+            {orderedEpisodes.length > 0 && (
+              <button
+                type="button"
+                onClick={() => {
+                  const target =
+                    resumeTarget ??
+                    ({
+                      season: orderedEpisodes[0]!.season,
+                      episode: orderedEpisodes[0]!.ep,
+                      resumeSec: 0,
+                    } as const);
+                  playEpisode(target.season, target.episode);
+                }}
+                className="inline-flex items-center gap-2 h-11 px-5 rounded-xl btn-brand font-medium"
+              >
+                <Play className="size-4 fill-white" />
+                {resumeTarget
+                  ? `Resume S${resumeTarget.season} · E${resumeTarget.episode.episode_num}`
+                  : "Play"}
+              </button>
+            )}
             <button
+              type="button"
               onClick={() =>
                 toggleFavorite({
                   kind: "series",
@@ -293,7 +408,7 @@ export default function SeriesDetail() {
               }
             >
               <Heart className={"size-4 " + (fav ? "fill-current" : "")} />
-              {fav ? "In Favorites" : "Add to Favorites"}
+              {fav ? `In ${MY_LIST_LABEL}` : `Add to ${MY_LIST_LABEL}`}
             </button>
           </div>
         </div>
@@ -333,28 +448,7 @@ export default function SeriesDetail() {
                 key={ep.id}
                 onFocus={warmTranscode}
                 onMouseEnter={warmTranscode}
-                onClick={() => {
-                  const ext = ep.container_extension || "mkv";
-                  play(
-                    {
-                      kind: "series",
-                      id: seriesId,
-                      streamId: parseInt(ep.id, 10),
-                      title: meta.name,
-                      subtitle: `S${activeSeason} · E${ep.episode_num} — ${ep.title}`,
-                      poster: buildImageProxy(ep.info?.movie_image || meta.cover),
-                      url: playUrl,
-                      containerExt: ext,
-                    },
-                    episodePlaylist ? { playlist: episodePlaylist } : undefined
-                  );
-                  addRecent({
-                    kind: "series",
-                    id: seriesId,
-                    name: meta.name,
-                    icon: meta.cover,
-                  });
-                }}
+                onClick={() => playEpisode(activeSeason!, ep)}
                 className="w-full text-left card p-3 flex items-center gap-4 hover:border-(--line-2) hover:bg-(--bg-3) transition-colors group"
               >
                 <div className="size-20 sm:size-28 shrink-0 rounded-lg overflow-hidden bg-(--bg-3) relative">
@@ -426,6 +520,10 @@ export default function SeriesDetail() {
             );
           }}
         />
+      </div>
+
+      <div className="mt-12">
+        <SimilarTitlesShelf titles={similarSeries} kind="series" />
       </div>
     </div>
   );

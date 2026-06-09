@@ -1,5 +1,8 @@
 import { categoryPassesRegionGate } from "@/lib/live-category-shelf";
-import type { TvRegion } from "@/lib/geo-continent";
+import {
+  sortLiveCategoriesForBrowse,
+  type TvRegion,
+} from "@/lib/geo-continent";
 import type { Category } from "@/lib/xtream-types";
 import { yieldToMain } from "@/lib/yield-to-main";
 
@@ -34,8 +37,8 @@ export async function buildShelfCategoryListChunked({
     out.push(c);
     if (i > 0 && i % FILTER_CHUNK === 0) {
       await yieldToMain();
-      if (isStale()) return out;
+      if (isStale()) return sortLiveCategoriesForBrowse(out, region);
     }
   }
-  return out;
+  return sortLiveCategoriesForBrowse(out, region);
 }

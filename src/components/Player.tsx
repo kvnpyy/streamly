@@ -18,7 +18,7 @@ import {
   canVodTranscodeProxyUrl,
   isVodTranscodeEnabledClient,
   playbackUrlUsesVodTranscode,
-  vodContainerNeedsServerPrep,
+  vodNeedsServerTranscodePrep,
   warmVodTranscodePlay,
 } from "@/lib/vod-transcode-url";
 import { TvPlayerRemoteHints } from "@/components/TvPlayerRemoteHints";
@@ -26,6 +26,11 @@ import { VodPrepareOverlay } from "@/components/VodPrepareOverlay";
 import { useTvBrowser } from "@/components/TvBrowserProvider";
 import { useAuth } from "@/store/auth";
 import { usePlayer, type PlayerSource } from "@/store/player";
+import {
+  shouldPersistVodResume,
+  type VodTimelineHold,
+  vodResumeStorageKey,
+} from "@/lib/player-vod-resume";
 import { browseAccountKey, usePrefs } from "@/store/preferences";
 import {
   buildSortedEpgRows,
@@ -39,6 +44,7 @@ import { usePlayerPlaybackPipeline } from "@/hooks/player/use-player-playback-pi
 import { usePlayerStallEscalation } from "@/hooks/player/use-player-stall-escalation";
 import { usePlayerVideoEvents } from "@/hooks/player/use-player-video-events";
 import { usePlayerVodResume } from "@/hooks/player/use-player-vod-resume";
+import { PlayerSeekBar } from "@/components/player/PlayerSeekBar";
 import { PlayerStallOverlay } from "@/components/player/PlayerStallOverlay";
 import { AnimatePresence, motion } from "framer-motion";
 import type Hls from "hls.js";
@@ -225,6 +231,13 @@ export function PlayerOverlay() {
   const vodSeekRestartTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null
   );
+  /** Survives transcode seek reload — consumed by pipeline / prep reset effects. */
+  const vodTimelineHoldRef = useRef<VodTimelineHold | null>(null);
+  /** Blocks initial resume from re-firing after a user seek or transcode URL swap. */
+  const vodResumeLockedRef = useRef(false);
+  /** While true, ignore video timeupdate → UI time (prevents seek-bar snap-back). */
+  const vodScrubbingRef = useRef(false);
+  const playbackTimeRef = useRef(0);
   const [vodTotalSec, setVodTotalSec] = useState(0);
   /** Throttles automatic `startLoad(-1)` storms on live HLS (see `tryHlsLiveEdgeRestart`). */
   const hlsLiveEdgeRestartGateRef = useRef(0);
@@ -242,6 +255,7 @@ export function PlayerOverlay() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [duration, setDuration] = useState(0);
   const [time, setTime] = useState(0);
+  playbackTimeRef.current = time;
   const [buffered, setBuffered] = useState(0);
   const [muted, setMuted] = useState(false);
   const [volume, setVolume] = useState(1);
@@ -262,6 +276,8 @@ export function PlayerOverlay() {
   const [videoHasFrame, setVideoHasFrame] = useState(false);
   const [vodPrepStartedAt, setVodPrepStartedAt] = useState<number | null>(null);
   const [vodPrepProgress, setVodPrepProgress] = useState(8);
+  const [vodSeekInFlight, setVodSeekInFlight] = useState(false);
+  const [vodSeekTargetSec, setVodSeekTargetSec] = useState<number | null>(null);
   const [playbackRetryKey, setPlaybackRetryKey] = useState(0);
   const vodTriedTranscodeRef = useRef(false);
   const vodPrepKickRef = useRef<AbortController | null>(null);
@@ -411,7 +427,7 @@ export function PlayerOverlay() {
     return (
       usesTranscodePlayback ||
       vodTranscodeBoost ||
-      vodContainerNeedsServerPrep(current.containerExt)
+      vodNeedsServerTranscodePrep(current.containerExt, current.url)
     );
   }, [
     open,
@@ -421,13 +437,31 @@ export function PlayerOverlay() {
     vodTranscodeBoost,
   ]);
   const showVodPrepare =
-    vodPrepEligible && !videoHasFrame && !error;
+    vodPrepEligible && !videoHasFrame && !error && !vodSeekInFlight;
   const quickVodPlayerOpen = vodPrepEligible && !videoHasFrame;
 
   useEffect(() => {
-    vodStartOffsetRef.current = 0;
-    vodEncodedSecRef.current = 0;
+    const hold = vodTimelineHoldRef.current;
+    if (hold) {
+      vodStartOffsetRef.current = hold.startOffsetSec;
+      vodEncodedSecRef.current = 0;
+    } else {
+      vodStartOffsetRef.current = 0;
+      vodEncodedSecRef.current = 0;
+    }
     queueMicrotask(() => {
+      if (hold) {
+        setTime(hold.absoluteTimeSec);
+        if (hold.durationSec && hold.durationSec > 1) {
+          setVodTotalSec(hold.durationSec);
+          vodDurationHintRef.current = hold.durationSec;
+        }
+        setVodSeekTargetSec(hold.absoluteTimeSec);
+        setVodSeekInFlight(true);
+        setVideoHasFrame(false);
+        setLoading(true);
+        return;
+      }
       setVideoHasFrame(false);
       setVodPrepProgress(8);
       if (!vodPrepEligible) {
@@ -498,6 +532,8 @@ export function PlayerOverlay() {
 
   const applyVodDurationHint = useCallback((sec: number) => {
     if (!Number.isFinite(sec) || sec <= 1) return;
+    const prev = vodDurationHintRef.current;
+    if (prev > 300 && sec < prev * 0.5) return;
     vodDurationHintRef.current = sec;
     setVodTotalSec(sec);
     setDuration((d) => (d > sec * 0.95 ? d : sec));
@@ -533,13 +569,27 @@ export function PlayerOverlay() {
       });
       if (!url) return;
 
+      const durationSec =
+        vodDurationHintRef.current > 1
+          ? vodDurationHintRef.current
+          : vodTotalSec > 1
+            ? vodTotalSec
+            : undefined;
+      vodTimelineHoldRef.current = {
+        absoluteTimeSec: Math.max(0, absoluteSec),
+        startOffsetSec: Math.max(0, Math.floor(absoluteSec)),
+        durationSec,
+      };
+      vodResumeLockedRef.current = true;
+
       vodTriedTranscodeRef.current = true;
       setVodTranscodeBoost(true);
       vodStartOffsetRef.current = Math.max(0, Math.floor(absoluteSec));
       vodEncodedSecRef.current = 0;
-      setVodPrepProgress(8);
-      setVodPrepStartedAt(Date.now());
+      setVodSeekTargetSec(Math.max(0, absoluteSec));
+      setVodSeekInFlight(true);
       setVideoHasFrame(false);
+      setLoading(true);
       setError(null);
       setTime(Math.max(0, absoluteSec));
 
@@ -560,10 +610,32 @@ export function PlayerOverlay() {
       }
 
       setVodPlaybackUrl(url);
-      setPlaybackRetryKey((k) => k + 1);
+      void fetch(url, { credentials: "same-origin", cache: "no-store" }).catch(
+        () => {}
+      );
     },
-    [current, tvBrowser, silkLikeClient, vodPlaybackUrl]
+    [current, tvBrowser, silkLikeClient, vodPlaybackUrl, vodTotalSec]
   );
+
+  useEffect(() => {
+    if (!vodSeekInFlight) return;
+    if (error) {
+      setVodSeekInFlight(false);
+      setVodSeekTargetSec(null);
+      return;
+    }
+    if (videoHasFrame) {
+      setVodSeekInFlight(false);
+      setVodSeekTargetSec(null);
+      setLoading(false);
+    }
+  }, [vodSeekInFlight, videoHasFrame, error]);
+
+  useEffect(() => {
+    if (open) return;
+    setVodSeekInFlight(false);
+    setVodSeekTargetSec(null);
+  }, [open]);
 
   const retryPlayback = useCallback(() => {
     setError(null);
@@ -611,7 +683,7 @@ export function PlayerOverlay() {
           signal: kick.signal,
         }).catch(() => {});
       } else if (
-        vodContainerNeedsServerPrep(current.containerExt) &&
+        vodNeedsServerTranscodePrep(current.containerExt, current.url) &&
         canVodTranscodeProxyUrl(current.url)
       ) {
         vodTriedTranscodeRef.current = true;
@@ -683,7 +755,7 @@ export function PlayerOverlay() {
     }
     const preferServerTranscode =
       isVodTranscodeEnabledClient() &&
-      vodContainerNeedsServerPrep(current.containerExt) &&
+      vodNeedsServerTranscodePrep(current.containerExt, current.url) &&
       canVodTranscodeProxyUrl(current.url);
     queueMicrotask(() => {
       if (preferServerTranscode) {
@@ -761,6 +833,7 @@ export function PlayerOverlay() {
     setVodPrepProgress,
     applyVodDurationHint,
     applyVodTranscodeTimelineHints,
+    vodTimelineHoldRef,
   });
 
   usePlayerVodResume({
@@ -769,12 +842,12 @@ export function PlayerOverlay() {
     isLive,
     creds,
     vodPlaybackUrl,
-    vodTotalSec,
     videoRef,
     hlsRef,
     vodDurationHintRef,
     vodStartOffsetRef,
     vodEncodedSecRef,
+    vodResumeLockedRef,
     restartTranscodeAtSeek,
   });
 
@@ -799,6 +872,7 @@ export function PlayerOverlay() {
     vodTotalSec,
     vodDurationHintRef,
     vodStartOffsetRef,
+    vodScrubbingRef,
     mobileLikeViewport,
     chromiumDesktopClient,
     cancelLiveMediaErrorDeferRef,
@@ -850,18 +924,20 @@ export function PlayerOverlay() {
   const getPlaybackDuration = useCallback(() => {
     if (isLive) return 0;
     if (vodTotalSec > 1) return vodTotalSec;
-    const v = videoRef.current;
     const hint = vodDurationHintRef.current;
+    if (hint > 1) return hint;
+    if (usesTranscodePlayback) return 0;
+    const v = videoRef.current;
     const vd = v?.duration;
     if (Number.isFinite(vd) && vd && vd > 1 && vd < 86400) return vd;
-    if (hint > 1) return hint;
     return duration > 1 && Number.isFinite(duration) ? duration : 0;
-  }, [isLive, vodTotalSec, duration]);
+  }, [isLive, vodTotalSec, duration, usesTranscodePlayback]);
 
   const seekVideoTo = useCallback(
     (absoluteSeconds: number) => {
       const v = videoRef.current;
       if (!v || isLive) return;
+      vodResumeLockedRef.current = true;
       const dur = getPlaybackDuration();
       if (!dur || !Number.isFinite(dur)) return;
       const absolute = Math.max(0, Math.min(dur - 0.25, absoluteSeconds));
@@ -869,12 +945,17 @@ export function PlayerOverlay() {
       if (usesTranscodePlayback && transcodeSeekNeedsServerRestart(absolute)) {
         if (vodSeekRestartTimerRef.current) {
           clearTimeout(vodSeekRestartTimerRef.current);
-        }
-        vodSeekRestartTimerRef.current = setTimeout(() => {
           vodSeekRestartTimerRef.current = null;
-          restartTranscodeAtSeek(absolute);
-        }, 320);
+        }
         setTime(absolute);
+        restartTranscodeAtSeek(absolute);
+        const resumeKey =
+          creds && current
+            ? vodResumeStorageKey(browseAccountKey(creds), current)
+            : null;
+        if (resumeKey && shouldPersistVodResume(absolute, dur)) {
+          usePrefs.getState().saveVodResume(resumeKey, absolute);
+        }
         return;
       }
 
@@ -906,6 +987,13 @@ export function PlayerOverlay() {
       });
       setTime(absolute);
       voidSafeVideoPlay(v);
+      const resumeKey =
+        creds && current
+          ? vodResumeStorageKey(browseAccountKey(creds), current)
+          : null;
+      if (resumeKey && shouldPersistVodResume(absolute, dur)) {
+        usePrefs.getState().saveVodResume(resumeKey, absolute);
+      }
     },
     [
       isLive,
@@ -913,6 +1001,8 @@ export function PlayerOverlay() {
       usesTranscodePlayback,
       transcodeSeekNeedsServerRestart,
       restartTranscodeAtSeek,
+      creds,
+      current,
     ]
   );
 
@@ -937,28 +1027,25 @@ export function PlayerOverlay() {
     if (val > 0 && v.muted) v.muted = false;
   }, []);
 
-  const onSeekInput = useCallback(
-    (e: React.FormEvent) => {
+  const onScrubStart = useCallback(() => {
+    vodScrubbingRef.current = true;
+  }, []);
+
+  const onScrubPreview = useCallback(
+    (targetSec: number) => {
       if (isLive) return;
-      const el = e.currentTarget;
-      if (!(el instanceof HTMLInputElement)) return;
-      const dur = getPlaybackDuration();
-      if (!dur) return;
-      setTime((parseFloat(el.value) / 100) * dur);
+      setTime(targetSec);
     },
-    [isLive, getPlaybackDuration]
+    [isLive]
   );
 
   const onSeekCommit = useCallback(
-    (e: React.SyntheticEvent) => {
+    (targetSec: number) => {
       if (isLive) return;
-      const el = e.currentTarget;
-      if (!(el instanceof HTMLInputElement)) return;
-      const dur = getPlaybackDuration();
-      if (!dur) return;
-      seekVideoTo((parseFloat(el.value) / 100) * dur);
+      vodScrubbingRef.current = false;
+      seekVideoTo(targetSec);
     },
-    [isLive, getPlaybackDuration, seekVideoTo]
+    [isLive, seekVideoTo]
   );
 
   /**
@@ -1345,10 +1432,11 @@ export function PlayerOverlay() {
       const dur = getPlaybackDuration();
       if (!dur || !Number.isFinite(dur) || dur < 2) return;
       strip.setPointerCapture(e.pointerId);
+      vodScrubbingRef.current = true;
       vodScrubPointerRef.current = {
         pointerId: e.pointerId,
         startX: e.clientX,
-        startTime: v.currentTime,
+        startTime: playbackTimeRef.current,
         moved: false,
       };
       wakeControls();
@@ -1401,6 +1489,7 @@ export function PlayerOverlay() {
       } else {
         togglePlay();
       }
+      vodScrubbingRef.current = false;
       vodScrubPointerRef.current = null;
       wakeControls();
     },
@@ -1411,6 +1500,7 @@ export function PlayerOverlay() {
     (e: React.PointerEvent<HTMLDivElement>) => {
       const s = vodScrubPointerRef.current;
       if (!s || s.pointerId !== e.pointerId) return;
+      vodScrubbingRef.current = false;
       vodScrubPointerRef.current = null;
       wakeControls();
     },
@@ -1601,14 +1691,17 @@ export function PlayerOverlay() {
     };
   }, [open, close]);
 
-  const effectiveVodDuration =
-    isLive || vodTotalSec <= 1
-      ? isLive
-        ? 0
+  const effectiveVodDuration = isLive
+    ? 0
+    : usesTranscodePlayback
+      ? vodTotalSec > 1
+        ? vodTotalSec
+        : 0
+      : vodTotalSec > 1
+        ? vodTotalSec
         : duration > 1 && Number.isFinite(duration)
           ? duration
-          : 0
-      : vodTotalSec;
+          : 0;
 
   const progress =
     effectiveVodDuration > 0 ? (time / effectiveVodDuration) * 100 : 0;
@@ -1905,6 +1998,19 @@ export function PlayerOverlay() {
               progress={vodPrepProgress}
             />
 
+            {vodSeekInFlight && !error && (
+              <div
+                className="pointer-events-none absolute inset-x-0 top-14 z-[9] flex justify-center px-4"
+                aria-live="polite"
+              >
+                <div className="rounded-full border border-white/15 bg-black/75 px-4 py-2 text-sm text-white/90 shadow-lg backdrop-blur-sm">
+                  Seeking to{" "}
+                  {formatTime(vodSeekTargetSec ?? time)}
+                  <span className="text-white/55"> — encoding from your provider</span>
+                </div>
+              </div>
+            )}
+
             {!isLive &&
               !error &&
               effectiveVodDuration > 2 && (
@@ -1931,6 +2037,7 @@ export function PlayerOverlay() {
             <AnimatePresence>
               {loading &&
                 !showVodPrepare &&
+                !vodSeekInFlight &&
                 !error &&
                 !needsTapToPlay &&
                 !stalled && (
@@ -2244,7 +2351,7 @@ export function PlayerOverlay() {
                   onKeyDown={swallowRemoteActivateKeys}
                   onPointerDown={swallowControlPointer}
                   onClick={swallowControlPointer}
-                  className="absolute bottom-0 inset-x-0 z-[8] p-3 sm:p-5 bg-gradient-to-t from-black/85 to-transparent"
+                  className="absolute bottom-0 inset-x-0 z-[8] overflow-visible p-3 sm:p-5 bg-gradient-to-t from-black/85 to-transparent"
                 >
                   {tvBrowser && (
                     <TvPlayerRemoteHints
@@ -2254,39 +2361,18 @@ export function PlayerOverlay() {
                     />
                   )}
                   {/* Seek bar */}
-                  {!isLive && (
-                    <div className="relative group/scrub mb-3">
-                      <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 h-1.5 bg-white/15 rounded-full overflow-hidden">
-                        <div
-                          className="absolute inset-y-0 left-0 bg-white/25"
-                          style={{ width: `${bufferedProgress}%` }}
-                        />
-                        <div
-                          className="absolute inset-y-0 left-0 bg-(--brand-2)"
-                          style={{ width: `${progress}%` }}
-                        />
-                      </div>
-                      <input
-                        type="range"
-                        min={0}
-                        max={100}
-                        step={0.1}
-                        value={progress}
-                        onInput={onSeekInput}
-                        onChange={onSeekCommit}
-                        onPointerUp={onSeekCommit}
-                        aria-label="Seek"
-                        className="relative w-full appearance-none bg-transparent h-5 cursor-pointer
-                                  [&::-webkit-slider-thumb]:appearance-none
-                                  [&::-webkit-slider-thumb]:size-3.5
-                                  [&::-webkit-slider-thumb]:rounded-full
-                                  [&::-webkit-slider-thumb]:bg-white
-                                  [&::-webkit-slider-thumb]:shadow-lg
-                                  [&::-webkit-slider-thumb]:opacity-0
-                                  group-hover/scrub:[&::-webkit-slider-thumb]:opacity-100
-                                  [&::-webkit-slider-thumb]:transition-opacity"
-                      />
-                    </div>
+                  {!isLive && effectiveVodDuration > 0 && (
+                    <PlayerSeekBar
+                      duration={effectiveVodDuration}
+                      time={time}
+                      progress={progress}
+                      bufferedProgress={bufferedProgress}
+                      playbackUrl={activePlaybackUrl}
+                      poster={posterSrc}
+                      onScrubStart={onScrubStart}
+                      onScrubPreview={onScrubPreview}
+                      onSeekCommit={onSeekCommit}
+                    />
                   )}
 
                   <div className="flex items-center gap-1.5 sm:gap-2 text-white">

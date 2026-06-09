@@ -1,6 +1,6 @@
 import { categoryPassesRegionGate } from "@/lib/live-category-shelf";
 import type { TvRegion } from "@/lib/geo-continent";
-import { getCategoryRegion } from "@/lib/geo-continent";
+import { getCategoryRegion, streamMatchesRegion } from "@/lib/geo-continent";
 import { getShelfCategoriesForRegion } from "@/lib/live-catalog-shelf-category-cache";
 import { getCachedLiveCatalogEntry } from "@/lib/live-catalog-server-cache";
 import { materializeStreamIds } from "@/lib/live-catalog-stream-map";
@@ -39,8 +39,7 @@ function filterPreviewForRegion(
   const out: LiveStream[] = [];
   for (const s of streams) {
     if (out.length >= limit) break;
-    const chRegion = getCategoryRegion(s.name);
-    if (chRegion === null || chRegion === region) out.push(s);
+    if (streamMatchesRegion(s.name, categoryName, region)) out.push(s);
   }
   return out;
 }

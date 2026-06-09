@@ -4,8 +4,10 @@ import { LiveDiscoverySections } from "@/components/LiveDiscoverySections";
 import { RegionalTrendingShelf } from "@/components/RegionalTrendingShelf";
 import type { RegionalTrendingCard } from "@/lib/discovery/regional-trending-types";
 import type { DiscoveryShelfMeta } from "@/lib/discovery/types";
+import { HomeRecentTile } from "@/components/home/HomeRecentTile";
 import { LiveMediaCard } from "@/components/LiveMediaCard";
-import { MediaCard } from "@/components/MediaCard";
+import { useContinueRecentPlay } from "@/hooks/use-continue-recent-play";
+import { continueDetailHref } from "@/lib/continue-watching";
 import { TvHomeQuickNav } from "@/components/tv/TvHomeQuickNav";
 import { TvHomeRow } from "@/components/tv/TvHomeRow";
 import { TvShelf } from "@/components/TvShelf";
@@ -105,6 +107,13 @@ export function TvHomeHub({
     !regionalTrending.loading &&
     regionalTrending.items.length > 0;
 
+  const { playRecent, progressPctFor } = useContinueRecentPlay(
+    creds,
+    recents,
+    play,
+    addRecent
+  );
+
   return (
     <div className="tv-home">
       <header className="tv-home__hero">
@@ -161,10 +170,10 @@ export function TvHomeHub({
       {showContinue && (
         <TvHomeRow
           title="Continue watching"
-          seeAllHref="/app/favorites"
+          seeAllHref="/app/continue"
           className="tv-home-continue"
         >
-          <TvShelf title="Continue" hideTitle seeAllHref="/app/favorites">
+          <TvShelf title="Continue" hideTitle seeAllHref="/app/continue">
             {recents.slice(0, 8).map((r) =>
               r.kind === "live" ? (
                 <div key={`live-${r.id}`} className="tv-home-shelf-card">
@@ -209,17 +218,13 @@ export function TvHomeHub({
                   />
                 </div>
               ) : (
-                <div key={`${r.kind}-${r.id}`} className="tv-home-shelf-card">
-                  <MediaCard
-                    title={r.name}
-                    poster={r.icon}
-                    panelServer={creds.server}
+                <div key={`${r.kind}-${r.id}`} className="tv-home-shelf-card w-36 shrink-0">
+                  <HomeRecentTile
+                    recent={r}
                     badge={r.kind === "movie" ? "Movie" : "Series"}
-                    href={
-                      r.kind === "movie"
-                        ? `/app/movies/${r.id}`
-                        : `/app/series/${r.id}`
-                    }
+                    onPlay={() => playRecent(r)}
+                    detailHref={continueDetailHref(r)}
+                    progressPct={progressPctFor(r)}
                     isFavorite={isFavorite(r.kind, r.id)}
                     onToggleFavorite={() =>
                       toggleFavorite({
@@ -227,6 +232,7 @@ export function TvHomeHub({
                         id: r.id,
                         name: r.name,
                         icon: r.icon,
+                        meta: r.meta,
                       })
                     }
                   />

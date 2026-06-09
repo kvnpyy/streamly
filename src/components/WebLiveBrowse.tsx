@@ -4,6 +4,7 @@ import { LiveShelfList } from "@/components/LiveShelfList";
 import { LiveShelfRow } from "@/components/LiveShelfRow";
 import {
   ALL_TV_REGIONS,
+  coerceTvRegion,
   detectRegionFromTimezone,
   type TvRegion,
 } from "@/lib/geo-continent";
@@ -115,7 +116,7 @@ function WebLiveBrowseLegacy({
     }
   }, [storedRegion, setStoredRegion]);
 
-  const region: TvRegion = storedRegion ?? "All";
+  const region: TvRegion = coerceTvRegion(storedRegion) ?? "All";
   const serverCounts = hasLiveServerCategoryCounts(countByCategoryId);
 
   const deferredCats = useDeferredValue(categories);

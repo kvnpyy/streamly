@@ -7,6 +7,7 @@ import { TvShelf } from "@/components/TvShelf";
 import { TvSpatialGrid } from "@/components/TvSpatialGrid";
 import {
   ALL_TV_REGIONS,
+  coerceTvRegion,
   detectRegionFromTimezone,
   type TvRegion,
 } from "@/lib/geo-continent";
@@ -107,7 +108,7 @@ function TvLiveBrowsePaged({
     }
   }, [storedRegion, setStoredRegion]);
 
-  const region: TvRegion = storedRegion ?? "All";
+  const region: TvRegion = coerceTvRegion(storedRegion) ?? "All";
 
   const {
     allShelves,
@@ -225,7 +226,7 @@ function TvLiveBrowseFull({
   }, [storedRegion, setStoredRegion]);
 
   // The active region — use "All" while auto-detecting to avoid flash
-  const region: TvRegion = storedRegion ?? "All";
+  const region: TvRegion = coerceTvRegion(storedRegion) ?? "All";
 
   const serverCounts = hasLiveServerCategoryCounts(countByCategoryId);
   const deferredStreams = useDeferredValue(streams);
@@ -499,7 +500,7 @@ function TvLiveBrowseFull({
       <TvSpatialGrid className="space-y-10">
         {/* Favourites shelf — pinned at top */}
         {favoriteStreams.length > 0 && (
-          <TvShelf title="❤ Favourites" seeAllHref="/app/favorites">
+          <TvShelf title="❤ My List" seeAllHref="/app/favorites">
             {favoriteStreams.map((c) => (
               <MemoChannelCard
                 key={c.stream_id}

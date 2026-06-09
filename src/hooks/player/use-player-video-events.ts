@@ -30,6 +30,7 @@ export type UsePlayerVideoEventsParams = {
   vodTotalSec: number;
   vodDurationHintRef: RefObject<number>;
   vodStartOffsetRef: RefObject<number>;
+  vodScrubbingRef: RefObject<boolean>;
   mobileLikeViewport: boolean;
   chromiumDesktopClient: boolean;
   cancelLiveMediaErrorDeferRef: RefObject<() => void>;
@@ -61,6 +62,7 @@ export function usePlayerVideoEvents(p: UsePlayerVideoEventsParams) {
     vodTotalSec,
     vodDurationHintRef,
     vodStartOffsetRef,
+    vodScrubbingRef,
     mobileLikeViewport,
     chromiumDesktopClient,
     cancelLiveMediaErrorDeferRef,
@@ -258,7 +260,9 @@ export function usePlayerVideoEvents(p: UsePlayerVideoEventsParams) {
       if (nowUi - lastUiFlushMs >= uiFlushMs) {
         lastUiFlushMs = nowUi;
         const off = usesTranscodePlayback ? vodStartOffsetRef.current : 0;
-        setTime(off + v.currentTime);
+        if (!vodScrubbingRef.current) {
+          setTime(off + v.currentTime);
+        }
         const buf = v.buffered;
         if (buf.length) setBuffered(off + buf.end(buf.length - 1));
       }
@@ -356,8 +360,13 @@ export function usePlayerVideoEvents(p: UsePlayerVideoEventsParams) {
       }
     };
     const onMeta = () => {
-      const vd = v.duration;
       const hint = vodDurationHintRef.current || vodTotalSec;
+      if (usesTranscodePlayback) {
+        if (hint > 1) applyVodDurationHint(hint);
+        if (v.videoWidth > 0) setLiveAudioNoPicture(false);
+        return;
+      }
+      const vd = v.duration;
       const d =
         Number.isFinite(vd) && vd > 1 && vd < 86400
           ? vd
@@ -525,6 +534,7 @@ export function usePlayerVideoEvents(p: UsePlayerVideoEventsParams) {
     hlsRef,
     vodDurationHintRef,
     vodStartOffsetRef,
+    vodScrubbingRef,
     cancelLiveMediaErrorDeferRef,
     livePlaybackErrorSuppressUntilRef,
     requestVodTranscodeFallbackRef,

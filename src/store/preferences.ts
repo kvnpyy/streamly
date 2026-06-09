@@ -1,5 +1,6 @@
 "use client";
 
+import { dispatchMyListToggle } from "@/lib/my-list";
 import { sanitizeRecents } from "@/lib/watch-state-sync";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
@@ -99,6 +100,7 @@ type PrefsState = {
   setVodResumeSec: (vodResumeSec: Record<string, number>) => void;
   addRecent: (f: Omit<Favorite, "addedAt">) => void;
   clearRecents: () => void;
+  removeRecent: (kind: FavoriteKind, id: number) => void;
   /** Reset persisted prefs (favorites, recents, browse memory, parental PIN). */
   resetAllPrefs: () => void;
   /** VOD resume positions (seconds). Key: `${accountKey}|movie|${streamId}` or `|series|…`. */
@@ -159,6 +161,7 @@ export const usePrefs = create<PrefsState>()(
               (x) => !(x.kind === f.kind && x.id === f.id)
             ),
           });
+          dispatchMyListToggle(false);
         } else {
           set({
             favorites: [{ ...f, addedAt: Date.now() }, ...get().favorites].slice(
@@ -166,6 +169,7 @@ export const usePrefs = create<PrefsState>()(
               500
             ),
           });
+          dispatchMyListToggle(true);
         }
       },
       isFavorite: (kind, id) =>
@@ -185,6 +189,12 @@ export const usePrefs = create<PrefsState>()(
         });
       },
       clearRecents: () => set({ recents: [] }),
+      removeRecent: (kind, id) =>
+        set({
+          recents: get().recents.filter(
+            (x) => !(x.kind === kind && x.id === id)
+          ),
+        }),
       vodResumeSec: {},
       saveVodResume: (storageKey, seconds) => {
         if (!storageKey || !Number.isFinite(seconds) || seconds < 12) return;

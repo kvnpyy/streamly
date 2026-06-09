@@ -2,24 +2,41 @@
 
 import { parsePositiveRouteId } from "@/lib/utils";
 import { buildImageProxy, buildStreamUrl, xtream } from "@/lib/xtream";
+import { vodResumeStorageKey } from "@/lib/player-vod-resume";
+import { MY_LIST_LABEL } from "@/lib/my-list";
+import { CONTINUE_PROGRESS_MIN_SEC } from "@/lib/continue-watching";
 import { useAuth } from "@/store/auth";
 import { usePlayer } from "@/store/player";
-import { usePrefs } from "@/store/preferences";
+import { browseAccountKey, usePrefs } from "@/store/preferences";
 import { useQuery } from "@tanstack/react-query";
 import { CastGallery } from "@/components/CastGallery";
 import { GenreChips } from "@/components/GenreChips";
+import { SimilarTitlesShelf } from "@/components/SimilarTitlesShelf";
+import { vodCatalogQueryOptions } from "@/lib/vod-catalog-query";
+import { pickSimilarMovies } from "@/lib/similar-titles";
 import { ArrowLeft, Heart, Play, Star } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
 export default function MovieDetail() {
   const params = useParams<{ id: string }>();
   const movieId = parsePositiveRouteId(params.id);
   const creds = useAuth((s) => s.creds);
   const { play } = usePlayer();
-  const { isFavorite, toggleFavorite, addRecent } = usePrefs();
+  const {
+    isFavorite,
+    toggleFavorite,
+    addRecent,
+    vodResumeSec,
+    hideAdult,
+    parentalUnlocked,
+  } = usePrefs();
   const [imgErr, setImgErr] = useState(false);
+  const accountKey = useMemo(
+    () => (creds ? browseAccountKey(creds) : ""),
+    [creds]
+  );
 
   const info = useQuery({
     queryKey: ["vod-info", creds?.server, creds?.username, movieId],
@@ -28,6 +45,23 @@ export default function MovieDetail() {
     retry: 2,
     retryDelay: (n) => Math.min(1000 * 2 ** n, 8000),
   });
+
+  const vodCatalog = useQuery({
+    ...vodCatalogQueryOptions(creds!, Boolean(creds && movieId != null && info.data)),
+  });
+
+  const similarMovies = useMemo(() => {
+    const meta = info.data?.info;
+    const data = info.data?.movie_data;
+    if (!meta || !data) return [];
+    return pickSimilarMovies(
+      vodCatalog.data?.streams,
+      data.stream_id,
+      data.category_id,
+      meta.genre,
+      { hideAdult, parentalUnlocked }
+    );
+  }, [info.data, vodCatalog.data?.streams, hideAdult, parentalUnlocked]);
 
   if (!creds) {
     return null;
@@ -116,6 +150,18 @@ export default function MovieDetail() {
   const backdrop = meta.backdrop_path?.[0];
   const ext = data.container_extension || meta.container_extension || "mp4";
   const fav = isFavorite("movie", data.stream_id);
+  const resumeKey =
+    accountKey && creds
+      ? vodResumeStorageKey(accountKey, {
+          kind: "movie",
+          id: data.stream_id,
+          title: meta.name || data.name,
+          url: "",
+        })
+      : null;
+  const hasResume =
+    resumeKey != null &&
+    (vodResumeSec[resumeKey] ?? 0) >= CONTINUE_PROGRESS_MIN_SEC;
 
   return (
     <div>
@@ -221,7 +267,7 @@ export default function MovieDetail() {
               }}
               className="inline-flex items-center gap-2 h-11 px-5 rounded-xl btn-brand font-medium"
             >
-              <Play className="size-4 fill-white" /> Play
+              <Play className="size-4 fill-white" /> {hasResume ? "Resume" : "Play"}
             </button>
             <button
               onClick={() =>
@@ -240,10 +286,14 @@ export default function MovieDetail() {
               }
             >
               <Heart className={"size-4 " + (fav ? "fill-current" : "")} />
-              {fav ? "In Favorites" : "Add to Favorites"}
+              {fav ? `In ${MY_LIST_LABEL}` : `Add to ${MY_LIST_LABEL}`}
             </button>
           </div>
         </div>
+      </div>
+
+      <div className="mt-12">
+        <SimilarTitlesShelf titles={similarMovies} kind="movie" />
       </div>
     </div>
   );

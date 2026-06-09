@@ -4,16 +4,22 @@ import { HomeRecentTile } from "@/components/home/HomeRecentTile";
 import { TvHomeQuickNav } from "@/components/tv/TvHomeQuickNav";
 import { TvHomeRow } from "@/components/tv/TvHomeRow";
 import { TvShelf } from "@/components/TvShelf";
-import {
-  buildLiveFlipPlaylist,
-  liveStreamToPlayerSource,
-  stubLiveStreamFromRecent,
-} from "@/lib/live-flip-playlist";
 import { buildHomeLiveChannelList } from "@/lib/home-live-channels";
-import { buildLivePlayUrl } from "@/lib/xtream";
+import {
+  FeaturedSpotlightHero,
+  playFeaturedSpotlight,
+} from "@/components/home/FeaturedSpotlight";
+import { CONTINUE_WATCHING_PATH, continueDetailHref } from "@/lib/continue-watching";
+import { pickFeaturedSpotlight } from "@/lib/featured-spotlight";
+import { useContinueRecentPlay } from "@/hooks/use-continue-recent-play";
 import type { XtreamCredentials } from "@/lib/xtream-types";
 import { looksAdult } from "@/lib/utils";
-import type { Favorite, RecentItem } from "@/store/preferences";
+import {
+  browseAccountKey,
+  type Favorite,
+  type RecentItem,
+  usePrefs,
+} from "@/store/preferences";
 import type { PlayerSource } from "@/store/player";
 import { Clapperboard, PlaySquare, Tv } from "lucide-react";
 import { useMemo } from "react";
@@ -47,6 +53,21 @@ export function TvHomeLight({
   showRichPrompt,
   onLoadRich,
 }: TvHomeLightProps) {
+  const vodResumeSec = usePrefs((s) => s.vodResumeSec);
+  const accountKey = useMemo(() => browseAccountKey(creds), [creds]);
+  const spotlight = useMemo(
+    () => pickFeaturedSpotlight(recents, accountKey, vodResumeSec),
+    [recents, accountKey, vodResumeSec]
+  );
+  const spotlightRecent = useMemo(
+    () =>
+      spotlight
+        ? recents.find(
+            (r) => r.kind === spotlight.kind && r.id === spotlight.id
+          )
+        : undefined,
+    [recents, spotlight]
+  );
   const safe = hideAdult && !parentalUnlocked;
   const safeLiveChannels = useMemo(() => {
     const list = buildHomeLiveChannelList(recents, favorites);
@@ -57,29 +78,64 @@ export function TvHomeLight({
   }, [recents, favorites, safe]);
 
   const recentSlice = useMemo(() => recents.slice(0, 8), [recents]);
+  const { playRecent, progressPctFor } = useContinueRecentPlay(
+    creds,
+    recents,
+    play,
+    addRecent,
+    safeLiveChannels.map((c) => ({
+      kind: "live" as const,
+      id: c.stream_id,
+      name: c.name,
+      icon: c.stream_icon,
+      addedAt: 0,
+      lastAt: 0,
+      meta: c.direct_source?.trim()
+        ? { direct_source: c.direct_source.trim() }
+        : undefined,
+    }))
+  );
 
   return (
     <div className="tv-home">
-      <header className="tv-home__hero">
-        <h1 className="tv-home__greeting">
-          Hey <span>{greetingName}</span>
-        </h1>
-        <TvHomeQuickNav
-          items={[
-            { href: "/app/live", label: "Live TV", icon: Tv },
-            { href: "/app/movies", label: "Movies", icon: Clapperboard },
-            { href: "/app/series", label: "Series", icon: PlaySquare },
-          ]}
+      {spotlight && spotlightRecent ? (
+        <FeaturedSpotlightHero
+          compact
+          spotlight={spotlight}
+          creds={creds}
+          recent={spotlightRecent}
+          onPlay={() =>
+            playFeaturedSpotlight(
+              spotlight,
+              creds,
+              spotlightRecent,
+              play,
+              addRecent
+            )
+          }
         />
-      </header>
+      ) : (
+        <header className="tv-home__hero">
+          <h1 className="tv-home__greeting">
+            Hey <span>{greetingName}</span>
+          </h1>
+          <TvHomeQuickNav
+            items={[
+              { href: "/app/live", label: "Live TV", icon: Tv },
+              { href: "/app/movies", label: "Movies", icon: Clapperboard },
+              { href: "/app/series", label: "Series", icon: PlaySquare },
+            ]}
+          />
+        </header>
+      )}
 
       {recentSlice.length > 0 && (
         <TvHomeRow
           title="Continue watching"
-          seeAllHref="/app/favorites"
+          seeAllHref={CONTINUE_WATCHING_PATH}
           className="tv-home-continue"
         >
-          <TvShelf title="Continue" hideTitle seeAllHref="/app/favorites">
+          <TvShelf title="Continue" hideTitle seeAllHref={CONTINUE_WATCHING_PATH}>
             {recentSlice.map((r) => (
               <div
                 key={r.kind === "live" ? `live-${r.id}` : `${r.kind}-${r.id}`}
@@ -95,34 +151,12 @@ export function TvHomeLight({
                       id: r.id,
                       name: r.name,
                       icon: r.icon,
+                      meta: r.meta,
                     })
                   }
-                  href={
-                    r.kind === "movie"
-                      ? `/app/movies/${r.id}`
-                      : r.kind === "series"
-                        ? `/app/series/${r.id}`
-                        : undefined
-                  }
-                  onPlay={
-                    r.kind === "live"
-                      ? () => {
-                          const stream = stubLiveStreamFromRecent(r);
-                          const flipStreams = recents
-                            .filter((x) => x.kind === "live")
-                            .map(stubLiveStreamFromRecent);
-                          play(liveStreamToPlayerSource(creds, stream), {
-                            playlist: buildLiveFlipPlaylist(
-                              creds,
-                              flipStreams.length > 1
-                                ? flipStreams
-                                : safeLiveChannels
-                            ),
-                          });
-                          addRecent(r);
-                        }
-                      : undefined
-                  }
+                  onPlay={() => playRecent(r)}
+                  detailHref={continueDetailHref(r)}
+                  progressPct={progressPctFor(r)}
                 />
               </div>
             ))}

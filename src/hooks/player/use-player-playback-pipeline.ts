@@ -24,9 +24,11 @@ import { playbackBreadcrumb } from "@/lib/playback-telemetry";
 import {
   buildAppleMobileLiveHlsConfig,
   buildIptvHlsJsConfig,
+  buildVodTranscodeHlsJsConfig,
   levelsListKey,
 } from "@/lib/iptv-hls-config";
 import { playbackUrlIsHls } from "@/lib/playback-url";
+import { resolveVodPlaybackUrl } from "@/lib/vod-transcode-url";
 import {
   readPreferredPlayerVolume,
 } from "@/lib/player-volume-pref";
@@ -36,7 +38,12 @@ import { safeVideoPlay } from "@/lib/video-play";
 import {
   playbackUrlUsesVodTranscode,
 } from "@/lib/vod-transcode-url";
-import { vodResumeStorageKey } from "@/lib/player-vod-resume";
+import {
+  shouldPersistVodResume,
+  type VodTimelineHold,
+  vodAbsoluteSec,
+  vodResumeStorageKey,
+} from "@/lib/player-vod-resume";
 import { browseAccountKey, usePrefs } from "@/store/preferences";
 import type { PlayerSource } from "@/store/player";
 import type { useHlsRuntime } from "@/hooks/use-hls-runtime";
@@ -91,6 +98,7 @@ export type UsePlayerPlaybackPipelineParams = {
     startOffset?: number;
     encoded?: number;
   }) => void;
+  vodTimelineHoldRef: RefObject<VodTimelineHold | null>;
 };
 
 export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
@@ -141,6 +149,7 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
     setVodPrepProgress,
     applyVodDurationHint,
     applyVodTranscodeTimelineHints,
+    vodTimelineHoldRef,
   } = p;
 
   useEffect(() => {
@@ -148,18 +157,33 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
     const video = videoRef.current;
     if (!video) return;
 
+    const timelineHold = vodTimelineHoldRef.current;
+
     setError(null);
     streamSupportRequestIdRef.current = null;
     setStreamSupportRequestId(null);
     liveTryAgainStrikeRef.current = 0;
     setNeedsTapToPlay(false);
     setStalled(false);
-    setTime(0);
-    setDuration(0);
-    setVodTotalSec(0);
+    if (timelineHold) {
+      setTime(timelineHold.absoluteTimeSec);
+      if (timelineHold.durationSec && timelineHold.durationSec > 1) {
+        applyVodDurationHint(timelineHold.durationSec);
+      } else {
+        setDuration(0);
+        setVodTotalSec(0);
+      }
+      vodStartOffsetRef.current = timelineHold.startOffsetSec;
+      vodEncodedSecRef.current = 0;
+      vodTimelineHoldRef.current = null;
+    } else {
+      setTime(0);
+      setDuration(0);
+      setVodTotalSec(0);
       vodDurationHintRef.current = 0;
-    vodStartOffsetRef.current = 0;
-    vodEncodedSecRef.current = 0;
+      vodStartOffsetRef.current = 0;
+      vodEncodedSecRef.current = 0;
+    }
     setLevels([]);
     setCurrentLevel(-1);
     setSubtitles([]);
@@ -174,7 +198,11 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
     probeFetchRef.current = new AbortController();
     const probeSignal = probeFetchRef.current.signal;
     const url = withLiveHlsCompatMse(
-      vodPlaybackUrl ?? current.url,
+      resolveVodPlaybackUrl(vodPlaybackUrl, current.url, {
+        containerExt: current.containerExt,
+        compatMse: tvBrowser || silkLikeClient,
+        kindIsLive: isLive,
+      }),
       isLive
     );
     const vodTranscodeHls = !isLive && playbackUrlUsesVodTranscode(url);
@@ -466,26 +494,7 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
           });
       const hlsConfig = {
         ...baseHlsConfig,
-        ...(vodTranscodeHls
-          ? {
-              maxBufferLength: 24,
-              maxMaxBufferLength: 90,
-              backBufferLength: 45,
-              maxBufferHole: isSafariFamilyWithoutChromium() ? 1.2 : 0.65,
-              maxFragLookUpTolerance: 0.4,
-              stretchShortVideoTrack: true,
-              startFragPrefetch: true,
-              initialLiveManifestSize: 1,
-              liveSyncDurationCount: 1,
-              maxLiveSyncPlaybackRate: 1,
-              manifestLoadingTimeOut: 22_000,
-              levelLoadingTimeOut: 22_000,
-              fragLoadingTimeOut: 28_000,
-              manifestLoadingMaxRetry: 24,
-              levelLoadingMaxRetry: 24,
-              fragLoadingMaxRetry: 18,
-            }
-          : {}),
+        ...(vodTranscodeHls ? buildVodTranscodeHlsJsConfig() : {}),
         xhrSetup(xhr: XMLHttpRequest, reqUrl: string) {
           if (!reqUrl.includes("/api/stream")) return;
           xhr.addEventListener("load", function onLoad() {
@@ -989,10 +998,23 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
     return () => {
       if (video && creds && current && current.kind !== "live") {
         const key = vodResumeStorageKey(browseAccountKey(creds), current);
-        const t = video.currentTime;
-        const d = video.duration;
-        if (key && t > 12 && d && Number.isFinite(d) && t < d - 45) {
-          usePrefs.getState().saveVodResume(key, t);
+        const activeUrl = vodPlaybackUrl ?? current.url;
+        const usesTranscode = playbackUrlUsesVodTranscode(activeUrl);
+        const absolute = vodAbsoluteSec(video.currentTime, {
+          usesTranscode,
+          startOffsetSec: vodStartOffsetRef.current,
+        });
+        const d =
+          vodDurationHintRef.current > 1
+            ? vodDurationHintRef.current
+            : video.duration;
+        if (
+          key &&
+          d &&
+          Number.isFinite(d) &&
+          shouldPersistVodResume(absolute, d)
+        ) {
+          usePrefs.getState().saveVodResume(key, absolute);
         }
       }
       cancelled = true;
@@ -1021,6 +1043,7 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
     vodPlaybackUrl,
     applyVodDurationHint,
     applyVodTranscodeTimelineHints,
+    vodTimelineHoldRef,
     playbackRetryKey,
     chromiumDesktopClient,
     tvBrowser,

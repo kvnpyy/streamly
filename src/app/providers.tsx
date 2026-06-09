@@ -9,6 +9,7 @@ import { CookieConsentBar } from "@/components/CookieConsentBar";
 import { LivingRoomBootstrap } from "@/components/LivingRoomBootstrap";
 import { TvBrowserProvider } from "@/components/TvBrowserProvider";
 import { PerformanceHud } from "@/components/PerformanceHud";
+import { ToastHost } from "@/components/ToastHost";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MotionConfig } from "framer-motion";
 import { SessionProvider } from "next-auth/react";
@@ -53,6 +54,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
                   <CatalogPrefetch />
                   {children}
                   <CookieConsentBar />
+                  <ToastHost />
                   <PerformanceHud />
                 </QueryClientProvider>
               </TvBrowserProvider>

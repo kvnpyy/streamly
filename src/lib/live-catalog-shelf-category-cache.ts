@@ -1,5 +1,8 @@
 import { categoryPassesRegionGate } from "@/lib/live-category-shelf";
-import type { TvRegion } from "@/lib/geo-continent";
+import {
+  sortLiveCategoriesForBrowse,
+  type TvRegion,
+} from "@/lib/geo-continent";
 import { lookupStreamIdsForCategory } from "@/lib/live-stream-index";
 import type { Category } from "@/lib/xtream-types";
 
@@ -47,10 +50,11 @@ export function getShelfCategoriesForRegion(
     out.push(c);
   }
 
-  cache.set(key, { categories: out, at: now });
+  const sorted = sortLiveCategoriesForBrowse(out, region);
+  cache.set(key, { categories: sorted, at: now });
   if (cache.size > 8) {
     const oldest = [...cache.entries()].sort((a, b) => a[1].at - b[1].at)[0];
     if (oldest) cache.delete(oldest[0]);
   }
-  return out;
+  return sorted;
 }

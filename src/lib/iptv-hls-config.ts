@@ -169,6 +169,41 @@ export function buildIptvHlsJsConfig(opts: {
   };
 }
 
+/**
+ * Server-transcoded MKV → growing HLS (EVENT-style). Stay several segments behind the
+ * encode edge so playback does not outrun ffmpeg (choppy video / A/V drift).
+ */
+export function buildVodTranscodeHlsJsConfig() {
+  /** Stay a few segments behind the encode edge once the playhead catches up. */
+  const behindEdge = 4;
+  return {
+    maxBufferLength: 28,
+    maxMaxBufferLength: 72,
+    backBufferLength: 30,
+    maxBufferHole: 0.85,
+    maxFragLookUpTolerance: 0.35,
+    stretchShortVideoTrack: false,
+    startFragPrefetch: false,
+    /** EVENT playlists are "live" to hls.js — never snap the user toward the encode edge while watching from the start. */
+    liveSyncDurationCount: behindEdge,
+    liveMaxLatencyDurationCount: Number.POSITIVE_INFINITY,
+    liveSyncMode: "buffered" as const,
+    maxLiveSyncPlaybackRate: 1,
+    liveSyncOnStallIncrease: 0,
+    initialLiveManifestSize: 2,
+    manifestLoadingTimeOut: 30_000,
+    levelLoadingTimeOut: 30_000,
+    fragLoadingTimeOut: 35_000,
+    manifestLoadingMaxRetry: 28,
+    levelLoadingMaxRetry: 28,
+    fragLoadingMaxRetry: 18,
+    nudgeOffset: 0.1,
+    nudgeMaxRetry: 14,
+    highBufferWatchdogPeriod: 5,
+    startPosition: 0,
+  };
+}
+
 /** iPhone/iPad live via hls.js — calmer live-edge sync than default mobile config. */
 export function buildAppleMobileLiveHlsConfig() {
   const base = buildIptvHlsJsConfig({ isLive: true, mobileLike: true });

@@ -17,8 +17,8 @@ export type TrendingDiagnoseInput = {
   channelById: Map<number, LiveStream>;
   snapshots: Map<number, StreamEpgSnapshot>;
   tmdbTrending?: TmdbTrendingItem[];
-  recentIds?: number[];
-  favIds?: number[];
+  recentIds?: Set<number> | number[];
+  favIds?: Set<number> | number[];
 };
 
 export type TrendingDiagnoseReport = {
@@ -55,8 +55,12 @@ function allIdsWithSnapshots(
 export function diagnoseTrendingOnTvPipeline(
   input: TrendingDiagnoseInput
 ): TrendingDiagnoseReport {
-  const recentIds = input.recentIds ?? new Set<number>();
-  const favIds = input.favIds ?? new Set<number>();
+  const recentIds =
+    input.recentIds instanceof Set
+      ? input.recentIds
+      : new Set(input.recentIds ?? []);
+  const favIds =
+    input.favIds instanceof Set ? input.favIds : new Set(input.favIds ?? []);
   const tmdb = input.tmdbTrending ?? [];
 
   const snapshotsWithTitle = [...input.snapshots.entries()].filter(([, s]) =>

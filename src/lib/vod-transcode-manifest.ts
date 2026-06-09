@@ -6,7 +6,8 @@ const ENCODED_DURATION_TAG_RE =
   /^#EXT-X-STREAMLY-ENCODED-DURATION-SEC:([\d.]+)/im;
 
 /** While ffmpeg is still running, cap playlist size so Safari/hls.js don't choke on huge m3u8. */
-export const MAX_IN_PROGRESS_PLAYLIST_SEGMENTS = 360;
+/** ~60 min @ 4s segments — avoids truncating hour-long episodes while ffmpeg is still running. */
+export const MAX_IN_PROGRESS_PLAYLIST_SEGMENTS = 900;
 
 export function sumExtinfDurationSec(manifestText: string): number {
   let sum = 0;
@@ -27,6 +28,49 @@ export function segmentNameFromPlaylistLine(line: string): string | null {
   return VOD_TRANSCODE_SEGMENT_RE.test(base) ? base : null;
 }
 
+function segmentSequence(name: string): number | null {
+  const m = name.match(/^seg_(\d+)\.ts$/i);
+  if (!m) return null;
+  const n = parseInt(m[1]!, 10);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** How many segments exist on disk starting at seg_00000 with no gaps. */
+export function contiguousSegmentCount(
+  files: ReadonlySet<string>
+): number {
+  let expect = 0;
+  const nums = [...files]
+    .map((f) => segmentSequence(f))
+    .filter((n): n is number => n !== null)
+    .sort((a, b) => a - b);
+  for (const n of nums) {
+    if (n === expect) expect++;
+    else break;
+  }
+  return expect;
+}
+
+/** Drop gaps (e.g. from crashed duplicate ffmpeg) so hls.js never 404s mid-playlist. */
+export function trimContiguousSegmentsFromStart<
+  T extends { extinf: string; media: string },
+>(pairs: T[]): T[] {
+  if (pairs.length === 0) return pairs;
+  const out: T[] = [];
+  let expect: number | null = null;
+  for (const pair of pairs) {
+    const name = segmentNameFromPlaylistLine(pair.media);
+    if (!name) continue;
+    const seq = segmentSequence(name);
+    if (seq == null) continue;
+    if (expect == null) expect = seq;
+    if (seq !== expect) break;
+    out.push(pair);
+    expect += 1;
+  }
+  return out;
+}
+
 /**
  * Strip discontinuity tags, cap length, and **only include segments that exist on disk**
  * so hls.js never 404s on entries ffmpeg listed before the .ts file was flushed.
@@ -38,8 +82,10 @@ export function prepareManifestForPlayback(
 ): string {
   const lines = text.split(/\r?\n/);
   const header: string[] = [];
-  const pairs: { extinf: string; media: string }[] = [];
+  const pairs: { extinf: string; media: string; discontinuity?: boolean }[] =
+    [];
   let pendingExtinf: string | null = null;
+  let pendingDisc = false;
 
   const canIncludeSegment = (mediaLine: string): boolean => {
     const name = segmentNameFromPlaylistLine(mediaLine);
@@ -50,7 +96,10 @@ export function prepareManifestForPlayback(
 
   for (const line of lines) {
     const trimmed = line.trim();
-    if (/^#EXT-X-DISCONTINUITY/i.test(trimmed)) continue;
+    if (/^#EXT-X-DISCONTINUITY/i.test(trimmed)) {
+      pendingDisc = true;
+      continue;
+    }
 
     if (trimmed.startsWith("#EXTINF")) {
       pendingExtinf = line;
@@ -59,7 +108,12 @@ export function prepareManifestForPlayback(
 
     if (pendingExtinf && trimmed && !trimmed.startsWith("#")) {
       if (canIncludeSegment(line)) {
-        pairs.push({ extinf: pendingExtinf, media: line });
+        pairs.push({
+          extinf: pendingExtinf,
+          media: line,
+          discontinuity: pendingDisc,
+        });
+        pendingDisc = false;
       }
       pendingExtinf = null;
       continue;
@@ -70,14 +124,15 @@ export function prepareManifestForPlayback(
     if (trimmed.startsWith("#")) header.push(line);
   }
 
-  let kept = pairs;
-  if (!playlistComplete && pairs.length > MAX_IN_PROGRESS_PLAYLIST_SEGMENTS) {
-    /** Keep the tail so playback can advance with ffmpeg; full list when complete. */
-    kept = pairs.slice(-MAX_IN_PROGRESS_PLAYLIST_SEGMENTS);
+  let kept = trimContiguousSegmentsFromStart(pairs);
+  if (!playlistComplete && kept.length > MAX_IN_PROGRESS_PLAYLIST_SEGMENTS) {
+    /** Keep from the start — VOD transcode always plays forward from seg_00000. */
+    kept = kept.slice(0, MAX_IN_PROGRESS_PLAYLIST_SEGMENTS);
   }
 
   const out = [...header];
   for (const p of kept) {
+    if (p.discontinuity) out.push("#EXT-X-DISCONTINUITY");
     out.push(p.extinf, p.media);
   }
   if (playlistComplete) out.push("#EXT-X-ENDLIST");
@@ -131,15 +186,18 @@ export function rewriteTranscodeManifest(
   const castQs = opts?.forCast ? "&cast=1" : "";
   const originPrefix = opts?.proxyOrigin?.replace(/\/+$/, "") ?? "";
   const baseQs = `u=${encodeURIComponent(upstream)}&type=vod&transcode=hls${compatQs}${seekQs}${castQs}`;
-  const tags: string[] = [];
-  if (opts?.playlistComplete) tags.push("#EXT-X-PLAYLIST-TYPE:VOD");
+  const streamlyTags: string[] = [];
+  if (opts?.playlistComplete) {
+    streamlyTags.push("#EXT-X-PLAYLIST-TYPE:VOD");
+  } else {
+    streamlyTags.push("#EXT-X-PLAYLIST-TYPE:EVENT");
+  }
   const off = opts?.startOffsetSec ?? 0;
-  if (off > 0) tags.push(`#EXT-X-STREAMLY-START-OFFSET-SEC:${off}`);
+  if (off > 0) streamlyTags.push(`#EXT-X-STREAMLY-START-OFFSET-SEC:${off}`);
   const enc = opts?.encodedDurationSec;
   if (enc != null && enc > 0) {
-    tags.push(`#EXT-X-STREAMLY-ENCODED-DURATION-SEC:${enc.toFixed(3)}`);
+    streamlyTags.push(`#EXT-X-STREAMLY-ENCODED-DURATION-SEC:${enc.toFixed(3)}`);
   }
-  const headerPrefix = tags.length ? `${tags.join("\n")}\n` : "";
   const body = text
     .split(/\r?\n/)
     .map((line) => {
@@ -156,5 +214,14 @@ export function rewriteTranscodeManifest(
       return originPrefix ? `${originPrefix}${rel}` : rel;
     })
     .join("\n");
-  return headerPrefix + body;
+
+  if (streamlyTags.length === 0) return body;
+
+  const lines = body.split(/\r?\n/);
+  const extm3uIdx = lines.findIndex((l) => l.trim() === "#EXTM3U");
+  if (extm3uIdx >= 0) {
+    lines.splice(extm3uIdx + 1, 0, ...streamlyTags);
+    return lines.join("\n");
+  }
+  return ["#EXTM3U", ...streamlyTags, body].join("\n");
 }

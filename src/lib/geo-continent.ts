@@ -4,12 +4,15 @@
  * How it works:
  *  1. Read the browser timezone via Intl.DateTimeFormat (always available, no API call).
  *  2. Map timezone prefix → continent.
- *  3. Separately, try to extract a 2-3 letter ISO country code from an IPTV
- *     category name (most providers use "US | ESPN", "CA | TSN", "DE | ARD" etc.)
- *     and map that code to a continent.
- *  4. Categories with NO detectable country prefix are treated as "generic" and
- *     always shown regardless of the active region filter.
+ *  3. Extract country codes from IPTV category/channel names ("US | ESPN", "CA | TSN",
+ *     "Canada | CBC", "[CANADA] …") and map to a continent. Full country names use the
+ *     same rules as {@link inferCountryFromCategory} in channel-meta.
+ *  4. Categories with NO detectable country signal are "generic" (shown on all regions,
+ *     with per-channel filtering when the shelf is built).
  */
+
+import { inferCountryFromCategory, parseChannelMeta } from "@/lib/channel-meta";
+import type { Category } from "@/lib/xtream-types";
 
 export type TvRegion =
   | "North America"
@@ -31,6 +34,38 @@ export const ALL_TV_REGIONS: TvRegion[] = [
   "Africa",
   "Oceania",
 ];
+
+/** Canadian IANA timezones — used to prioritize CA shelves on North America browse. */
+const CANADIAN_TIMEZONES = new Set([
+  "America/Toronto",
+  "America/Vancouver",
+  "America/Edmonton",
+  "America/Winnipeg",
+  "America/Halifax",
+  "America/St_Johns",
+  "America/Regina",
+  "America/Whitehorse",
+  "America/Yellowknife",
+  "America/Iqaluit",
+  "America/Moncton",
+  "America/Glace_Bay",
+  "America/Goose_Bay",
+  "America/Thunder_Bay",
+  "America/Nipigon",
+  "America/Rainy_River",
+  "America/Atikokan",
+  "America/Coral_Harbour",
+  "America/Blanc-Sablon",
+  "America/Creston",
+  "America/Dawson",
+  "America/Dawson_Creek",
+  "America/Fort_Nelson",
+  "America/Inuvik",
+  "America/Rankin_Inlet",
+  "America/Resolute",
+  "America/Swift_Current",
+  "America/Pangnirtung",
+]);
 
 // ---------------------------------------------------------------------------
 // Country-code → region lookup (ISO 3166-1 alpha-2 and common 3-letter codes)
@@ -206,6 +241,49 @@ const CODE_TO_REGION: Record<string, TvRegion> = {
   WS: "Oceania",
 };
 
+/** Prefix tokens from IPTV panels → ISO 3166-1 alpha-2. */
+const PREFIX_ALIAS_TO_ISO: Record<string, string> = {
+  USA: "US",
+  US: "US",
+  CAN: "CA",
+  CA: "CA",
+  CANADA: "CA",
+  GBR: "GB",
+  UK: "GB",
+  ENG: "GB",
+};
+
+/**
+ * Bracket/dash prefixes that mean language, not geography (common on 24/7 rows).
+ * `[EN] COBRA KAI` under a US 24/7 category is English-language, not UK/Europe.
+ */
+const LANGUAGE_ONLY_PREFIX_CODES = new Set([
+  "EN",
+  "ENG",
+  "MULTI",
+  "INT",
+  "GLOBAL",
+]);
+
+export function isLanguageOnlyPrefix(code: string | null | undefined): boolean {
+  if (!code?.trim()) return false;
+  return LANGUAGE_ONLY_PREFIX_CODES.has(code.trim().toUpperCase());
+}
+
+/** Provider category rows like `[US] 24/7 ENGLISH MOVIES/SERIES 4K`. */
+export function categoryHas24_7(categoryName: string): boolean {
+  return /\b24\s*\/\s*7\b/i.test(categoryName);
+}
+
+function northAmericaCategoryContext(categoryName: string): boolean {
+  const iso = getCategoryCountryIso(categoryName);
+  return (
+    iso === "US" ||
+    iso === "CA" ||
+    categoryHas24_7(categoryName)
+  );
+}
+
 /**
  * Detect the user's region from the browser timezone.
  * Returns "All" if detection fails or the timezone is ambiguous.
@@ -254,8 +332,18 @@ export function detectRegionFromTimezone(): TvRegion {
   return "All";
 }
 
+/** True when the browser timezone is in Canada (used to surface CA shelves first). */
+export function isCanadianTimezone(): boolean {
+  try {
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    return tz ? CANADIAN_TIMEZONES.has(tz) : false;
+  } catch {
+    return false;
+  }
+}
+
 /**
- * Extract a 2-3 letter country code from an IPTV category name.
+ * Extract a 2-6 letter country prefix from an IPTV category or channel name.
  *
  * Handles every common provider naming pattern:
  *   "US | ESPN"       standard prefix + separator
@@ -272,20 +360,20 @@ export function detectRegionFromTimezone(): TvRegion {
 export function extractCountryCode(categoryName: string): string | null {
   const name = categoryName.trim();
 
-  // Pattern 1: [XX] or [XXX] at start — most common bracket style
-  let m = name.match(/^\[([A-Za-z]{2,4})\]/);
+  // Pattern 1: [XX] or [CANADA] at start — most common bracket style
+  let m = name.match(/^\[([A-Za-z]{2,6})\]/);
   if (m) return m[1]!.toUpperCase();
 
-  // Pattern 2: (XX) or (XXX) at start
-  m = name.match(/^\(([A-Za-z]{2,4})\)/);
+  // Pattern 2: (XX) or (CANADA) at start
+  m = name.match(/^\(([A-Za-z]{2,6})\)/);
   if (m) return m[1]!.toUpperCase();
 
   // Pattern 3: | XX | or |XX| at start (leading-pipe style)
-  m = name.match(/^\|\s*([A-Za-z]{2,4})\s*\|/);
+  m = name.match(/^\|\s*([A-Za-z]{2,6})\s*\|/);
   if (m) return m[1]!.toUpperCase();
 
   // Pattern 4: XX | or XX: or XX - at start (standard prefix + separator)
-  m = name.match(/^([A-Za-z]{2,4})\s*[\|:\-–\/\\]/);
+  m = name.match(/^([A-Za-z]{2,6})\s*[\|:\-–\/\\]/);
   if (m) return m[1]!.toUpperCase();
 
   // Pattern 5: skip leading non-ASCII (emoji flags like 🇬🇧) then retry patterns 1-4
@@ -297,39 +385,162 @@ export function extractCountryCode(categoryName: string): string | null {
   return null;
 }
 
-/**
- * Get the region for a category.
- * Returns null when the category has no detectable country prefix —
- * these "generic" categories (Sports, Movies, News…) should always be shown.
- */
-export function getCategoryRegion(categoryName: string): TvRegion | null {
-  const code = extractCountryCode(categoryName);
-  if (!code) return null;
+/** Normalize a panel prefix or ISO code to alpha-2 (US, CA, GB, …). */
+export function normalizeCountryIso(token: string | null | undefined): string | null {
+  if (!token?.trim()) return null;
+  const u = token.trim().toUpperCase();
+  if (isLanguageOnlyPrefix(u)) return null;
+  if (PREFIX_ALIAS_TO_ISO[u]) return PREFIX_ALIAS_TO_ISO[u]!;
+  if (u.length === 2 && CODE_TO_REGION[u]) return u;
+  return PREFIX_ALIAS_TO_ISO[u] ?? null;
+}
+
+/** ISO-2 from a category title (prefix + full country names). */
+export function getCategoryCountryIso(categoryName: string): string | null {
+  const rawPrefix = extractCountryCode(categoryName);
+  if (rawPrefix && isLanguageOnlyPrefix(rawPrefix)) {
+    /* fall through — e.g. [EN] 24/7 Movies should not read as UK */
+  } else {
+    const fromPrefix = normalizeCountryIso(rawPrefix);
+    if (fromPrefix) return fromPrefix;
+  }
+  return inferCountryFromCategory(categoryName) ?? null;
+}
+
+/** ISO-2 from a channel title. */
+export function getStreamCountryIso(channelName: string): string | null {
+  const rawPrefix = extractCountryCode(channelName);
+  if (!rawPrefix || isLanguageOnlyPrefix(rawPrefix)) {
+    /* [EN] marathons are language tags, not Europe */
+  } else {
+    const fromPrefix = normalizeCountryIso(rawPrefix);
+    if (fromPrefix) return fromPrefix;
+  }
+  const inferred = inferCountryFromCategory(channelName);
+  if (inferred === "GB" && rawPrefix && isLanguageOnlyPrefix(rawPrefix)) {
+    return null;
+  }
+  return (
+    inferred ??
+    parseChannelMeta(channelName).countryCode ??
+    null
+  );
+}
+
+export function countryIsoToTvRegion(iso: string): TvRegion | null {
+  const code = iso.toUpperCase();
+  if (code === "CA") return "North America";
   return CODE_TO_REGION[code] ?? null;
 }
 
 /**
+ * Get the continent region for a category.
+ * Returns null when no country is detected (generic — Sports, Movies, …).
+ */
+export function getCategoryRegion(categoryName: string): TvRegion | null {
+  const iso = getCategoryCountryIso(categoryName);
+  if (!iso) return null;
+  return countryIsoToTvRegion(iso);
+}
+
+/**
+ * Get the continent region for a channel name.
+ */
+export function getStreamRegion(channelName: string): TvRegion | null {
+  const iso = getStreamCountryIso(channelName);
+  if (!iso) return null;
+  return countryIsoToTvRegion(iso);
+}
+
+/**
  * Decide whether a category should be visible under the given region filter.
- *
- * Logic:
- *  - "All" → always visible
- *  - Category has no detectable country code → always visible (generic)
- *  - Category country code matches filter region → visible
- *  - Otherwise → hidden
  */
 export function categoryMatchesRegion(
   categoryName: string,
   region: TvRegion
 ): boolean {
   if (region === "All") return true;
+  if (region === "North America" && categoryHas24_7(categoryName)) {
+    const iso = getCategoryCountryIso(categoryName);
+    if (iso === null || iso === "US" || iso === "CA") return true;
+  }
   const catRegion = getCategoryRegion(categoryName);
-  if (catRegion === null) return true; // generic / no prefix
+  if (catRegion === null) return true;
   return catRegion === region;
+}
+
+/**
+ * Whether a channel belongs in the active region (uses category context for CA-only shelves).
+ */
+export function streamMatchesRegion(
+  channelName: string,
+  categoryName: string,
+  region: TvRegion
+): boolean {
+  if (region === "All") return true;
+
+  const rawStreamPrefix = extractCountryCode(channelName);
+  if (
+    region === "North America" &&
+    isLanguageOnlyPrefix(rawStreamPrefix) &&
+    northAmericaCategoryContext(categoryName)
+  ) {
+    return true;
+  }
+
+  const catRegion = getCategoryRegion(categoryName);
+  if (catRegion !== null) {
+    return catRegion === region;
+  }
+
+  const streamRegion = getStreamRegion(channelName);
+  if (streamRegion === null) return true;
+  return streamRegion === region;
+}
+
+/**
+ * On North America, surface CA/US category groups before generic buckets —
+ * many providers list hundreds of US rows before any Canadian groups.
+ */
+export function sortLiveCategoriesForBrowse(
+  categories: Category[],
+  region: TvRegion
+): Category[] {
+  if (region !== "North America") return categories;
+
+  const rank = (name: string): number => {
+    const iso = getCategoryCountryIso(name);
+    if (iso === "CA") return 0;
+    if (/\bcanad/i.test(name)) return 1;
+    if (categoryHas24_7(name) && (iso === null || iso === "US" || iso === "CA")) {
+      return 2;
+    }
+    if (iso === "US") return 3;
+    if (iso === null) return 4;
+    return 5;
+  };
+
+  return [...categories].sort((a, b) => {
+    const d = rank(a.category_name) - rank(b.category_name);
+    if (d !== 0) return d;
+    return a.category_name.localeCompare(b.category_name);
+  });
 }
 
 const VALID_TV_REGIONS = new Set<string>(ALL_TV_REGIONS);
 
+/** Legacy persisted value from a brief Canada-only region experiment. */
+export function coerceTvRegion(
+  region: TvRegion | string | null | undefined
+): TvRegion | null {
+  if (region == null) return null;
+  const trimmed = String(region).trim();
+  if (trimmed === "Canada") return "North America";
+  if (!VALID_TV_REGIONS.has(trimmed)) return null;
+  return trimmed as TvRegion;
+}
+
 export function parseTvRegion(regionParam: string | null | undefined): TvRegion {
-  const trimmed = regionParam?.trim() || "All";
-  return (VALID_TV_REGIONS.has(trimmed) ? trimmed : "All") as TvRegion;
+  const coerced = coerceTvRegion(regionParam);
+  return coerced ?? "All";
 }

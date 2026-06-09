@@ -2,7 +2,7 @@
 
 import { cn, safeStr } from "@/lib/utils";
 import { proxiedCssBackground } from "@/lib/image-proxy";
-import { Heart, Play, Star } from "lucide-react";
+import { Heart, Info, Play, Star } from "lucide-react";
 import Link from "next/link";
 
 /** Deterministic 0–359 hue from a string. */
@@ -30,6 +30,8 @@ function titleInitials(title: unknown): string {
 export type MediaCardProps = {
   href?: string;
   onClick?: () => void;
+  /** Detail page when primary action is play (`onClick`). */
+  detailHref?: string;
   poster?: string;
   title: string;
   subtitle?: string;
@@ -51,6 +53,7 @@ export type MediaCardProps = {
 export function MediaCard({
   href,
   onClick,
+  detailHref,
   poster,
   title,
   subtitle,
@@ -72,6 +75,7 @@ export function MediaCard({
   const posterBg = proxiedCssBackground(poster, panelServer);
   const hue = titleHue(title);
   const initials = titleInitials(title);
+  const infoHref = detailHref ?? (onClick ? href : undefined);
 
   const inner = (
     <div
@@ -81,7 +85,6 @@ export function MediaCard({
       )}
     >
       <div className="relative aspect-[2/3] overflow-hidden">
-        {/* Layer 1: deterministic gradient background — always visible, acts as fallback */}
         <div
           className="absolute inset-0"
           style={{
@@ -89,7 +92,6 @@ export function MediaCard({
           }}
         />
 
-        {/* Layer 2: initials fallback text — visible whenever the poster doesn't cover */}
         <div className="absolute inset-0 grid place-items-center pointer-events-none">
           <span
             className="text-3xl font-bold select-none"
@@ -99,7 +101,6 @@ export function MediaCard({
           </span>
         </div>
 
-        {/* Layer 3: poster via CSS background-image — silently skipped on error, no red boxes */}
         {posterBg && (
           <div
             className="absolute inset-0 transition-transform duration-500 group-hover:scale-[1.04]"
@@ -114,7 +115,6 @@ export function MediaCard({
 
         <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/0 to-black/0 opacity-90" />
 
-        {/* badges */}
         <div className="absolute top-2 left-2 flex gap-1.5">
           {badge && (
             <span className="text-[10px] uppercase tracking-wider px-2 py-1 rounded-md bg-black/55 backdrop-blur border border-white/10 text-white">
@@ -131,14 +131,14 @@ export function MediaCard({
 
         {onToggleFavorite && (
           <button
-            aria-label={isFavorite ? "Remove from favorites" : "Add to favorites"}
+            aria-label={isFavorite ? "Remove from My List" : "Add to My List"}
             onClick={(e) => {
               e.preventDefault();
               e.stopPropagation();
               onToggleFavorite();
             }}
             className={cn(
-              "absolute top-2 right-2 size-8 grid place-items-center rounded-lg backdrop-blur transition-colors",
+              "absolute top-2 right-2 size-8 grid place-items-center rounded-lg backdrop-blur transition-colors z-10",
               isFavorite
                 ? "bg-(--danger)/90 text-white"
                 : "bg-black/45 text-white/80 hover:bg-black/70"
@@ -148,6 +148,17 @@ export function MediaCard({
               className={cn("size-4", isFavorite && "fill-white")}
             />
           </button>
+        )}
+
+        {infoHref && onClick && (
+          <Link
+            href={infoHref}
+            aria-label={`More info about ${title}`}
+            onClick={(e) => e.stopPropagation()}
+            className="absolute top-2 right-12 size-8 grid place-items-center rounded-lg bg-black/45 text-white/90 hover:bg-black/60 z-10 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity"
+          >
+            <Info className="size-4" />
+          </Link>
         )}
 
         <div className="absolute inset-x-0 bottom-0 p-3 translate-y-2 group-hover:translate-y-0 opacity-0 group-hover:opacity-100 transition-all">
@@ -169,33 +180,39 @@ export function MediaCard({
     </div>
   );
 
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        data-tv-card-root
+        tabIndex={0}
+        onClick={onClick}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            onClick();
+          }
+        }}
+        className="block w-full text-left focus-ring rounded-2xl [&:focus-visible]:relative [&:focus-visible]:z-[1]"
+      >
+        {inner}
+      </button>
+    );
+  }
+
   if (href) {
     return (
       <Link
         href={href}
         prefetch={false}
         data-tv-card-root
+        tabIndex={0}
         className="block focus-ring rounded-2xl [&:focus-visible]:relative [&:focus-visible]:z-[1]"
       >
         {inner}
       </Link>
     );
   }
-  return (
-    <div
-      role="button"
-      tabIndex={0}
-      data-tv-card-root
-      onClick={onClick}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          onClick?.();
-        }
-      }}
-      className="block w-full text-left focus-ring rounded-2xl cursor-pointer [&:focus-visible]:relative [&:focus-visible]:z-[1]"
-    >
-      {inner}
-    </div>
-  );
+
+  return <div className="block w-full">{inner}</div>;
 }

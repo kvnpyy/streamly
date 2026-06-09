@@ -1,10 +1,13 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   appendVodTranscodeHls,
   buildVodTranscodeRetryUrl,
   canVodTranscodeProxyUrl,
+  inferVodContainerExtFromProxyUrl,
   playbackUrlUsesVodTranscode,
+  resolveVodPlaybackUrl,
   stripVodTranscodeParams,
+  vodNeedsServerTranscodePrep,
   vodTranscodeBaseProxyUrl,
 } from "./vod-transcode-url";
 
@@ -39,5 +42,32 @@ describe("vod-transcode-url", () => {
           "&type=hls"
       )
     ).toBe(false);
+  });
+
+  it("infers MKV from upstream URL when panel metadata says mp4", () => {
+    const series =
+      "/api/stream?u=" +
+      encodeURIComponent(
+        "http://omentv.co.in/series/ca6517ba/fb549b89/1358214.mkv"
+      ) +
+      "&type=vod";
+    expect(inferVodContainerExtFromProxyUrl(series, "mp4")).toBe("mkv");
+    expect(vodNeedsServerTranscodePrep("mp4", series)).toBe(true);
+  });
+
+  it("resolveVodPlaybackUrl upgrades risky series to transcode=hls", () => {
+    vi.stubEnv("NEXT_PUBLIC_VOD_TRANSCODE", "1");
+    const series =
+      "/api/stream?u=" +
+      encodeURIComponent(
+        "http://omentv.co.in/series/ca6517ba/fb549b89/1358214.mkv"
+      ) +
+      "&type=vod";
+    const out = resolveVodPlaybackUrl(null, series, {
+      containerExt: "mp4",
+      kindIsLive: false,
+    });
+    expect(out).toContain("transcode=hls");
+    vi.unstubAllEnvs();
   });
 });

@@ -1,4 +1,7 @@
-import { vodContainerUiHint } from "@/lib/utils";
+import {
+  normalizeContainerExt,
+  vodContainerUiHint,
+} from "@/lib/utils";
 
 /** Client-visible gate — must match server `STREAM_VOD_TRANSCODE=1` and ffmpeg on the host. */
 export function isVodTranscodeEnabledClient(): boolean {
@@ -137,6 +140,64 @@ export function vodContainerNeedsServerPrep(
   containerExt: string | undefined
 ): boolean {
   return vodContainerUiHint(containerExt) === "risky";
+}
+
+/** Extension from proxied upstream `u=` (panels often mislabel MKV as MP4). */
+export function upstreamMediaExtFromProxyUrl(proxyUrl: string): string | null {
+  try {
+    const origin =
+      typeof window !== "undefined" ? window.location.origin : "http://localhost";
+    const parsed = new URL(proxyUrl, origin);
+    const upstream = parsed.searchParams.get("u");
+    if (!upstream) return null;
+    const path = decodeURIComponent(upstream).split(/[?#]/)[0].toLowerCase();
+    const m = path.match(/\.([a-z0-9]{2,5})$/);
+    return m ? m[1]! : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Prefer the real file suffix in `u=` over unreliable panel metadata. */
+export function inferVodContainerExtFromProxyUrl(
+  proxyUrl: string,
+  declaredExt?: string | null
+): string {
+  const fromUrl = upstreamMediaExtFromProxyUrl(proxyUrl);
+  if (fromUrl) return fromUrl;
+  const declared = normalizeContainerExt(declaredExt);
+  return declared === "unknown" ? "mkv" : declared;
+}
+
+export function vodNeedsServerTranscodePrep(
+  containerExt: string | undefined,
+  proxyUrl: string
+): boolean {
+  return vodContainerNeedsServerPrep(
+    inferVodContainerExtFromProxyUrl(proxyUrl, containerExt)
+  );
+}
+
+/**
+ * Pick the URL the player should load — never probe/play raw MKV when server
+ * transcode is enabled (avoids HTTP/2 progressive failures in the browser).
+ */
+export function resolveVodPlaybackUrl(
+  vodPlaybackUrl: string | null,
+  proxyUrl: string,
+  opts: {
+    containerExt?: string;
+    compatMse?: boolean;
+    kindIsLive: boolean;
+  }
+): string {
+  if (opts.kindIsLive) return vodPlaybackUrl ?? proxyUrl;
+  const base = vodPlaybackUrl ?? proxyUrl;
+  if (!isVodTranscodeEnabledClient()) return base;
+  if (!canVodTranscodeProxyUrl(proxyUrl)) return base;
+  if (!vodNeedsServerTranscodePrep(opts.containerExt, proxyUrl)) return base;
+  if (playbackUrlUsesVodTranscode(base)) return base;
+  return appendVodTranscodeHls(proxyUrl, { compatMse: opts.compatMse });
 }
 
 const warmInFlight = new Set<string>();

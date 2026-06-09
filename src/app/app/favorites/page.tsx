@@ -33,16 +33,16 @@ export default function FavoritesPage() {
     <div className="space-y-10">
       <SectionHeader
         eyebrow="Saved"
-        title="Favorites"
-        description="Your starred channels, movies, and series — all in one place."
+        title="My List"
+        description="Your saved channels, movies, and series — all in one place."
       />
 
       {favorites.length === 0 && (
         <div className="card p-12 text-center text-(--text-dim)">
           <Heart className="size-7 mx-auto text-(--text-muted) mb-3" />
-          <div className="text-base text-(--text)">No favorites yet</div>
+          <div className="text-base text-(--text)">Your list is empty</div>
           <div className="text-sm mt-1 text-(--text-muted)">
-            Tap the heart on any channel, movie, or series to save it here.
+            Tap the heart on any channel, movie, or series to add it to My List.
           </div>
         </div>
       )}

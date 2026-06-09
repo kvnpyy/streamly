@@ -5,8 +5,10 @@ import { VirtualChannelTileGrid } from "@/components/VirtualChannelTileGrid";
 import { TvSearchPanel } from "@/components/TvSearchPanel";
 import { MediaCard } from "@/components/MediaCard";
 import { VirtualMediaCatalogGrid } from "@/components/VirtualMediaCatalogGrid";
-import { SectionHeader } from "@/components/SectionHeader";
+import { SectionHeader, SkeletonGrid } from "@/components/SectionHeader";
 import { useTvBrowser } from "@/components/TvBrowserProvider";
+import { useCatalogPlay } from "@/hooks/use-catalog-play";
+import { useGlobalProgrammeSearch } from "@/hooks/use-global-programme-search";
 import { liveCatalogQueryOptions } from "@/lib/live-catalog-query";
 import { seriesCatalogQueryOptions } from "@/lib/series-catalog-query";
 import { vodCatalogQueryOptions } from "@/lib/vod-catalog-query";
@@ -43,6 +45,7 @@ function SearchInner() {
 
   const creds = useAuth((s) => s.creds)!;
   const { play } = usePlayer();
+  const { playMovie, movieDetailHref, seriesDetailHref } = useCatalogPlay();
   const { isFavorite, toggleFavorite, addRecent, hideAdult, parentalUnlocked } =
     usePrefs();
   const safe = hideAdult && !parentalUnlocked;
@@ -67,7 +70,7 @@ function SearchInner() {
     return buildLiveChannelIndex(rows);
   }, [liveCatalog.data?.streams, searchEnabled]);
 
-  const filteredLive = useMemo(() => {
+  const filteredLiveByName = useMemo(() => {
     if (!searchEnabled || !liveChannelIndex) return [];
     const matched = filterLiveChannelsByName(liveChannelIndex, f);
     const out: typeof matched = [];
@@ -78,6 +81,20 @@ function SearchInner() {
     }
     return out;
   }, [liveChannelIndex, f, safe, searchEnabled]);
+
+  const { liveMatches, programmeScanning } = useGlobalProgrammeSearch(
+    creds,
+    f,
+    filteredLiveByName,
+    liveChannelIndex,
+    searchEnabled
+  );
+
+  const filteredLive = useMemo(() => {
+    if (!searchEnabled) return [];
+    return liveMatches.slice(0, MAX_PER_SECTION);
+  }, [liveMatches, searchEnabled]);
+
   const vodNameIndex = useMemo(() => {
     const rows = vod.data?.streams;
     if (!searchEnabled || !rows?.length) return null;
@@ -120,9 +137,11 @@ function SearchInner() {
   const deferredVod = useDeferredValue(filteredVod);
   const deferredSeries = useDeferredValue(filteredSeries);
 
-  const loading =
+  const catalogLoading =
     searchEnabled &&
     (liveCatalog.isFetching || vod.isFetching || series.isFetching);
+
+  const loading = catalogLoading && deferredLive.length + deferredVod.length + deferredSeries.length === 0;
 
   const total =
     deferredLive.length + deferredVod.length + deferredSeries.length;
@@ -137,7 +156,7 @@ function SearchInner() {
         description={
           tv
             ? "Type below with your remote — matches appear as you search."
-            : "Use the bar at the top — results update as you type. Live channels, movies, and series all at once."
+            : "Use the bar at the top — results update as you type. Channels, on-air programmes, movies, and series."
         }
       />
 
@@ -153,58 +172,75 @@ function SearchInner() {
         <div className="rounded-xl border border-(--line) bg-(--bg-2)/80 px-4 py-6 text-center text-sm text-(--text-muted)">
           Type at least {MIN_SEARCH_LEN} characters to search the catalog.
         </div>
-      ) : loading && total === 0 ? (
-        <div className="rounded-xl border border-(--line) bg-(--bg-2)/80 px-4 py-6 text-center text-sm text-(--text-muted)">
-          Searching…
+      ) : loading ? (
+        <div className="space-y-8" aria-busy="true">
+          <section>
+            <div className="skeleton h-4 w-24 rounded mb-3" />
+            <SkeletonGrid count={8} variant="tile" />
+          </section>
+          <section>
+            <div className="skeleton h-4 w-24 rounded mb-3" />
+            <SkeletonGrid count={12} />
+          </section>
         </div>
-      ) : total === 0 ? (
+      ) : total === 0 && !programmeScanning ? (
         <div className="rounded-xl border border-(--line) bg-(--bg-2)/80 px-4 py-6 sm:py-8 text-center text-sm text-(--text-muted)">
           No results for “{q}”.
         </div>
       ) : (
         <div className="space-y-6 sm:space-y-8 scroll-mt-4">
-          {deferredLive.length > 0 && (
-            <section>
+          {(deferredLive.length > 0 || programmeScanning) && (
+            <section aria-busy={programmeScanning}>
               <h3 className="text-sm uppercase tracking-wider text-(--text-muted) mb-3">
-                Live ({deferredLive.length})
+                Live ({deferredLive.length}
+                {programmeScanning ? "+" : ""})
+                {programmeScanning ? (
+                  <span className="normal-case tracking-normal text-(--text-dim) ml-2">
+                    scanning programmes…
+                  </span>
+                ) : null}
               </h3>
-              <VirtualChannelTileGrid
-                items={deferredLive}
-                itemKey={(c) => c.stream_id}
-                renderItem={(c) => (
-                  <ChannelTile
-                    number={c.num}
-                    name={c.name}
-                    icon={c.stream_icon}
-                    isFavorite={isFavorite("live", c.stream_id)}
-                    onToggleFavorite={() =>
-                      toggleFavorite({
-                        kind: "live",
-                        id: c.stream_id,
-                        name: c.name,
-                        icon: c.stream_icon,
-                        ...(c.direct_source?.trim()
-                          ? { meta: { direct_source: c.direct_source.trim() } }
-                          : {}),
-                      })
-                    }
-                    onClick={() => {
-                      play(liveStreamToPlayerSource(creds, c), {
-                        playlist: buildLiveFlipPlaylist(creds, deferredLive),
-                      });
-                      addRecent({
-                        kind: "live",
-                        id: c.stream_id,
-                        name: c.name,
-                        icon: c.stream_icon,
-                        ...(c.direct_source?.trim()
-                          ? { meta: { direct_source: c.direct_source.trim() } }
-                          : {}),
-                      });
-                    }}
-                  />
-                )}
-              />
+              {deferredLive.length > 0 ? (
+                <VirtualChannelTileGrid
+                  items={deferredLive}
+                  itemKey={(c) => c.stream_id}
+                  renderItem={(c) => (
+                    <ChannelTile
+                      number={c.num}
+                      name={c.name}
+                      icon={c.stream_icon}
+                      isFavorite={isFavorite("live", c.stream_id)}
+                      onToggleFavorite={() =>
+                        toggleFavorite({
+                          kind: "live",
+                          id: c.stream_id,
+                          name: c.name,
+                          icon: c.stream_icon,
+                          ...(c.direct_source?.trim()
+                            ? { meta: { direct_source: c.direct_source.trim() } }
+                            : {}),
+                        })
+                      }
+                      onClick={() => {
+                        play(liveStreamToPlayerSource(creds, c), {
+                          playlist: buildLiveFlipPlaylist(creds, deferredLive),
+                        });
+                        addRecent({
+                          kind: "live",
+                          id: c.stream_id,
+                          name: c.name,
+                          icon: c.stream_icon,
+                          ...(c.direct_source?.trim()
+                            ? { meta: { direct_source: c.direct_source.trim() } }
+                            : {}),
+                        });
+                      }}
+                    />
+                  )}
+                />
+              ) : (
+                <SkeletonGrid count={6} variant="tile" />
+              )}
             </section>
           )}
 
@@ -218,19 +254,20 @@ function SearchInner() {
                 maxItems={MAX_PER_SECTION}
                 revision={f}
                 renderItem={(m) => {
-                  const mid = parsePositiveRouteId(m.stream_id)!;
+                  const href = movieDetailHref(m);
                   return (
                     <MediaCard
-                      href={`/app/movies/${mid}`}
+                      onClick={() => playMovie(m)}
+                      detailHref={href}
                       poster={m.stream_icon}
                       title={m.name}
                       subtitle={m.year}
                       rating={m.rating}
-                      isFavorite={isFavorite("movie", mid)}
+                      isFavorite={isFavorite("movie", m.stream_id)}
                       onToggleFavorite={() =>
                         toggleFavorite({
                           kind: "movie",
-                          id: mid,
+                          id: m.stream_id,
                           name: m.name,
                           icon: m.stream_icon,
                         })
@@ -254,9 +291,10 @@ function SearchInner() {
                 revision={f}
                 renderItem={(s) => {
                   const sid = parsePositiveRouteId(s.series_id)!;
+                  const href = seriesDetailHref(s);
                   return (
                     <MediaCard
-                      href={`/app/series/${sid}`}
+                      href={href ?? `/app/series/${sid}`}
                       poster={s.cover}
                       title={s.name}
                       subtitle={s.year}

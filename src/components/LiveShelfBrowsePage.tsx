@@ -22,6 +22,7 @@ import { LIVE_GUIDE_MAX_CHANNELS } from "@/lib/live-guide-limits";
 import { scheduleLiveBrowseUiReady } from "@/lib/live-page-performance";
 import type { SlimLiveCatalog } from "@/lib/slim-live-catalog";
 import {
+  coerceTvRegion,
   detectRegionFromTimezone,
   type TvRegion,
 } from "@/lib/geo-continent";
@@ -96,7 +97,8 @@ export function LiveShelfBrowsePage({
     }
   }, [storedRegion, setStoredRegion]);
 
-  const tvRegion: TvRegion = storedRegion ?? detectRegionFromTimezone();
+  const tvRegion: TvRegion =
+    coerceTvRegion(storedRegion) ?? detectRegionFromTimezone();
 
   useEffect(() => {
     if (view !== "guide") {

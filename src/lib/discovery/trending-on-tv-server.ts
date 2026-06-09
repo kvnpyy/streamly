@@ -159,15 +159,40 @@ function collectRegionalStreams(
   return out;
 }
 
+function filterEpgHintsForRegion(
+  hints: EpgTitleHint[],
+  tvRegion: TvRegion,
+  streamById: Map<number, LiveStream>,
+  categories: { category_id: string; category_name: string }[]
+): EpgTitleHint[] {
+  if (tvRegion === "All" || hints.length === 0) return hints;
+  return hints.filter(({ streamId }) => {
+    const stream = streamById.get(streamId);
+    if (!stream) return false;
+    const catName = categoryNameForStream(stream, categories) ?? "";
+    return filterStreamsForTvRegion([stream], tvRegion, catName).length > 0;
+  });
+}
+
 function mergeChannelsWithHints(
   regional: LiveStream[],
   hints: EpgTitleHint[],
-  streamById: Map<number, LiveStream>
+  streamById: Map<number, LiveStream>,
+  tvRegion: TvRegion,
+  categories: { category_id: string; category_name: string }[]
 ): LiveStream[] {
   const byId = new Map(regional.map((c) => [c.stream_id, c]));
   for (const { streamId } of hints.slice(0, MAX_HINT_STREAMS)) {
     const s = streamById.get(streamId);
-    if (s) byId.set(streamId, s);
+    if (!s) continue;
+    const catName = categoryNameForStream(s, categories) ?? "";
+    if (
+      tvRegion !== "All" &&
+      filterStreamsForTvRegion([s], tvRegion, catName).length === 0
+    ) {
+      continue;
+    }
+    byId.set(streamId, s);
   }
   return [...byId.values()];
 }
@@ -224,7 +249,19 @@ export async function buildTrendingOnTvForAccount(
   opts?: { priorityStreamIds?: number[]; epgHints?: EpgTitleHint[] }
 ): Promise<TrendingOnTvServerResult> {
   const tmdbCountry = resolveTmdbCountry({ tvRegion });
-  const hints = opts?.epgHints ?? [];
+  const rawHints = opts?.epgHints ?? [];
+
+  const { bundle, index, streamById } = await getCachedLiveCatalogEntry(creds);
+  const categoryRows = bundle.categories.map((c) => ({
+    category_id: c.category_id,
+    category_name: c.category_name,
+  }));
+  const hints = filterEpgHintsForRegion(
+    rawHints,
+    tvRegion,
+    streamById,
+    categoryRows
+  );
   const rKey = responseKey(creds, tvRegion, tmdbCountry);
   const cached = responseCache.get(rKey);
   if (
@@ -249,20 +286,33 @@ export async function buildTrendingOnTvForAccount(
     setServerEpgTitlesBatch(creds, hints);
   }
 
-  const { bundle, index, streamById } = await getCachedLiveCatalogEntry(creds);
   let channels = collectRegionalStreams(creds, tvRegion, bundle, index, streamById);
 
   if (channels.length === 0 && tvRegion !== "All") {
     channels = collectRegionalStreams(creds, "All", bundle, index, streamById);
   }
 
-  channels = mergeChannelsWithHints(channels, hints, streamById);
+  channels = mergeChannelsWithHints(
+    channels,
+    hints,
+    streamById,
+    tvRegion,
+    categoryRows
+  );
 
   const channelById = new Map<number, LiveStream>();
   for (const c of channels) channelById.set(c.stream_id, c);
   for (const { streamId } of hints) {
     const s = streamById.get(streamId);
-    if (s) channelById.set(streamId, s);
+    if (!s) continue;
+    const catName = categoryNameForStream(s, categoryRows) ?? "";
+    if (
+      tvRegion !== "All" &&
+      filterStreamsForTvRegion([s], tvRegion, catName).length === 0
+    ) {
+      continue;
+    }
+    channelById.set(streamId, s);
   }
 
   const recentIds = new Set<number>();
@@ -303,10 +353,6 @@ export async function buildTrendingOnTvForAccount(
   const hintFetchIds = hints
     .map((h) => h.streamId)
     .filter((id) => !snapshots.has(id));
-  const categoryRows = bundle.categories.map((c) => ({
-    category_id: c.category_id,
-    category_name: c.category_name,
-  }));
 
   await fillEpgSnapshots(
     creds,

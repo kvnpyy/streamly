@@ -162,7 +162,7 @@ export function useRegionalTrending({
 
     const threshold = minItems ?? 4;
 
-    if (livingRoom && items.length < threshold && catalogReady) {
+    if (items.length < threshold && catalogReady) {
       const topMovies = buildTopRatedMovies(movieList, {
         ...safeOpts,
         isFavorite: (id) => isFavorite("movie", id),

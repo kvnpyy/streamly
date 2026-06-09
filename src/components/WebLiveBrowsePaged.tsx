@@ -4,6 +4,7 @@ import { LiveShelfList } from "@/components/LiveShelfList";
 import { LiveShelfRow } from "@/components/LiveShelfRow";
 import {
   ALL_TV_REGIONS,
+  coerceTvRegion,
   detectRegionFromTimezone,
   type TvRegion,
 } from "@/lib/geo-continent";
@@ -50,7 +51,7 @@ function WebLiveBrowsePagedInner({ creds, openChannel }: WebLiveBrowsePagedProps
     }
   }, [storedRegion, setStoredRegion]);
 
-  const region: TvRegion = storedRegion ?? "All";
+  const region: TvRegion = coerceTvRegion(storedRegion) ?? "All";
 
   const {
     allShelves,
@@ -74,10 +75,11 @@ function WebLiveBrowsePagedInner({ creds, openChannel }: WebLiveBrowsePagedProps
   const handleRegionChange = useCallback(
     (r: TvRegion) => {
       closeCategory();
+      setShelfEpgHints([]);
       setStoredRegion(r);
       resetVisible();
     },
-    [closeCategory, setStoredRegion, resetVisible]
+    [closeCategory, setShelfEpgHints, setStoredRegion, resetVisible]
   );
 
   const handleOpenCategory = useCallback(

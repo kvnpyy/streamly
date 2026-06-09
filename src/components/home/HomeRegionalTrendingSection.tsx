@@ -2,6 +2,7 @@
 
 import { RegionalTrendingShelf } from "@/components/RegionalTrendingShelf";
 import {
+  coerceTvRegion,
   detectRegionFromTimezone,
   type TvRegion,
 } from "@/lib/geo-continent";
@@ -63,7 +64,7 @@ export function HomeRegionalTrendingSection({
     }
   }, [storedRegion, setStoredRegion]);
 
-  const tvRegion: TvRegion = storedRegion ?? "All";
+  const tvRegion: TvRegion = coerceTvRegion(storedRegion) ?? "All";
 
   const trendingOnTv = useTrendingOnTv({
     creds,

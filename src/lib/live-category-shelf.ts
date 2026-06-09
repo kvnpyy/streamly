@@ -1,4 +1,9 @@
-import { getCategoryRegion, type TvRegion } from "@/lib/geo-continent";
+import {
+  categoryMatchesRegion,
+  getCategoryRegion,
+  streamMatchesRegion,
+  type TvRegion,
+} from "@/lib/geo-continent";
 import type { Category, LiveStream } from "@/lib/xtream-types";
 
 export type LiveShelfMeta = {
@@ -15,9 +20,7 @@ export function categoryPassesRegionGate(
   categoryName: string,
   region: TvRegion
 ): boolean {
-  if (region === "All") return true;
-  const catRegion = getCategoryRegion(categoryName);
-  return catRegion === null || catRegion === region;
+  return categoryMatchesRegion(categoryName, region);
 }
 
 /**
@@ -37,7 +40,10 @@ export function buildLiveShelfMetaFromIndex(
   const catRegion = getCategoryRegion(category.category_name);
   const catId = String(category.category_id);
 
-  if (region === "All" || catRegion !== null) {
+  const catName = category.category_name;
+  const categoryLocked = catRegion !== null && catRegion === region;
+
+  if (region === "All" || categoryLocked) {
     const preview: LiveStream[] = [];
     for (let i = 0; i < streamIds.length && preview.length < previewLimit; i++) {
       const s = byId.get(streamIds[i]!);
@@ -46,7 +52,7 @@ export function buildLiveShelfMetaFromIndex(
     if (preview.length === 0) return null;
     return {
       id: catId,
-      title: category.category_name,
+      title: catName,
       preview,
       total: streamIds.length,
     };
@@ -59,8 +65,7 @@ export function buildLiveShelfMetaFromIndex(
     const s = byId.get(streamIds[i]!);
     if (!s) continue;
     probeSawStream = true;
-    const chRegion = getCategoryRegion(s.name);
-    if (chRegion === null || chRegion === region) {
+    if (streamMatchesRegion(s.name, catName, region)) {
       probeSawMatch = true;
       break;
     }
@@ -75,8 +80,7 @@ export function buildLiveShelfMetaFromIndex(
   for (let i = 0; i < scanCap; i++) {
     const s = byId.get(streamIds[i]!);
     if (!s) continue;
-    const chRegion = getCategoryRegion(s.name);
-    if (chRegion !== null && chRegion !== region) continue;
+    if (!streamMatchesRegion(s.name, catName, region)) continue;
     total++;
     if (preview.length < previewLimit) {
       preview.push(s);
@@ -123,11 +127,14 @@ export function buildLiveShelfMeta(
 
   const catRegion = getCategoryRegion(category.category_name);
 
-  if (region === "All" || catRegion !== null) {
+  const catName = category.category_name;
+  const categoryLocked = catRegion !== null && catRegion === region;
+
+  if (region === "All" || categoryLocked) {
     const total = allChannels.length;
     return {
       id: String(category.category_id),
-      title: category.category_name,
+      title: catName,
       preview: allChannels.slice(0, previewLimit),
       total,
     };
@@ -139,8 +146,7 @@ export function buildLiveShelfMeta(
 
   for (let i = 0; i < scanCap; i++) {
     const ch = allChannels[i]!;
-    const chRegion = getCategoryRegion(ch.name);
-    if (chRegion !== null && chRegion !== region) continue;
+    if (!streamMatchesRegion(ch.name, catName, region)) continue;
     total++;
     if (preview.length < previewLimit) preview.push(ch);
   }
@@ -170,16 +176,15 @@ export function filterStreamsForTvRegion(
   categoryName: string
 ): LiveStream[] {
   if (!channels.length) return channels;
-  const catRegion = getCategoryRegion(categoryName);
   if (region === "All") return channels;
+  const catRegion = getCategoryRegion(categoryName);
   if (catRegion !== null) {
     return catRegion === region ? channels : [];
   }
   const out: LiveStream[] = [];
   for (let i = 0; i < channels.length; i++) {
     const ch = channels[i]!;
-    const chRegion = getCategoryRegion(ch.name);
-    if (chRegion === null || chRegion === region) out.push(ch);
+    if (streamMatchesRegion(ch.name, categoryName, region)) out.push(ch);
   }
   return out;
 }

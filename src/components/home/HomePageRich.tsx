@@ -13,8 +13,9 @@ import {
 } from "@/lib/catalog-preview";
 import { buildTopRatedMovies, buildNewSeries } from "@/lib/discovery";
 import { DISCOVERY_SHELF_META } from "@/lib/discovery/shelf-meta";
+import { seriesCatalogQueryOptions } from "@/lib/series-catalog-query";
+import { vodCatalogQueryOptions } from "@/lib/vod-catalog-query";
 import { useLivingRoomHomeLayout } from "@/lib/use-living-room-home-layout";
-import { xtream } from "@/lib/xtream";
 import type { LiveStream, SeriesItem, VodStream } from "@/lib/xtream-types";
 import { useAuth } from "@/store/auth";
 import { usePrefs } from "@/store/preferences";
@@ -53,16 +54,14 @@ export function HomePageRich() {
     return () => clearTimeout(t);
   }, []);
 
-  const vod = useQuery({
-    queryKey: ["vod", creds.server, creds.username, "all"],
-    queryFn: ({ signal }) => xtream.vodStreams(creds, undefined, signal),
-    enabled: catalogFetchReady,
+  const vodCatalog = useQuery({
+    ...vodCatalogQueryOptions(creds, catalogFetchReady),
   });
-  const series = useQuery({
-    queryKey: ["series", creds.server, creds.username, "all"],
-    queryFn: ({ signal }) => xtream.series(creds, undefined, signal),
-    enabled: catalogFetchReady,
+  const seriesCatalog = useQuery({
+    ...seriesCatalogQueryOptions(creds, catalogFetchReady),
   });
+  const vodStreams = vodCatalog.data?.streams;
+  const seriesStreams = seriesCatalog.data?.streams;
 
   const safeOpts = useMemo(
     () => ({ hideAdult, parentalUnlocked }),
@@ -71,7 +70,7 @@ export function HomePageRich() {
 
   useEffect(() => {
     let cancelled = false;
-    const list = vod.data;
+    const list = vodStreams;
     const run = async () => {
       if (!list?.length) {
         if (!cancelled) setTopRatedMovieStreams([]);
@@ -84,11 +83,11 @@ export function HomePageRich() {
     return () => {
       cancelled = true;
     };
-  }, [vod.data, safeOpts]);
+  }, [vodStreams, safeOpts]);
 
   useEffect(() => {
     let cancelled = false;
-    const list = series.data;
+    const list = seriesStreams;
     const run = async () => {
       if (!list?.length) {
         if (!cancelled) setNewUpdatedSeriesStreams([]);
@@ -101,7 +100,7 @@ export function HomePageRich() {
     return () => {
       cancelled = true;
     };
-  }, [series.data, safeOpts]);
+  }, [seriesStreams, safeOpts]);
 
   const toggleFavoriteMovie = useCallback(
     (m: VodStream, mid: number) => {
@@ -182,9 +181,9 @@ export function HomePageRich() {
       <div className="tv-home tv-home--rich space-y-8 pt-6">
         <HomeRegionalTrendingSection
           creds={creds}
-          movies={vod.data}
-          series={series.data}
-          vodLoading={vod.isLoading || series.isLoading}
+          movies={vodStreams}
+          series={seriesStreams}
+          vodLoading={vodCatalog.isLoading || seriesCatalog.isLoading}
           recents={recents}
           favorites={favorites}
           hideAdult={hideAdult}
@@ -194,7 +193,7 @@ export function HomePageRich() {
           toggleFavoriteSeries={toggleFavoriteSeries}
           toggleFavoriteLive={toggleFavoriteLive}
         />
-        {(vod.isLoading || topRatedMovieStreams.length > 0) && (
+        {(vodCatalog.isLoading || topRatedMovieStreams.length > 0) && (
           <TvHomeRow
             title={DISCOVERY_SHELF_META.vod_top_rated_movies.title}
             seeAllHref="/app/movies"
@@ -204,7 +203,7 @@ export function HomePageRich() {
               hideTitle
               seeAllHref="/app/movies"
             >
-              {vod.isLoading
+              {vodCatalog.isLoading
                 ? null
                 : topRatedMovieStreams.slice(0, 8).map((m) => {
                     const mid = parsePositiveRouteId(m.stream_id);
@@ -233,7 +232,7 @@ export function HomePageRich() {
             </TvShelf>
           </TvHomeRow>
         )}
-        {(series.isLoading || newUpdatedSeriesStreams.length > 0) && (
+        {(seriesCatalog.isLoading || newUpdatedSeriesStreams.length > 0) && (
           <TvHomeRow
             title={DISCOVERY_SHELF_META.vod_new_series.title}
             seeAllHref="/app/series"
@@ -243,7 +242,7 @@ export function HomePageRich() {
               hideTitle
               seeAllHref="/app/series"
             >
-              {series.isLoading
+              {seriesCatalog.isLoading
                 ? null
                 : newUpdatedSeriesStreams.slice(0, 8).map((s) => {
                     const sid = parsePositiveRouteId(s.series_id);
@@ -279,9 +278,9 @@ export function HomePageRich() {
     <div className="space-y-10 pt-4 border-t border-white/5">
       <HomeRegionalTrendingSection
         creds={creds}
-        movies={vod.data}
-        series={series.data}
-        vodLoading={vod.isLoading || series.isLoading}
+        movies={vodStreams}
+        series={seriesStreams}
+        vodLoading={vodCatalog.isLoading || seriesCatalog.isLoading}
         recents={recents}
         favorites={favorites}
         hideAdult={hideAdult}
@@ -304,7 +303,7 @@ export function HomePageRich() {
             </Link>
           }
         />
-        {vod.isLoading || topRatedMovies.length === 0 ? (
+        {vodCatalog.isLoading || topRatedMovies.length === 0 ? (
           <SkeletonGrid count={12} />
         ) : (
           <TvSpatialGrid className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
@@ -337,7 +336,7 @@ export function HomePageRich() {
             </Link>
           }
         />
-        {series.isLoading || newUpdatedSeries.length === 0 ? (
+        {seriesCatalog.isLoading || newUpdatedSeries.length === 0 ? (
           <SkeletonGrid count={12} />
         ) : (
           <TvSpatialGrid className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
