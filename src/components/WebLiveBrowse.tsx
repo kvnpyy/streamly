@@ -243,7 +243,7 @@ function WebLiveBrowseLegacy({
             {allShelves.length > visibleShelfCount ? (
               <span className="text-(--text-muted)">
                 {" "}
-                · {allShelves.length - visibleShelfCount} ready
+                · loading more…
               </span>
             ) : null}
             {searchQuery ? (

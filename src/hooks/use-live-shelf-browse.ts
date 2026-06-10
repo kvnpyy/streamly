@@ -14,8 +14,8 @@ import {
   useState,
 } from "react";
 
-/** Server allows up to 6 categories per shelf-batch request. */
-const SHELVES_PER_FETCH = 6;
+/** Server allows up to 24 categories per shelf-batch request. */
+const SHELVES_PER_FETCH = 24;
 const INITIAL_SHELF_COUNT = 8;
 
 export type UseLiveShelfBrowseOptions = {
@@ -144,19 +144,23 @@ export function useLiveShelfBrowse({
     void (async () => {
       setLoading(true);
       try {
-        const built = await fetchBatch(
-          0,
-          Math.max(initialVisible, SHELVES_PER_FETCH * 2)
-        );
+        let built: LiveShelfMeta[] = [];
+        while (!cancelled && session === sessionRef.current) {
+          const batch = await fetchBatch(
+            categoryOffsetRef.current,
+            SHELVES_PER_FETCH
+          );
+          if (cancelled || session !== sessionRef.current) return;
+          if (batch.length) {
+            built = [...built, ...batch];
+            allShelvesRef.current = built;
+            setAllShelves(built);
+          }
+          if (!hasMoreRef.current) break;
+        }
         if (cancelled || session !== sessionRef.current) return;
-        allShelvesRef.current = built;
-        // Urgent commit so the first shelves paint immediately. A transition
-        // here was being starved and the page stayed blank until the user
-        // clicked something (which forced React to flush the pending update).
-        const vis = Math.min(initialVisible, built.length);
-        visibleRef.current = vis;
-        setAllShelves(built);
-        setVisibleShelfCount(vis);
+        visibleRef.current = built.length;
+        setVisibleShelfCount(built.length);
         prefetchNext();
       } finally {
         if (!cancelled && session === sessionRef.current) {

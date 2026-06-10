@@ -24,6 +24,50 @@ export function categoryPassesRegionGate(
 }
 
 /**
+ * Collect shelf preview tiles — scans the full category index when needed so
+ * regional matches deep in large mixed lists are not missed (old cap was ~42).
+ */
+export function collectRegionalShelfPreview(
+  streamIds: number[],
+  resolveStream: (id: number) => LiveStream | undefined,
+  categoryName: string,
+  region: TvRegion,
+  previewLimit: number
+): LiveStream[] {
+  if (!streamIds.length || previewLimit < 1) return [];
+
+  if (region === "All") {
+    const out: LiveStream[] = [];
+    for (const id of streamIds) {
+      if (out.length >= previewLimit) break;
+      const s = resolveStream(id);
+      if (s) out.push(s);
+    }
+    return out;
+  }
+
+  const catRegion = getCategoryRegion(categoryName);
+  if (catRegion !== null && catRegion === region) {
+    const out: LiveStream[] = [];
+    for (const id of streamIds) {
+      if (out.length >= previewLimit) break;
+      const s = resolveStream(id);
+      if (s) out.push(s);
+    }
+    return out;
+  }
+
+  const out: LiveStream[] = [];
+  for (const id of streamIds) {
+    if (out.length >= previewLimit) break;
+    const s = resolveStream(id);
+    if (!s) continue;
+    if (streamMatchesRegion(s.name, categoryName, region)) out.push(s);
+  }
+  return out;
+}
+
+/**
  * Build shelf meta from server `streamIdsByCategory` + stream map — never materializes
  * full per-category channel arrays (avoids O(total streams) RAM + CPU).
  */
@@ -37,19 +81,21 @@ export function buildLiveShelfMetaFromIndex(
   if (!streamIds?.length) return null;
   if (!categoryPassesRegionGate(category.category_name, region)) return null;
 
-  const catRegion = getCategoryRegion(category.category_name);
   const catId = String(category.category_id);
-
   const catName = category.category_name;
+  const catRegion = getCategoryRegion(catName);
   const categoryLocked = catRegion !== null && catRegion === region;
 
+  const preview = collectRegionalShelfPreview(
+    streamIds,
+    (id) => byId.get(id),
+    catName,
+    region,
+    previewLimit
+  );
+  if (preview.length === 0) return null;
+
   if (region === "All" || categoryLocked) {
-    const preview: LiveStream[] = [];
-    for (let i = 0; i < streamIds.length && preview.length < previewLimit; i++) {
-      const s = byId.get(streamIds[i]!);
-      if (s) preview.push(s);
-    }
-    if (preview.length === 0) return null;
     return {
       id: catId,
       title: catName,
@@ -58,57 +104,18 @@ export function buildLiveShelfMetaFromIndex(
     };
   }
 
-  const probeCap = Math.min(streamIds.length, 10);
-  let probeSawStream = false;
-  let probeSawMatch = false;
-  for (let i = 0; i < probeCap; i++) {
-    const s = byId.get(streamIds[i]!);
-    if (!s) continue;
-    probeSawStream = true;
-    if (streamMatchesRegion(s.name, catName, region)) {
-      probeSawMatch = true;
-      break;
-    }
-  }
-  if (probeSawStream && !probeSawMatch) return null;
-
-  const preview: LiveStream[] = [];
   let total = 0;
-  const scanCap = Math.min(streamIds.length, previewLimit * 4);
-
-  let extraCountScans = 0;
-  for (let i = 0; i < scanCap; i++) {
-    const s = byId.get(streamIds[i]!);
+  for (const id of streamIds) {
+    const s = byId.get(id);
     if (!s) continue;
-    if (!streamMatchesRegion(s.name, catName, region)) continue;
-    total++;
-    if (preview.length < previewLimit) {
-      preview.push(s);
-    } else {
-      extraCountScans++;
-      if (extraCountScans > 8) break;
-    }
-  }
-
-  if (preview.length === 0) {
-    return null;
-  }
-
-  let finalTotal = total;
-  if (scanCap < streamIds.length && total > 0) {
-    finalTotal = Math.max(
-      total,
-      Math.round((total / scanCap) * streamIds.length)
-    );
-  } else if (scanCap < streamIds.length) {
-    finalTotal = streamIds.length;
+    if (streamMatchesRegion(s.name, catName, region)) total++;
   }
 
   return {
     id: catId,
-    title: category.category_name,
+    title: catName,
     preview,
-    total: finalTotal,
+    total: total > 0 ? total : preview.length,
   };
 }
 

@@ -185,7 +185,7 @@ function WebLiveBrowsePagedInner({ creds, openChannel }: WebLiveBrowsePagedProps
             {allShelves.length > visibleShelfCount ? (
               <span className="text-(--text-muted)">
                 {" "}
-                · {allShelves.length - visibleShelfCount} ready
+                · loading more…
               </span>
             ) : null}
           </p>

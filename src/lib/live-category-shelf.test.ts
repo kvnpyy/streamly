@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildLiveShelfMeta,
   buildLiveShelfMetaFromIndex,
+  collectRegionalShelfPreview,
   filterStreamsForTvRegion,
 } from "./live-category-shelf";
 import type { Category, LiveStream } from "@/lib/xtream-types";
@@ -91,6 +92,34 @@ describe("buildLiveShelfMeta", () => {
       8
     );
     expect(meta).toBeNull();
+  });
+
+  it("finds regional matches deep in large mixed category lists", () => {
+    const ids = Array.from({ length: 120 }, (_, i) => i);
+    const byId = new Map(
+      ids.map((i) => [
+        i,
+        ch(i, i < 100 ? `US: Channel ${i}` : `UK: Channel ${i}`),
+      ] as const)
+    );
+    const preview = collectRegionalShelfPreview(
+      ids,
+      (id) => byId.get(id),
+      "Sports",
+      "Europe",
+      4
+    );
+    expect(preview).toHaveLength(4);
+    expect(preview.every((s) => s.name.startsWith("UK:"))).toBe(true);
+
+    const meta = buildLiveShelfMetaFromIndex(
+      { category_id: "1", category_name: "Sports" } as Category,
+      ids,
+      byId,
+      "Europe",
+      4
+    );
+    expect(meta?.preview).toHaveLength(4);
   });
 
   it("filterStreamsForTvRegion keeps generic channels in a prefixless category", () => {

@@ -1,11 +1,12 @@
-import { categoryPassesRegionGate } from "@/lib/live-category-shelf";
+import {
+  categoryPassesRegionGate,
+  collectRegionalShelfPreview,
+} from "@/lib/live-category-shelf";
 import type { TvRegion } from "@/lib/geo-continent";
-import { getCategoryRegion, streamMatchesRegion } from "@/lib/geo-continent";
 import { getCachedLiveCatalogEntry } from "@/lib/live-catalog-server-cache";
-import { materializeStreamIds } from "@/lib/live-catalog-stream-map";
 import { lookupStreamIdsForCategory } from "@/lib/live-stream-index";
 import type { ShelfPreviewPayload } from "@/lib/live-catalog-shelves";
-import type { Category, LiveStream } from "@/lib/xtream-types";
+import type { Category } from "@/lib/xtream-types";
 import { NextRequest, NextResponse } from "next/server";
 
 export const runtime = "nodejs";
@@ -27,25 +28,6 @@ function categoryById(
   catId: string
 ): Category | undefined {
   return categories.find((c) => String(c.category_id) === catId);
-}
-
-function filterPreviewForRegion(
-  streams: LiveStream[],
-  categoryName: string,
-  region: TvRegion,
-  limit: number
-): LiveStream[] {
-  if (region === "All") return streams.slice(0, limit);
-  const catRegion = getCategoryRegion(categoryName);
-  if (catRegion !== null && catRegion === region) {
-    return streams.slice(0, limit);
-  }
-  const out: LiveStream[] = [];
-  for (const s of streams) {
-    if (out.length >= limit) break;
-    if (streamMatchesRegion(s.name, categoryName, region)) out.push(s);
-  }
-  return out;
 }
 
 /**
@@ -88,10 +70,9 @@ export async function GET(req: NextRequest) {
       const ids = lookupStreamIdsForCategory(index, catId) ?? [];
       if (!ids.length) continue;
 
-      const fetchCap = Math.min(ids.length, limit * 6);
-      const raw = materializeStreamIds(byId, ids, fetchCap);
-      const streams = filterPreviewForRegion(
-        raw,
+      const streams = collectRegionalShelfPreview(
+        ids,
+        (id) => byId.get(id),
         category.category_name,
         region,
         limit
