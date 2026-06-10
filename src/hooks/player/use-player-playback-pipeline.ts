@@ -510,7 +510,9 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
               !reqUrl.includes("media=") &&
               xhr.status >= 400
             ) {
-              const body = xhr.responseText?.trim().slice(0, 240);
+              const raw = xhr.responseText?.trim();
+              const body =
+                raw && !raw.startsWith("<") ? raw.slice(0, 240) : null;
               if (xhr.status === 503) {
                 surfacePlaybackError(
                   body ||
