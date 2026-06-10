@@ -144,7 +144,9 @@ export function useLiveShelfBrowse({
     void (async () => {
       setLoading(true);
       try {
+        const { yieldToMain } = await import("@/lib/yield-to-main");
         let built: LiveShelfMeta[] = [];
+        let firstPaint = true;
         while (!cancelled && session === sessionRef.current) {
           const batch = await fetchBatch(
             categoryOffsetRef.current,
@@ -155,8 +157,15 @@ export function useLiveShelfBrowse({
             built = [...built, ...batch];
             allShelvesRef.current = built;
             setAllShelves(built);
+            const vis = firstPaint
+              ? Math.min(initialVisible, built.length)
+              : built.length;
+            firstPaint = false;
+            visibleRef.current = vis;
+            setVisibleShelfCount(vis);
           }
           if (!hasMoreRef.current) break;
+          await yieldToMain();
         }
         if (cancelled || session !== sessionRef.current) return;
         visibleRef.current = built.length;

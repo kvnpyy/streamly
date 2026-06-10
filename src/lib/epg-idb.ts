@@ -51,6 +51,9 @@ export async function idbForEachBatch(
   onBatch: (batch: Array<[string, EpgCacheEntry]>) => void | Promise<void>
 ): Promise<void> {
   const db = await openDb();
+  /** Cursor iteration must stay synchronous — awaiting inside `onsuccess` ends the tx. */
+  const batches: Array<Array<[string, EpgCacheEntry]>> = [];
+
   await new Promise<void>((resolve, reject) => {
     const tx = db.transaction(STORE, "readonly");
     const os = tx.objectStore(STORE);
@@ -58,28 +61,31 @@ export async function idbForEachBatch(
     let batch: Array<[string, EpgCacheEntry]> = [];
 
     req.onsuccess = () => {
-      void (async () => {
-        const cursor = req.result;
-        if (!cursor) {
-          if (batch.length) await onBatch(batch);
-          resolve();
-          return;
-        }
-        const value = cursor.value as EpgCacheEntry;
-        if (value?.title && typeof value.at === "number") {
-          batch.push([String(cursor.key), value]);
-        }
-        if (batch.length >= batchSize) {
-          await onBatch(batch);
-          batch = [];
-          const { yieldToMain } = await import("@/lib/yield-to-main");
-          await yieldToMain();
-        }
-        cursor.continue();
-      })();
+      const cursor = req.result;
+      if (!cursor) {
+        if (batch.length) batches.push(batch);
+        resolve();
+        return;
+      }
+      const value = cursor.value as EpgCacheEntry;
+      if (value?.title && typeof value.at === "number") {
+        batch.push([String(cursor.key), value]);
+      }
+      if (batch.length >= batchSize) {
+        batches.push(batch);
+        batch = [];
+      }
+      cursor.continue();
     };
     req.onerror = () => reject(req.error ?? new Error("idb cursor failed"));
+    tx.onerror = () => reject(tx.error ?? new Error("idb tx failed"));
   });
+
+  const { yieldToMain } = await import("@/lib/yield-to-main");
+  for (const chunk of batches) {
+    await onBatch(chunk);
+    await yieldToMain();
+  }
 }
 
 /** One-time migration from legacy localStorage blob → IndexedDB keys. */
