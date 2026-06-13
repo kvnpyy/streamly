@@ -24,7 +24,14 @@ import {
 /**
  * Saved IPTV provider accounts (requires Streamly sign-in); switches cookie + auth store + React Query caches.
  */
-export function PlaylistSwitcher({ className }: { className?: string }) {
+export function PlaylistSwitcher({
+  className,
+  compact = false,
+}: {
+  className?: string;
+  /** Icon-only trigger for narrow top bars (phones). */
+  compact?: boolean;
+}) {
   const { status } = useSession();
   const qc = useQueryClient();
   const creds = useAuth((s) => s.creds);
@@ -124,18 +131,34 @@ export function PlaylistSwitcher({ className }: { className?: string }) {
           if (e.key === "Escape") setOpen(false);
         }}
         title="Switch playlist"
-        className="flex items-center gap-1.5 min-h-9 max-w-[10.5rem] sm:max-w-[14rem] pl-2.5 pr-2 rounded-xl border border-(--line) bg-(--bg-2) text-[11px] sm:text-xs text-(--text-dim) hover:border-(--brand)/40 hover:text-(--text) transition-colors disabled:opacity-55"
+        aria-label={compact ? `Switch playlist (${summaryLabel})` : undefined}
+        className={cn(
+          "rounded-xl border border-(--line) bg-(--bg-2) text-(--text-dim) hover:border-(--brand)/40 hover:text-(--text) transition-colors disabled:opacity-55",
+          compact
+            ? "inline-flex size-9 items-center justify-center"
+            : "flex items-center gap-1.5 min-h-9 max-w-[10.5rem] sm:max-w-[14rem] pl-2.5 pr-2 text-[11px] sm:text-xs"
+        )}
       >
         <ListMusic className="size-3.5 shrink-0 text-(--brand-2)" aria-hidden />
-        <span className="truncate min-w-0 font-medium">{summaryLabel}</span>
-        {busyId !== null ? (
-          <Loader2 className="size-3.5 animate-spin shrink-0" aria-hidden />
-        ) : (
-          <ChevronDown
-            className={cn("size-3.5 shrink-0 opacity-80 transition-transform", open && "rotate-180")}
-            aria-hidden
-          />
+        {!compact && (
+          <>
+            <span className="truncate min-w-0 font-medium">{summaryLabel}</span>
+            {busyId !== null ? (
+              <Loader2 className="size-3.5 animate-spin shrink-0" aria-hidden />
+            ) : (
+              <ChevronDown
+                className={cn(
+                  "size-3.5 shrink-0 opacity-80 transition-transform",
+                  open && "rotate-180"
+                )}
+                aria-hidden
+              />
+            )}
+          </>
         )}
+        {compact && busyId !== null ? (
+          <Loader2 className="size-3.5 animate-spin shrink-0" aria-hidden />
+        ) : null}
       </button>
 
       {open && (

@@ -35,6 +35,52 @@ function segmentSequence(name: string): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+/**
+ * True when ffmpeg's m3u8 lists missing segments or sequence holes on disk.
+ * Do not compare against the playback-trimmed manifest (900-seg cap) — that
+ * false-positive would kill ffmpeg on every manifest poll.
+ */
+export function manifestReferencesMissingOrGappedSegments(
+  manifestText: string,
+  onDisk: ReadonlySet<string>
+): boolean {
+  let expect: number | null = null;
+  let pendingInf = false;
+  for (const line of manifestText.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (trimmed.startsWith("#EXTINF")) {
+      pendingInf = true;
+      continue;
+    }
+    if (!pendingInf || !trimmed || trimmed.startsWith("#")) {
+      pendingInf = false;
+      continue;
+    }
+    pendingInf = false;
+    const name = segmentNameFromPlaylistLine(trimmed);
+    if (!name) continue;
+    const seq = segmentSequence(name);
+    if (seq == null) continue;
+    if (!onDisk.has(name)) return true;
+    if (expect == null) expect = seq;
+    if (seq !== expect) return true;
+    expect += 1;
+  }
+  return false;
+}
+
+/** True when seg_00029+ exists but the prefix 0..N-1 is broken or incomplete. */
+export function hasOrphanSegmentsBeyondPrefix(
+  files: ReadonlySet<string>
+): boolean {
+  const prefix = contiguousSegmentCount(files);
+  for (const name of files) {
+    const seq = segmentSequence(name);
+    if (seq !== null && seq >= prefix) return true;
+  }
+  return false;
+}
+
 /** How many segments exist on disk starting at seg_00000 with no gaps. */
 export function contiguousSegmentCount(
   files: ReadonlySet<string>
@@ -52,6 +98,65 @@ export function contiguousSegmentCount(
 }
 
 /** Drop gaps (e.g. from crashed duplicate ffmpeg) so hls.js never 404s mid-playlist. */
+/** Parse #EXTINF durations keyed by segment filename from an ffmpeg m3u8. */
+export function parseExtinfDurationsBySegment(
+  manifestText: string
+): Map<string, number> {
+  const out = new Map<string, number>();
+  let pending: number | null = null;
+  for (const line of manifestText.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    const inf = trimmed.match(/^#EXTINF:([\d.]+)/i);
+    if (inf) {
+      const n = parseFloat(inf[1]!);
+      pending = Number.isFinite(n) && n > 0 ? n : null;
+      continue;
+    }
+    const name = segmentNameFromPlaylistLine(line);
+    if (name && pending != null) {
+      out.set(name, pending);
+      pending = null;
+    }
+  }
+  return out;
+}
+
+export function countManifestSegments(manifestText: string): number {
+  let n = 0;
+  for (const line of manifestText.split(/\r?\n/)) {
+    if (segmentNameFromPlaylistLine(line)) n += 1;
+  }
+  return n;
+}
+
+/**
+ * Build a contiguous playlist from on-disk segments when ffmpeg's index.m3u8 lags
+ * behind flushed .ts files (common during provider read stalls).
+ */
+export function buildManifestFromContiguousDisk(
+  onDisk: ReadonlySet<string>,
+  durationBySegment: ReadonlyMap<string, number>,
+  defaultSegSec: number
+): string {
+  const prefix = contiguousSegmentCount(onDisk);
+  if (prefix <= 0) return "#EXTM3U\n";
+  const targetDur = Math.max(2, Math.ceil(defaultSegSec));
+  const lines = [
+    "#EXTM3U",
+    "#EXT-X-VERSION:6",
+    `#EXT-X-TARGETDURATION:${targetDur}`,
+    "#EXT-X-MEDIA-SEQUENCE:0",
+    "#EXT-X-INDEPENDENT-SEGMENTS",
+  ];
+  for (let i = 0; i < prefix; i++) {
+    const name = `seg_${String(i).padStart(5, "0")}.ts`;
+    if (!onDisk.has(name)) break;
+    const dur = durationBySegment.get(name) ?? defaultSegSec;
+    lines.push(`#EXTINF:${dur.toFixed(6)},`, name);
+  }
+  return lines.join("\n");
+}
+
 export function trimContiguousSegmentsFromStart<
   T extends { extinf: string; media: string },
 >(pairs: T[]): T[] {

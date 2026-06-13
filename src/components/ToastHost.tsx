@@ -26,7 +26,7 @@ export function ToastHost() {
 
   return (
     <div
-      className="fixed bottom-[max(5.5rem,env(safe-area-inset-bottom))] md:bottom-8 left-1/2 -translate-x-1/2 z-[200] pointer-events-none px-4 w-full max-w-sm"
+      className="fixed bottom-[max(5.5rem,env(safe-area-inset-bottom))] lg:bottom-8 left-1/2 -translate-x-1/2 z-[200] pointer-events-none px-4 w-full max-w-sm"
       role="status"
       aria-live="polite"
     >

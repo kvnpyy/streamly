@@ -17,5 +17,7 @@ export function transcodeManifestWaitMs(
 ): number {
   const http = opts?.httpWaitMs ?? VOD_TRANSCODE_MANIFEST_HTTP_WAIT_MS;
   const playlist = opts?.playlistWaitMs ?? VOD_TRANSCODE_PLAYLIST_WAIT_MS;
-  return seekSec > 0 ? playlist : http;
+  if (seekSec > 0) return playlist;
+  // Cold MKV start: heavy files often need >30s before seg_00000 exists.
+  return Math.min(playlist, Math.max(http, 60_000));
 }

@@ -7,7 +7,7 @@ import { MediaShelf } from "@/components/MediaShelf";
 import { useCatalogPageReady } from "@/hooks/use-catalog-page-ready";
 import { useSeriesDiscoveryShelves } from "@/hooks/use-vod-discovery-shelves";
 import { isDiscoveryShelvesEnabled } from "@/lib/discovery";
-import { MobileCategoryRail } from "@/components/MobileCategoryRail";
+import { VodGenreBar } from "@/components/VodGenreBar";
 import { MediaCard } from "@/components/MediaCard";
 import { SectionHeader, SkeletonGrid } from "@/components/SectionHeader";
 import { buildProviderGenreShelves } from "@/lib/vod-genre-discovery";
@@ -23,7 +23,13 @@ import type { SeriesItem, XtreamCredentials } from "@/lib/xtream-types";
 import { useAuth } from "@/store/auth";
 import { browseAccountKey, usePrefs } from "@/store/preferences";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowDownAZ, Star, TrendingUp } from "lucide-react";
+import {
+  CatalogSortToggle,
+  catalogSortLabel,
+  type CatalogSort,
+} from "@/components/CatalogSortToggle";
+import { shouldUseInstantCatalogGrid } from "@/lib/catalog-sort";
+import { useTvPresentation } from "@/lib/use-living-room-home-layout";
 import { scheduleWhenIdle } from "@/lib/defer-idle";
 import {
   buildIdsByCategory,
@@ -41,8 +47,6 @@ import {
   useState,
   useTransition,
 } from "react";
-
-type Sort = "added" | "rating" | "name";
 
 export default function SeriesPage() {
   const creds = useAuth((s) => s.creds)!;
@@ -79,7 +83,8 @@ function SeriesPageInner({
   const seriesSearchRef = useRef<HTMLInputElement>(null);
   useSlashFocusSearch(seriesSearchRef);
   const qFilter = useDebouncedValue(qInput, 140);
-  const [sort, setSort] = useState<Sort>("added");
+  const [sort, setSort] = useState<CatalogSort>("added");
+  const catalogGridRef = useRef<HTMLDivElement>(null);
 
   const savedSeriesCategory = usePrefs(
     (s) => s.browseByAccount[accountKey]?.seriesCategory
@@ -341,15 +346,16 @@ function SeriesPageInner({
     () =>
       discoveryReady
         ? buildProviderGenreShelves({
-        kind: "series",
-        categories: filteredCats,
-        countById,
-        streams: items.data ?? [],
-        allowedCatIds,
-        hideAdult,
-        parentalUnlocked,
-        isFavorite: (kind, id) => isFavorite(kind, id),
-        toggleFavorite,
+            kind: "series",
+            categories: filteredCats,
+            countById,
+            streams: items.data ?? [],
+            allowedCatIds,
+            hideAdult,
+            parentalUnlocked,
+            isFavorite: (kind, id) => isFavorite(kind, id),
+            toggleFavorite,
+            maxShelves: 6,
           })
         : [],
     [
@@ -370,14 +376,34 @@ function SeriesPageInner({
     discoveryOn &&
     selected === "all" &&
     !qFilter &&
+    sort === "added" &&
     !items.isLoading;
 
-  const displayVisible = useDeferredValue(visible);
+  const tvPresentation = useTvPresentation();
+  const tvShelfBrowse = tvPresentation && showDiscovery;
+
+  const deferredVisible = useDeferredValue(visible);
+  const displayVisible = shouldUseInstantCatalogGrid(sort, qFilter)
+    ? visible
+    : deferredVisible;
+
+  const handleSortChange = useCallback((next: CatalogSort) => {
+    setSort(next);
+    if (next !== "added") {
+      requestAnimationFrame(() => {
+        catalogGridRef.current?.scrollIntoView({
+          behavior: "smooth",
+          block: "start",
+        });
+      });
+    }
+  }, []);
 
   const gridRevision = useMemo(
     () =>
       [
         showDiscovery ? "disc" : "grid",
+        sort,
         recentSeriesItems.length,
         topRatedSeriesItems.length,
         newlyAddedSeriesItems.length,
@@ -387,6 +413,7 @@ function SeriesPageInner({
       ].join("|"),
     [
       showDiscovery,
+      sort,
       recentSeriesItems.length,
       topRatedSeriesItems.length,
       newlyAddedSeriesItems.length,
@@ -396,19 +423,37 @@ function SeriesPageInner({
     ]
   );
 
+  const sortLabel = catalogSortLabel(sort);
+  const hideAdultGenres = hideAdult && !parentalUnlocked;
+
   return (
-    <div className="space-y-5">
-      <SectionHeader
-        hideDescriptionOnMobile
-        eyebrow="Binge worthy"
-        title="Series"
-        description={
-          selected === "all"
-            ? "Full seasons and episodes from your provider's catalog."
-            : `Showing series in “${selectedCategoryName || "this category"}” only. Clear the filter below or pick “All” in the sidebar for everything.`
-        }
-        right={
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full lg:w-auto">
+    <div className="space-y-4">
+      <header className="space-y-3">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+          <div className="min-w-0 space-y-3">
+            <SectionHeader
+              compact
+              hideDescriptionOnMobile
+              eyebrow="Binge worthy"
+              title="Series"
+              description={
+                selected === "all"
+                  ? "Browse by genre or search the full catalog."
+                  : `Series in “${selectedCategoryName || "this category"}”.`
+              }
+              className="mb-0"
+            />
+            {!cats.isLoading && (
+              <VodGenreBar
+                categories={filteredCats}
+                value={selected}
+                onChange={setCategory}
+                countById={countById}
+                hideAdult={hideAdultGenres}
+              />
+            )}
+          </div>
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full lg:w-auto shrink-0">
             <input
               ref={seriesSearchRef}
               value={qInput}
@@ -417,10 +462,10 @@ function SeriesPageInner({
               aria-label="Search series"
               className="h-10 px-3 rounded-xl bg-(--bg-2) border border-(--line) focus:border-(--brand)/50 outline-none text-sm w-full sm:w-56 min-w-0"
             />
-            <SortToggle sort={sort} setSort={setSort} />
+            <CatalogSortToggle sort={sort} onChange={handleSortChange} />
           </div>
-        }
-      />
+        </div>
+      </header>
 
       {/* ── Discovery shelves (hidden when user has active filters) ── */}
       {showDiscovery && (
@@ -460,23 +505,12 @@ function SeriesPageInner({
           {genreShelves.map((shelf) => (
             <MediaShelf
               key={shelf.categoryId}
-              eyebrow="Browse by genre"
               title={shelf.title}
               items={shelf.items}
               seeAllHref={`/app/series?category=${encodeURIComponent(shelf.categoryId)}`}
             />
           ))}
         </div>
-      )}
-
-      {!cats.isLoading && (
-        <MobileCategoryRail
-          categories={filteredCats}
-          value={selected}
-          onChange={setCategory}
-          countById={countById}
-          label="Genre"
-        />
       )}
 
       {selected !== "all" && (
@@ -494,18 +528,30 @@ function SeriesPageInner({
         <div className="card p-10 text-center text-(--text-muted)">
           No series match your filters.
         </div>
+      ) : tvShelfBrowse ? (
+        <p className="text-sm text-(--text-muted) card px-4 py-3 text-pretty">
+          Pick a genre above or open a shelf row to browse. Use Search in the top
+          bar to find a title across the catalog.
+        </p>
       ) : (
         <>
-          {showDiscovery && (
-            <div className="pt-1">
-              <p className="text-[11px] font-semibold uppercase tracking-widest text-(--brand-2) mb-0.5">
-                Full catalog
-              </p>
-              <h2 className="text-base font-bold text-(--text) leading-tight">
-                All Series
-              </h2>
-            </div>
-          )}
+          <div ref={catalogGridRef} className="scroll-mt-20">
+            {(showDiscovery || sort !== "added") && (
+              <div className="pt-1 pb-2">
+                <p className="text-[11px] font-semibold uppercase tracking-widest text-(--brand-2) mb-0.5">
+                  Full catalog
+                </p>
+                <h2 className="text-base font-bold text-(--text) leading-tight">
+                  All Series
+                  {sortLabel ? (
+                    <span className="text-(--text-muted) font-medium">
+                      {" "}
+                      · {sortLabel}
+                    </span>
+                  ) : null}
+                </h2>
+              </div>
+            )}
           <VirtualMediaCatalogGrid
           items={displayVisible}
           maxItems={400}
@@ -540,35 +586,9 @@ function SeriesPageInner({
             ) : null
           }
         />
+          </div>
         </>
       )}
-    </div>
-  );
-}
-
-function SortToggle({ sort, setSort }: { sort: Sort; setSort: (s: Sort) => void }) {
-  const items: { value: Sort; label: string; icon: React.ReactNode }[] = [
-    { value: "added", label: "New", icon: <TrendingUp className="size-3.5" /> },
-    { value: "rating", label: "Rating", icon: <Star className="size-3.5" /> },
-    { value: "name", label: "A-Z", icon: <ArrowDownAZ className="size-3.5" /> },
-  ];
-  return (
-    <div className="flex items-center gap-1 p-1 rounded-xl bg-(--bg-2) border border-(--line) w-fit shrink-0 self-start sm:self-auto">
-      {items.map((i) => (
-        <button
-          key={i.value}
-          onClick={() => setSort(i.value)}
-          className={
-            "flex items-center gap-1.5 min-h-11 px-3 rounded-lg text-xs " +
-            (sort === i.value
-              ? "bg-(--bg-3) text-(--text)"
-              : "text-(--text-dim) hover:text-(--text)")
-          }
-        >
-          {i.icon}
-          {i.label}
-        </button>
-      ))}
     </div>
   );
 }

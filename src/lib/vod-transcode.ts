@@ -1,7 +1,12 @@
 import "server-only";
 
 import {
+  buildManifestFromContiguousDisk,
   contiguousSegmentCount,
+  countManifestSegments,
+  hasOrphanSegmentsBeyondPrefix,
+  manifestReferencesMissingOrGappedSegments,
+  parseExtinfDurationsBySegment,
   prepareManifestForPlayback,
   rewriteTranscodeManifest,
   sumExtinfDurationSec,
@@ -88,6 +93,61 @@ function manifestHttpWaitMs(): number {
 function hlsSegmentSeconds(): number {
   const n = parseFloat(process.env.STREAM_TRANSCODE_HLS_TIME ?? "4");
   return Number.isFinite(n) && n >= 2 && n <= 8 ? n : 4;
+}
+
+function transcodeStallKillMs(): number {
+  const n = parseInt(process.env.STREAM_TRANSCODE_STALL_MS ?? "22000", 10);
+  return Number.isFinite(n) && n >= 8000 && n <= 120_000 ? n : 22_000;
+}
+
+/** Stop ffmpeg when no client has requested segments/manifests for this long. */
+function transcodeIdleMs(): number {
+  const n = parseInt(process.env.STREAM_TRANSCODE_IDLE_MS ?? "60000", 10);
+  return Number.isFinite(n) && n >= 15_000 && n <= 600_000 ? n : 60_000;
+}
+
+function transcodeIdleSweepMs(): number {
+  const n = parseInt(process.env.STREAM_TRANSCODE_IDLE_SWEEP_MS ?? "15000", 10);
+  return Number.isFinite(n) && n >= 5000 && n <= 120_000 ? n : 15_000;
+}
+
+/** Kill ffmpeg when upstream read stalls but the process stays alive (frozen encode). */
+async function maybeRecoverStalledFfmpeg(
+  job: TranscodeJob,
+  diskCount: number
+): Promise<void> {
+  const now = Date.now();
+  if (diskCount > job.lastSegmentCount) {
+    job.lastSegmentCount = diskCount;
+    job.lastSegmentGrowthAt = now;
+    return;
+  }
+  if (!job.proc || job.proc.exitCode != null) return;
+  if (now - job.lastSegmentGrowthAt < transcodeStallKillMs()) return;
+  try {
+    job.proc.kill("SIGTERM");
+  } catch {
+    /* noop */
+  }
+  job.proc = null;
+  job.lastSegmentGrowthAt = now;
+}
+
+function manifestTextForPlayback(
+  raw: string,
+  playlistComplete: boolean,
+  onDisk: ReadonlySet<string>
+): string {
+  const trimmedFromRaw = prepareManifestForPlayback(raw, playlistComplete, onDisk);
+  const diskPrefix = contiguousSegmentCount(onDisk);
+  const rawSegs = countManifestSegments(trimmedFromRaw);
+  if (diskPrefix <= rawSegs) return trimmedFromRaw;
+  const synthesized = buildManifestFromContiguousDisk(
+    onDisk,
+    parseExtinfDurationsBySegment(raw),
+    hlsSegmentSeconds()
+  );
+  return prepareManifestForPlayback(synthesized, playlistComplete, onDisk);
 }
 
 function transcodeMaxHeight(): number {
@@ -286,11 +346,89 @@ type TranscodeJob = {
   durationSec: number | null;
   startOffsetSec: number;
   waiters: Array<(ok: boolean) => void>;
+  /** Contiguous segment count last time we checked encode progress. */
+  lastSegmentCount: number;
+  /** When `lastSegmentCount` last increased (stall detection). */
+  lastSegmentGrowthAt: number;
+  /** Last manifest/segment GET from a player (0 = explicitly released). */
+  lastViewerAt: number;
 };
 
 const jobs = new Map<string, TranscodeJob>();
+let idleSweepTimer: ReturnType<typeof setInterval> | null = null;
+
+function jobViewerActive(job: TranscodeJob): boolean {
+  const at = job.lastViewerAt;
+  if (at <= 0) return false;
+  return Date.now() - at < transcodeIdleMs();
+}
+
+function touchTranscodeViewerByUpstream(
+  upstream: string,
+  startOffsetSec: number
+): void {
+  const key = cacheKeyForUpstream(upstream, startOffsetSec);
+  const job = jobs.get(key);
+  if (job) job.lastViewerAt = Date.now();
+  ensureIdleSweepRunning();
+}
+
+function noteTranscodeViewer(job: TranscodeJob): void {
+  job.lastViewerAt = Date.now();
+  ensureIdleSweepRunning();
+}
+
+function ensureIdleSweepRunning(): void {
+  if (idleSweepTimer) return;
+  idleSweepTimer = setInterval(() => {
+    void sweepIdleTranscodeJobs();
+  }, transcodeIdleSweepMs());
+  idleSweepTimer.unref?.();
+}
+
+function stopTranscodeProcOnly(job: TranscodeJob): boolean {
+  if (!job.proc || job.proc.exitCode != null) return false;
+  try {
+    job.proc.kill("SIGTERM");
+  } catch {
+    /* noop */
+  }
+  job.proc = null;
+  if (job.state === "running" || job.state === "starting") {
+    job.state = "ready";
+  }
+  drainTranscodeQueue();
+  return true;
+}
+
+async function sweepIdleTranscodeJobs(): Promise<void> {
+  for (const job of jobs.values()) {
+    if (jobViewerActive(job)) continue;
+    if (!job.proc || job.proc.exitCode != null) continue;
+    try {
+      const raw = await fsp.readFile(path.join(job.dir, MANIFEST_NAME), "utf8");
+      if (await isPlaylistFullyEncoded(job, raw)) continue;
+    } catch {
+      /* no manifest yet — still safe to stop a runaway encode */
+    }
+    stopTranscodeProcOnly(job);
+  }
+}
+
+/** Client closed player — stop all ffmpeg for this upstream immediately. */
+export function releaseVodTranscodeJobs(upstream: string): number {
+  let stopped = 0;
+  for (const job of jobs.values()) {
+    if (job.upstream !== upstream) continue;
+    job.lastViewerAt = 0;
+    if (stopTranscodeProcOnly(job)) stopped += 1;
+  }
+  return stopped;
+}
 /** One in-flight ensureJob per cache key — prevents duplicate ffmpeg on the same output dir. */
 const ensureJobInflight = new Map<string, Promise<TranscodeJob>>();
+/** Prevents duplicate ffmpeg spawns when ensureEncodingContinues races. */
+const beginTranscodeInflight = new Set<string>();
 
 function activeTranscodeCount(): number {
   let n = 0;
@@ -410,11 +548,25 @@ async function isPlaylistFullyEncoded(
  * Duplicate ffmpeg resumes can leave seg_00027 missing while seg_00054 exists.
  * Playback only sees the contiguous prefix (often ~2 min) then freezes forever.
  */
-async function healTranscodeJobContiguity(job: TranscodeJob): Promise<number> {
-  if (job.proc && job.proc.exitCode == null) {
-    return contiguousSegmentCount(await listSegmentFiles(job.dir));
-  }
+function waitForProcExit(
+  proc: ChildProcess,
+  maxWaitMs = 8000
+): Promise<void> {
+  if (proc.exitCode != null) return Promise.resolve();
+  return new Promise((resolve) => {
+    const done = () => {
+      clearTimeout(timer);
+      resolve();
+    };
+    proc.once("close", done);
+    proc.once("error", done);
+    const timer = setTimeout(done, maxWaitMs);
+    timer.unref?.();
+  });
+}
 
+/** Drop orphan seg_00058+ files and rewrite index.m3u8 to a contiguous prefix. */
+async function healTranscodeJobContiguity(job: TranscodeJob): Promise<number> {
   const dir = job.dir;
   const onDisk = await listSegmentFiles(dir);
   const prefixCount = contiguousSegmentCount(onDisk);
@@ -437,14 +589,63 @@ async function healTranscodeJobContiguity(job: TranscodeJob): Promise<number> {
   );
 
   try {
-    const raw = await fsp.readFile(path.join(dir, MANIFEST_NAME), "utf8");
-    const healed = prepareManifestForPlayback(raw, false, healedDisk);
+    let durationBySegment = new Map<string, number>();
+    try {
+      const raw = await fsp.readFile(path.join(dir, MANIFEST_NAME), "utf8");
+      durationBySegment = parseExtinfDurationsBySegment(raw);
+    } catch {
+      /* fresh dir */
+    }
+    const healed = buildManifestFromContiguousDisk(
+      healedDisk,
+      durationBySegment,
+      hlsSegmentSeconds()
+    );
     await fsp.writeFile(path.join(dir, MANIFEST_NAME), healed, "utf8");
   } catch {
     /* manifest will be rebuilt on next encode */
   }
 
   return prefixCount;
+}
+
+/**
+ * ffmpeg `append_list` can continue at seg_00058 while seg_00029..57 are missing,
+ * freezing the player ~2 minutes in. Kill a bad encode and heal before resuming.
+ */
+async function ensureTranscodeJobContiguous(job: TranscodeJob): Promise<number> {
+  const onDisk = await listSegmentFiles(job.dir);
+  const prefix = contiguousSegmentCount(onDisk);
+  if (prefix === 0) return 0;
+
+  let manifestDiskGap = false;
+  try {
+    const raw = await fsp.readFile(path.join(job.dir, MANIFEST_NAME), "utf8");
+    manifestDiskGap = manifestReferencesMissingOrGappedSegments(raw, onDisk);
+  } catch {
+    /* no manifest yet */
+  }
+
+  const needsHeal =
+    hasOrphanSegmentsBeyondPrefix(onDisk) || manifestDiskGap;
+  if (!needsHeal) return prefix;
+
+  if (job.proc && job.proc.exitCode == null) {
+    const proc = job.proc;
+    try {
+      proc.kill("SIGTERM");
+    } catch {
+      /* noop */
+    }
+    await waitForProcExit(proc);
+    job.proc = null;
+    if (job.state === "running" || job.state === "starting") {
+      job.state = "ready";
+    }
+    drainTranscodeQueue();
+  }
+
+  return healTranscodeJobContiguity(job);
 }
 
 const resumeInflight = new Map<string, Promise<void>>();
@@ -456,7 +657,7 @@ async function resumeTranscodeJob(job: TranscodeJob): Promise<void> {
     return;
   }
   try {
-    const prefixCount = await healTranscodeJobContiguity(job);
+    const prefixCount = await ensureTranscodeJobContiguous(job);
     if (prefixCount === 0) {
       void beginTranscodeJob(job);
       return;
@@ -479,8 +680,9 @@ async function resumeTranscodeJob(job: TranscodeJob): Promise<void> {
   }
 }
 
-/** Keep ffmpeg running (or restart after crash/reboot) until the full episode is encoded. */
+/** Keep ffmpeg running while a viewer is active until the full episode is encoded. */
 async function ensureEncodingContinues(job: TranscodeJob): Promise<void> {
+  if (!jobViewerActive(job)) return;
   if (job.proc && job.proc.exitCode == null) return;
 
   let raw: string | null = null;
@@ -689,7 +891,9 @@ async function spawnFfmpeg(
     "-hls_list_size",
     "0",
     "-hls_flags",
-    "independent_segments+temp_file+append_list",
+    resume && resume.startSegmentNumber > 0
+      ? "independent_segments+temp_file"
+      : "independent_segments+temp_file+append_list",
     "-hls_segment_type",
     "mpegts",
     "-hls_segment_filename",
@@ -736,7 +940,10 @@ async function spawnFfmpeg(
       }
       job.state = "ready";
       notifyWaiters(job, true);
-      void ensureEncodingContinues(job);
+      if (jobViewerActive(job)) {
+        await ensureTranscodeJobContiguous(job);
+        void ensureEncodingContinues(job);
+      }
       drainTranscodeQueue();
     })();
   });
@@ -804,9 +1011,9 @@ async function ensureJobLocked(
     await cancelOtherUpstreamTranscodeJobs(upstream, key);
   }
 
+  // ensureJob() serializes concurrent callers via ensureJobInflight — do not await
+  // that map here or tc_reset deadlocks waiting on the in-flight promise itself.
   if (opts?.resetCache) {
-    const pending = ensureJobInflight.get(key);
-    if (pending) await pending.catch(() => {});
     await wipeTranscodeJobDir(dir, key);
   }
 
@@ -841,6 +1048,9 @@ async function ensureJobLocked(
     durationSec: cachedMeta?.durationSec ?? null,
     startOffsetSec,
     waiters: [],
+    lastSegmentCount: 0,
+    lastSegmentGrowthAt: Date.now(),
+    lastViewerAt: Date.now(),
   };
   jobs.set(key, job);
   if (manifest) {
@@ -874,6 +1084,7 @@ async function ensureJob(
 
 async function beginTranscodeJob(job: TranscodeJob): Promise<void> {
   if (job.proc && job.proc.exitCode == null) return;
+  if (beginTranscodeInflight.has(job.key)) return;
 
   const partial = await readManifestIfReady(job.dir);
   if (partial) {
@@ -885,11 +1096,17 @@ async function beginTranscodeJob(job: TranscodeJob): Promise<void> {
   if (job.state === "running" || job.state === "ready") {
     if (await readManifestIfReady(job.dir)) return;
   }
+
+  beginTranscodeInflight.add(job.key);
   try {
-    const meta = await resolveJobMeta(job);
-    job.durationSec = meta.durationSec;
-    const plan = meta.plan;
-    if (job.state === "failed") return;
+    const upstreamErr = await validateVodUpstreamReadable(job.upstream);
+    if (upstreamErr) {
+      job.state = "failed";
+      job.error = upstreamErr;
+      notifyWaiters(job, false);
+      drainTranscodeQueue();
+      return;
+    }
 
     const slotWaitMs = Math.min(waitForPlaylistMs(), 180_000);
     let waited = 0;
@@ -909,14 +1126,10 @@ async function beginTranscodeJob(job: TranscodeJob): Promise<void> {
       return;
     }
 
-    const upstreamErr = await validateVodUpstreamReadable(job.upstream);
-    if (upstreamErr) {
-      job.state = "failed";
-      job.error = upstreamErr;
-      notifyWaiters(job, false);
-      drainTranscodeQueue();
-      return;
-    }
+    const meta = await resolveJobMeta(job);
+    job.durationSec = meta.durationSec;
+    const plan = meta.plan;
+    if (job.state === "failed") return;
 
     job.state = "starting";
     await spawnFfmpeg(job, plan);
@@ -926,6 +1139,8 @@ async function beginTranscodeJob(job: TranscodeJob): Promise<void> {
       err instanceof Error ? err.message : "Could not probe or start transcode.";
     notifyWaiters(job, false);
     drainTranscodeQueue();
+  } finally {
+    beginTranscodeInflight.delete(job.key);
   }
 }
 
@@ -969,10 +1184,20 @@ export async function handleVodTranscodeRequest(opts: {
     };
   }
 
+  if (!opts.head) {
+    touchTranscodeViewerByUpstream(
+      opts.upstream,
+      Math.max(0, Math.floor(opts.seekSec ?? 0))
+    );
+  }
+
   const job = await ensureJob(opts.upstream, {
     resetCache: opts.resetCache,
     seekSec: opts.seekSec,
   });
+  if (!opts.head) {
+    noteTranscodeViewer(job);
+  }
   const media =
     opts.media && opts.media !== MANIFEST_NAME
       ? path.basename(opts.media)
@@ -983,7 +1208,7 @@ export async function handleVodTranscodeRequest(opts: {
   }
 
   if (media === MANIFEST_NAME) {
-    await healTranscodeJobContiguity(job);
+    await ensureTranscodeJobContiguous(job);
     void ensureEncodingContinues(job);
     const manifestWait = transcodeManifestWaitMs(opts.seekSec ?? 0, {
       httpWaitMs: manifestHttpWaitMs(),
@@ -1032,6 +1257,9 @@ export async function handleVodTranscodeRequest(opts: {
         await writeJobMeta(job.dir, meta);
       });
     }
+    const onDisk = await listSegmentFiles(job.dir);
+    const diskPrefix = contiguousSegmentCount(onDisk);
+    await maybeRecoverStalledFfmpeg(job, diskPrefix);
     const encodedDurationSec = sumExtinfDurationSec(raw);
     const playlistComplete =
       job.state === "ready" &&
@@ -1040,12 +1268,7 @@ export async function handleVodTranscodeRequest(opts: {
       (job.durationSec == null ||
         job.durationSec <= 0 ||
         encodedDurationSec >= job.durationSec * 0.92);
-    const onDisk = await listSegmentFiles(job.dir);
-    const trimmed = prepareManifestForPlayback(
-      raw,
-      playlistComplete,
-      onDisk
-    );
+    const trimmed = manifestTextForPlayback(raw, playlistComplete, onDisk);
     if (
       !playlistComplete &&
       !trimmed.split(/\r?\n/).some((l) => SEGMENT_RE.test(l.trim()))
@@ -1056,10 +1279,11 @@ export async function handleVodTranscodeRequest(opts: {
       };
     }
     const trimmedEncodedSec = sumExtinfDurationSec(trimmed);
+    const manifestCompatMse = opts.forCast ? false : opts.compatMse;
     const rewritten = rewriteTranscodeManifest(
       trimmed,
       opts.upstream,
-      opts.compatMse,
+      manifestCompatMse,
       {
         durationSec,
         playlistComplete,
@@ -1118,6 +1342,22 @@ export async function handleVodTranscodeRequest(opts: {
     }
     segmentReady = await waitForSegmentFile(segPath, 14_000);
     if (!segmentReady) {
+      const diskAfterWait = await listSegmentFiles(job.dir);
+      const diskPrefix = contiguousSegmentCount(diskAfterWait);
+      const seqMatch = /^seg_(\d+)\.ts$/.exec(media);
+      const segNum = seqMatch ? parseInt(seqMatch[1]!, 10) : -1;
+      const notEncodedYet =
+        segNum >= 0 &&
+        (segNum >= diskPrefix || !diskAfterWait.has(media));
+      if (notEncodedYet) {
+        await ensureTranscodeJobContiguous(job);
+        void ensureEncodingContinues(job);
+        return {
+          status: 503,
+          errorText: "Segment not ready yet.",
+          extraHeaders: { "retry-after": "2" },
+        };
+      }
       return { status: 404, errorText: "Segment not found." };
     }
   }

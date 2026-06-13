@@ -1,6 +1,6 @@
 "use client";
 
-import { useTvBrowser } from "@/components/TvBrowserProvider";
+import { useLivingRoomShell } from "@/components/TvBrowserProvider";
 import {
   GUIDE_VIEWPORT_PAD_SEC,
   epgProgramRangeUnixSec,
@@ -26,7 +26,7 @@ import {
 } from "@tanstack/react-virtual";
 import { ChevronDown, ChevronRight, ChevronUp, Heart, Play, Radio } from "lucide-react";
 import type { CSSProperties, KeyboardEvent } from "react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 
 const PX_PER_MIN = 4; // 30 min slot = 120px wide
 const SLOT_MIN = 30;
@@ -47,6 +47,20 @@ const ROW_PX = 108;
 const HEADER_PX = 38;
 const CHANNEL_COL_PX = 336;
 const TOTAL_HOURS = 12;
+
+function subscribePhoneLandscape(callback: () => void) {
+  if (typeof window === "undefined") return () => {};
+  const mq = window.matchMedia("(max-width: 896px) and (orientation: landscape)");
+  const onChange = () => callback();
+  mq.addEventListener("change", onChange);
+  return () => mq.removeEventListener("change", onChange);
+}
+
+function isPhoneLandscape(): boolean {
+  if (typeof window === "undefined") return false;
+  return window.matchMedia("(max-width: 896px) and (orientation: landscape)").matches;
+}
+
 type Props = {
   channels: LiveStream[];
   isFavorite: (id: number) => boolean;
@@ -74,7 +88,16 @@ export function LiveGuide({
   categoryNameById,
 }: Props) {
   const now = useNow(60_000);
-  const tvBrowser = useTvBrowser();
+  const livingRoomShell = useLivingRoomShell();
+  const phoneLandscape = useSyncExternalStore(
+    subscribePhoneLandscape,
+    isPhoneLandscape,
+    () => false
+  );
+  const compactPhone = phoneLandscape && !livingRoomShell;
+  const channelColPx = compactPhone ? 248 : CHANNEL_COL_PX;
+  const totalHours = compactPhone ? 6 : TOTAL_HOURS;
+  const rowPx = compactPhone ? 88 : ROW_PX;
   // Anchor: round "now" down to the previous half-hour, then start the
   // viewport 30 min before that so users can see what just aired.
   const anchor = useMemo(() => {
@@ -100,14 +123,14 @@ export function LiveGuide({
   const rowVirtualizer = useVirtualizer({
     count: visibleChannels.length,
     getScrollElement: () => scrollerRef.current,
-    estimateSize: () => ROW_PX,
+    estimateSize: () => rowPx,
     /** Fewer off-screen rows = fewer EPG hooks + lighter scroll. */
     overscan: 2,
     getItemKey: (index) =>
       visibleChannels[index]?.stream_id ?? `idx:${index}`,
   });
 
-  const totalMinutes = TOTAL_HOURS * 60;
+  const totalMinutes = totalHours * 60;
   const totalWidth = totalMinutes * PX_PER_MIN;
 
   const slots = useMemo(() => {
@@ -179,7 +202,7 @@ export function LiveGuide({
    */
   useEffect(() => {
     const el = scrollerRef.current;
-    if (!el || !tvBrowser) return;
+    if (!el || !livingRoomShell) return;
 
     const stepX = SLOT_PX * 2;
     const stepY = ROW_PX * 2;
@@ -224,7 +247,7 @@ export function LiveGuide({
 
     el.addEventListener("keydown", handleCapture, true);
     return () => el.removeEventListener("keydown", handleCapture, true);
-  }, [tvBrowser]);
+  }, [livingRoomShell]);
 
   const nowLineLeft = ((now - anchor) / 60) * PX_PER_MIN;
 
@@ -241,10 +264,10 @@ export function LiveGuide({
               {visibleChannels.length} channels ·{" "}
             </>
           )}
-          {TOTAL_HOURS}-hr window
+          {totalHours}-hr window
         </div>
         <div className="flex items-center gap-2">
-          {tvBrowser && (
+          {livingRoomShell && (
             <>
               <button
                 type="button"
@@ -288,21 +311,23 @@ export function LiveGuide({
         onKeyDown={onGuideScrollerKeyDown}
         className={cn(
           "relative overflow-auto overscroll-x-contain overscroll-y-contain outline-none touch-pan-x touch-pan-y",
-          tvBrowser &&
+          livingRoomShell &&
             "overflow-y-scroll scroll-auto [scroll-behavior:auto]",
           "focus-visible:ring-2 focus-visible:ring-(--brand)/45 focus-visible:ring-offset-2 focus-visible:ring-offset-(--bg-1)"
         )}
         style={{
-          maxHeight: tvBrowser
+          maxHeight: livingRoomShell
             ? "min(72dvh, calc(100dvh - 9rem))"
-            : "calc(100vh - 280px)",
+            : compactPhone
+              ? "min(70dvh, calc(100dvh - 8rem))"
+              : "calc(100vh - 280px)",
           WebkitOverflowScrolling: "touch",
         }}
       >
         <div
           className="relative"
           style={{
-            width: CHANNEL_COL_PX + totalWidth,
+            width: channelColPx + totalWidth,
             height: HEADER_PX + rowVirtualizer.getTotalSize(),
           }}
         >
@@ -313,7 +338,7 @@ export function LiveGuide({
           >
             <div
               className="sticky left-0 z-40 bg-(--bg-2) border-r border-(--line) flex items-center px-3 text-[11px] uppercase tracking-wider text-(--text-muted) font-semibold"
-              style={{ width: CHANNEL_COL_PX, minWidth: CHANNEL_COL_PX }}
+              style={{ width: channelColPx, minWidth: channelColPx }}
             >
               Channel
             </div>
@@ -351,7 +376,7 @@ export function LiveGuide({
           <div
             className="absolute top-0 z-20 pointer-events-none"
             style={{
-              left: CHANNEL_COL_PX + nowLineLeft,
+              left: channelColPx + nowLineLeft,
               height: HEADER_PX + rowVirtualizer.getTotalSize(),
             }}
           >
@@ -378,6 +403,9 @@ export function LiveGuide({
                   anchor={anchor}
                   now={now}
                   totalWidth={totalWidth}
+                  channelColPx={channelColPx}
+                  rowPx={rowPx}
+                  totalHours={totalHours}
                   categoryLabel={categoryNameById?.[c.category_id]}
                   isFavorite={isFavorite(c.stream_id)}
                   onToggleFavorite={onToggleFavorite}
@@ -407,6 +435,9 @@ function GuideRow({
   anchor,
   now,
   totalWidth,
+  channelColPx,
+  rowPx,
+  totalHours,
   categoryLabel,
   isFavorite,
   onToggleFavorite,
@@ -419,6 +450,9 @@ function GuideRow({
   anchor: number;
   now: number;
   totalWidth: number;
+  channelColPx: number;
+  rowPx: number;
+  totalHours: number;
   categoryLabel?: string;
   isFavorite: boolean;
   onToggleFavorite: (c: LiveStream) => void;
@@ -440,12 +474,12 @@ function GuideRow({
   }, [categoryLabel, channel.name]);
 
   const viewportSec = useMemo(() => {
-    const windowEnd = anchor + TOTAL_HOURS * 3600;
+    const windowEnd = anchor + totalHours * 3600;
     return {
       lo: anchor - GUIDE_VIEWPORT_PAD_SEC,
       hi: windowEnd + GUIDE_VIEWPORT_PAD_SEC,
     };
-  }, [anchor]);
+  }, [anchor, totalHours]);
 
   const {
     programs: allPrograms,
@@ -490,13 +524,13 @@ function GuideRow({
       style={{
         top: virtualRow.start,
         height: virtualRow.size,
-        minHeight: ROW_PX,
+        minHeight: rowPx,
       }}
     >
       {/* Sticky channel column */}
       <div
         className="sticky left-0 z-10 bg-(--bg-1) border-r border-(--line) flex items-start gap-3 px-3 py-2 self-stretch"
-        style={{ width: CHANNEL_COL_PX, minWidth: CHANNEL_COL_PX }}
+        style={{ width: channelColPx, minWidth: channelColPx }}
       >
         <button
           type="button"

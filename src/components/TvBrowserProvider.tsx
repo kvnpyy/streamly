@@ -1,6 +1,10 @@
 "use client";
 
-import { isLivingRoomClient, isCoarsePointerLargeScreen } from "@/lib/living-room-detect";
+import {
+  isCoarsePointerLargeScreen,
+  isLivingRoomClient,
+  isNativeTvUa,
+} from "@/lib/living-room-detect";
 import { isSamsungTvUserAgent } from "@/lib/tv-user-agent";
 import { usePrefs } from "@/store/preferences";
 import {
@@ -11,11 +15,25 @@ import {
   type ReactNode,
 } from "react";
 
-const TvBrowserContext = createContext(false);
+const LivingRoomShellContext = createContext(false);
+const NativeTvUaContext = createContext(false);
 
 /** TV shell: no sidebar, TvTopNav, spatial nav, living-room CSS. */
+export function useLivingRoomShell(): boolean {
+  return useContext(LivingRoomShellContext);
+}
+
+/** Native TV / console UA (Tizen, webOS, Fire TV class, etc.). */
+export function useNativeTvUa(): boolean {
+  return useContext(NativeTvUaContext);
+}
+
+/**
+ * @deprecated Prefer {@link useLivingRoomShell} for layout/chrome or
+ * {@link useNativeTvUa} for TV-class playback tuning.
+ */
 export function useTvBrowser(): boolean {
-  return useContext(TvBrowserContext);
+  return useLivingRoomShell();
 }
 
 function subscribeCoarsePointer(callback: () => void) {
@@ -38,6 +56,12 @@ export function TvBrowserProvider({ children }: { children: ReactNode }) {
   const livingRoomShell = useSyncExternalStore(
     subscribeCoarsePointer,
     () => isLivingRoomClient(comfortTvBrowsing),
+    () => false
+  );
+
+  const nativeTvUa = useSyncExternalStore(
+    () => () => {},
+    () => isNativeTvUa(),
     () => false
   );
 
@@ -64,11 +88,15 @@ export function TvBrowserProvider({ children }: { children: ReactNode }) {
     else delete root.dataset.tvComfort;
     if (samsungTv) root.dataset.samsungTv = "true";
     else delete root.dataset.samsungTv;
-  }, [livingRoomShell, comfortTvBrowsing, coarsePointerTv, samsungTv]);
+    if (nativeTvUa) root.dataset.nativeTv = "true";
+    else delete root.dataset.nativeTv;
+  }, [livingRoomShell, comfortTvBrowsing, coarsePointerTv, samsungTv, nativeTvUa]);
 
   return (
-    <TvBrowserContext.Provider value={livingRoomShell}>
-      {children}
-    </TvBrowserContext.Provider>
+    <LivingRoomShellContext.Provider value={livingRoomShell}>
+      <NativeTvUaContext.Provider value={nativeTvUa}>
+        {children}
+      </NativeTvUaContext.Provider>
+    </LivingRoomShellContext.Provider>
   );
 }

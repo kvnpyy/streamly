@@ -203,6 +203,33 @@ export function resolveVodPlaybackUrl(
 const warmInFlight = new Set<string>();
 const warmLastAt = new Map<string, number>();
 
+/** Tell the server to stop ffmpeg for this title when the player closes. */
+export function releaseVodTranscodePlayback(proxyUrl: string): void {
+  if (!isVodTranscodeEnabledClient()) return;
+  if (typeof window === "undefined") return;
+  try {
+    const origin = window.location.origin;
+    const parsed = new URL(proxyUrl, origin);
+    const upstream = parsed.searchParams.get("u");
+    if (!upstream) return;
+    const releaseUrl = new URL("/api/stream", origin);
+    releaseUrl.searchParams.set("transcode", "release");
+    releaseUrl.searchParams.set("u", upstream);
+    const beaconUrl = releaseUrl.toString();
+    if (typeof navigator.sendBeacon === "function") {
+      navigator.sendBeacon(beaconUrl, "");
+    } else {
+      void fetch(beaconUrl, {
+        method: "POST",
+        credentials: "same-origin",
+        keepalive: true,
+      });
+    }
+  } catch {
+    /* noop */
+  }
+}
+
 /** Start server transcode before Play (focus / hover) so first segment is ready sooner. */
 export function warmVodTranscodePlay(
   proxyUrl: string,

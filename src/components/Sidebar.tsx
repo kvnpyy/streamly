@@ -34,7 +34,7 @@ export function Sidebar() {
     <aside
       className={cn(
         "shrink-0 flex-col h-screen sticky top-0 border-r border-(--line) bg-(--bg-1)/50 transition-[width,padding] duration-200 ease-out",
-        tv ? "flex" : "hidden md:flex",
+        tv ? "flex" : "hidden lg:flex",
         collapsed ? "w-[76px] px-2 py-5" : "w-64 px-4 py-5"
       )}
     >

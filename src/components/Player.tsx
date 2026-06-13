@@ -44,6 +44,14 @@ import { usePlayerPlaybackPipeline } from "@/hooks/player/use-player-playback-pi
 import { usePlayerStallEscalation } from "@/hooks/player/use-player-stall-escalation";
 import { usePlayerVideoEvents } from "@/hooks/player/use-player-video-events";
 import { usePlayerVodResume } from "@/hooks/player/use-player-vod-resume";
+import { usePlayerAutoplayNext } from "@/hooks/player/use-player-autoplay-next";
+import type { PlayerAudioTrack } from "@/lib/player-audio-tracks";
+import {
+  normalizePlaybackSpeed,
+  readPreferredPlaybackSpeed,
+  writePreferredPlaybackSpeed,
+} from "@/lib/player-playback-speed";
+import { PlayerAutoplayNextOverlay } from "@/components/player/PlayerAutoplayNextOverlay";
 import { PlayerSeekBar } from "@/components/player/PlayerSeekBar";
 import { PlayerStallOverlay } from "@/components/player/PlayerStallOverlay";
 import { AnimatePresence, motion } from "framer-motion";
@@ -72,6 +80,7 @@ import {
   isPlayerControlKeyboardTarget,
   isRemoteActivateKey,
   liveChannelFlipKeyDelta,
+  vodArrowSeekDeltaSec,
 } from "@/lib/player-control-target";
 import { isLivingRoomPlaybackClient } from "@/lib/tv-playback-tune";
 import {
@@ -252,6 +261,8 @@ export function PlayerOverlay() {
   const userChoseAutoHlsQualityRef = useRef(false);
   /** After user opens Quality once, stop re-pinning lowest-safe on each manifest refresh. */
   const userTouchedHlsQualityRef = useRef(false);
+  /** When true, skip automatic browser-friendly audio track selection. */
+  const userPickedAudioTrackRef = useRef(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [duration, setDuration] = useState(0);
   const [time, setTime] = useState(0);
@@ -287,6 +298,11 @@ export function PlayerOverlay() {
   const [currentLevel, setCurrentLevel] = useState<number>(-1);
   const [subtitles, setSubtitles] = useState<SubtitleTrack[]>([]);
   const [activeSubtitle, setActiveSubtitle] = useState<number>(-1); // -1 = off
+  const [audioTracks, setAudioTracks] = useState<PlayerAudioTrack[]>([]);
+  const [activeAudioTrack, setActiveAudioTrack] = useState<number>(-1);
+  const [playbackSpeed, setPlaybackSpeed] = useState(() =>
+    typeof window === "undefined" ? 1 : readPreferredPlaybackSpeed()
+  );
   const [showSettings, setShowSettings] = useState(false);
   const [showSubs, setShowSubs] = useState(false);
   const [showShare, setShowShare] = useState(false);
@@ -403,13 +419,21 @@ export function PlayerOverlay() {
 
   const castMedia = useMemo(() => {
     if (!current || typeof window === "undefined") return null;
+    const proxyUrl = vodPlaybackUrl ?? current.url;
+    const seekSec =
+      !isLive &&
+      (playbackUrlUsesVodTranscode(proxyUrl) ||
+        vodNeedsServerTranscodePrep(current.containerExt, current.url))
+        ? Math.max(0, Math.floor(time))
+        : undefined;
     return buildCastMediaDescriptor({
       origin: window.location.origin,
       current,
       isLive,
-      proxyPlaybackUrl: vodPlaybackUrl ?? current.url,
+      proxyPlaybackUrl: proxyUrl,
+      seekSec,
     });
-  }, [current, isLive, vodPlaybackUrl]);
+  }, [current, isLive, vodPlaybackUrl, time]);
 
   /** Same-origin poster via /api/img — avoids CORS when panel logos are raw http(s) URLs. */
   const posterSrc = useMemo(
@@ -511,7 +535,7 @@ export function PlayerOverlay() {
           "This episode is taking unusually long to prepare. Check your connection, then try Play again — or use a native IPTV app for MKV files."
         );
       })();
-    }, 90_000);
+    }, 28_000);
     return () => {
       window.clearTimeout(slowId);
       window.clearTimeout(failId);
@@ -813,6 +837,7 @@ export function PlayerOverlay() {
     livePlaybackErrorSuppressUntilRef,
     userChoseAutoHlsQualityRef,
     userTouchedHlsQualityRef,
+    userPickedAudioTrackRef,
     vodPrepKickRef,
     vodSeekRestartTimerRef,
     stallTimer,
@@ -828,6 +853,8 @@ export function PlayerOverlay() {
     setCurrentLevel,
     setSubtitles,
     setActiveSubtitle,
+    setAudioTracks,
+    setActiveAudioTrack,
     setLiveAudioNoPicture,
     setLoading,
     setVolume,
@@ -1008,12 +1035,21 @@ export function PlayerOverlay() {
     ]
   );
 
+  const getPlaybackTimeNow = useCallback(() => {
+    const v = videoRef.current;
+    if (v && Number.isFinite(v.currentTime)) {
+      const off = usesTranscodePlayback ? vodStartOffsetRef.current : 0;
+      return Math.max(0, off + v.currentTime);
+    }
+    return playbackTimeRef.current;
+  }, [usesTranscodePlayback]);
+
   const seek = useCallback(
     (delta: number) => {
       if (isLive) return;
-      seekVideoTo(time + delta);
+      seekVideoTo(getPlaybackTimeNow() + delta);
     },
-    [isLive, seekVideoTo, time]
+    [isLive, seekVideoTo, getPlaybackTimeNow]
   );
 
   const setMute = useCallback((m: boolean) => {
@@ -1364,6 +1400,32 @@ export function PlayerOverlay() {
     });
   };
 
+  const switchAudioTrack = (id: number) => {
+    const hls = hlsRef.current;
+    if (!hls || id < 0 || id >= audioTracks.length) return;
+    userPickedAudioTrackRef.current = true;
+    try {
+      hls.audioTrack = id;
+    } catch {
+      /* noop */
+    }
+    setActiveAudioTrack(id);
+  };
+
+  const switchPlaybackSpeed = useCallback((rate: number) => {
+    const normalized = normalizePlaybackSpeed(rate);
+    setPlaybackSpeed(normalized);
+    writePreferredPlaybackSpeed(normalized);
+    const v = videoRef.current;
+    if (v) v.playbackRate = normalized;
+  }, []);
+
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!v || !open) return;
+    v.playbackRate = playbackSpeed;
+  }, [open, current?.url, playbackSpeed]);
+
   const controlsHideDelayMs =
     tvBrowser || silkLikeClient ? 22_000 : 3000;
 
@@ -1603,7 +1665,10 @@ export function PlayerOverlay() {
           wakeControls();
           return;
         }
-      } else if (
+      }
+
+      if (
+        !flipWithArrowKeys &&
         livingRoomPlayback &&
         (e.key === "ArrowUp" || e.key === "PageUp")
       ) {
@@ -1614,6 +1679,7 @@ export function PlayerOverlay() {
           if (v.volume > 0) v.muted = false;
         }
       } else if (
+        !flipWithArrowKeys &&
         livingRoomPlayback &&
         (e.key === "ArrowDown" || e.key === "PageDown")
       ) {
@@ -1622,16 +1688,12 @@ export function PlayerOverlay() {
         if (v) {
           v.volume = Math.max(0, v.volume - 0.08);
         }
-      } else if (e.key === "ArrowRight") {
-        if (!isLive) {
-          e.preventDefault();
-          seek(seekStep);
-        }
-      } else if (e.key === "ArrowLeft") {
-        if (!isLive) {
-          e.preventDefault();
-          seek(-seekStep);
-        }
+      }
+
+      const arrowSeek = vodArrowSeekDeltaSec(e.key, { isLive, seekStep });
+      if (arrowSeek != null) {
+        e.preventDefault();
+        seek(arrowSeek);
       }
       if (e.key.toLowerCase() === "m") setMute(!muted);
       if (e.key.toLowerCase() === "f") fullscreenGestureToggle();
@@ -1704,6 +1766,24 @@ export function PlayerOverlay() {
         : duration > 1 && Number.isFinite(duration)
           ? duration
           : 0;
+
+  const playNextEpisode = useCallback(() => {
+    doFlip(1, true);
+  }, [doFlip]);
+
+  const autoplayNext = usePlayerAutoplayNext({
+    open,
+    current,
+    playlist,
+    index,
+    timeSec: time,
+    durationSec: effectiveVodDuration,
+    videoRef,
+    onPlayNext: playNextEpisode,
+    usesTranscode: usesTranscodePlayback,
+    startOffsetSecRef: vodStartOffsetRef,
+    encodedSecRelRef: vodEncodedSecRef,
+  });
 
   const progress =
     effectiveVodDuration > 0 ? (time / effectiveVodDuration) * 100 : 0;
@@ -2329,6 +2409,16 @@ export function PlayerOverlay() {
               )}
             </AnimatePresence>
 
+            <PlayerAutoplayNextOverlay
+              visible={autoplayNext.visible}
+              nextEpisode={autoplayNext.nextEpisode}
+              countdownSec={autoplayNext.countdownSec}
+              onPlayNextNow={autoplayNext.playNextNow}
+              onCancel={autoplayNext.cancelAutoplay}
+              onWatchCredits={autoplayNext.watchCredits}
+              showWatchCredits
+            />
+
             {/* EPG drawer — code-split until user opens schedule */}
             <AnimatePresence>
               {showEpg && isLive && (
@@ -2355,7 +2445,7 @@ export function PlayerOverlay() {
                   onClick={swallowControlPointer}
                   className="absolute bottom-0 inset-x-0 z-[8] overflow-visible p-3 sm:p-5 bg-gradient-to-t from-black/85 to-transparent"
                 >
-                  {tvBrowser && (
+                  {(tvBrowser || silkLikeClient) && (
                     <TvPlayerRemoteHints
                       flipWithArrowKeys={flipWithArrowKeys}
                       flipIsEpisodeList={playlist?.kind === "series"}
@@ -2462,7 +2552,8 @@ export function PlayerOverlay() {
                           onClick={() => setShowEpg((s) => !s)}
                           aria-label="Schedule"
                           className={cn(
-                            "size-9 hidden sm:grid place-items-center rounded-lg hover:bg-white/10",
+                            "size-9 grid place-items-center rounded-lg hover:bg-white/10",
+                            tvBrowser && "hidden",
                             showEpg && "bg-white/15"
                           )}
                         >
@@ -2471,6 +2562,7 @@ export function PlayerOverlay() {
                       )}
 
                       <PlayerControlMenus
+                          isLive={isLive}
                           hasSubtitles={subtitles.length > 0}
                           showSubs={showSubs}
                           setShowSubs={setShowSubs}
@@ -2481,6 +2573,11 @@ export function PlayerOverlay() {
                           subtitles={subtitles}
                           activeSubtitle={activeSubtitle}
                           onSwitchSubtitle={switchSubtitle}
+                          audioTracks={audioTracks}
+                          activeAudioTrack={activeAudioTrack}
+                          onSwitchAudioTrack={switchAudioTrack}
+                          playbackSpeed={playbackSpeed}
+                          onSwitchPlaybackSpeed={switchPlaybackSpeed}
                           levels={levels}
                           currentLevel={currentLevel}
                           qualityLabel={qualityLabel}
@@ -2505,7 +2602,8 @@ export function PlayerOverlay() {
                             : "Available once video has loaded"
                         }
                         className={cn(
-                          "size-9 hidden sm:grid place-items-center rounded-lg hover:bg-white/10",
+                          "size-9 grid place-items-center rounded-lg hover:bg-white/10",
+                          tvBrowser && "hidden",
                           isPip && "bg-white/10",
                           !pipReady && !isPip && "opacity-40 cursor-not-allowed"
                         )}

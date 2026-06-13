@@ -730,7 +730,7 @@ export function LiveGridPageInner({ shell }: { shell: LivePageShell }) {
     </div>
   );
 
-  /* ── TV-class browsers: discovery rows + category shelves ── */
+  /* ── TV-class browsers: shelves (list) or EPG guide ── */
   if (tvBrowser) {
     return (
       <div className="space-y-6">
@@ -738,11 +738,93 @@ export function LiveGridPageInner({ shell }: { shell: LivePageShell }) {
           hideDescriptionOnMobile
           eyebrow="Watch live"
           title="Live TV"
-          description="Browse channels by category. Use search to find a channel or on-air programme."
+          description={
+            view === "guide"
+              ? "TV guide with what’s on now and coming up. Pick a category to focus the grid."
+              : "Browse channels by category. Use search to find a channel or on-air programme."
+          }
           right={liveSearchToolbar}
         />
-        {liveDiscoveryBlocks}
-        {browseUiReady ? (
+
+        {view === "list" ? liveDiscoveryBlocks : null}
+
+        {!cats.isLoading && view === "guide" && (
+          <MobileCategoryRail
+            categories={sortedFilteredCats}
+            value={selected}
+            onChange={setCategory}
+            countById={countById}
+            label="Browse"
+          />
+        )}
+
+        {selected !== "all" && (
+          <ActiveCategoryFilterBar
+            categoryName={selectedCategoryName || "Selected category"}
+            count={streams.isLoading ? undefined : visible.length}
+            countLabel={
+              visible.length === 1 ? "channel in view" : "channels in view"
+            }
+            onClear={() => setCategory("all")}
+          />
+        )}
+
+        <LiveCategoryBrowseModal
+          open={categoryBrowseOpen}
+          onClose={() => setCategoryBrowseOpen(false)}
+          categories={sortedFilteredCats}
+          value={selected}
+          countById={countById}
+          onChange={setCategory}
+        />
+
+        {catalog.isError && (
+          <div className="card p-6 flex flex-col sm:flex-row sm:items-center gap-4">
+            <p className="text-sm text-(--text-muted) flex-1">
+              Could not load the channel list. Check your connection and try again.
+            </p>
+            <button
+              type="button"
+              className="btn-brand px-4 py-2 text-sm font-medium shrink-0"
+              onClick={() => void catalog.refetch()}
+            >
+              Retry
+            </button>
+          </div>
+        )}
+
+        {view === "guide" ? (
+          channelsLoading || deferredSelected !== selected ? (
+            <SkeletonGrid variant="tile" count={6} />
+          ) : displayVisible.length === 0 ? (
+            <GridEmpty
+              hasSearch={Boolean(qTrim)}
+              categoryFiltered={selected !== "all"}
+            />
+          ) : guideReady ? (
+            <LiveGuidePanel
+              channels={displayVisible}
+              allCategoriesMode={selected === "all"}
+              categoryNameById={categoryNameById}
+              isFavorite={(id) => isFavorite("live", id)}
+              onToggleFavorite={(c) =>
+                toggleFavorite({
+                  kind: "live",
+                  id: c.stream_id,
+                  name: c.name,
+                  icon: c.stream_icon,
+                  ...(c.direct_source?.trim()
+                    ? { meta: { direct_source: c.direct_source.trim() } }
+                    : {}),
+                })
+              }
+              onPlay={(c) => openChannel(c)}
+              livingRoomGuide
+            />
+          ) : (
+            <SkeletonGrid variant="tile" count={6} />
+          )
+        ) : browseUiReady ? (
           <LiveAllCategoriesBrowse
             variant="tv"
             categories={deferredBrowseCategories}

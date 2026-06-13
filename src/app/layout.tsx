@@ -19,6 +19,7 @@ import {
 import { cn } from "@/lib/utils";
 import { headers } from "next/headers";
 import Script from "next/script";
+import { Suspense } from "react";
 import "./globals.css";
 import { Providers } from "./providers";
 
@@ -142,7 +143,9 @@ export default async function RootLayout({
           strategy="beforeInteractive"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
         />
-        <GoogleAnalytics />
+        <Suspense fallback={null}>
+          <GoogleAnalytics />
+        </Suspense>
         <Providers>{children}</Providers>
       </body>
     </html>

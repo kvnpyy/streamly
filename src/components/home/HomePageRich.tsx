@@ -1,7 +1,10 @@
 "use client";
 
 import { HomeRegionalTrendingSection } from "@/components/home/HomeRegionalTrendingSection";
+import { TvHomeHub } from "@/components/TvHomeHub";
 import { MediaCard } from "@/components/MediaCard";
+import { useTvHomeHubModel } from "@/hooks/use-tv-home-hub-model";
+import { welcomeDisplayName } from "@/lib/welcome-display-name";
 import { TvSpatialGrid } from "@/components/TvSpatialGrid";
 import { SectionHeader, SkeletonGrid } from "@/components/SectionHeader";
 import { TvHomeRow } from "@/components/tv/TvHomeRow";
@@ -18,14 +21,19 @@ import { vodCatalogQueryOptions } from "@/lib/vod-catalog-query";
 import { useLivingRoomHomeLayout } from "@/lib/use-living-room-home-layout";
 import type { LiveStream, SeriesItem, VodStream } from "@/lib/xtream-types";
 import { useAuth } from "@/store/auth";
+import { usePlayer } from "@/store/player";
 import { usePrefs } from "@/store/preferences";
 import { useQuery } from "@tanstack/react-query";
+import { useSession } from "next-auth/react";
 import { sliceShelfItems } from "@/hooks/use-vod-discovery-shelves";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 export function HomePageRich() {
   const creds = useAuth((s) => s.creds)!;
+  const account = useAuth((s) => s.account);
+  const { data: streamSession } = useSession();
+  const { play } = usePlayer();
   const livingRoomHome = useLivingRoomHomeLayout();
   const {
     isFavorite,
@@ -34,7 +42,14 @@ export function HomePageRich() {
     parentalUnlocked,
     recents,
     favorites,
+    addRecent,
   } = usePrefs();
+
+  const greetingName = welcomeDisplayName({
+    streamName: streamSession?.user?.name,
+    streamEmail: streamSession?.user?.email,
+    iptvUsername: account?.user_info.username || creds.username,
+  });
 
   const [catalogFetchReady, setCatalogFetchReady] = useState(false);
   const [topRatedMovieStreams, setTopRatedMovieStreams] = useState<VodStream[]>(
@@ -176,23 +191,27 @@ export function HomePageRich() {
     ]
   );
 
+  const tvHub = useTvHomeHubModel({
+    greetingName,
+    creds,
+    movies: vodStreams,
+    series: seriesStreams,
+    vodLoading: vodCatalog.isLoading,
+    seriesLoading: seriesCatalog.isLoading,
+    recents,
+    favorites,
+    hideAdult,
+    parentalUnlocked,
+    isFavorite,
+    toggleFavorite,
+    play,
+    addRecent,
+  });
+
   if (livingRoomHome) {
     return (
-      <div className="tv-home tv-home--rich space-y-8 pt-6">
-        <HomeRegionalTrendingSection
-          creds={creds}
-          movies={vodStreams}
-          series={seriesStreams}
-          vodLoading={vodCatalog.isLoading || seriesCatalog.isLoading}
-          recents={recents}
-          favorites={favorites}
-          hideAdult={hideAdult}
-          parentalUnlocked={parentalUnlocked}
-          isFavorite={isFavorite}
-          toggleFavoriteMovie={toggleFavoriteMovie}
-          toggleFavoriteSeries={toggleFavoriteSeries}
-          toggleFavoriteLive={toggleFavoriteLive}
-        />
+      <div className="tv-home tv-home--rich space-y-8">
+        <TvHomeHub {...tvHub} />
         {(vodCatalog.isLoading || topRatedMovieStreams.length > 0) && (
           <TvHomeRow
             title={DISCOVERY_SHELF_META.vod_top_rated_movies.title}

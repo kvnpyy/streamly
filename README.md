@@ -19,6 +19,35 @@ custom HLS player, TV remote navigation, EPG guide, parental controls, and more.
 
 **No ads. No tracking by default. Fully open source.**
 
+**Live demo:** [iptvwebplayer.org](https://iptvwebplayer.org) · **Community:** [Discord](https://discord.gg/QGFKJt9t7A)
+
+---
+
+## Featured guides
+
+Practical write-ups on the live site — not just README bullets:
+
+| Guide | Summary |
+|-------|---------|
+| [How I Built a Full IPTV Frontend with Next.js 16 + Docker in One Weekend](https://iptvwebplayer.org/blog/nextjs-iptv-weekend-build) | Honest build log — proxy-first playback, Xtream client, HLS player, SQLite, Docker. |
+| [Running Streamly on a $5 VPS (Real Numbers + Tips)](https://iptvwebplayer.org/blog/streamly-five-dollar-vps) | Monthly costs, RAM/bandwidth reality, deploy timings, when cheap hosting works. |
+| [How to Self-Host Streamly: Docker Setup](https://iptvwebplayer.org/blog/how-to-self-host-streamly) | Step-by-step Compose, secrets, volumes, HTTPS, and backups. |
+| [Xtream Codes vs M3U in 2026](https://iptvwebplayer.org/blog/xtream-codes-vs-m3u) | Which format to use day-to-day and why both stay in Streamly. |
+
+**[All guides →](https://iptvwebplayer.org/blog)** · **[What's new (changelog) →](https://iptvwebplayer.org/changelog)**
+
+---
+
+## What's new
+
+**Latest release: [v0.2.14](https://iptvwebplayer.org/changelog)** (June 2026)
+
+- GitHub README **Featured guides** — all four blog posts linked
+- **CHANGELOG.md** + live [/changelog](https://iptvwebplayer.org/changelog) page
+- Version badge in the app links to release notes
+
+See the full **[changelog](./CHANGELOG.md)** or **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/changelog)** for earlier releases.
+
 ---
 
 ## Features

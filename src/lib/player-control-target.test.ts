@@ -4,6 +4,7 @@ import {
   isPlayerControlKeyboardTarget,
   isRemoteActivateKey,
   liveChannelFlipKeyDelta,
+  vodArrowSeekDeltaSec,
 } from "./player-control-target";
 
 describe("isPlayerControlKeyboardTarget", () => {
@@ -25,6 +26,21 @@ describe("isPlayPauseShortcutKey", () => {
   it("includes media keys", () => {
     expect(isPlayPauseShortcutKey("MediaPlayPause")).toBe(true);
     expect(isPlayPauseShortcutKey("f")).toBe(false);
+  });
+});
+
+describe("vodArrowSeekDeltaSec", () => {
+  it("maps horizontal arrows for VOD only", () => {
+    expect(
+      vodArrowSeekDeltaSec("ArrowRight", { isLive: false, seekStep: 10 })
+    ).toBe(10);
+    expect(
+      vodArrowSeekDeltaSec("ArrowLeft", { isLive: false, seekStep: 10 })
+    ).toBe(-10);
+    expect(
+      vodArrowSeekDeltaSec("ArrowRight", { isLive: true, seekStep: 10 })
+    ).toBeNull();
+    expect(vodArrowSeekDeltaSec("ArrowUp", { isLive: false, seekStep: 10 })).toBeNull();
   });
 });
 

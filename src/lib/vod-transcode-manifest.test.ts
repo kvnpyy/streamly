@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildManifestFromContiguousDisk,
   contiguousSegmentCount,
+  countManifestSegments,
+  hasOrphanSegmentsBeyondPrefix,
+  manifestReferencesMissingOrGappedSegments,
   MAX_IN_PROGRESS_PLAYLIST_SEGMENTS,
   parseStreamlyDurationSec,
   prepareManifestForPlayback,
@@ -70,6 +74,15 @@ describe("rewriteTranscodeManifest", () => {
     expect(out).not.toContain("seg_00010.ts");
   });
 
+  it("hasOrphanSegmentsBeyondPrefix detects seg_00058 after a 29-segment prefix", () => {
+    const onDisk = new Set(
+      Array.from({ length: 29 }, (_, i) => `seg_${String(i).padStart(5, "0")}.ts`)
+    );
+    onDisk.add("seg_00058.ts");
+    expect(hasOrphanSegmentsBeyondPrefix(onDisk)).toBe(true);
+    expect(contiguousSegmentCount(onDisk)).toBe(29);
+  });
+
   it("contiguousSegmentCount stops at the first missing index", () => {
     expect(
       contiguousSegmentCount(new Set(["seg_00002.ts", "seg_00026.ts"]))
@@ -91,6 +104,24 @@ describe("rewriteTranscodeManifest", () => {
       "seg_00000.ts",
       "seg_00001.ts",
     ]);
+  });
+
+  it("buildManifestFromContiguousDisk lists flushed segments ahead of stale m3u8", () => {
+    const onDisk = new Set(
+      Array.from({ length: 12 }, (_, i) => `seg_${String(i).padStart(5, "0")}.ts`)
+    );
+    const stale = [
+      "#EXTM3U",
+      "#EXTINF:4.0,",
+      "seg_00000.ts",
+      "#EXTINF:4.0,",
+      "seg_00001.ts",
+    ].join("\n");
+    const fromStale = prepareManifestForPlayback(stale, false, onDisk);
+    expect(countManifestSegments(fromStale)).toBe(2);
+    const rebuilt = buildManifestFromContiguousDisk(onDisk, new Map(), 4);
+    expect(countManifestSegments(rebuilt)).toBe(12);
+    expect(rebuilt).toContain("seg_00011.ts");
   });
 
   it("only lists segments that exist on disk", () => {
@@ -128,5 +159,53 @@ describe("rewriteTranscodeManifest", () => {
     expect(inProgress).toContain("#EXT-X-PLAYLIST-TYPE:EVENT");
     expect(inProgress).not.toContain("#EXT-X-PLAYLIST-TYPE:VOD");
     expect(parseStreamlyDurationSec(inProgress)).toBeNull();
+  });
+});
+
+describe("manifestReferencesMissingOrGappedSegments", () => {
+  function manifestForSegs(count: number, start = 0): string {
+    const lines = ["#EXTM3U", "#EXT-X-VERSION:3"];
+    for (let i = start; i < start + count; i++) {
+      lines.push("#EXTINF:4.000,");
+      lines.push(`seg_${String(i).padStart(5, "0")}.ts`);
+    }
+    return lines.join("\n");
+  }
+
+  it("returns false when raw manifest exceeds playback trim cap but disk is contiguous", () => {
+    const n = MAX_IN_PROGRESS_PLAYLIST_SEGMENTS + 50;
+    const onDisk = new Set(
+      Array.from({ length: n }, (_, i) => `seg_${String(i).padStart(5, "0")}.ts`)
+    );
+    const raw = manifestForSegs(n);
+    expect(countManifestSegments(raw)).toBe(n);
+    expect(
+      countManifestSegments(prepareManifestForPlayback(raw, false, onDisk))
+    ).toBeLessThan(n);
+    expect(manifestReferencesMissingOrGappedSegments(raw, onDisk)).toBe(false);
+  });
+
+  it("returns true when manifest lists a segment missing from disk", () => {
+    const onDisk = new Set(["seg_00000.ts", "seg_00001.ts"]);
+    const raw = manifestForSegs(3);
+    expect(manifestReferencesMissingOrGappedSegments(raw, onDisk)).toBe(true);
+  });
+
+  it("returns true when manifest has a sequence hole", () => {
+    const onDisk = new Set([
+      "seg_00000.ts",
+      "seg_00001.ts",
+      "seg_00003.ts",
+    ]);
+    const raw = [
+      "#EXTM3U",
+      "#EXTINF:4,",
+      "seg_00000.ts",
+      "#EXTINF:4,",
+      "seg_00001.ts",
+      "#EXTINF:4,",
+      "seg_00003.ts",
+    ].join("\n");
+    expect(manifestReferencesMissingOrGappedSegments(raw, onDisk)).toBe(true);
   });
 });

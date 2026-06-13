@@ -19,6 +19,8 @@ import { limitStreamProxy } from "@/lib/stream-rate-limit";
 import {
   handleVodTranscodeRequest,
   isVodTranscodeEnabledServer,
+  releaseVodTranscodeJobs,
+  upstreamEligibleForVodTranscode,
 } from "@/lib/vod-transcode";
 import { NextRequest } from "next/server";
 
@@ -123,6 +125,10 @@ export async function GET(req: NextRequest) {
   return handle(req, /*head*/ false);
 }
 
+export async function POST(req: NextRequest) {
+  return handle(req, /*head*/ false);
+}
+
 async function handle(req: NextRequest, head: boolean) {
   const requestId = newRequestId();
   const ua = req.headers.get("user-agent") ?? "";
@@ -154,12 +160,14 @@ async function handle(req: NextRequest, head: boolean) {
   const url = new URL(req.url);
   const target = url.searchParams.get("u");
   const type = url.searchParams.get("type") || "vod";
+  const forCast = url.searchParams.get("cast") === "1";
   /**
    * Strip HEVC/Dolby ladder rungs when a safer variant exists (all HLS clients).
-   * Also propagates `compat=mse` on rewritten nested playlist URLs.
+   * Chromecast uses native HLS — never propagate browser `compat=mse` on cast URLs.
    */
   const compatMse =
-    type === "hls" || url.searchParams.get("compat") === "mse";
+    !forCast &&
+    (type === "hls" || url.searchParams.get("compat") === "mse");
 
   if (!target) {
     return new Response("Missing 'u' parameter", {
@@ -169,6 +177,25 @@ async function handle(req: NextRequest, head: boolean) {
   }
 
   const transcodeMode = url.searchParams.get("transcode");
+  if (transcodeMode === "release") {
+    if (!isVodTranscodeEnabledServer()) {
+      return new Response("VOD transcode is not enabled.", {
+        status: 503,
+        headers: corsHeaders({ "content-type": "text/plain" }, requestId),
+      });
+    }
+    if (!upstreamEligibleForVodTranscode(target)) {
+      return new Response("URL is not eligible for VOD transcode.", {
+        status: 400,
+        headers: corsHeaders({ "content-type": "text/plain" }, requestId),
+      });
+    }
+    releaseVodTranscodeJobs(target);
+    return new Response(null, {
+      status: 204,
+      headers: corsHeaders(undefined, requestId),
+    });
+  }
   if (transcodeMode === "hls") {
     if (!isVodTranscodeEnabledServer()) {
       return new Response("VOD transcode is not enabled.", {
@@ -296,11 +323,11 @@ async function handle(req: NextRequest, head: boolean) {
       });
     }
 
-    const forCast = url.searchParams.get("cast") === "1";
+    const forCastManifest = url.searchParams.get("cast") === "1";
     const cacheKey = manifestCacheKey({
       upstream: target,
       compatMse,
-      forCast,
+      forCast: forCastManifest,
     });
     const cached = getCachedManifest(cacheKey);
     if (cached != null) {
@@ -320,13 +347,13 @@ async function handle(req: NextRequest, head: boolean) {
     } catch {
       finalManifestUrl = upstreamUrl;
     }
-    if (compatMse) {
+    if (compatMse || forCastManifest) {
       text = sanitizeTvMasterPlaylistIfNeeded(text);
     }
     const rewritten = rewriteHlsManifest(text, finalManifestUrl, {
       compatMse,
-      forCast,
-      proxyOrigin: forCast ? new URL(req.url).origin : undefined,
+      forCast: forCastManifest,
+      proxyOrigin: forCastManifest ? new URL(req.url).origin : undefined,
     });
     setCachedManifest(
       cacheKey,

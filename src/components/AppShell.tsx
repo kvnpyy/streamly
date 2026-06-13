@@ -98,7 +98,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               "relative flex-1 min-w-0 min-h-screen flex flex-col",
               tv
                 ? "pb-0"
-                : "pb-[calc(4.25rem+env(safe-area-inset-bottom,0px))] md:pb-0"
+                : "pb-[calc(4.25rem+env(safe-area-inset-bottom,0px))] lg:pb-0"
             )}
           >
             {tv ? <TvTopNav /> : <TopBar />}
@@ -164,7 +164,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       <main
         className={cn(
           "flex-1 min-w-0 min-h-screen flex flex-col",
-          "pb-[calc(4.25rem+env(safe-area-inset-bottom,0px))] md:pb-0"
+          "pb-[calc(4.25rem+env(safe-area-inset-bottom,0px))] lg:pb-0"
         )}
       >
         <TopBar />

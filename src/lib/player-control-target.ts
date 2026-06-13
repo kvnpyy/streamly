@@ -29,6 +29,17 @@ export function isPlayPauseShortcutKey(key: string): boolean {
  * Remote “channel zap” keys → flip delta (-1 / +1), or null if not a channel key.
  * Handles legacy `keyCode` values seen on Samsung/LG webviews.
  */
+/** ←/→ seek delta for VOD (seconds); null for live or unrelated keys. */
+export function vodArrowSeekDeltaSec(
+  key: string,
+  opts: { isLive: boolean; seekStep: number }
+): number | null {
+  if (opts.isLive) return null;
+  if (key === "ArrowRight") return opts.seekStep;
+  if (key === "ArrowLeft") return -opts.seekStep;
+  return null;
+}
+
 export function liveChannelFlipKeyDelta(
   key: string,
   keyCode?: number

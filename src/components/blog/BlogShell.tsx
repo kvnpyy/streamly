@@ -24,6 +24,9 @@ export function BlogShell({
             <Link href="/blog" className="hover:text-(--text) transition-colors">
               Blog
             </Link>
+            <Link href="/changelog" className="hover:text-(--text) transition-colors">
+              Changelog
+            </Link>
             <Link href="/" className="hover:text-(--text) transition-colors">
               Home
             </Link>

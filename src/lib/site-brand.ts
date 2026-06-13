@@ -13,6 +13,16 @@ export const FEEDBACK_FORM_URL =
   process.env.NEXT_PUBLIC_FEEDBACK_FORM_URL?.trim() ||
   "https://form.typeform.com/to/e9haRFsv";
 
+const DEFAULT_DISCORD_INVITE_URL = "https://discord.gg/QGFKJt9t7A";
+
+/** Public Discord invite — set empty in env to hide community links. */
+export function discordInviteUrl(): string | null {
+  const raw = process.env.NEXT_PUBLIC_DISCORD_INVITE_URL?.trim();
+  if (raw === "") return null;
+  if (raw) return raw;
+  return DEFAULT_DISCORD_INVITE_URL;
+}
+
 /** Shown near login and checkout-style surfaces. */
 export const USER_CONTENT_DISCLAIMER_SHORT =
   "Streamly does not provide channels or copyrighted content. You need your own subscription and must follow your provider’s terms and applicable law.";

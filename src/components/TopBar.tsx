@@ -41,6 +41,18 @@ function TopBarSearchSkeleton() {
   );
 }
 
+function routeTitle(pathname: string): string | undefined {
+  if (pathname === "/app") return "Home";
+  if (pathname.startsWith("/app/live")) return "Live TV";
+  if (pathname.startsWith("/app/movies")) return "Movies";
+  if (pathname.startsWith("/app/series")) return "Series";
+  if (pathname.startsWith("/app/favorites")) return "My List";
+  if (pathname.startsWith("/app/search")) return "Search";
+  if (pathname.startsWith("/app/settings")) return "Settings";
+  if (pathname.startsWith("/app/continue")) return "Continue";
+  return undefined;
+}
+
 function TopBarInner({ title, subtitle }: { title?: string; subtitle?: string }) {
   const tv = useTvBrowser();
   const router = useRouter();
@@ -94,6 +106,8 @@ function TopBarInner({ title, subtitle }: { title?: string; subtitle?: string })
       ? liveSearch.inputValue
       : offRouteQuery;
 
+  const pageTitle = title ?? routeTitle(pathname);
+
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
@@ -113,19 +127,27 @@ function TopBarInner({ title, subtitle }: { title?: string; subtitle?: string })
           tv ? "px-4 py-2" : "px-3 sm:px-6 py-2.5 sm:py-3"
         )}
       >
-        {(title || subtitle) && (
-          <div className="hidden md:block min-w-0">
-            {title && (
-              <div className="text-base font-semibold tracking-tight truncate">
-                {title}
+        {(pageTitle || subtitle) && (
+          <div className="min-w-0 shrink-0 max-w-[7rem] sm:max-w-none">
+            {pageTitle && (
+              <div
+                className={cn(
+                  "font-semibold tracking-tight truncate",
+                  subtitle ? "text-sm sm:text-base" : "text-sm sm:text-base"
+                )}
+              >
+                {pageTitle}
               </div>
             )}
             {subtitle && (
-              <div className="text-xs text-(--text-muted) truncate">{subtitle}</div>
+              <div className="hidden sm:block text-xs text-(--text-muted) truncate">
+                {subtitle}
+              </div>
             )}
           </div>
         )}
 
+        <PlaylistSwitcher className="flex sm:hidden shrink-0" compact />
         <PlaylistSwitcher className="hidden sm:flex shrink-0 mr-1.5 xl:mr-2" />
 
         <form

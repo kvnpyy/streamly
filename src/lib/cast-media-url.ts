@@ -3,8 +3,13 @@ import {
   canVodTranscodeProxyUrl,
   isVodTranscodeEnabledClient,
   playbackUrlUsesVodTranscode,
+  stripVodTranscodeParams,
   vodNeedsServerTranscodePrep,
+  vodTranscodeBaseProxyUrl,
 } from "@/lib/vod-transcode-url";
+import {
+  liveCastPlaylistLooksReady,
+} from "@/lib/cast-live-hls";
 import type { PlayerSource } from "@/store/player";
 
 export type CastStreamKind = "live" | "buffered";
@@ -21,16 +26,68 @@ export function toAbsoluteAppUrl(origin: string, pathOrUrl: string): string {
   return `${base}${pathOrUrl.startsWith("/") ? pathOrUrl : `/${pathOrUrl}`}`;
 }
 
+/** Chromecast plays native HLS — never forward browser `compat=mse` ladder stripping. */
+export function sanitizeProxyUrlForCast(
+  proxyUrl: string,
+  origin: string
+): string {
+  try {
+    const parsed = new URL(proxyUrl, origin);
+    parsed.searchParams.delete("compat");
+    return `${parsed.pathname}?${parsed.searchParams.toString()}`;
+  } catch {
+    return proxyUrl;
+  }
+}
+
 /** Tag proxied cast URLs so manifests can emit absolute segment URIs for receivers. */
 export function appendCastStreamQuery(url: string): string {
   try {
     const parsed = new URL(url);
     parsed.searchParams.set("cast", "1");
+    parsed.searchParams.delete("compat");
     return parsed.toString();
   } catch {
     const join = url.includes("?") ? "&" : "?";
     return `${url}${join}cast=1`;
   }
+}
+
+/**
+ * Poll the cast manifest the same way a Chromecast receiver would (no cookies).
+ * Waits for transcode warm-up / 503 retry cycles before sender loadMedia().
+ */
+export async function waitForCastPlaylistReady(
+  manifestUrl: string,
+  opts?: { signal?: AbortSignal; timeoutMs?: number }
+): Promise<void> {
+  const timeoutMs = opts?.timeoutMs ?? 90_000;
+  const deadline = Date.now() + timeoutMs;
+  let attempt = 0;
+
+  while (Date.now() < deadline) {
+    if (opts?.signal?.aborted) {
+      throw new Error("Cast preparation cancelled.");
+    }
+    attempt += 1;
+    const res = await fetch(manifestUrl, {
+      method: "GET",
+      cache: "no-store",
+      credentials: "omit",
+      signal: opts?.signal,
+    });
+    if (res.ok) {
+      const text = await res.text();
+      if (liveCastPlaylistLooksReady(text)) return;
+    }
+    const retryAfterSec = parseInt(res.headers.get("retry-after") ?? "", 10);
+    const waitMs =
+      res.status === 503 && Number.isFinite(retryAfterSec) && retryAfterSec > 0
+        ? Math.min(8000, retryAfterSec * 1000)
+        : Math.min(4000, 600 + attempt * 250);
+    await new Promise((r) => window.setTimeout(r, waitMs));
+  }
+  throw new Error("Timed out preparing stream for your TV.");
 }
 
 /**
@@ -43,23 +100,33 @@ export function buildCastMediaDescriptor(opts: {
   isLive: boolean;
   /** Active browser playback URL (`current.url` or transcode override). */
   proxyPlaybackUrl: string;
+  /** Resume VOD transcode near this position (seconds). */
+  seekSec?: number;
 }): CastMediaDescriptor | null {
-  const { origin, current, isLive, proxyPlaybackUrl } = opts;
+  const { origin, current, isLive, proxyPlaybackUrl, seekSec } = opts;
   if (!origin || !proxyPlaybackUrl) return null;
 
   let proxyPath = proxyPlaybackUrl;
+  let usesTranscode = playbackUrlUsesVodTranscode(proxyPlaybackUrl);
 
   if (!isLive && isVodTranscodeEnabledClient()) {
     const needsTranscode =
-      playbackUrlUsesVodTranscode(proxyPlaybackUrl) ||
+      usesTranscode ||
       (vodNeedsServerTranscodePrep(current.containerExt, current.url) &&
         canVodTranscodeProxyUrl(current.url));
     if (needsTranscode) {
-      proxyPath = playbackUrlUsesVodTranscode(proxyPlaybackUrl)
-        ? proxyPlaybackUrl
-        : appendVodTranscodeHls(current.url);
+      const base =
+        vodTranscodeBaseProxyUrl(proxyPlaybackUrl) ??
+        vodTranscodeBaseProxyUrl(current.url) ??
+        stripVodTranscodeParams(current.url);
+      const seek =
+        seekSec != null && seekSec > 2 ? Math.floor(seekSec) : undefined;
+      proxyPath = appendVodTranscodeHls(base, { seekSec: seek });
+      usesTranscode = true;
     }
   }
+
+  proxyPath = sanitizeProxyUrlForCast(proxyPath, origin);
 
   const absolute = appendCastStreamQuery(
     toAbsoluteAppUrl(origin, proxyPath)
@@ -68,13 +135,13 @@ export function buildCastMediaDescriptor(opts: {
   if (isLive) {
     return {
       url: absolute,
-      contentType: "application/x-mpegURL",
+      contentType: "application/vnd.apple.mpegurl",
       streamType: "live",
     };
   }
 
   const hls =
-    playbackUrlUsesVodTranscode(proxyPath) ||
+    usesTranscode ||
     /\.m3u8($|[?#])/i.test(proxyPath) ||
     current.containerExt?.toLowerCase() === "m3u8";
 
@@ -82,7 +149,8 @@ export function buildCastMediaDescriptor(opts: {
     return {
       url: absolute,
       contentType: "application/x-mpegURL",
-      streamType: "buffered",
+      // In-progress server transcode playlists are EVENT-style — receivers need LIVE.
+      streamType: usesTranscode ? "live" : "buffered",
     };
   }
 

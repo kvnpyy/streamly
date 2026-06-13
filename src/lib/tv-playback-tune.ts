@@ -1,4 +1,4 @@
-import { isCoarsePointerLargeScreen } from "@/lib/living-room-detect";
+import { isCoarsePointerLargeScreen, isLikelyTabletDevice } from "@/lib/living-room-detect";
 import {
   isAmazonSilkUserAgent,
   isTvClassUserAgent,
@@ -8,11 +8,10 @@ import {
 export function isLivingRoomPlaybackClient(ua?: string): boolean {
   if (typeof navigator === "undefined" && !ua) return false;
   const u = ua ?? navigator.userAgent ?? "";
-  return (
-    isTvClassUserAgent(u) ||
-    isAmazonSilkUserAgent(u) ||
-    isCoarsePointerLargeScreen()
-  );
+  if (isTvClassUserAgent(u) || isAmazonSilkUserAgent(u)) return true;
+  if (isLikelyTabletDevice(u)) return false;
+  if (ua) return false;
+  return isCoarsePointerLargeScreen();
 }
 
 /** Longer debounce on TV remotes — reduces rapid HLS teardown/rebuild while zapping. */

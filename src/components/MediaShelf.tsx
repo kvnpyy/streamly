@@ -31,13 +31,23 @@ type MediaShelfProps = {
   seeAllHref?: string;
 };
 
-function ShelfCards({ items }: { items: MediaShelfItem[] }) {
+function ShelfCards({
+  items,
+  tv = false,
+}: {
+  items: MediaShelfItem[];
+  tv?: boolean;
+}) {
   return (
     <>
       {items.map((item) => (
         <div
           key={item.id}
-          className="shrink-0 w-32 sm:w-36 md:w-40 snap-start"
+          className={
+            tv
+              ? "tv-home-shelf-card shrink-0"
+              : "shrink-0 w-32 sm:w-36 md:w-40 snap-start"
+          }
         >
           <MediaCard
             href={item.onClick ? undefined : item.href}
@@ -105,7 +115,7 @@ export function MediaShelf({
           </div>
         ) : null}
         <TvShelf title={title} seeAllHref={seeAllHref}>
-          <ShelfCards items={items} />
+          <ShelfCards items={items} tv />
         </TvShelf>
       </section>
     );

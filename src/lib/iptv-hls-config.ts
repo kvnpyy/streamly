@@ -174,19 +174,20 @@ export function buildIptvHlsJsConfig(opts: {
  * encode edge so playback does not outrun ffmpeg (choppy video / A/V drift).
  */
 export function buildVodTranscodeHlsJsConfig() {
-  /** Stay a few segments behind the encode edge once the playhead catches up. */
-  const behindEdge = 4;
+  /**
+   * EVENT transcode playlists look "live" to hls.js. Keep sync targets tight so
+   * hitting the buffer end does not fling the playhead back to an old encode edge.
+   */
   return {
-    maxBufferLength: 28,
-    maxMaxBufferLength: 72,
-    backBufferLength: 30,
+    maxBufferLength: 42,
+    maxMaxBufferLength: 96,
+    backBufferLength: 36,
     maxBufferHole: 0.85,
     maxFragLookUpTolerance: 0.35,
     stretchShortVideoTrack: false,
     startFragPrefetch: false,
-    /** EVENT playlists are "live" to hls.js — never snap the user toward the encode edge while watching from the start. */
-    liveSyncDurationCount: behindEdge,
-    liveMaxLatencyDurationCount: Number.POSITIVE_INFINITY,
+    liveSyncDurationCount: 1,
+    liveMaxLatencyDurationCount: 4,
     liveSyncMode: "buffered" as const,
     maxLiveSyncPlaybackRate: 1,
     liveSyncOnStallIncrease: 0,

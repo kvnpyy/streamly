@@ -15,6 +15,97 @@ export const CONTINUE_WATCHING_PATH = "/app/continue";
 /** Minimum resume seconds before we show a progress bar (matches player save threshold). */
 export const CONTINUE_PROGRESS_MIN_SEC = 15;
 
+/** Treat episode as finished when resume is this close to the end (matches player save cutoff). */
+export const EPISODE_COMPLETED_RATIO = 0.92;
+
+export type SeriesEpisodeWatchStatus = "unwatched" | "in_progress" | "completed";
+
+export type SeriesEpisodeWatchState = {
+  status: SeriesEpisodeWatchStatus;
+  resumeSec: number;
+  progressPct: number | null;
+  durationSec: number;
+};
+
+/** Parse runtime from Xtream episode metadata (seconds). */
+export function parseEpisodeDurationSec(ep: SeriesEpisode): number {
+  const secs = ep.info?.duration_secs;
+  if (typeof secs === "number" && Number.isFinite(secs) && secs > 0) {
+    return secs;
+  }
+  const raw = ep.info?.duration;
+  if (typeof raw === "number" && Number.isFinite(raw) && raw > 0) {
+    return raw;
+  }
+  if (typeof raw === "string" && raw.trim()) {
+    const parts = raw.trim().split(":").map((p) => parseInt(p, 10));
+    if (parts.every((n) => Number.isFinite(n))) {
+      if (parts.length === 3) {
+        return parts[0]! * 3600 + parts[1]! * 60 + parts[2]!;
+      }
+      if (parts.length === 2) {
+        return parts[0]! * 60 + parts[1]!;
+      }
+    }
+  }
+  return 0;
+}
+
+export function seriesEpisodeResumeKey(
+  accountKey: string,
+  seriesId: number,
+  ep: SeriesEpisode
+): string | null {
+  const streamId = parseInt(ep.id, 10);
+  if (!Number.isFinite(streamId)) return null;
+  return vodResumeStorageKey(accountKey, {
+    kind: "series",
+    id: seriesId,
+    streamId,
+    title: "",
+    url: "",
+  });
+}
+
+export function seriesEpisodeWatchState(
+  accountKey: string,
+  seriesId: number,
+  ep: SeriesEpisode,
+  vodResumeSec: Record<string, number>
+): SeriesEpisodeWatchState {
+  const durationSec = parseEpisodeDurationSec(ep);
+  const key = seriesEpisodeResumeKey(accountKey, seriesId, ep);
+  const resumeSec = key ? (vodResumeSec[key] ?? 0) : 0;
+
+  if (resumeSec < CONTINUE_PROGRESS_MIN_SEC) {
+    return {
+      status: "unwatched",
+      resumeSec: 0,
+      progressPct: null,
+      durationSec,
+    };
+  }
+
+  if (
+    durationSec > 30 &&
+    resumeSec >= durationSec * EPISODE_COMPLETED_RATIO
+  ) {
+    return {
+      status: "completed",
+      resumeSec,
+      progressPct: 100,
+      durationSec,
+    };
+  }
+
+  return {
+    status: "in_progress",
+    resumeSec,
+    progressPct: computeContinueProgressPct(resumeSec, durationSec),
+    durationSec,
+  };
+}
+
 export type RecentEpisodeMeta = {
   episodeStreamId: number;
   season: string;
@@ -162,7 +253,10 @@ export type SeriesResumeTarget = {
   resumeSec: number;
 };
 
-/** Pick the in-progress episode with the furthest resume position. */
+/**
+ * Pick the latest in-progress episode in play order (not the highest resume offset).
+ * Skips episodes that are effectively finished so E2 wins after E1 is done.
+ */
 export function findSeriesResumeTarget(
   accountKey: string,
   seriesId: number,
@@ -171,21 +265,14 @@ export function findSeriesResumeTarget(
 ): SeriesResumeTarget | null {
   let best: SeriesResumeTarget | null = null;
   for (const { season, ep } of orderedEpisodes) {
-    const streamId = parseInt(ep.id, 10);
-    if (!Number.isFinite(streamId)) continue;
-    const key = vodResumeStorageKey(accountKey, {
-      kind: "series",
-      id: seriesId,
-      streamId,
-      title: "",
-      url: "",
-    });
-    if (!key) continue;
-    const resumeSec = vodResumeSec[key];
-    if (resumeSec == null || resumeSec < CONTINUE_PROGRESS_MIN_SEC) continue;
-    if (!best || resumeSec > best.resumeSec) {
-      best = { season, episode: ep, resumeSec };
-    }
+    const watch = seriesEpisodeWatchState(
+      accountKey,
+      seriesId,
+      ep,
+      vodResumeSec
+    );
+    if (watch.status !== "in_progress") continue;
+    best = { season, episode: ep, resumeSec: watch.resumeSec };
   }
   return best;
 }

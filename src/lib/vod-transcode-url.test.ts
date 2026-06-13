@@ -5,6 +5,7 @@ import {
   canVodTranscodeProxyUrl,
   inferVodContainerExtFromProxyUrl,
   playbackUrlUsesVodTranscode,
+  releaseVodTranscodePlayback,
   resolveVodPlaybackUrl,
   stripVodTranscodeParams,
   vodNeedsServerTranscodePrep,
@@ -53,6 +54,23 @@ describe("vod-transcode-url", () => {
       "&type=vod";
     expect(inferVodContainerExtFromProxyUrl(series, "mp4")).toBe("mkv");
     expect(vodNeedsServerTranscodePrep("mp4", series)).toBe(true);
+  });
+
+  it("releaseVodTranscodePlayback beacons transcode=release for upstream", () => {
+    vi.stubEnv("NEXT_PUBLIC_VOD_TRANSCODE", "1");
+    const beacon = vi.fn().mockReturnValue(true);
+    vi.stubGlobal("window", {
+      location: { origin: "http://localhost" },
+    });
+    vi.stubGlobal("navigator", { sendBeacon: beacon });
+    const transcoded = appendVodTranscodeHls(base);
+    releaseVodTranscodePlayback(transcoded);
+    expect(beacon).toHaveBeenCalledTimes(1);
+    const [url] = beacon.mock.calls[0] as [string, string];
+    expect(url).toContain("transcode=release");
+    expect(url).toContain("u=");
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
   });
 
   it("resolveVodPlaybackUrl upgrades risky series to transcode=hls", () => {

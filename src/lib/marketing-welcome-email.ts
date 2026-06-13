@@ -11,7 +11,7 @@ import {
   createMarketingUnsubscribeToken,
   marketingUnsubscribeUrl,
 } from "@/lib/marketing-unsubscribe-token";
-import { SITE_NAME, absoluteSiteUrl } from "@/lib/site-brand";
+import { SITE_NAME, absoluteSiteUrl, discordInviteUrl } from "@/lib/site-brand";
 
 export type SendWelcomeEmailResult =
   | { ok: true }
@@ -27,6 +27,7 @@ export async function sendMarketingWelcomeEmail(opts: {
   const greet = greetName ? escapeHtml(greetName) : "there";
   const appUrl = absoluteSiteUrl("/app");
   const settingsUrl = absoluteSiteUrl("/app/settings");
+  const discordUrl = discordInviteUrl();
 
   const unsubToken = createMarketingUnsubscribeToken(opts.userId);
   const unsubLine = unsubToken
@@ -39,7 +40,7 @@ export async function sendMarketingWelcomeEmail(opts: {
 Thanks for confirming your email. ${SITE_NAME} is ready when you are — open your library, add an IPTV provider in Settings, and start watching live TV, movies, and series in one place.
 
 Open ${SITE_NAME}: ${appUrl}
-Settings (saved providers): ${settingsUrl}
+Settings (saved providers): ${settingsUrl}${discordUrl ? `\nJoin the community: ${discordUrl}` : ""}
 
 We'll only send occasional product tips and launch news because you opted in. Transactional messages (password reset, security) may still arrive separately.${unsubLine}`;
 
@@ -71,10 +72,21 @@ We'll only send occasional product tips and launch news because you opted in. Tr
         title: "Pick up on any device",
         body: "Sign in with your Streamly account so providers sync wherever you watch.",
       },
+      ...(discordUrl
+        ? [
+            {
+              title: "Join the community",
+              body: "Chat with other users, get setup help, and hear about releases on Discord.",
+            },
+          ]
+        : []),
     ],
     ctas: [
-      { label: `Open ${SITE_NAME}`, href: appUrl, variant: "primary" },
-      { label: "Account settings", href: settingsUrl, variant: "secondary" },
+      { label: `Open ${SITE_NAME}`, href: appUrl, variant: "primary" as const },
+      { label: "Account settings", href: settingsUrl, variant: "secondary" as const },
+      ...(discordUrl
+        ? [{ label: "Join Discord", href: discordUrl, variant: "secondary" as const }]
+        : []),
     ],
     footnote:
       "You opted in to occasional product tips and launch news. Password resets and security emails are separate.",

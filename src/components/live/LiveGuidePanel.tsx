@@ -18,6 +18,8 @@ type LiveGuidePanelProps = {
   onToggleFavorite: (c: LiveStream) => void;
   onPlay: (c: LiveStream) => void;
   allCategoriesMode: boolean;
+  /** Couch / TV browsers — copy tuned for remote + category modal. */
+  livingRoomGuide?: boolean;
 };
 
 export function LiveGuidePanel({
@@ -27,9 +29,10 @@ export function LiveGuidePanel({
   onToggleFavorite,
   onPlay,
   allCategoriesMode,
+  livingRoomGuide = false,
 }: LiveGuidePanelProps) {
   const limit = allCategoriesMode
-    ? Math.min(LIVE_GUIDE_MAX_CHANNELS, 48)
+    ? Math.min(LIVE_GUIDE_MAX_CHANNELS, livingRoomGuide ? 36 : 48)
     : LIVE_GUIDE_MAX_CHANNELS;
 
   return (
@@ -37,8 +40,9 @@ export function LiveGuidePanel({
       {allCategoriesMode && channels.length > limit && (
         <p className="text-xs text-(--text-muted) card px-3 py-2 text-pretty">
           The guide is limited to {limit} channels while browsing all categories.
-          Pick a category in the sidebar for a focused guide, or use List view for
-          the full channel list.
+          {livingRoomGuide
+            ? " Open Categories above to pick a group, or switch to List for shelf browse."
+            : " Pick a category in the sidebar for a focused guide, or use List view for the full channel list."}
         </p>
       )}
       <LiveGuide

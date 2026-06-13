@@ -6,7 +6,9 @@ import {
   computeContinueProgressPct,
   CONTINUE_PROGRESS_MIN_SEC,
   findSeriesResumeTarget,
+  parseEpisodeDurationSec,
   parseRecentEpisodeMeta,
+  seriesEpisodeWatchState,
   recentResumeStorageKey,
   seriesEpisodeRecentMeta,
 } from "./continue-watching";
@@ -125,7 +127,33 @@ describe("continue-watching", () => {
     ).toBeNull();
   });
 
-  it("findSeriesResumeTarget picks furthest resume", () => {
+  it("parseEpisodeDurationSec reads HH:MM:SS", () => {
+    expect(
+      parseEpisodeDurationSec({
+        id: "1",
+        episode_num: "1",
+        title: "x",
+        container_extension: "mkv",
+        info: { duration: "01:00:01" },
+      })
+    ).toBe(3601);
+  });
+
+  it("seriesEpisodeWatchState marks near-end resume as completed", () => {
+    const ep = {
+      id: "10",
+      episode_num: "1",
+      title: "Pilot",
+      container_extension: "mp4",
+      info: { duration_secs: 3600 },
+    };
+    const vodResumeSec = { [`${accountKey}|series|10`]: 3550 };
+    expect(seriesEpisodeWatchState(accountKey, 5, ep, vodResumeSec).status).toBe(
+      "completed"
+    );
+  });
+
+  it("findSeriesResumeTarget picks latest in-progress episode", () => {
     const ordered = [
       {
         season: "1",
@@ -153,6 +181,38 @@ describe("continue-watching", () => {
     const hit = findSeriesResumeTarget(accountKey, 5, ordered, vodResumeSec);
     expect(hit?.episode.id).toBe("11");
     expect(hit?.resumeSec).toBe(900);
+  });
+
+  it("findSeriesResumeTarget skips completed E1 when E2 is in progress", () => {
+    const ordered = [
+      {
+        season: "1",
+        ep: {
+          id: "10",
+          episode_num: "1",
+          title: "Pilot",
+          container_extension: "mp4",
+          info: { duration_secs: 3600 },
+        },
+      },
+      {
+        season: "1",
+        ep: {
+          id: "11",
+          episode_num: "2",
+          title: "Two",
+          container_extension: "mp4",
+          info: { duration_secs: 3600 },
+        },
+      },
+    ];
+    const vodResumeSec = {
+      [`${accountKey}|series|10`]: 3580,
+      [`${accountKey}|series|11`]: 420,
+    };
+    const hit = findSeriesResumeTarget(accountKey, 5, ordered, vodResumeSec);
+    expect(hit?.episode.id).toBe("11");
+    expect(hit?.resumeSec).toBe(420);
   });
 
   it("seriesEpisodeRecentMeta includes duration when present", () => {

@@ -1,4 +1,5 @@
 import { BrandMark } from "@/components/BrandMark";
+import { CommunityDiscordLink } from "@/components/CommunityDiscordLink";
 import { LandingHeroPreview } from "@/components/landing/LandingHeroPreview";
 import { LandingSectionEyebrow } from "@/components/landing/LandingSectionEyebrow";
 import { UserContentDisclaimer } from "@/components/UserContentDisclaimer";
@@ -119,6 +120,10 @@ export function MarketingLanding() {
             >
               Blog
             </Link>
+            <CommunityDiscordLink
+              label="Discord"
+              className="hidden sm:inline-flex text-(--text-muted) hover:text-(--text) transition-colors min-h-10 px-2.5 sm:px-3 rounded-lg hover:bg-white/[0.04] landing-focus-ring"
+            />
             <Link
               href="/login"
               className="inline-flex items-center justify-center rounded-xl btn-brand px-4 sm:px-5 py-2.5 text-sm font-semibold text-white min-h-10 shadow-[0_8px_28px_rgba(124,92,255,0.28)] landing-focus-ring"
@@ -413,6 +418,10 @@ export function MarketingLanding() {
                     Open player
                     <ChevronRight className="size-4" aria-hidden />
                   </Link>
+                  <CommunityDiscordLink
+                    label="Join Discord"
+                    className="landing-focus-ring inline-flex items-center justify-center gap-2 rounded-xl border border-[#5865F2]/35 bg-[#5865F2]/10 px-6 py-3.5 text-sm font-medium text-[#c7ceff] min-h-12 w-full sm:w-auto hover:bg-[#5865F2]/18 hover:border-[#5865F2]/50"
+                  />
                   <a
                     href="#features"
                     className="landing-focus-ring inline-flex items-center justify-center rounded-xl border border-white/12 px-6 py-3.5 text-sm font-medium text-(--text) min-h-12 w-full sm:w-auto hover:bg-white/[0.04]"
@@ -456,6 +465,16 @@ export function MarketingLanding() {
                 Blog
               </Link>
               <Link
+                href="/changelog"
+                className="min-h-10 inline-flex items-center hover:text-(--text) landing-focus-ring rounded"
+              >
+                Changelog
+              </Link>
+              <CommunityDiscordLink
+                label="Discord"
+                className="min-h-10 hover:text-(--text) landing-focus-ring rounded px-0.5 text-(--text-muted)"
+              />
+              <Link
                 href="/login"
                 className="min-h-10 inline-flex items-center hover:text-(--text) landing-focus-ring rounded"
               >
@@ -477,6 +496,16 @@ export function MarketingLanding() {
             >
               Privacy
             </Link>
+            <Link
+              href="/changelog"
+              className="min-h-10 inline-flex items-center underline underline-offset-2 hover:text-(--text) landing-focus-ring"
+            >
+              Changelog
+            </Link>
+            <CommunityDiscordLink
+              label="Discord"
+              className="min-h-10 underline underline-offset-2 hover:text-(--text) landing-focus-ring text-(--text-muted)"
+            />
           </div>
           <p className="text-center sm:text-left text-xs text-(--text-muted)">
             {SITE_NAME} · iptvwebplayer.org

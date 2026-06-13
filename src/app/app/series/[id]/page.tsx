@@ -11,6 +11,7 @@ import { proxiedCssBackground } from "@/lib/image-proxy";
 import {
   findSeriesResumeTarget,
   seriesEpisodeRecentMeta,
+  seriesEpisodeWatchState,
 } from "@/lib/continue-watching";
 import { MY_LIST_LABEL } from "@/lib/my-list";
 import { buildImageProxy, buildSeriesEpisodePlayUrl, xtream } from "@/lib/xtream";
@@ -27,7 +28,7 @@ import { VirtualEpisodeList } from "@/components/VirtualEpisodeList";
 import { GenreChips } from "@/components/GenreChips";
 import { seriesCatalogQueryOptions } from "@/lib/series-catalog-query";
 import { pickSimilarSeries } from "@/lib/similar-titles";
-import { ArrowLeft, Heart, Play, Star } from "lucide-react";
+import { ArrowLeft, Check, Heart, Play, Star } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useMemo, useState } from "react";
@@ -111,12 +112,6 @@ export default function SeriesDetail() {
   }, [info.data]);
 
   const [manualSeason, setManualSeason] = useState<string | null>(null);
-  const activeSeason = useMemo(() => {
-    if (manualSeason != null && seasons.includes(manualSeason)) {
-      return manualSeason;
-    }
-    return seasons[0] ?? null;
-  }, [manualSeason, seasons]);
 
   /** All seasons in order — used for next/previous episode in the player (like live channel flip). */
   const orderedEpisodes = useMemo(() => {
@@ -152,6 +147,35 @@ export default function SeriesDetail() {
       vodResumeSec
     );
   }, [accountKey, seriesId, orderedEpisodes, vodResumeSec]);
+
+  const resumeStreamId = resumeTarget
+    ? parseInt(resumeTarget.episode.id, 10)
+    : null;
+
+  const seasonsWithProgress = useMemo(() => {
+    if (!accountKey || seriesId == null) return new Set<string>();
+    const out = new Set<string>();
+    for (const { season, ep } of orderedEpisodes) {
+      const watch = seriesEpisodeWatchState(
+        accountKey,
+        seriesId,
+        ep,
+        vodResumeSec
+      );
+      if (watch.status === "in_progress") out.add(season);
+    }
+    return out;
+  }, [accountKey, seriesId, orderedEpisodes, vodResumeSec]);
+
+  const activeSeason = useMemo(() => {
+    if (manualSeason != null && seasons.includes(manualSeason)) {
+      return manualSeason;
+    }
+    if (resumeTarget && seasons.includes(resumeTarget.season)) {
+      return resumeTarget.season;
+    }
+    return seasons[0] ?? null;
+  }, [manualSeason, seasons, resumeTarget]);
 
   const episodePlaylist = useMemo((): PlayerPlaylist | null => {
     if (!creds || seriesId == null) return null;
@@ -386,8 +410,10 @@ export default function SeriesDetail() {
               >
                 <Play className="size-4 fill-white" />
                 {resumeTarget
-                  ? `Resume S${resumeTarget.season} · E${resumeTarget.episode.episode_num}`
-                  : "Play"}
+                  ? `Continue S${resumeTarget.season} · E${resumeTarget.episode.episode_num}`
+                  : orderedEpisodes[0]
+                    ? `Play S${orderedEpisodes[0].season} · E${orderedEpisodes[0].ep.episode_num}`
+                    : "Play"}
               </button>
             )}
             <button
@@ -428,7 +454,15 @@ export default function SeriesDetail() {
                   : "bg-(--bg-2) text-(--text-dim) hover:text-(--text) hover:bg-(--bg-3) border border-(--line)"
               )}
             >
-              Season {s}
+              <span className="inline-flex items-center gap-1.5">
+                Season {s}
+                {seasonsWithProgress.has(s) && activeSeason !== s && (
+                  <span
+                    className="size-1.5 rounded-full bg-(--danger)"
+                    aria-label="In progress"
+                  />
+                )}
+              </span>
             </button>
           ))}
         </div>
@@ -440,6 +474,20 @@ export default function SeriesDetail() {
             const extHint = vodContainerUiHint(ep.container_extension);
             const extLabel = normalizeContainerExt(ep.container_extension);
             const playUrl = buildSeriesEpisodePlayUrl(creds!, ep);
+            const watch =
+              accountKey && seriesId != null
+                ? seriesEpisodeWatchState(
+                    accountKey,
+                    seriesId,
+                    ep,
+                    vodResumeSec
+                  )
+                : null;
+            const epStreamId = parseInt(ep.id, 10);
+            const isResumeEpisode =
+              resumeStreamId != null &&
+              Number.isFinite(epStreamId) &&
+              epStreamId === resumeStreamId;
             const warmTranscode = () => {
               warmVodTranscodePlay(playUrl, { compatMse: tvBrowser });
             };
@@ -449,7 +497,12 @@ export default function SeriesDetail() {
                 onFocus={warmTranscode}
                 onMouseEnter={warmTranscode}
                 onClick={() => playEpisode(activeSeason!, ep)}
-                className="w-full text-left card p-3 flex items-center gap-4 hover:border-(--line-2) hover:bg-(--bg-3) transition-colors group"
+                className={cn(
+                  "w-full text-left card p-3 flex items-center gap-4 hover:border-(--line-2) hover:bg-(--bg-3) transition-colors group",
+                  isResumeEpisode &&
+                    "border-(--brand)/45 bg-(--brand)/5 ring-1 ring-(--brand)/25",
+                  watch?.status === "completed" && !isResumeEpisode && "opacity-90"
+                )}
               >
                 <div className="size-20 sm:size-28 shrink-0 rounded-lg overflow-hidden bg-(--bg-3) relative">
                   {/* CSS background-image: silently skips broken URLs, no red-box indicator.
@@ -470,6 +523,27 @@ export default function SeriesDetail() {
                       />
                     ) : null;
                   })()}
+                  {watch?.status === "completed" && (
+                    <div className="absolute top-1.5 left-1.5 size-6 rounded-full bg-black/55 grid place-items-center">
+                      <Check className="size-3.5 text-white" strokeWidth={2.5} />
+                    </div>
+                  )}
+                  {watch?.progressPct != null && watch.progressPct > 0 && (
+                    <div
+                      className="absolute bottom-0 left-0 right-0 h-1 bg-white/25"
+                      aria-hidden
+                    >
+                      <div
+                        className={cn(
+                          "h-full transition-[width] duration-300",
+                          watch.status === "completed"
+                            ? "bg-emerald-400/90"
+                            : "bg-(--danger)"
+                        )}
+                        style={{ width: `${watch.progressPct}%` }}
+                      />
+                    </div>
+                  )}
                   <div className="absolute inset-0 grid place-items-center bg-black/0 group-hover:bg-black/35 transition-colors">
                     <div className="size-9 rounded-full btn-brand grid place-items-center opacity-0 group-hover:opacity-100 transition-opacity">
                       <Play className="size-4 fill-white" />
@@ -481,6 +555,16 @@ export default function SeriesDetail() {
                     <div className="text-sm text-(--text-muted)">
                       Episode {ep.episode_num}
                     </div>
+                    {isResumeEpisode && (
+                      <span className="text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded-md bg-(--brand)/20 text-(--brand) border border-(--brand)/30">
+                        Resume
+                      </span>
+                    )}
+                    {watch?.status === "completed" && (
+                      <span className="text-[10px] font-medium uppercase tracking-wide px-1.5 py-0.5 rounded-md border border-emerald-500/35 text-emerald-200/90 bg-emerald-500/10">
+                        Watched
+                      </span>
+                    )}
                     <span
                       className={cn(
                         "text-[10px] font-medium uppercase tracking-wide px-1.5 py-0.5 rounded-md border shrink-0 tabular-nums",

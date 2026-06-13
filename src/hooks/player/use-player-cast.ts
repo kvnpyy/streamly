@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { CastMediaDescriptor } from "@/lib/cast-media-url";
+import { waitForCastPlaylistReady } from "@/lib/cast-media-url";
+import { resolveCastLiveHlsUrl } from "@/lib/cast-live-hls";
 import {
   CAST_SENDER_SCRIPT_SRC,
   shouldAttemptChromecastSenderLoad,
@@ -249,8 +251,28 @@ export function usePlayerCast({
         return;
       }
 
+      setCastActionMessage("Preparing stream for your TV…");
+      let playUrl = castMedia.url;
+      try {
+        if (castMedia.streamType === "live") {
+          playUrl = await resolveCastLiveHlsUrl(castMedia.url);
+        }
+        await waitForCastPlaylistReady(playUrl, { timeoutMs: 45_000 });
+      } catch (prepErr) {
+        const msg =
+          prepErr instanceof Error && prepErr.message
+            ? prepErr.message
+            : "Could not prepare stream for your TV.";
+        setCastActionMessage(
+          `${msg} Try again in a moment, or copy the stream URL for VLC on your TV.`
+        );
+        window.setTimeout(() => setCastActionMessage(null), 10_000);
+        return;
+      }
+      setCastActionMessage(null);
+
       const mediaInfo = new ChromeMedia.MediaInfo(
-        castMedia.url,
+        playUrl,
         castMedia.contentType
       ) as {
         streamType?: number;

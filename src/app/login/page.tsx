@@ -2,6 +2,7 @@
 
 import { StreamIdentityCard } from "@/components/StreamIdentityCard";
 import { BrandMark } from "@/components/BrandMark";
+import { CommunityDiscordLink } from "@/components/CommunityDiscordLink";
 import { UserContentDisclaimer } from "@/components/UserContentDisclaimer";
 import { useAuthBootstrapReady } from "@/components/AuthSessionBootstrap";
 import { useTvBrowser } from "@/components/TvBrowserProvider";
@@ -464,6 +465,10 @@ function LoginPageInner() {
             >
               Blog
             </Link>
+            <CommunityDiscordLink
+              label="Discord"
+              className="min-h-11 underline underline-offset-2 hover:text-(--text)"
+            />
           </div>
           <div className="flex items-center gap-2">
             <Sparkles className="size-3 text-(--brand-2)" />

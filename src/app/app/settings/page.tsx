@@ -1,6 +1,7 @@
 "use client";
 
 import { LiveCategorySortSection } from "@/components/LiveCategorySortSection";
+import { CommunityDiscordLink } from "@/components/CommunityDiscordLink";
 import { MarketingEmailPreferences } from "@/components/MarketingEmailPreferences";
 import { ProviderAccountsPanel } from "@/components/ProviderAccountsPanel";
 import { SectionHeader } from "@/components/SectionHeader";
@@ -159,6 +160,32 @@ export default function SettingsPage() {
       )}
 
       <section className="card p-5">
+        <h3 className="text-base font-semibold mb-2">Community</h3>
+        <p className="text-sm text-(--text-dim) mb-4 leading-relaxed">
+          Join the {SITE_NAME} Discord for setup help, release notes, and chat with
+          other users. Email is still best for account and privacy requests.
+        </p>
+        <div className="flex flex-wrap gap-2">
+          <CommunityDiscordLink
+            label="Join Discord"
+            className="min-h-11 px-4 rounded-lg bg-[#5865F2]/15 border border-[#5865F2]/35 hover:border-[#5865F2]/55 text-sm font-medium text-[#c7ceff]"
+          />
+          <a
+            href={feedbackFormUrlWithContext({
+              surface: "settings",
+              pathname,
+              tvBrowser: tv,
+            })}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="min-h-11 px-4 rounded-lg bg-(--bg-3) border border-(--line) hover:border-(--line-2) text-sm inline-flex items-center"
+          >
+            Send feedback
+          </a>
+        </div>
+      </section>
+
+      <section className="card p-5">
         <h3 className="text-base font-semibold mb-2">Legal</h3>
         <p className="text-sm text-(--text-dim) mb-4 leading-relaxed">
           How {SITE_NAME} describes hosting and data handling before you open the app to
@@ -177,18 +204,6 @@ export default function SettingsPage() {
           >
             Privacy Policy
           </Link>
-          <a
-            href={feedbackFormUrlWithContext({
-              surface: "settings",
-              pathname,
-              tvBrowser: tv,
-            })}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="min-h-11 px-4 rounded-lg bg-(--bg-3) border border-(--line) hover:border-(--line-2) text-sm inline-flex items-center"
-          >
-            Send feedback
-          </a>
         </div>
       </section>
 
@@ -201,6 +216,20 @@ export default function SettingsPage() {
           store IPTV credentials encrypted on this server; playback still talks to
           your provider through our proxy.
         </p>
+        <div className="mt-4 flex flex-wrap gap-2">
+          <Link
+            href="/changelog"
+            className="min-h-11 px-4 rounded-lg bg-(--bg-3) border border-(--line) hover:border-(--line-2) text-sm inline-flex items-center"
+          >
+            What&apos;s new
+          </Link>
+          <Link
+            href="/blog"
+            className="min-h-11 px-4 rounded-lg bg-(--bg-3) border border-(--line) hover:border-(--line-2) text-sm inline-flex items-center"
+          >
+            Guides &amp; blog
+          </Link>
+        </div>
         <UserContentDisclaimer className="mt-4" />
       </section>
     </div>

@@ -1,5 +1,6 @@
 import { BlogShell } from "@/components/blog/BlogShell";
 import { getAllBlogPosts } from "@/lib/blog/registry";
+import { formatChangelogVersion, getLatestChangelogEntry } from "@/lib/changelog";
 import { absoluteSiteUrl, SITE_NAME } from "@/lib/site-brand";
 import type { Metadata } from "next";
 import Link from "next/link";
@@ -24,6 +25,7 @@ export const metadata: Metadata = {
 
 export default function BlogIndexPage() {
   const posts = getAllBlogPosts();
+  const latest = getLatestChangelogEntry();
 
   return (
     <BlogShell backHref="/" backLabel="Home">
@@ -39,6 +41,15 @@ export default function BlogIndexPage() {
             Practical write-ups on self-hosting, playlist formats, and building a
             calm IPTV web player — from the person who actually maintains the
             code.
+          </p>
+          <p className="text-sm text-(--text-dim)">
+            Product updates:{" "}
+            <Link
+              href="/changelog"
+              className="text-(--brand-2) underline underline-offset-2"
+            >
+              What&apos;s new in {formatChangelogVersion(latest.version)}
+            </Link>
           </p>
         </header>
 

@@ -1,0 +1,49 @@
+# Streamly Discord — copy/paste pinned messages
+# Invite: https://discord.gg/QGFKJt9t7A
+
+=== PIN in #rules ===
+
+Welcome to the official Streamly community.
+
+1. Be respectful — no harassment, hate, or spam.
+2. Streamly is a player, not a provider. We don't sell channels or host copyrighted streams.
+3. Don't share illegal playlists, piracy links, or full Xtream credentials in public channels.
+4. For account, privacy, or legal issues, use email — not Discord DMs.
+5. No unsolicited DMs advertising providers or "free IPTV."
+6. Follow Discord's Terms of Service and Community Guidelines.
+
+By staying here you agree to these rules and our site Terms/Privacy:
+https://iptvwebplayer.org/legal/terms
+
+=== PIN in #announcements ===
+
+Streamly Discord is live — the official community for https://iptvwebplayer.org
+
+• #help — setup & troubleshooting (Xtream, M3U, TV browser)
+• #feedback — ideas for the player
+• #general — chat with other users
+
+We don't provide IPTV subscriptions. Bring your own provider.
+
+=== PIN in #help ===
+
+Before you ask — quick checks:
+
+1. Do you have an active subscription with your IPTV provider? Streamly can't fix expired panels.
+2. Xtream login: server URL (with http/https), username, password — same as your provider gave you.
+3. M3U: paste the full playlist URL your provider sent (often ends in .m3u or get.php?...).
+4. Streams won't play? Try another browser (Chrome vs Safari). Live HLS varies by provider.
+5. TV browser: use iptvwebplayer.org in the TV's browser, sign in, then pair if needed in Settings.
+
+Don't post your full password in public. Redact it or DM a mod if you must share details.
+
+Site: https://iptvwebplayer.org/login
+Settings (after login): https://iptvwebplayer.org/app/settings
+
+=== OPTIONAL welcome message (Server Settings → Community → Welcome) ===
+
+Welcome to Streamly Discord 👋
+
+This is the official community for the Streamly IPTV web player. Head to #help if you're connecting a playlist for the first time, or #general to say hi.
+
+Open the player: https://iptvwebplayer.org/login

@@ -65,4 +65,29 @@ describe("usePlayer flip", () => {
     expect(usePlayer.getState().current?.id).toBe(3);
     expect(usePlayer.getState().index).toBe(2);
   });
+
+  it("immediate flip advances series episodes by playback url", () => {
+    const ep1: PlayerSource = {
+      kind: "series",
+      id: 10,
+      streamId: 101,
+      title: "Show",
+      subtitle: "S1 · E1",
+      url: "http://x/ep1",
+    };
+    const ep2: PlayerSource = {
+      kind: "series",
+      id: 10,
+      streamId: 102,
+      title: "Show",
+      subtitle: "S1 · E2",
+      url: "http://x/ep2",
+    };
+    usePlayer
+      .getState()
+      .play(ep1, { playlist: { kind: "series", items: [ep1, ep2] } });
+    usePlayer.getState().flip(1, { immediate: true });
+    expect(usePlayer.getState().current?.streamId).toBe(102);
+    expect(usePlayer.getState().index).toBe(1);
+  });
 });

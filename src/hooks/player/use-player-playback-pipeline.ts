@@ -37,6 +37,7 @@ import { isAmazonSilkUserAgent, isTvClassUserAgent } from "@/lib/tv-user-agent";
 import { safeVideoPlay } from "@/lib/video-play";
 import {
   playbackUrlUsesVodTranscode,
+  releaseVodTranscodePlayback,
 } from "@/lib/vod-transcode-url";
 import {
   shouldPersistVodResume,
@@ -44,9 +45,12 @@ import {
   vodAbsoluteSec,
   vodResumeStorageKey,
 } from "@/lib/player-vod-resume";
+import { mapHlsAudioTracks } from "@/lib/player-audio-tracks";
+import { shouldTreatTranscodeAsEnded } from "@/lib/player-transcode-playback-end";
 import { browseAccountKey, usePrefs } from "@/store/preferences";
 import type { PlayerSource } from "@/store/player";
 import type { useHlsRuntime } from "@/hooks/use-hls-runtime";
+import type { PlayerAudioTrack } from "@/lib/player-audio-tracks";
 
 export type UsePlayerPlaybackPipelineParams = {
   open: boolean;
@@ -73,6 +77,7 @@ export type UsePlayerPlaybackPipelineParams = {
   livePlaybackErrorSuppressUntilRef: RefObject<number>;
   userChoseAutoHlsQualityRef: RefObject<boolean>;
   userTouchedHlsQualityRef: RefObject<boolean>;
+  userPickedAudioTrackRef: RefObject<boolean>;
   vodPrepKickRef: RefObject<AbortController | null>;
   vodSeekRestartTimerRef: RefObject<ReturnType<typeof setTimeout> | null>;
   stallTimer: RefObject<ReturnType<typeof setTimeout> | null>;
@@ -88,6 +93,8 @@ export type UsePlayerPlaybackPipelineParams = {
   setCurrentLevel: Dispatch<SetStateAction<number>>;
   setSubtitles: Dispatch<SetStateAction<{ id: number; label: string; lang?: string; source: "hls" | "native" }[]>>;
   setActiveSubtitle: Dispatch<SetStateAction<number>>;
+  setAudioTracks: Dispatch<SetStateAction<PlayerAudioTrack[]>>;
+  setActiveAudioTrack: Dispatch<SetStateAction<number>>;
   setLiveAudioNoPicture: Dispatch<SetStateAction<boolean>>;
   setLoading: Dispatch<SetStateAction<boolean>>;
   setVolume: Dispatch<SetStateAction<number>>;
@@ -127,6 +134,7 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
     livePlaybackErrorSuppressUntilRef,
     userChoseAutoHlsQualityRef,
     userTouchedHlsQualityRef,
+    userPickedAudioTrackRef,
     vodPrepKickRef,
     vodSeekRestartTimerRef,
     stallTimer,
@@ -142,6 +150,8 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
     setCurrentLevel,
     setSubtitles,
     setActiveSubtitle,
+    setAudioTracks,
+    setActiveAudioTrack,
     setLiveAudioNoPicture,
     setLoading,
     setVolume,
@@ -188,9 +198,12 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
     setCurrentLevel(-1);
     setSubtitles([]);
     setActiveSubtitle(-1);
+    setAudioTracks([]);
+    setActiveAudioTrack(-1);
     setLiveAudioNoPicture(false);
     userChoseAutoHlsQualityRef.current = false;
     userTouchedHlsQualityRef.current = false;
+    userPickedAudioTrackRef.current = false;
 
     let cancelled = false;
     fragLoadDowngradeRef.current = 0;
@@ -514,16 +527,14 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
               const body =
                 raw && !raw.startsWith("<") ? raw.slice(0, 240) : null;
               if (xhr.status === 503) {
-                surfacePlaybackError(
-                  body ||
-                    "Server is busy preparing other videos. Wait a minute, then try again."
-                );
-              } else {
-                surfacePlaybackError(
-                  body ||
-                    "Could not prepare this file for browser playback. If your IPTV plan allows only one stream, close other players and try again."
-                );
+                // Server is still encoding the first segment — keep prep UI, let hls.js retry.
+                setVodPrepProgress((p) => Math.min(92, Math.max(p, 20) + 3));
+                return;
               }
+              surfacePlaybackError(
+                body ||
+                  "Could not prepare this file for browser playback. If your IPTV plan allows only one stream, close other players and try again."
+              );
               return;
             }
             if (vodTranscodeHls && !reqUrl.includes("media=")) {
@@ -622,7 +633,12 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
 
       hls.on(Hls.Events.AUDIO_TRACKS_UPDATED, () => {
         if (cancelled) return;
-        preferBrowserFriendlyAudioTrack(hls);
+        const tracks = hls.audioTracks ?? [];
+        setAudioTracks(mapHlsAudioTracks(tracks));
+        if (!userPickedAudioTrackRef.current) {
+          preferBrowserFriendlyAudioTrack(hls);
+        }
+        setActiveAudioTrack(hls.audioTrack);
       });
 
       /**
@@ -649,7 +665,10 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
 
       hls.on(Hls.Events.AUDIO_TRACK_SWITCHED, () => {
         if (cancelled) return;
-        preferBrowserFriendlyAudioTrack(hls);
+        setActiveAudioTrack(hls.audioTrack);
+        if (!userPickedAudioTrackRef.current) {
+          preferBrowserFriendlyAudioTrack(hls);
+        }
       });
 
       hls.on(Hls.Events.LEVEL_SWITCHED, (_e, data) => {
@@ -1035,7 +1054,54 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
 
     stallTimer.current = setTimeout(runStallWatchdog, stallMs);
 
+    /** When the encode edge stalls, reload the growing manifest before the buffer runs dry. */
+    let transcodeEndSignaled = false;
+    const vodEdgeWatch =
+      vodTranscodeHls
+        ? window.setInterval(() => {
+            if (cancelled) return;
+            const vv = videoRef.current;
+            const hls = hlsRef.current;
+            if (!vv || !hls || vv.paused) return;
+
+            const durationSec = vodDurationHintRef.current;
+            const atFinale = shouldTreatTranscodeAsEnded({
+              video: vv,
+              startOffsetSec: vodStartOffsetRef.current,
+              durationSec,
+              encodedSecRel: vodEncodedSecRef.current,
+            });
+
+            if (atFinale) {
+              if (!transcodeEndSignaled) {
+                transcodeEndSignaled = true;
+                try {
+                  vv.pause();
+                } catch {
+                  /* noop */
+                }
+                vv.dispatchEvent(new Event("ended"));
+              }
+              return;
+            }
+
+            if (vv.ended) return;
+            let bufEnd = 0;
+            for (let bi = 0; bi < vv.buffered.length; bi++) {
+              bufEnd = Math.max(bufEnd, vv.buffered.end(bi));
+            }
+            const ahead = bufEnd - vv.currentTime;
+            if (ahead > 8) return;
+            try {
+              hls.startLoad(Math.max(0, vv.currentTime));
+            } catch {
+              /* noop */
+            }
+          }, 2500)
+        : null;
+
     return () => {
+      if (vodEdgeWatch != null) window.clearInterval(vodEdgeWatch);
       if (video && creds && current && current.kind !== "live") {
         const key = vodResumeStorageKey(browseAccountKey(creds), current);
         const activeUrl = vodPlaybackUrl ?? current.url;
@@ -1067,6 +1133,9 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
       }
       if (stallTimer.current) clearTimeout(stallTimer.current);
       cleanupHls();
+      if (vodTranscodeHls) {
+        releaseVodTranscodePlayback(url);
+      }
       try {
         video.pause();
         video.removeAttribute("src");
@@ -1103,6 +1172,7 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
     livePlaybackErrorSuppressUntilRef,
     userChoseAutoHlsQualityRef,
     userTouchedHlsQualityRef,
+    userPickedAudioTrackRef,
     vodPrepKickRef,
     vodSeekRestartTimerRef,
     stallTimer,
@@ -1118,6 +1188,8 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
     setCurrentLevel,
     setSubtitles,
     setActiveSubtitle,
+    setAudioTracks,
+    setActiveAudioTrack,
     setLiveAudioNoPicture,
     setLoading,
     setVolume,

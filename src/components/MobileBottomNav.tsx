@@ -70,7 +70,7 @@ export function MobileBottomNav() {
   return (
     <>
       <nav
-        className="md:hidden fixed bottom-0 inset-x-0 z-40 glass border-t border-(--line) pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-1.5 px-1"
+        className="lg:hidden fixed bottom-0 inset-x-0 z-40 glass border-t border-(--line) pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-1.5 px-1"
         aria-label="Main navigation"
       >
         <div className="flex items-stretch justify-around gap-0.5 max-w-lg mx-auto">
@@ -84,13 +84,13 @@ export function MobileBottomNav() {
                 key={href}
                 href={href}
                 className={cn(
-                  "flex flex-col items-center gap-0.5 min-w-0 flex-1 py-1.5 rounded-xl text-[10px] font-medium transition-colors",
+                  "flex flex-col items-center justify-center gap-1 min-w-0 flex-1 min-h-12 py-2 rounded-xl text-[10px] font-medium transition-colors",
                   active
                     ? "text-(--brand) bg-(--brand)/14 shadow-[inset_0_1px_0_rgba(255,255,255,0.07)]"
                     : "text-(--text-muted) active:bg-(--bg-2)"
                 )}
               >
-                <Icon className={cn("size-5 shrink-0", active && "stroke-[2.5px]")} />
+                <Icon className={cn("size-6 shrink-0", active && "stroke-[2.5px]")} />
                 <span className="truncate max-w-full px-0.5">{label.replace(" TV", "")}</span>
               </Link>
             );
@@ -103,7 +103,7 @@ export function MobileBottomNav() {
               setSheetOpen(true);
             }}
             className={cn(
-              "flex flex-col items-center gap-0.5 min-w-0 flex-1 py-1.5 rounded-xl text-[10px] font-medium transition-colors",
+              "flex flex-col items-center justify-center gap-1 min-w-0 flex-1 min-h-12 py-2 rounded-xl text-[10px] font-medium transition-colors",
               sheetOpen || MOBILE_NAV_MORE.some((x) => pathname.startsWith(x.href))
                 ? "text-(--brand) bg-(--brand)/14 shadow-[inset_0_1px_0_rgba(255,255,255,0.07)]"
                 : "text-(--text-muted) active:bg-(--bg-2)"
@@ -111,14 +111,14 @@ export function MobileBottomNav() {
             aria-expanded={sheetOpen}
             aria-haspopup="dialog"
           >
-            <Menu className="size-5 shrink-0" />
+            <Menu className="size-6 shrink-0" />
             <span className="truncate">More</span>
           </button>
         </div>
       </nav>
 
       {sheetOpen && (
-        <div className="md:hidden fixed inset-0 z-50" role="dialog" aria-modal="true">
+        <div className="lg:hidden fixed inset-0 z-50" role="dialog" aria-modal="true">
           <button
             type="button"
             className="absolute inset-0 bg-black/55 backdrop-blur-[2px]"

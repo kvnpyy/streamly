@@ -19,6 +19,12 @@ export default function sitemap(): MetadataRoute.Sitemap {
     { url: `${origin}/blog`, lastModified: last, changeFrequency: "weekly", priority: 0.75 },
     ...blogEntries,
     {
+      url: `${origin}/changelog`,
+      lastModified: last,
+      changeFrequency: "weekly",
+      priority: 0.65,
+    },
+    {
       url: `${origin}/legal/terms`,
       lastModified: last,
       changeFrequency: "yearly",

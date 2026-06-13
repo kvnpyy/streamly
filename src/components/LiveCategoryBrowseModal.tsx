@@ -12,6 +12,8 @@ type Props = {
   value: string | "all";
   onChange: (id: string | "all") => void;
   countById?: Record<string, number>;
+  title?: string;
+  subtitle?: string;
 };
 
 /**
@@ -25,6 +27,8 @@ export function LiveCategoryBrowseModal({
   value,
   onChange,
   countById,
+  title = "Browse categories",
+  subtitle = "Search and pick a group — same as the desktop sidebar",
 }: Props) {
   useEffect(() => {
     if (!open || typeof document === "undefined") return;
@@ -42,7 +46,7 @@ export function LiveCategoryBrowseModal({
       className="fixed inset-0 z-[80] flex items-end justify-center sm:items-center sm:p-4"
       role="dialog"
       aria-modal="true"
-      aria-label="Browse categories"
+      aria-label={title}
     >
       <button
         type="button"
@@ -55,12 +59,8 @@ export function LiveCategoryBrowseModal({
           <div className="flex items-center gap-2 min-w-0">
             <Layers className="size-4 text-(--brand-2) shrink-0" aria-hidden />
             <div className="min-w-0">
-              <div className="text-sm font-semibold text-(--text)">
-                Browse categories
-              </div>
-              <div className="text-[11px] text-(--text-muted)">
-                Search and pick a group — same as the desktop sidebar
-              </div>
+              <div className="text-sm font-semibold text-(--text)">{title}</div>
+              <div className="text-[11px] text-(--text-muted)">{subtitle}</div>
             </div>
           </div>
           <button

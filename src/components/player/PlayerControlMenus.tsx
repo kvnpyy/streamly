@@ -1,6 +1,11 @@
 "use client";
 
 import type { CastSenderUiState } from "@/hooks/player/use-player-cast";
+import type { PlayerAudioTrack } from "@/lib/player-audio-tracks";
+import {
+  PLAYBACK_SPEED_OPTIONS,
+  playbackSpeedLabel,
+} from "@/lib/player-playback-speed";
 import { cn } from "@/lib/utils";
 import { isChromiumBasedDesktopBrowser } from "@/lib/browser";
 import { hlsRenditionLabel } from "@/lib/live-hls-playback";
@@ -24,6 +29,7 @@ export type PlayerSubtitleTrack = {
 };
 
 export type PlayerControlMenusProps = {
+  isLive: boolean;
   hasSubtitles: boolean;
   showSubs: boolean;
   setShowSubs: React.Dispatch<React.SetStateAction<boolean>>;
@@ -34,6 +40,11 @@ export type PlayerControlMenusProps = {
   subtitles: PlayerSubtitleTrack[];
   activeSubtitle: number;
   onSwitchSubtitle: (id: number) => void;
+  audioTracks: PlayerAudioTrack[];
+  activeAudioTrack: number;
+  onSwitchAudioTrack: (id: number) => void;
+  playbackSpeed: number;
+  onSwitchPlaybackSpeed: (rate: number) => void;
   levels: Level[];
   currentLevel: number;
   qualityLabel: string;
@@ -49,6 +60,7 @@ export type PlayerControlMenusProps = {
 
 /** Subtitles, quality, and share/cast dropdowns — code-split from the main player chunk. */
 export function PlayerControlMenus({
+  isLive,
   hasSubtitles,
   showSubs,
   setShowSubs,
@@ -59,6 +71,11 @@ export function PlayerControlMenus({
   subtitles,
   activeSubtitle,
   onSwitchSubtitle,
+  audioTracks,
+  activeAudioTrack,
+  onSwitchAudioTrack,
+  playbackSpeed,
+  onSwitchPlaybackSpeed,
   levels,
   currentLevel,
   qualityLabel,
@@ -170,9 +187,68 @@ export function PlayerControlMenus({
               initial={{ opacity: 0, y: 6 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: 6 }}
-              className="absolute right-0 bottom-11 w-56 glass rounded-xl p-1.5 overflow-hidden max-h-72 overflow-y-auto"
+              className="absolute right-0 bottom-11 w-56 glass rounded-xl p-1.5 overflow-hidden max-h-80 overflow-y-auto"
             >
-              <div className="px-3 py-2 text-[11px] uppercase tracking-wider text-white/50">
+              {!isLive && (
+                <>
+                  <div className="px-3 py-2 text-[11px] uppercase tracking-wider text-white/50">
+                    Playback speed
+                  </div>
+                  {PLAYBACK_SPEED_OPTIONS.map((rate) => (
+                    <button
+                      key={rate}
+                      type="button"
+                      onClick={() => {
+                        onSwitchPlaybackSpeed(rate);
+                        setShowSettings(false);
+                      }}
+                      className={cn(
+                        "w-full text-left px-3 py-2 rounded-lg text-sm hover:bg-white/10 flex items-center justify-between",
+                        playbackSpeed === rate && "bg-white/10"
+                      )}
+                    >
+                      {playbackSpeedLabel(rate)}
+                      {playbackSpeed === rate && (
+                        <Check className="size-3.5" />
+                      )}
+                    </button>
+                  ))}
+                </>
+              )}
+              {audioTracks.length > 1 && (
+                <>
+                  <div className="px-3 py-2 text-[11px] uppercase tracking-wider text-white/50 border-t border-white/10 mt-1">
+                    Audio
+                  </div>
+                  {audioTracks.map((track) => (
+                    <button
+                      key={track.id}
+                      type="button"
+                      onClick={() => {
+                        onSwitchAudioTrack(track.id);
+                        setShowSettings(false);
+                      }}
+                      className={cn(
+                        "w-full text-left px-3 py-2 rounded-lg text-sm hover:bg-white/10 flex items-center justify-between",
+                        activeAudioTrack === track.id && "bg-white/10"
+                      )}
+                    >
+                      <span className="truncate">
+                        {track.label}
+                        {track.lang && (
+                          <span className="text-white/40 ml-1.5">
+                            {track.lang}
+                          </span>
+                        )}
+                      </span>
+                      {activeAudioTrack === track.id && (
+                        <Check className="size-3.5 shrink-0" />
+                      )}
+                    </button>
+                  ))}
+                </>
+              )}
+              <div className="px-3 py-2 text-[11px] uppercase tracking-wider text-white/50 border-t border-white/10 mt-1">
                 Quality
               </div>
               {levels.length > 1 &&

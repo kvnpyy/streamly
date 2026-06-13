@@ -163,6 +163,11 @@ export const LANDING_FAQ = [
     answer:
       "Yes. Docker on your own VPS if you want a self-hosted IPTV player. I posted my Compose setup on the blog. Or just use iptvwebplayer.org if you don't want to run it yourself.",
   },
+  {
+    question: "Is there a community or support chat?",
+    answer:
+      "Yes — join the official Streamly Discord (discord.gg/QGFKJt9t7A) for setup help, release notes, and feedback from other users. Email is still best for account, privacy, and legal requests. You can also find the invite in the site footer or Settings.",
+  },
 ] as const;
 
 export function buildLandingFaqJsonLd() {
