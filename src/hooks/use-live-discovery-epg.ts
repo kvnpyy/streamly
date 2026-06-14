@@ -269,7 +269,7 @@ export function useLiveDiscoveryEpg({
           setSnapshots(new Map(merged));
         }
 
-        if (livingRoom) await yieldToMain();
+        await yieldToMain();
       }
 
       if (!cancelled && cacheBatch.length > 0) {

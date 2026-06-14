@@ -38,3 +38,30 @@ export function voidSafeVideoPlay(
     onRejected?.(error);
   });
 }
+
+/**
+ * Pause and clear `<video src>` without calling `load()`.
+ * Sync `video.load()` after a broken HLS/MSE session can freeze Fire TV / Silk / some mobile WebViews.
+ */
+export function detachVideoElement(video: HTMLVideoElement): void {
+  try {
+    video.pause();
+  } catch {
+    /* noop */
+  }
+  try {
+    video.removeAttribute("src");
+  } catch {
+    /* noop */
+  }
+}
+
+/** Full reset when restarting playback inside the same overlay (Try again, seek restart). */
+export function resetVideoElement(video: HTMLVideoElement): void {
+  detachVideoElement(video);
+  try {
+    video.load();
+  } catch {
+    /* noop */
+  }
+}

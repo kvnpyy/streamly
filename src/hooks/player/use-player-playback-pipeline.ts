@@ -34,7 +34,7 @@ import {
 } from "@/lib/player-volume-pref";
 import { withLiveHlsCompatMse } from "@/lib/stream-url";
 import { isAmazonSilkUserAgent, isTvClassUserAgent } from "@/lib/tv-user-agent";
-import { safeVideoPlay } from "@/lib/video-play";
+import { detachVideoElement, safeVideoPlay } from "@/lib/video-play";
 import {
   playbackUrlUsesVodTranscode,
   releaseVodTranscodePlayback,
@@ -326,12 +326,7 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
         cancelled = true;
         if (stallTimer.current) clearTimeout(stallTimer.current);
         cleanupHls();
-        video.removeAttribute("src");
-        try {
-          video.load();
-        } catch {
-          /* noop */
-        }
+        detachVideoElement(video);
       };
     }
 
@@ -1136,13 +1131,7 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
       if (vodTranscodeHls) {
         releaseVodTranscodePlayback(url);
       }
-      try {
-        video.pause();
-        video.removeAttribute("src");
-        video.load();
-      } catch {
-        /* noop */
-      }
+      detachVideoElement(video);
     };
   }, [
     open,

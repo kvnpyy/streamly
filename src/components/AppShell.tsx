@@ -1,6 +1,7 @@
 "use client";
 
 import { AppVersionBadge } from "@/components/AppVersionBadge";
+import { BrowseMountGate } from "@/components/BrowseMountGate";
 import { MobileBottomNav } from "@/components/MobileBottomNav";
 import { Sidebar } from "@/components/Sidebar";
 import { StreamlyOnboardingConnect } from "@/components/StreamlyOnboardingConnect";
@@ -147,7 +148,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         <TvTopNav />
         <main className="flex-1 min-h-0 min-w-0 overflow-y-auto">
           <div className="w-full max-w-[1920px] mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6">
-            {!playerOpen ? children : null}
+            <BrowseMountGate frozen={playerOpen}>{children}</BrowseMountGate>
           </div>
         </main>
         <PlayerOverlay />
@@ -174,7 +175,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             isSearchPage ? "pt-1 pb-4 sm:pt-3 sm:pb-6" : "py-4 sm:py-6"
           )}
         >
-          {!playerOpen ? children : null}
+          <BrowseMountGate frozen={playerOpen}>{children}</BrowseMountGate>
         </div>
       </main>
       <MobileBottomNav />

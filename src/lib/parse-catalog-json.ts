@@ -2,7 +2,7 @@ import { yieldToMain } from "@/lib/yield-to-main";
 import type { CatalogParseWorkerOut } from "@/lib/workers/catalog-parse.worker";
 
 /** Payloads above this use a Web Worker when available. */
-const WORKER_PARSE_MIN_BYTES = 384_000;
+const WORKER_PARSE_MIN_BYTES = 128_000;
 
 let worker: Worker | null = null;
 let workerFailed = false;

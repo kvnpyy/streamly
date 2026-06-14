@@ -4,6 +4,7 @@ import {
   writeCatalogDisk,
 } from "@/lib/xtream-catalog-disk-cache";
 import { xtreamCatalogCacheControlHeader } from "@/lib/xtream-catalog-cache";
+import { slimSeriesCatalogBody } from "@/lib/slim-vod-catalog";
 import { fetchSeriesCatalogOnServer } from "@/lib/xtream-server-series-catalog";
 import type { SeriesCatalogBundle } from "@/lib/vod-catalog-bundle";
 import { NextRequest, NextResponse } from "next/server";
@@ -26,9 +27,14 @@ export async function GET(req: NextRequest) {
   }
 
   const diskKey = catalogDiskKey("series", creds);
+  const slim =
+    req.headers.get("x-series-catalog-slim") === "1" ||
+    req.nextUrl.searchParams.get("slim") === "1";
+
   const diskHit = await readCatalogDisk<SeriesCatalogBundle>(diskKey);
   if (diskHit) {
-    return NextResponse.json(diskHit, {
+    const body = slim ? slimSeriesCatalogBody(diskHit) : diskHit;
+    return NextResponse.json(body, {
       headers: {
         "Cache-Control": xtreamCatalogCacheControlHeader(),
         "X-Series-Catalog-Source": "disk",
@@ -41,7 +47,8 @@ export async function GET(req: NextRequest) {
       signal: req.signal,
     });
     void writeCatalogDisk(diskKey, bundle).catch(() => {});
-    return NextResponse.json(bundle, {
+    const body = slim ? slimSeriesCatalogBody(bundle) : bundle;
+    return NextResponse.json(body, {
       headers: {
         "Cache-Control": xtreamCatalogCacheControlHeader(),
         "X-Series-Catalog-Source": "upstream",

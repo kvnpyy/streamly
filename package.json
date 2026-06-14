@@ -1,6 +1,6 @@
 {
   "name": "iptv-player",
-  "version": "0.2.18",
+  "version": "0.2.23",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -22,6 +22,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:p0-clickthrough": "node scripts/p0-clickthrough.mjs",
+    "test:p0-vod-catalog": "node scripts/p0-vod-catalog-clickthrough.mjs",
     "test:qa-checklist": "node scripts/qa-device-checklist.mjs",
     "test:qa": "node scripts/qa-device-checklist.mjs --run-p0",
     "app:start": "bash scripts/run.sh start",

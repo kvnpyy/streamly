@@ -1,28 +1,35 @@
 "use client";
 
+import { CatalogGridLoadMore } from "@/components/CatalogGridLoadMore";
 import { ActiveCategoryFilterBar } from "@/components/ActiveCategoryFilterBar";
 import { VirtualMediaCatalogGrid } from "@/components/VirtualMediaCatalogGrid";
 import { DiscoveryShelf } from "@/components/DiscoveryShelf";
 import { MediaShelf } from "@/components/MediaShelf";
 import { useCatalogPageReady } from "@/hooks/use-catalog-page-ready";
-import { useSeriesDiscoveryShelves } from "@/hooks/use-vod-discovery-shelves";
-import { isDiscoveryShelvesEnabled } from "@/lib/discovery";
+import { isDiscoveryShelvesEnabled, DISCOVERY_SHELF_META } from "@/lib/discovery";
+import { attachSeriesDiscoveryShelfItems } from "@/lib/attach-discovery-shelf-items";
 import { VodGenreBar } from "@/components/VodGenreBar";
 import { MediaCard } from "@/components/MediaCard";
 import { SectionHeader, SkeletonGrid } from "@/components/SectionHeader";
-import { buildProviderGenreShelves } from "@/lib/vod-genre-discovery";
 import { useDebouncedValue } from "@/lib/use-debounce";
 import { useSlashFocusSearch } from "@/lib/use-slash-focus-search";
+import { looksAdult, parsePositiveRouteId } from "@/lib/utils";
+import { slimSeriesCatalogQueryOptions } from "@/lib/slim-series-catalog-query";
 import {
-  buildNameSearchIndex,
-  filterByNameQuery,
-} from "@/lib/name-search-index";
-import { looksAdult, parsePositiveRouteId, safeStr } from "@/lib/utils";
-import { seriesCatalogQueryOptions } from "@/lib/series-catalog-query";
+  catalogGridTotal,
+  catalogItemsNextPageParam,
+  fetchSeriesCatalogGridPage,
+  flattenCatalogPages,
+  seriesCatalogGridInfiniteKey,
+} from "@/lib/vod-catalog-infinite";
+import {
+  seriesItemsQueryOptions,
+} from "@/lib/series-catalog-items";
+import { seriesDiscoveryShelvesQueryOptions } from "@/lib/series-discovery-shelves-query";
 import type { SeriesItem, XtreamCredentials } from "@/lib/xtream-types";
 import { useAuth } from "@/store/auth";
 import { browseAccountKey, usePrefs } from "@/store/preferences";
-import { useQuery } from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import {
   CatalogSortToggle,
   catalogSortLabel,
@@ -31,12 +38,6 @@ import {
 import { shouldUseInstantCatalogGrid } from "@/lib/catalog-sort";
 import { useTvPresentation } from "@/lib/use-living-room-home-layout";
 import { scheduleWhenIdle } from "@/lib/defer-idle";
-import {
-  buildIdsByCategory,
-  buildItemByIdMap,
-  countByCategoryFromIndex,
-  pickItemsForCategory,
-} from "@/lib/vod-catalog-index";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   useCallback,
@@ -116,39 +117,26 @@ function SeriesPageInner({
   );
 
   const catalogReady = useCatalogPageReady();
-  const catalog = useQuery(seriesCatalogQueryOptions(creds, catalogReady));
+  const slimCatalog = useQuery(slimSeriesCatalogQueryOptions(creds, catalogReady));
 
   const cats = useMemo(
     () => ({
-      data: catalog.data?.categories,
-      isLoading: !catalogReady || catalog.isLoading,
-      isError: catalog.isError,
-      isFetched: catalog.isFetched,
+      data: slimCatalog.data?.categories,
+      isLoading: !catalogReady || slimCatalog.isLoading,
+      isError: slimCatalog.isError,
+      isFetched: slimCatalog.isFetched,
     }),
     [
-      catalog.data?.categories,
+      slimCatalog.data?.categories,
       catalogReady,
-      catalog.isLoading,
-      catalog.isError,
-      catalog.isFetched,
+      slimCatalog.isLoading,
+      slimCatalog.isError,
+      slimCatalog.isFetched,
     ]
   );
 
-  const items = useMemo(
-    () => ({
-      data: catalog.data?.streams,
-      isLoading: !catalogReady || catalog.isLoading,
-      isError: catalog.isError,
-      isFetched: catalog.isFetched,
-    }),
-    [
-      catalog.data?.streams,
-      catalogReady,
-      catalog.isLoading,
-      catalog.isError,
-      catalog.isFetched,
-    ]
-  );
+  const countById = slimCatalog.data?.countByCategoryId ?? {};
+  const catalogMetaReady = catalogReady && slimCatalog.isSuccess;
 
   const filteredCats = useMemo(() => {
     const list = cats.data || [];
@@ -190,86 +178,70 @@ function SeriesPageInner({
     });
   }, [fromUrlCategory, accountKey, setBrowsePref]);
 
-  const seriesCatalog = useMemo(() => {
-    const raw = (items.data || []).filter(
-      (s) => parsePositiveRouteId(s.series_id) != null
-    );
-    if (!raw.length) {
-      return {
-        filtered: [] as SeriesItem[],
-        byId: undefined as Map<number, SeriesItem> | undefined,
-        idsByCategory: undefined as Record<string, number[]> | undefined,
-        countById: {} as Record<string, number>,
-      };
-    }
-    let filtered = raw;
-    if (hideAdult && !parentalUnlocked) {
-      filtered = filtered.filter(
-        (s) =>
-          allowedCatIds.has(String(s.category_id)) &&
-          !looksAdult({ name: s.name })
-      );
-    }
-    const byId = buildItemByIdMap(filtered, (s) => parsePositiveRouteId(s.series_id)!);
-    const serverIndex = catalog.data?.idsByCategory;
-    const serverCounts = catalog.data?.countByCategoryId;
-    if (serverIndex && serverCounts) {
-      return {
-        filtered,
-        byId,
-        idsByCategory: serverIndex,
-        countById: serverCounts,
-      };
-    }
-    const idsByCategory = buildIdsByCategory(
-      filtered,
-      (s) => String(s.category_id),
-      (s) => parsePositiveRouteId(s.series_id)!
-    );
-    return {
-      filtered,
-      byId,
-      idsByCategory,
-      countById: countByCategoryFromIndex(idsByCategory),
-    };
-  }, [catalog.data, items.data, hideAdult, parentalUnlocked, allowedCatIds]);
-
-  const countById = seriesCatalog.countById;
-
-  const categoryStreams = useMemo(
-    () =>
-      selected === "all"
-        ? seriesCatalog.filtered
-        : pickItemsForCategory(
-            seriesCatalog.filtered,
-            selected,
-            seriesCatalog.idsByCategory,
-            seriesCatalog.byId
-          ),
-    [seriesCatalog, selected]
+  const gridParams = useMemo(
+    () => ({
+      categoryId: selected,
+      sort,
+      q: qFilter.trim() || undefined,
+    }),
+    [selected, sort, qFilter]
   );
 
-  const categoryNameIndex = useMemo(
-    () => buildNameSearchIndex(categoryStreams, (s) => s.name),
-    [categoryStreams]
-  );
+  const itemsPage = useInfiniteQuery({
+    queryKey: seriesCatalogGridInfiniteKey(creds, gridParams),
+    queryFn: ({ pageParam, signal }) =>
+      fetchSeriesCatalogGridPage(creds, gridParams, pageParam, signal),
+    initialPageParam: 0,
+    getNextPageParam: catalogItemsNextPageParam,
+    enabled: catalogMetaReady,
+    staleTime: 60_000,
+    gcTime: 120_000,
+    structuralSharing: false,
+    refetchOnWindowFocus: false,
+  });
 
   const visible = useMemo(() => {
-    let list = categoryStreams;
-    const f = qFilter.trim().toLowerCase();
-    if (f) list = filterByNameQuery(categoryNameIndex, f);
-    if (sort === "rating" || sort === "name") {
-      list = list.slice().sort((a, b) => {
-        if (sort === "rating") {
-          return (
-            (parseFloat(b.rating || "0") || 0) - (parseFloat(a.rating || "0") || 0)
-          );
-        }
-        return safeStr(a.name).localeCompare(safeStr(b.name));
-      });
-    }
-    return list;
-  }, [categoryStreams, categoryNameIndex, qFilter, sort]);
+    const list = flattenCatalogPages(itemsPage.data).filter(
+      (s): s is SeriesItem =>
+        typeof s === "object" &&
+        s != null &&
+        parsePositiveRouteId((s as SeriesItem).series_id) != null
+    );
+    if (!hideAdult || parentalUnlocked) return list;
+    return list.filter(
+      (s) =>
+        allowedCatIds.has(String(s.category_id)) &&
+        !looksAdult({ name: s.name })
+    );
+  }, [itemsPage.data, hideAdult, parentalUnlocked, allowedCatIds]);
+
+  const totalInView = catalogGridTotal(itemsPage.data) || visible.length;
+  const seriesLoading = !catalogMetaReady || itemsPage.isLoading;
+  const loadMoreSeries = useCallback(() => {
+    if (!itemsPage.hasNextPage || itemsPage.isFetchingNextPage) return;
+    void itemsPage.fetchNextPage();
+  }, [itemsPage]);
+
+  const recentSeriesIds = useMemo(
+    () =>
+      recents
+        .filter((r) => r.kind === "series")
+        .slice(0, 20)
+        .map((r) => r.id),
+    [recents]
+  );
+
+  const recentSeriesPage = useQuery(
+    seriesItemsQueryOptions(
+      creds,
+      {
+        categoryId: "all",
+        streamIds: recentSeriesIds,
+        limit: 20,
+      },
+      catalogMetaReady && recentSeriesIds.length > 0
+    )
+  );
 
   const selectedCategoryName = useMemo(() => {
     if (selected === "all") return "";
@@ -283,9 +255,11 @@ function SeriesPageInner({
   // ── Discovery shelves ──────────────────────────────────────────────────
 
   const recentSeriesItems = useMemo(() => {
-    const allSeries = items.data ?? [];
     const seriesById = new Map(
-      allSeries.map((s) => [parsePositiveRouteId(s.series_id), s])
+      (recentSeriesPage.data?.items ?? []).map((s) => [
+        parsePositiveRouteId(s.series_id),
+        s,
+      ])
     );
     return recents
       .filter((r) => r.kind === "series")
@@ -307,7 +281,7 @@ function SeriesPageInner({
         };
       })
       .filter((x): x is NonNullable<typeof x> => x !== null);
-  }, [recents, items.data, isFavorite, toggleFavorite]);
+  }, [recents, recentSeriesPage.data?.items, isFavorite, toggleFavorite]);
 
   const toggleFavoriteSeriesItem = useCallback(
     (s: SeriesItem, sid: number) => {
@@ -318,58 +292,74 @@ function SeriesPageInner({
 
   const discoveryOn = isDiscoveryShelvesEnabled();
 
+  const recentSeriesIdsForShelves = useMemo(
+    () =>
+      recents
+        .filter((r) => r.kind === "series")
+        .slice(0, 20)
+        .map((r) => r.id),
+    [recents]
+  );
+
+  const favoriteSeriesIds = useMemo(
+    () => favorites.filter((f) => f.kind === "series").map((f) => f.id),
+    [favorites]
+  );
+
   const [discoveryReady, setDiscoveryReady] = useState(false);
   useEffect(() => {
-    if (selected !== "all" || qFilter || items.isLoading || !discoveryOn) {
+    if (selected !== "all" || qFilter || slimCatalog.isLoading || !discoveryOn) {
       queueMicrotask(() => setDiscoveryReady(false));
       return;
     }
     return scheduleWhenIdle(() => setDiscoveryReady(true), 2_500);
-  }, [selected, qFilter, items.isLoading, discoveryOn]);
+  }, [selected, qFilter, slimCatalog.isLoading, discoveryOn]);
 
-  const discovery = useSeriesDiscoveryShelves(
-    discoveryReady ? items.data : undefined,
-    recents,
-    favorites,
-    {
-      hideAdult,
-      parentalUnlocked,
-      isFavorite,
-      toggleFavoriteSeries: toggleFavoriteSeriesItem,
-    }
-  );
-
-  const topRatedSeriesItems = discovery.topRated;
-  const newlyAddedSeriesItems = discovery.newlyAdded;
-
-  const genreShelves = useMemo(
-    () =>
+  const discoveryShelves = useQuery(
+    seriesDiscoveryShelvesQueryOptions(
+      creds,
+      {
+        hideAdult,
+        parentalUnlocked,
+        recentIds: recentSeriesIdsForShelves,
+        favoriteIds: favoriteSeriesIds,
+      },
       discoveryReady
-        ? buildProviderGenreShelves({
-            kind: "series",
-            categories: filteredCats,
-            countById,
-            streams: items.data ?? [],
-            allowedCatIds,
-            hideAdult,
-            parentalUnlocked,
-            isFavorite: (kind, id) => isFavorite(kind, id),
-            toggleFavorite,
-            maxShelves: 6,
-          })
-        : [],
-    [
-      discoveryReady,
-      filteredCats,
-      countById,
-      items.data,
-      allowedCatIds,
-      hideAdult,
-      parentalUnlocked,
-      isFavorite,
-      toggleFavorite,
-    ]
+    )
   );
+
+  const attachSeriesShelves = useCallback(
+    (items: Parameters<typeof attachSeriesDiscoveryShelfItems>[0]) =>
+      attachSeriesDiscoveryShelfItems(items, {
+        isFavorite: (id) => isFavorite("series", id),
+        toggleFavoriteSeries: toggleFavoriteSeriesItem,
+      }),
+    [isFavorite, toggleFavoriteSeriesItem]
+  );
+
+  const topRatedSeriesItems = useMemo(
+    () => attachSeriesShelves(discoveryShelves.data?.topRated ?? []),
+    [discoveryShelves.data?.topRated, attachSeriesShelves]
+  );
+  const newlyAddedSeriesItems = useMemo(
+    () => attachSeriesShelves(discoveryShelves.data?.newlyAdded ?? []),
+    [discoveryShelves.data?.newlyAdded, attachSeriesShelves]
+  );
+  const forYouSeriesItems = useMemo(
+    () => attachSeriesShelves(discoveryShelves.data?.forYou ?? []),
+    [discoveryShelves.data?.forYou, attachSeriesShelves]
+  );
+  const trendingSeriesItems = useMemo(
+    () => attachSeriesShelves(discoveryShelves.data?.trending ?? []),
+    [discoveryShelves.data?.trending, attachSeriesShelves]
+  );
+  const genreShelves = useMemo(() => {
+    const shelves = discoveryShelves.data?.genreShelves ?? [];
+    return shelves.map((shelf) => ({
+      ...shelf,
+      items: attachSeriesShelves(shelf.items),
+    }));
+  }, [discoveryShelves.data?.genreShelves, attachSeriesShelves]);
 
   const showDiscovery =
     discoveryReady &&
@@ -377,7 +367,7 @@ function SeriesPageInner({
     selected === "all" &&
     !qFilter &&
     sort === "added" &&
-    !items.isLoading;
+    !slimCatalog.isLoading;
 
   const tvPresentation = useTvPresentation();
   const tvShelfBrowse = tvPresentation && showDiscovery;
@@ -477,28 +467,28 @@ function SeriesPageInner({
               items={recentSeriesItems}
             />
           )}
-          {discoveryOn && discovery.forYou.length > 0 && (
+          {discoveryOn && forYouSeriesItems.length > 0 && (
             <DiscoveryShelf
-              meta={discovery.meta.vod_for_you_series}
-              items={discovery.forYou}
+              meta={DISCOVERY_SHELF_META.vod_for_you_series}
+              items={forYouSeriesItems}
             />
           )}
-          {discoveryOn && discovery.trending.length > 0 && (
+          {discoveryOn && trendingSeriesItems.length > 0 && (
             <DiscoveryShelf
-              meta={discovery.meta.vod_trending_series}
-              items={discovery.trending}
-              loading={discovery.trendingLoading}
+              meta={DISCOVERY_SHELF_META.vod_trending_series}
+              items={trendingSeriesItems}
+              loading={discoveryShelves.isLoading && trendingSeriesItems.length === 0}
             />
           )}
           {topRatedSeriesItems.length > 0 && (
             <DiscoveryShelf
-              meta={discovery.meta.vod_top_rated_series}
+              meta={DISCOVERY_SHELF_META.vod_top_rated_series}
               items={topRatedSeriesItems}
             />
           )}
           {newlyAddedSeriesItems.length > 0 && (
             <DiscoveryShelf
-              meta={discovery.meta.vod_new_series}
+              meta={DISCOVERY_SHELF_META.vod_new_series}
               items={newlyAddedSeriesItems}
             />
           )}
@@ -516,13 +506,13 @@ function SeriesPageInner({
       {selected !== "all" && (
         <ActiveCategoryFilterBar
           categoryName={selectedCategoryName || "Selected category"}
-          count={items.isLoading ? undefined : visible.length}
+          count={seriesLoading ? undefined : totalInView}
           countLabel="series in view"
           onClear={() => setCategory("all")}
         />
       )}
 
-      {items.isLoading ? (
+      {seriesLoading ? (
         <SkeletonGrid count={18} />
       ) : visible.length === 0 ? (
         <div className="card p-10 text-center text-(--text-muted)">
@@ -554,7 +544,7 @@ function SeriesPageInner({
             )}
           <VirtualMediaCatalogGrid
           items={displayVisible}
-          maxItems={400}
+          maxItems={displayVisible.length}
           itemKey={(s) => parsePositiveRouteId(s.series_id) ?? s.series_id}
           revision={gridRevision}
           renderItem={(s) => {
@@ -579,11 +569,14 @@ function SeriesPageInner({
             );
           }}
           footer={
-            visible.length > 600 ? (
-              <div className="text-center text-xs text-(--text-muted) py-3">
-                Showing first 600 of {visible.length}.
-              </div>
-            ) : null
+            <CatalogGridLoadMore
+              loaded={visible.length}
+              total={totalInView}
+              hasMore={Boolean(itemsPage.hasNextPage)}
+              loading={itemsPage.isFetchingNextPage}
+              onLoadMore={loadMoreSeries}
+              label="series"
+            />
           }
         />
           </div>

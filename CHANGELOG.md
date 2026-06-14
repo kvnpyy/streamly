@@ -7,6 +7,38 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+---
+
+## [0.2.23] — 2026-06-13
+
+### Changed
+- **Movies & Series grids** — initial load is 120 titles per request; “Show more” (and scroll) fetches additional pages from `/api/vod/items` and `/api/series/items` instead of pulling 600 rows up front.
+
+## [0.2.22] — 2026-06-13
+
+### Added
+- **Server discovery shelves** for Movies and Series — `/api/vod/discovery-shelves` and `/api/series/discovery-shelves` return pre-built shelf rows (top rated, newly added, for you, TMDB trending, genre rails).
+
+### Changed
+- **Movies & Series browse** — discovery rows no longer trigger a client-side 800-item catalog preview fetch; shelves are assembled on the VPS from the disk-cached bundle.
+
+## [0.2.21] — 2026-06-13
+
+### Added
+- **Slim VOD/series catalogs** — `/api/vod/catalog` and `/api/series/catalog` can return categories + counts only (`slim=1` or `x-*-catalog-slim: 1`).
+- **Paginated item APIs** — `/api/vod/items` and `/api/series/items` with category, search, sort, offset/limit, and id lookup.
+- **Movies & Series pages** — browse via slim catalog + server-paginated grids instead of shipping full provider catalogs to the browser.
+
+## [0.2.20] — 2026-06-13
+
+### Fixed
+- **Library / browse freezes on Chrome and desktop** — discovery EPG and catalog indexing no longer monopolize the main thread on initial load; VOD search indexes build lazily in chunks.
+
+## [0.2.19] — 2026-06-13
+
+### Fixed
+- **Player close freeze** on TV, Fire TV Silk, and some mobile/PC browsers — teardown no longer blocks the main thread; history cleanup and browse remount are deferred; exit control stays reachable when controls auto-hide.
+
 ## [0.2.18] — 2026-06-13
 
 Production release bundling P0–P3 UX parity, Discord/GA/changelog/blog work, and player improvements (autoplay next, cast, transcode).

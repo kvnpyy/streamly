@@ -1,30 +1,35 @@
 "use client";
 
+import { CatalogGridLoadMore } from "@/components/CatalogGridLoadMore";
 import { ActiveCategoryFilterBar } from "@/components/ActiveCategoryFilterBar";
 import { VirtualMediaCatalogGrid } from "@/components/VirtualMediaCatalogGrid";
 import { DiscoveryShelf } from "@/components/DiscoveryShelf";
 import { MediaShelf } from "@/components/MediaShelf";
 import { useCatalogPageReady } from "@/hooks/use-catalog-page-ready";
 import { useCatalogPlay } from "@/hooks/use-catalog-play";
-import { useMovieDiscoveryShelves } from "@/hooks/use-vod-discovery-shelves";
-import { isDiscoveryShelvesEnabled } from "@/lib/discovery";
+import { isDiscoveryShelvesEnabled, DISCOVERY_SHELF_META } from "@/lib/discovery";
+import { attachMovieDiscoveryShelfItems } from "@/lib/attach-discovery-shelf-items";
 import { VodGenreBar } from "@/components/VodGenreBar";
 import { MediaCard } from "@/components/MediaCard";
 import { SectionHeader, SkeletonGrid } from "@/components/SectionHeader";
-import { buildProviderGenreShelves } from "@/lib/vod-genre-discovery";
 import { parsePositiveRouteId } from "@/lib/utils";
 import { useDebouncedValue } from "@/lib/use-debounce";
 import { useSlashFocusSearch } from "@/lib/use-slash-focus-search";
+import { looksAdult } from "@/lib/utils";
+import { slimVodCatalogQueryOptions } from "@/lib/slim-vod-catalog-query";
 import {
-  buildNameSearchIndex,
-  filterByNameQuery,
-} from "@/lib/name-search-index";
-import { looksAdult, safeStr } from "@/lib/utils";
-import { vodCatalogQueryOptions } from "@/lib/vod-catalog-query";
+  catalogGridTotal,
+  catalogItemsNextPageParam,
+  fetchVodCatalogGridPage,
+  flattenVodItemsPages,
+  vodCatalogGridInfiniteKey,
+} from "@/lib/vod-catalog-infinite";
+import { vodItemsQueryOptions } from "@/lib/vod-catalog-items";
+import { vodDiscoveryShelvesQueryOptions } from "@/lib/vod-discovery-shelves-query";
 import type { VodStream, XtreamCredentials } from "@/lib/xtream-types";
 import { useAuth } from "@/store/auth";
 import { browseAccountKey, usePrefs } from "@/store/preferences";
-import { useQuery } from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import {
   CatalogSortToggle,
   catalogSortLabel,
@@ -33,12 +38,6 @@ import {
 import { shouldUseInstantCatalogGrid } from "@/lib/catalog-sort";
 import { useTvPresentation } from "@/lib/use-living-room-home-layout";
 import { scheduleWhenIdle } from "@/lib/defer-idle";
-import {
-  buildIdsByCategory,
-  buildItemByIdMap,
-  countByCategoryFromIndex,
-  pickItemsForCategory,
-} from "@/lib/vod-catalog-index";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   useCallback,
@@ -119,39 +118,27 @@ function MoviesPageInner({
   );
 
   const catalogReady = useCatalogPageReady();
-  const catalog = useQuery(vodCatalogQueryOptions(creds, catalogReady));
+  const slimCatalog = useQuery(slimVodCatalogQueryOptions(creds, catalogReady));
 
   const cats = useMemo(
     () => ({
-      data: catalog.data?.categories,
-      isLoading: !catalogReady || catalog.isLoading,
-      isError: catalog.isError,
-      isFetched: catalog.isFetched,
+      data: slimCatalog.data?.categories,
+      isLoading: !catalogReady || slimCatalog.isLoading,
+      isError: slimCatalog.isError,
+      isFetched: slimCatalog.isFetched,
     }),
     [
-      catalog.data?.categories,
+      slimCatalog.data?.categories,
       catalogReady,
-      catalog.isLoading,
-      catalog.isError,
-      catalog.isFetched,
+      slimCatalog.isLoading,
+      slimCatalog.isError,
+      slimCatalog.isFetched,
     ]
   );
 
-  const movies = useMemo(
-    () => ({
-      data: catalog.data?.streams,
-      isLoading: !catalogReady || catalog.isLoading,
-      isError: catalog.isError,
-      isFetched: catalog.isFetched,
-    }),
-    [
-      catalog.data?.streams,
-      catalogReady,
-      catalog.isLoading,
-      catalog.isError,
-      catalog.isFetched,
-    ]
-  );
+  const countById = slimCatalog.data?.countByCategoryId ?? {};
+
+  const catalogMetaReady = catalogReady && slimCatalog.isSuccess;
 
   const filteredCats = useMemo(() => {
     const list = cats.data || [];
@@ -193,93 +180,72 @@ function MoviesPageInner({
     });
   }, [fromUrlCategory, accountKey, setBrowsePref]);
 
-  const vodCatalog = useMemo(() => {
-    const raw = movies.data || [];
-    if (!raw.length) {
-      return {
-        filtered: [] as VodStream[],
-        byId: undefined as Map<number, VodStream> | undefined,
-        idsByCategory: undefined as Record<string, number[]> | undefined,
-        countById: {} as Record<string, number>,
-      };
-    }
-    let filtered = raw;
-    if (hideAdult && !parentalUnlocked) {
-      filtered = filtered.filter(
-        (s) =>
-          allowedCatIds.has(String(s.category_id)) &&
-          !looksAdult({ name: s.name, is_adult: s.is_adult })
-      );
-    }
-    const byId = buildItemByIdMap(filtered, (s) => s.stream_id);
-    const serverIndex = catalog.data?.idsByCategory;
-    const serverCounts = catalog.data?.countByCategoryId;
-    if (serverIndex && serverCounts) {
-      return {
-        filtered,
-        byId,
-        idsByCategory: serverIndex,
-        countById: serverCounts,
-      };
-    }
-    const idsByCategory = buildIdsByCategory(
-      filtered,
-      (s) => String(s.category_id),
-      (s) => s.stream_id
-    );
-    return {
-      filtered,
-      byId,
-      idsByCategory,
-      countById: countByCategoryFromIndex(idsByCategory),
-    };
-  }, [catalog.data, movies.data, hideAdult, parentalUnlocked, allowedCatIds]);
-
-  const countById = vodCatalog.countById;
-
-  const categoryStreams = useMemo(
-    () =>
-      selected === "all"
-        ? vodCatalog.filtered
-        : pickItemsForCategory(
-            vodCatalog.filtered,
-            selected,
-            vodCatalog.idsByCategory,
-            vodCatalog.byId
-          ),
-    [vodCatalog, selected]
+  const gridParams = useMemo(
+    () => ({
+      categoryId: selected,
+      sort,
+      q: qFilter.trim() || undefined,
+    }),
+    [selected, sort, qFilter]
   );
 
-  const categoryNameIndex = useMemo(
-    () => buildNameSearchIndex(categoryStreams, (s) => s.name),
-    [categoryStreams]
-  );
+  const itemsPage = useInfiniteQuery({
+    queryKey: vodCatalogGridInfiniteKey(creds, gridParams),
+    queryFn: ({ pageParam, signal }) =>
+      fetchVodCatalogGridPage(creds, gridParams, pageParam, signal),
+    initialPageParam: 0,
+    getNextPageParam: catalogItemsNextPageParam,
+    enabled: catalogMetaReady,
+    staleTime: 60_000,
+    gcTime: 120_000,
+    structuralSharing: false,
+    refetchOnWindowFocus: false,
+  });
 
   const visible = useMemo(() => {
-    let list = categoryStreams;
-    const f = qFilter.trim().toLowerCase();
-    if (f) list = filterByNameQuery(categoryNameIndex, f);
-    if (sort === "rating" || sort === "name") {
-      list = list.slice().sort((a, b) => {
-        if (sort === "rating") {
-          return (
-            (parseFloat(b.rating || "0") || 0) - (parseFloat(a.rating || "0") || 0)
-          );
-        }
-        return safeStr(a.name).localeCompare(safeStr(b.name));
-      });
-    }
-    /* sort === "added": keep panel order (avoids O(n log n) on huge catalogs). */
-    return list;
-  }, [categoryStreams, categoryNameIndex, qFilter, sort]);
+    const list = flattenVodItemsPages(itemsPage.data);
+    if (!hideAdult || parentalUnlocked) return list;
+    return list.filter(
+      (s) =>
+        allowedCatIds.has(String(s.category_id)) &&
+        !looksAdult({ name: s.name, is_adult: s.is_adult })
+    );
+  }, [itemsPage.data, hideAdult, parentalUnlocked, allowedCatIds]);
+
+  const totalInView = catalogGridTotal(itemsPage.data) || visible.length;
+  const moviesLoading = !catalogMetaReady || itemsPage.isLoading;
+  const loadMoreMovies = useCallback(() => {
+    if (!itemsPage.hasNextPage || itemsPage.isFetchingNextPage) return;
+    void itemsPage.fetchNextPage();
+  }, [itemsPage]);
+
+  const recentMovieIds = useMemo(
+    () =>
+      recents
+        .filter((r) => r.kind === "movie")
+        .slice(0, 20)
+        .map((r) => r.id),
+    [recents]
+  );
+
+  const recentMoviesPage = useQuery(
+    vodItemsQueryOptions(
+      creds,
+      {
+        categoryId: "all",
+        streamIds: recentMovieIds,
+        limit: 20,
+      },
+      catalogMetaReady && recentMovieIds.length > 0
+    )
+  );
 
   // ── Discovery shelves ───────────────────────────────────────────────────
 
   /** Recently watched movies (from persisted recents store). */
   const recentMovieItems = useMemo(() => {
-    const allMovies = movies.data ?? [];
     const movieById = new Map(
-      allMovies.map((m) => [parsePositiveRouteId(m.stream_id), m])
+      (recentMoviesPage.data?.items ?? []).map((m) => [m.stream_id, m])
     );
     return recents
       .filter((r) => r.kind === "movie")
@@ -301,7 +267,7 @@ function MoviesPageInner({
         };
       })
       .filter((x): x is NonNullable<typeof x> => x !== null);
-  }, [recents, movies.data, isFavorite, toggleFavorite]);
+  }, [recents, recentMoviesPage.data?.items, isFavorite, toggleFavorite]);
 
   const toggleFavoriteMovie = useCallback(
     (m: VodStream, mid: number) => {
@@ -312,75 +278,84 @@ function MoviesPageInner({
 
   const discoveryOn = isDiscoveryShelvesEnabled();
 
+  const recentMovieIdsForShelves = useMemo(
+    () =>
+      recents
+        .filter((r) => r.kind === "movie")
+        .slice(0, 20)
+        .map((r) => r.id),
+    [recents]
+  );
+
+  const favoriteMovieIds = useMemo(
+    () => favorites.filter((f) => f.kind === "movie").map((f) => f.id),
+    [favorites]
+  );
+
   const [discoveryReady, setDiscoveryReady] = useState(false);
   useEffect(() => {
-    if (selected !== "all" || qFilter || movies.isLoading || !discoveryOn) {
+    if (selected !== "all" || qFilter || slimCatalog.isLoading || !discoveryOn) {
       queueMicrotask(() => setDiscoveryReady(false));
       return;
     }
     return scheduleWhenIdle(() => setDiscoveryReady(true), 2_500);
-  }, [selected, qFilter, movies.isLoading, discoveryOn]);
+  }, [selected, qFilter, slimCatalog.isLoading, discoveryOn]);
 
-  const discovery = useMovieDiscoveryShelves(
-    discoveryReady ? movies.data : undefined,
-    recents,
-    favorites,
-    {
-      hideAdult,
-      parentalUnlocked,
-      isFavorite,
-      toggleFavoriteMovie,
-    }
+  const discoveryShelves = useQuery(
+    vodDiscoveryShelvesQueryOptions(
+      creds,
+      {
+        hideAdult,
+        parentalUnlocked,
+        recentIds: recentMovieIdsForShelves,
+        favoriteIds: favoriteMovieIds,
+      },
+      discoveryReady
+    )
+  );
+
+  const attachMovieShelves = useCallback(
+    (items: Parameters<typeof attachMovieDiscoveryShelfItems>[0]) =>
+      attachMovieDiscoveryShelfItems(items, {
+        isFavorite: (id) => isFavorite("movie", id),
+        toggleFavoriteMovie,
+        playMovie,
+      }),
+    [isFavorite, toggleFavoriteMovie, playMovie]
   );
 
   const topRatedItems = useMemo(
-    () => enrichMovieShelfItems(discovery.topRated, movies.data),
-    [discovery.topRated, movies.data, enrichMovieShelfItems]
+    () => attachMovieShelves(discoveryShelves.data?.topRated ?? []),
+    [discoveryShelves.data?.topRated, attachMovieShelves]
   );
   const newlyAddedItems = useMemo(
-    () => enrichMovieShelfItems(discovery.newlyAdded, movies.data),
-    [discovery.newlyAdded, movies.data, enrichMovieShelfItems]
+    () => attachMovieShelves(discoveryShelves.data?.newlyAdded ?? []),
+    [discoveryShelves.data?.newlyAdded, attachMovieShelves]
   );
   const forYouItems = useMemo(
-    () => enrichMovieShelfItems(discovery.forYou, movies.data),
-    [discovery.forYou, movies.data, enrichMovieShelfItems]
+    () => attachMovieShelves(discoveryShelves.data?.forYou ?? []),
+    [discoveryShelves.data?.forYou, attachMovieShelves]
   );
   const trendingItems = useMemo(
-    () => enrichMovieShelfItems(discovery.trending, movies.data),
-    [discovery.trending, movies.data, enrichMovieShelfItems]
+    () => attachMovieShelves(discoveryShelves.data?.trending ?? []),
+    [discoveryShelves.data?.trending, attachMovieShelves]
   );
-  const playableRecentMovies = useMemo(
-    () => enrichMovieShelfItems(recentMovieItems, movies.data),
-    [recentMovieItems, movies.data, enrichMovieShelfItems]
+  const genreShelves = useMemo(() => {
+    const shelves = discoveryShelves.data?.genreShelves ?? [];
+    return shelves.map((shelf) => ({
+      ...shelf,
+      items: attachMovieShelves(shelf.items),
+    }));
+  }, [discoveryShelves.data?.genreShelves, attachMovieShelves]);
+
+  const recentLookupList = useMemo(
+    () => recentMoviesPage.data?.items ?? [],
+    [recentMoviesPage.data?.items]
   );
 
-  const genreShelves = useMemo(
-    () =>
-      discoveryReady
-        ? buildProviderGenreShelves({
-            kind: "movie",
-            categories: filteredCats,
-            countById,
-            streams: movies.data ?? [],
-            allowedCatIds,
-            hideAdult,
-            parentalUnlocked,
-            isFavorite: (kind, id) => isFavorite(kind, id),
-            toggleFavorite,
-            maxShelves: 6,
-          })
-        : [],
-    [
-      discoveryReady,
-      filteredCats,
-      countById,
-      movies.data,
-      allowedCatIds,
-      hideAdult,
-      parentalUnlocked,
-      isFavorite,
-      toggleFavorite,
-    ]
+  const playableRecentMovies = useMemo(
+    () => enrichMovieShelfItems(recentMovieItems, recentLookupList),
+    [recentMovieItems, recentLookupList, enrichMovieShelfItems]
   );
 
   const showDiscovery =
@@ -389,7 +364,7 @@ function MoviesPageInner({
     selected === "all" &&
     !qFilter &&
     sort === "added" &&
-    !movies.isLoading;
+    !slimCatalog.isLoading;
 
   const tvPresentation = useTvPresentation();
   const tvShelfBrowse = tvPresentation && showDiscovery;
@@ -501,26 +476,26 @@ function MoviesPageInner({
           )}
           {discoveryOn && forYouItems.length > 0 && (
             <DiscoveryShelf
-              meta={discovery.meta.vod_for_you_movies}
+              meta={DISCOVERY_SHELF_META.vod_for_you_movies}
               items={forYouItems}
             />
           )}
           {discoveryOn && trendingItems.length > 0 && (
             <DiscoveryShelf
-              meta={discovery.meta.vod_trending_movies}
+              meta={DISCOVERY_SHELF_META.vod_trending_movies}
               items={trendingItems}
-              loading={discovery.trendingLoading}
+              loading={discoveryShelves.isLoading && trendingItems.length === 0}
             />
           )}
           {topRatedItems.length > 0 && (
             <DiscoveryShelf
-              meta={discovery.meta.vod_top_rated_movies}
+              meta={DISCOVERY_SHELF_META.vod_top_rated_movies}
               items={topRatedItems}
             />
           )}
           {newlyAddedItems.length > 0 && (
             <DiscoveryShelf
-              meta={discovery.meta.vod_new_movies}
+              meta={DISCOVERY_SHELF_META.vod_new_movies}
               items={newlyAddedItems}
             />
           )}
@@ -528,7 +503,7 @@ function MoviesPageInner({
             <MediaShelf
               key={shelf.categoryId}
               title={shelf.title}
-              items={enrichMovieShelfItems(shelf.items, movies.data)}
+              items={shelf.items}
               seeAllHref={`/app/movies?category=${encodeURIComponent(shelf.categoryId)}`}
             />
           ))}
@@ -538,7 +513,7 @@ function MoviesPageInner({
       {selected !== "all" && (
         <ActiveCategoryFilterBar
           categoryName={selectedCategoryName || "Selected category"}
-          count={movies.isLoading ? undefined : visible.length}
+          count={moviesLoading ? undefined : totalInView}
           countLabel={
             visible.length === 1 ? "movie in view" : "movies in view"
           }
@@ -546,7 +521,7 @@ function MoviesPageInner({
         />
       )}
 
-      {movies.isLoading ? (
+      {moviesLoading ? (
         <SkeletonGrid count={18} />
       ) : visible.length === 0 ? (
         <div className="card p-10 text-center text-(--text-muted)">
@@ -578,7 +553,7 @@ function MoviesPageInner({
             )}
           <VirtualMediaCatalogGrid
           items={displayVisible}
-          maxItems={400}
+          maxItems={displayVisible.length}
           itemKey={(m) => m.stream_id}
           revision={gridRevision}
           renderItem={(m) => {
@@ -604,11 +579,14 @@ function MoviesPageInner({
             );
           }}
           footer={
-            visible.length > 600 ? (
-              <div className="text-center text-xs text-(--text-muted) py-3">
-                Showing first 600 of {visible.length}. Filter to see more.
-              </div>
-            ) : null
+            <CatalogGridLoadMore
+              loaded={visible.length}
+              total={totalInView}
+              hasMore={Boolean(itemsPage.hasNextPage)}
+              loading={itemsPage.isFetchingNextPage}
+              onLoadMore={loadMoreMovies}
+              label={visible.length === 1 ? "movie" : "movies"}
+            />
           }
         />
           </div>

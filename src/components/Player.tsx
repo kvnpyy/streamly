@@ -73,7 +73,7 @@ import {
 } from "@/lib/picture-in-picture";
 import { playbackBreadcrumb } from "@/lib/playback-telemetry";
 import { withLiveHlsCompatMse } from "@/lib/stream-url";
-import { safeVideoPlay, voidSafeVideoPlay } from "@/lib/video-play";
+import { detachVideoElement, resetVideoElement, safeVideoPlay, voidSafeVideoPlay } from "@/lib/video-play";
 import { isAmazonSilkUserAgent } from "@/lib/tv-user-agent";
 import {
   isPlayPauseShortcutKey,
@@ -326,6 +326,8 @@ export function PlayerOverlay() {
   /** Live: Safari sometimes decodes audio but paints no picture (poster glitch, audio-only variant, or codec/compositor edge case). */
   const [liveAudioNoPicture, setLiveAudioNoPicture] = useState(false);
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** True while our sentinel `history.pushState` entry is active (hardware Back vs X close). */
+  const playerHistoryActiveRef = useRef(false);
   /** Hide timer must read latest playback/panel state — stale `isPlaying` in closures kept TV controls visible during series. */
   const isPlayingRef = useRef(isPlaying);
   const playerPanelsOpenRef = useRef(false);
@@ -628,8 +630,7 @@ export function PlayerOverlay() {
             hlsRef.current = null;
           }
           v.pause();
-          v.removeAttribute("src");
-          v.load();
+          detachVideoElement(v);
         } catch {
           /* noop */
         }
@@ -681,9 +682,7 @@ export function PlayerOverlay() {
           hlsRef.current.destroy();
           hlsRef.current = null;
         }
-        v.pause();
-        v.removeAttribute("src");
-        v.load();
+        resetVideoElement(v);
       } catch {
         /* noop */
       }
@@ -1426,6 +1425,16 @@ export function PlayerOverlay() {
     v.playbackRate = playbackSpeed;
   }, [open, current?.url, playbackSpeed]);
 
+  const requestClose = useCallback(() => {
+    if (hideTimer.current) clearTimeout(hideTimer.current);
+    setShowSettings(false);
+    setShowSubs(false);
+    setShowShare(false);
+    setShowEpg(false);
+    setShowControls(true);
+    close();
+  }, [close]);
+
   const controlsHideDelayMs =
     tvBrowser || silkLikeClient ? 22_000 : 3000;
 
@@ -1622,10 +1631,14 @@ export function PlayerOverlay() {
             return;
           }
         }
-        // Don't preventDefault for Backspace when not fullscreen — let the
-        // browser handle history.back() naturally (TV hardware Back button).
         if (e.key === "Escape") {
-          close();
+          e.preventDefault();
+          requestClose();
+          return;
+        }
+        if (e.key === "BrowserBack" || e.key === "GoBack") {
+          e.preventDefault();
+          requestClose();
         }
         return;
       }
@@ -1704,7 +1717,7 @@ export function PlayerOverlay() {
     return () => window.removeEventListener("keydown", onKey);
   }, [
     open,
-    close,
+    requestClose,
     togglePlay,
     seek,
     setMute,
@@ -1728,32 +1741,42 @@ export function PlayerOverlay() {
    */
   useEffect(() => {
     if (!open) return;
-    // Push a sentinel history entry so the first Back press comes to us.
+    playerHistoryActiveRef.current = true;
     window.history.pushState({ playerOpen: true }, "");
     const onPopState = () => {
       if (document.fullscreenElement) {
         void document.exitFullscreen().catch(() => {});
-        // Re-push so a second Back press still closes the player.
         window.history.pushState({ playerOpen: true }, "");
+        playerHistoryActiveRef.current = true;
         return;
       }
       const vid = videoRef.current as VideoWebKit | null;
       if (isFsRef.current && vid) {
         try { vid.webkitExitFullscreen?.(); } catch { /* noop */ }
         window.history.pushState({ playerOpen: true }, "");
+        playerHistoryActiveRef.current = true;
         return;
       }
-      close();
+      playerHistoryActiveRef.current = false;
+      requestClose();
     };
     window.addEventListener("popstate", onPopState);
     return () => {
       window.removeEventListener("popstate", onPopState);
-      // Clean up the sentinel history entry if we pushed it.
-      if (window.history.state?.playerOpen) {
-        window.history.back();
+      if (playerHistoryActiveRef.current && window.history.state?.playerOpen) {
+        playerHistoryActiveRef.current = false;
+        window.setTimeout(() => {
+          try {
+            if (window.history.state?.playerOpen) {
+              window.history.back();
+            }
+          } catch {
+            /* noop */
+          }
+        }, 0);
       }
     };
-  }, [open, close]);
+  }, [open, requestClose]);
 
   const effectiveVodDuration = isLive
     ? 0
@@ -1842,8 +1865,7 @@ export function PlayerOverlay() {
         return;
       }
       el.pause();
-      el.removeAttribute("src");
-      el.load();
+      detachVideoElement(el);
       el.src = url;
       voidSafeVideoPlay(el);
     } catch {
@@ -1890,9 +1912,7 @@ export function PlayerOverlay() {
       liveTryAgainStrikeRef.current = 0;
       if (el) {
         try {
-          el.pause();
-          el.removeAttribute("src");
-          el.load();
+          resetVideoElement(el);
         } catch {
           /* noop */
         }
@@ -2071,6 +2091,26 @@ export function PlayerOverlay() {
               )}
             />
 
+            {(livingRoomPlayback || mobileLikeViewport) && !showControls && (
+              <button
+                type="button"
+                onPointerUp={(e) => {
+                  if (e.button !== 0) return;
+                  e.stopPropagation();
+                  requestClose();
+                }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  requestClose();
+                }}
+                aria-label="Close player"
+                title="Close"
+                className="absolute top-4 right-4 z-[25] size-11 grid place-items-center rounded-xl bg-black/55 border border-white/15 text-white hover:bg-black/70 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/80"
+              >
+                <X className="size-5" />
+              </button>
+            )}
+
             <VodPrepareOverlay
               visible={showVodPrepare}
               title={current.title}
@@ -2181,6 +2221,7 @@ export function PlayerOverlay() {
                 hasDirectUrl={!!directUrl}
                 onTryAgain={() => recoverPlaybackFromError()}
                 onCopyUrl={() => void copyDirectUrl()}
+                onClose={requestClose}
               />
             )}
 
@@ -2236,7 +2277,8 @@ export function PlayerOverlay() {
                       </button>
                     ) : null}
                     <button
-                      onClick={close}
+                      type="button"
+                      onClick={requestClose}
                       className="px-4 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-white text-sm"
                     >
                       Close
@@ -2367,7 +2409,10 @@ export function PlayerOverlay() {
                       </button>
                     )}
                     <button
-                      onClick={close}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        requestClose();
+                      }}
                       aria-label="Close"
                       className="size-9 grid place-items-center rounded-lg bg-white/10 hover:bg-white/20 text-white"
                     >

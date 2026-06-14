@@ -11,6 +11,56 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.2.23",
+    date: "2026-06-13",
+    summary: "Paginated Movies and Series grids — 120 titles per page with load more.",
+    highlights: [
+      "Catalog grids fetch 120 items at a time instead of 600 on first paint.",
+      "Show more button and scroll sentinel load the next page from the VPS.",
+      "Virtual grid renders all loaded pages without the old 400-item display cap.",
+    ],
+  },
+  {
+    version: "0.2.22",
+    date: "2026-06-13",
+    summary: "Server-built Movies and Series discovery shelves — no 800-item preview fetch.",
+    highlights: [
+      "New /api/vod/discovery-shelves and /api/series/discovery-shelves build top rated, new, for-you, trending, and genre rails on the VPS.",
+      "TMDB trending matching runs server-side from the cached catalog bundle.",
+      "Movies and Series pages no longer download an 800-title preview blob for discovery rows.",
+    ],
+  },
+  {
+    version: "0.2.21",
+    date: "2026-06-13",
+    summary: "Server-side slim VOD/series catalogs with paginated item APIs.",
+    highlights: [
+      "Movies and Series load category metadata only — titles paginate from /api/vod/items and /api/series/items.",
+      "Disk-cached full bundles on the VPS; browser no longer downloads entire movie/series catalogs up front.",
+      "P0 click-through tests for slim grid, genre filter, and search on Movies and Series.",
+    ],
+  },
+  {
+    version: "0.2.20",
+    date: "2026-06-13",
+    summary: "Fix library and browse freezes on Chrome and desktop browsers.",
+    highlights: [
+      "Defer discovery EPG and yield between batches on all clients — not only TV.",
+      "Lazy/chunked VOD name indexes; skip heavy category maps until a genre is opened.",
+      "Smaller catalog JSON uses Web Worker parsing sooner; home rich shelves load later.",
+    ],
+  },
+  {
+    version: "0.2.19",
+    date: "2026-06-13",
+    summary: "Fix player close freezing on TV, Fire TV Silk, and mobile.",
+    highlights: [
+      "Skip sync video.load() on teardown — avoids main-thread hangs on embedded browsers.",
+      "Defer history.back() and browse remount when closing the player overlay.",
+      "Always-visible exit control when TV/mobile chrome is hidden; Close on stall overlay.",
+    ],
+  },
+  {
     version: "0.2.18",
     date: "2026-06-13",
     summary: "Production release — cross-platform UX parity (P0–P3) and player polish.",

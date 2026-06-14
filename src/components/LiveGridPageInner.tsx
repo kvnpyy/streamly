@@ -262,10 +262,12 @@ export function LiveGridPageInner({ shell }: { shell: LivePageShell }) {
 
   const categoryChannelIndex = useMemo(
     () =>
+      programmeSearchOn &&
+      programmeSearchQLower &&
       categoryFilteredStreams.length
         ? buildLiveChannelIndex(categoryFilteredStreams)
         : null,
-    [categoryFilteredStreams]
+    [programmeSearchOn, programmeSearchQLower, categoryFilteredStreams]
   );
 
   const scanPlan = useMemo(() => {
@@ -516,10 +518,10 @@ export function LiveGridPageInner({ shell }: { shell: LivePageShell }) {
   const [liveDiscoveryReady, setLiveDiscoveryReady] = useState(false);
   useEffect(() => {
     const ua = typeof navigator !== "undefined" ? navigator.userAgent : "";
-    const ms = tvLivingRoom ? tvLivePageDiscoveryDeferMs(ua) : 2_500;
+    const ms = tvLivePageDiscoveryDeferMs(ua);
     const t = setTimeout(() => setLiveDiscoveryReady(true), ms);
     return () => clearTimeout(t);
-  }, [tvLivingRoom]);
+  }, []);
 
   const trendingShelfOn = isLiveTrendingShelfEnabled();
   const pageDiscoveryOn = isLivePageDiscoveryEnabled();
@@ -552,11 +554,9 @@ export function LiveGridPageInner({ shell }: { shell: LivePageShell }) {
     favorites,
     enabled: discoveryEpgEnabled,
     livingRoom: tvLivingRoom,
-    deferMs: tvLivingRoom
-      ? tvHomeDiscoveryDeferMs(
-          typeof navigator !== "undefined" ? navigator.userAgent : ""
-        )
-      : 0,
+    deferMs: tvHomeDiscoveryDeferMs(
+      typeof navigator !== "undefined" ? navigator.userAgent : ""
+    ),
     tmdbTrending: tmdbMerged,
   });
 

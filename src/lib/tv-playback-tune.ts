@@ -24,9 +24,9 @@ export function tvDiscoveryEpgMaxScan(ua?: string): number {
   return isLivingRoomPlaybackClient(ua) ? 24 : 36;
 }
 
-/** Brief defer so the hub paints one frame before EPG (not multi-second). */
+/** Brief defer so the hub paints one frame before EPG (all clients — not only TV). */
 export function tvHomeDiscoveryDeferMs(ua?: string): number {
-  return isLivingRoomPlaybackClient(ua) ? 350 : 0;
+  return isLivingRoomPlaybackClient(ua) ? 350 : 900;
 }
 
 /** Channels to scan first for on-now before the slower background pass. */
@@ -74,7 +74,7 @@ export function tvLiveSearchProgrammeDeferMs(ua?: string): number {
 
 /** Wait before discovery EPG on Live TV page so the grid can paint. */
 export function tvLivePageDiscoveryDeferMs(ua?: string): number {
-  return isLivingRoomPlaybackClient(ua) ? 8_000 : 0;
+  return isLivingRoomPlaybackClient(ua) ? 8_000 : 1_800;
 }
 
 /** Defer full movie/series catalog on TV home so live + discovery paint first. */

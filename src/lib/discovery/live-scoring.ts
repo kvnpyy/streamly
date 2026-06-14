@@ -143,4 +143,4 @@ export const LIVE_DISCOVERY_MIN_ITEMS = 3;
 /** Max channels to short-EPG scan per page load. */
 export const LIVE_DISCOVERY_MAX_SCAN = 36;
 
-export const LIVE_DISCOVERY_EPG_CONCURRENCY = 6;
+export const LIVE_DISCOVERY_EPG_CONCURRENCY = 4;

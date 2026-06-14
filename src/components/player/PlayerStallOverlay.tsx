@@ -8,6 +8,7 @@ export type PlayerStallOverlayProps = {
   hasDirectUrl: boolean;
   onTryAgain: () => void;
   onCopyUrl: () => void;
+  onClose: () => void;
 };
 
 export function PlayerStallOverlay({
@@ -18,6 +19,7 @@ export function PlayerStallOverlay({
   hasDirectUrl,
   onTryAgain,
   onCopyUrl,
+  onClose,
 }: PlayerStallOverlayProps) {
   return (
     <div className="absolute inset-x-0 bottom-24 mx-auto max-w-md px-4 z-[6]">
@@ -65,6 +67,13 @@ export function PlayerStallOverlay({
               {copied ? "Copied" : "Copy stream URL"}
             </button>
           ) : null}
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-4 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-white text-sm"
+          >
+            Close
+          </button>
         </div>
       </div>
     </div>
