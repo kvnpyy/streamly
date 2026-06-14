@@ -25,14 +25,6 @@ export type ShelfBatchResponse = {
   totalCategories: number;
 };
 
-export type ShelfBatchResponse = {
-  shelves: ShelfBatchItem[];
-  nextOffset: number;
-  hasMore: boolean;
-  /** Categories in this region that have at least one channel. */
-  totalCategories: number;
-};
-
 const RETRYABLE_STATUSES = new Set([502, 503, 504, 429]);
 
 function sleep(ms: number): Promise<void> {
