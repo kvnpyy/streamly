@@ -26,7 +26,7 @@ import { CastGallery } from "@/components/CastGallery";
 import { SimilarTitlesShelf } from "@/components/SimilarTitlesShelf";
 import { VirtualEpisodeList } from "@/components/VirtualEpisodeList";
 import { GenreChips } from "@/components/GenreChips";
-import { seriesCatalogQueryOptions } from "@/lib/series-catalog-query";
+import { seriesCategoryPreviewQueryOptions } from "@/lib/catalog-items-search";
 import { pickSimilarSeries } from "@/lib/similar-titles";
 import { ArrowLeft, Check, Heart, Play, Star } from "lucide-react";
 import Link from "next/link";
@@ -80,25 +80,31 @@ export default function SeriesDetail() {
     retryDelay: (n) => Math.min(1000 * 2 ** n, 8000),
   });
 
-  const seriesCatalog = useQuery({
-    ...seriesCatalogQueryOptions(
+  const categoryId =
+    info.data?.info?.category_id != null
+      ? String(info.data.info.category_id)
+      : undefined;
+
+  const categoryPreview = useQuery(
+    seriesCategoryPreviewQueryOptions(
       creds!,
-      Boolean(creds && seriesId != null && info.data)
-    ),
-  });
+      categoryId,
+      Boolean(creds && seriesId != null && info.data && categoryId)
+    )
+  );
 
   const similarSeries = useMemo(() => {
     const meta = info.data?.info;
     if (!meta || seriesId == null) return [];
     return pickSimilarSeries(
-      seriesCatalog.data?.streams,
+      categoryPreview.data?.items,
       seriesId,
       meta.genre,
       { hideAdult, parentalUnlocked }
     );
   }, [
     info.data,
-    seriesCatalog.data?.streams,
+    categoryPreview.data?.items,
     seriesId,
     hideAdult,
     parentalUnlocked,

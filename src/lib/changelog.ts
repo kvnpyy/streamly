@@ -11,6 +11,17 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.2.24",
+    date: "2026-06-13",
+    summary: "Fix Chrome freeze on initial load — eliminate remaining full-catalog client fetches.",
+    highlights: [
+      "Home rich shelves use server discovery APIs instead of downloading entire VOD and series catalogs.",
+      "Search uses paginated item APIs; live name search uses a capped channel sample with chunked indexing.",
+      "Movie and series detail pages load a category preview for similar titles, not the full catalog.",
+      "Catalog JSON parsing always prefers a Web Worker when available.",
+    ],
+  },
+  {
     version: "0.2.23",
     date: "2026-06-13",
     summary: "Paginated Movies and Series grids — 120 titles per page with load more.",

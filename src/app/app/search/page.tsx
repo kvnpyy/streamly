@@ -8,19 +8,18 @@ import { VirtualMediaCatalogGrid } from "@/components/VirtualMediaCatalogGrid";
 import { SectionHeader, SkeletonGrid } from "@/components/SectionHeader";
 import { useTvBrowser } from "@/components/TvBrowserProvider";
 import { useCatalogPlay } from "@/hooks/use-catalog-play";
+import { useChunkedNameSearchIndex } from "@/hooks/use-chunked-name-search-index";
 import { useGlobalProgrammeSearch } from "@/hooks/use-global-programme-search";
-import { liveCatalogQueryOptions } from "@/lib/live-catalog-query";
-import { seriesCatalogQueryOptions } from "@/lib/series-catalog-query";
-import { vodCatalogQueryOptions } from "@/lib/vod-catalog-query";
+import {
+  seriesCatalogSearchQueryOptions,
+  vodCatalogSearchQueryOptions,
+} from "@/lib/catalog-items-search";
+import { liveCategoryChannelsQueryOptions } from "@/lib/live-catalog-channels";
+import { LIVE_LIST_MAX_CHANNELS } from "@/lib/live-guide-limits";
 import { useSlashFocusSearch } from "@/lib/use-slash-focus-search";
 import {
-  buildLiveChannelIndex,
   filterLiveChannelsByName,
 } from "@/lib/live-channel-index";
-import {
-  buildNameSearchIndex,
-  filterByNameQuery,
-} from "@/lib/name-search-index";
 import { looksAdult, parsePositiveRouteId } from "@/lib/utils";
 import {
   buildLiveFlipPlaylist,
@@ -53,22 +52,26 @@ function SearchInner() {
   const f = q.trim().toLowerCase();
   const searchEnabled = f.length >= MIN_SEARCH_LEN;
 
-  const liveCatalog = useQuery({
-    ...liveCatalogQueryOptions(creds),
-    enabled: searchEnabled,
-  });
-  const vod = useQuery({
-    ...vodCatalogQueryOptions(creds, searchEnabled),
-  });
-  const series = useQuery({
-    ...seriesCatalogQueryOptions(creds, searchEnabled),
-  });
+  const liveChannels = useQuery(
+    liveCategoryChannelsQueryOptions(
+      creds,
+      "all",
+      LIVE_LIST_MAX_CHANNELS,
+      searchEnabled
+    )
+  );
+  const vodSearch = useQuery(
+    vodCatalogSearchQueryOptions(creds, f, searchEnabled)
+  );
+  const seriesSearch = useQuery(
+    seriesCatalogSearchQueryOptions(creds, f, searchEnabled)
+  );
 
-  const liveChannelIndex = useMemo(() => {
-    const rows = liveCatalog.data?.streams;
-    if (!searchEnabled || !rows?.length) return null;
-    return buildLiveChannelIndex(rows);
-  }, [liveCatalog.data?.streams, searchEnabled]);
+  const liveChannelIndex = useChunkedNameSearchIndex(
+    liveChannels.data ?? [],
+    (s) => s.name,
+    searchEnabled && (liveChannels.data?.length ?? 0) > 0
+  );
 
   const filteredLiveByName = useMemo(() => {
     if (!searchEnabled || !liveChannelIndex) return [];
@@ -95,43 +98,31 @@ function SearchInner() {
     return liveMatches.slice(0, MAX_PER_SECTION);
   }, [liveMatches, searchEnabled]);
 
-  const vodNameIndex = useMemo(() => {
-    const rows = vod.data?.streams;
-    if (!searchEnabled || !rows?.length) return null;
-    return buildNameSearchIndex(rows, (s) => s.name);
-  }, [vod.data?.streams, searchEnabled]);
-
-  const seriesNameIndex = useMemo(() => {
-    const rows = series.data?.streams;
-    if (!searchEnabled || !rows?.length) return null;
-    return buildNameSearchIndex(rows, (s) => s.name);
-  }, [series.data?.streams, searchEnabled]);
-
   const filteredVod = useMemo(() => {
-    if (!searchEnabled || !vodNameIndex) return [];
-    const matched = filterByNameQuery(vodNameIndex, f);
-    const out: typeof matched = [];
-    for (const s of matched) {
+    if (!searchEnabled) return [];
+    const rows = vodSearch.data?.items ?? [];
+    const out: typeof rows = [];
+    for (const s of rows) {
       if (parsePositiveRouteId(s.stream_id) == null) continue;
       if (safe && looksAdult({ name: s.name, is_adult: s.is_adult })) continue;
       out.push(s);
       if (out.length >= MAX_PER_SECTION) break;
     }
     return out;
-  }, [vodNameIndex, f, safe, searchEnabled]);
+  }, [vodSearch.data?.items, safe, searchEnabled]);
 
   const filteredSeries = useMemo(() => {
-    if (!searchEnabled || !seriesNameIndex) return [];
-    const matched = filterByNameQuery(seriesNameIndex, f);
-    const out: typeof matched = [];
-    for (const s of matched) {
+    if (!searchEnabled) return [];
+    const rows = seriesSearch.data?.items ?? [];
+    const out: typeof rows = [];
+    for (const s of rows) {
       if (parsePositiveRouteId(s.series_id) == null) continue;
       if (safe && looksAdult({ name: s.name })) continue;
       out.push(s);
       if (out.length >= MAX_PER_SECTION) break;
     }
     return out;
-  }, [seriesNameIndex, f, safe, searchEnabled]);
+  }, [seriesSearch.data?.items, safe, searchEnabled]);
 
   const deferredLive = useDeferredValue(filteredLive);
   const deferredVod = useDeferredValue(filteredVod);
@@ -139,7 +130,7 @@ function SearchInner() {
 
   const catalogLoading =
     searchEnabled &&
-    (liveCatalog.isFetching || vod.isFetching || series.isFetching);
+    (liveChannels.isFetching || vodSearch.isFetching || seriesSearch.isFetching);
 
   const loading = catalogLoading && deferredLive.length + deferredVod.length + deferredSeries.length === 0;
 

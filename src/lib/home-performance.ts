@@ -12,4 +12,4 @@ export function isHomeAutoRichDisabled(): boolean {
 }
 
 /** Idle delay before auto-loading home recommendations (default on). */
-export const HOME_AUTO_RICH_DELAY_MS = 4_000;
+export const HOME_AUTO_RICH_DELAY_MS = 8_000;

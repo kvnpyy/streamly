@@ -9,6 +9,16 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.2.24] — 2026-06-13
+
+### Fixed
+- **Chrome freeze on initial load** — home rich shelves, search, detail “similar titles”, and live category settings no longer download full provider catalogs to the browser.
+- **Catalog JSON parsing** — always prefers a Web Worker when available so large responses do not block the main thread.
+
+### Changed
+- **Home recommendations** — use server discovery shelves and slim catalog counts instead of client-side top-rated / newest picks over full VOD and series arrays.
+- **Search** — VOD and series queries hit paginated `/api/*/items?q=`; live name search uses a capped channel sample with chunked indexing.
+
 ## [0.2.23] — 2026-06-13
 
 ### Changed

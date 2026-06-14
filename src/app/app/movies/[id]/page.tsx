@@ -12,7 +12,7 @@ import { useQuery } from "@tanstack/react-query";
 import { CastGallery } from "@/components/CastGallery";
 import { GenreChips } from "@/components/GenreChips";
 import { SimilarTitlesShelf } from "@/components/SimilarTitlesShelf";
-import { vodCatalogQueryOptions } from "@/lib/vod-catalog-query";
+import { vodCategoryPreviewQueryOptions } from "@/lib/catalog-items-search";
 import { pickSimilarMovies } from "@/lib/similar-titles";
 import { ArrowLeft, Heart, Play, Star } from "lucide-react";
 import Link from "next/link";
@@ -46,22 +46,31 @@ export default function MovieDetail() {
     retryDelay: (n) => Math.min(1000 * 2 ** n, 8000),
   });
 
-  const vodCatalog = useQuery({
-    ...vodCatalogQueryOptions(creds!, Boolean(creds && movieId != null && info.data)),
-  });
+  const categoryId =
+    info.data?.movie_data?.category_id != null
+      ? String(info.data.movie_data.category_id)
+      : undefined;
+
+  const categoryPreview = useQuery(
+    vodCategoryPreviewQueryOptions(
+      creds!,
+      categoryId,
+      Boolean(creds && movieId != null && info.data && categoryId)
+    )
+  );
 
   const similarMovies = useMemo(() => {
     const meta = info.data?.info;
     const data = info.data?.movie_data;
     if (!meta || !data) return [];
     return pickSimilarMovies(
-      vodCatalog.data?.streams,
+      categoryPreview.data?.items,
       data.stream_id,
       data.category_id,
       meta.genre,
       { hideAdult, parentalUnlocked }
     );
-  }, [info.data, vodCatalog.data?.streams, hideAdult, parentalUnlocked]);
+  }, [info.data, categoryPreview.data?.items, hideAdult, parentalUnlocked]);
 
   if (!creds) {
     return null;

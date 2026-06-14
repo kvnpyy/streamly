@@ -9,15 +9,18 @@ import { TvSpatialGrid } from "@/components/TvSpatialGrid";
 import { SectionHeader, SkeletonGrid } from "@/components/SectionHeader";
 import { TvHomeRow } from "@/components/tv/TvHomeRow";
 import { TvShelf } from "@/components/TvShelf";
-import { parsePositiveRouteId } from "@/lib/utils";
 import {
-  pickNewestSeries,
-  pickTopMoviesByRating,
-} from "@/lib/catalog-preview";
-import { buildTopRatedMovies, buildNewSeries } from "@/lib/discovery";
+  attachMovieDiscoveryShelfItems,
+  attachSeriesDiscoveryShelfItems,
+} from "@/lib/attach-discovery-shelf-items";
+import { scheduleWhenIdle } from "@/lib/defer-idle";
+import { isDiscoveryShelvesEnabled } from "@/lib/discovery/feature-flag";
 import { DISCOVERY_SHELF_META } from "@/lib/discovery/shelf-meta";
-import { seriesCatalogQueryOptions } from "@/lib/series-catalog-query";
-import { vodCatalogQueryOptions } from "@/lib/vod-catalog-query";
+import { seriesDiscoveryShelvesQueryOptions } from "@/lib/series-discovery-shelves-query";
+import { slimSeriesCatalogQueryOptions } from "@/lib/slim-series-catalog-query";
+import { slimVodCatalogQueryOptions } from "@/lib/slim-vod-catalog-query";
+import { vodDiscoveryShelvesQueryOptions } from "@/lib/vod-discovery-shelves-query";
+import { useCatalogPlay } from "@/hooks/use-catalog-play";
 import { useLivingRoomHomeLayout } from "@/lib/use-living-room-home-layout";
 import type { LiveStream, SeriesItem, VodStream } from "@/lib/xtream-types";
 import { useAuth } from "@/store/auth";
@@ -29,11 +32,19 @@ import { sliceShelfItems } from "@/hooks/use-vod-discovery-shelves";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+function sumCategoryCounts(map: Record<string, number> | undefined): number {
+  if (!map) return 0;
+  let total = 0;
+  for (const n of Object.values(map)) total += n;
+  return total;
+}
+
 export function HomePageRich() {
   const creds = useAuth((s) => s.creds)!;
   const account = useAuth((s) => s.account);
   const { data: streamSession } = useSession();
   const { play } = usePlayer();
+  const { playMovie } = useCatalogPlay();
   const livingRoomHome = useLivingRoomHomeLayout();
   const {
     isFavorite,
@@ -52,12 +63,8 @@ export function HomePageRich() {
   });
 
   const [catalogFetchReady, setCatalogFetchReady] = useState(false);
-  const [topRatedMovieStreams, setTopRatedMovieStreams] = useState<VodStream[]>(
-    []
-  );
-  const [newUpdatedSeriesStreams, setNewUpdatedSeriesStreams] = useState<
-    SeriesItem[]
-  >([]);
+  const [discoveryReady, setDiscoveryReady] = useState(false);
+  const discoveryOn = isDiscoveryShelvesEnabled();
 
   useEffect(() => {
     const enable = () => setCatalogFetchReady(true);
@@ -69,53 +76,76 @@ export function HomePageRich() {
     return () => clearTimeout(t);
   }, []);
 
-  const vodCatalog = useQuery({
-    ...vodCatalogQueryOptions(creds, catalogFetchReady),
-  });
-  const seriesCatalog = useQuery({
-    ...seriesCatalogQueryOptions(creds, catalogFetchReady),
-  });
-  const vodStreams = vodCatalog.data?.streams;
-  const seriesStreams = seriesCatalog.data?.streams;
+  useEffect(() => {
+    if (!catalogFetchReady || !discoveryOn) {
+      queueMicrotask(() => setDiscoveryReady(false));
+      return;
+    }
+    return scheduleWhenIdle(() => setDiscoveryReady(true), 500);
+  }, [catalogFetchReady, discoveryOn]);
 
-  const safeOpts = useMemo(
-    () => ({ hideAdult, parentalUnlocked }),
-    [hideAdult, parentalUnlocked]
+  const slimVod = useQuery(
+    slimVodCatalogQueryOptions(creds, catalogFetchReady)
+  );
+  const slimSeries = useQuery(
+    slimSeriesCatalogQueryOptions(creds, catalogFetchReady)
   );
 
-  useEffect(() => {
-    let cancelled = false;
-    const list = vodStreams;
-    const run = async () => {
-      if (!list?.length) {
-        if (!cancelled) setTopRatedMovieStreams([]);
-        return;
-      }
-      const picked = await pickTopMoviesByRating(list, 18, safeOpts);
-      if (!cancelled) setTopRatedMovieStreams(picked);
-    };
-    void run();
-    return () => {
-      cancelled = true;
-    };
-  }, [vodStreams, safeOpts]);
+  const recentMovieIds = useMemo(
+    () =>
+      recents
+        .filter((r) => r.kind === "movie")
+        .slice(0, 20)
+        .map((r) => r.id),
+    [recents]
+  );
+  const favoriteMovieIds = useMemo(
+    () => favorites.filter((f) => f.kind === "movie").map((f) => f.id),
+    [favorites]
+  );
+  const recentSeriesIds = useMemo(
+    () =>
+      recents
+        .filter((r) => r.kind === "series")
+        .slice(0, 20)
+        .map((r) => r.id),
+    [recents]
+  );
+  const favoriteSeriesIds = useMemo(
+    () => favorites.filter((f) => f.kind === "series").map((f) => f.id),
+    [favorites]
+  );
 
-  useEffect(() => {
-    let cancelled = false;
-    const list = seriesStreams;
-    const run = async () => {
-      if (!list?.length) {
-        if (!cancelled) setNewUpdatedSeriesStreams([]);
-        return;
-      }
-      const picked = await pickNewestSeries(list, 18, safeOpts);
-      if (!cancelled) setNewUpdatedSeriesStreams(picked);
-    };
-    void run();
-    return () => {
-      cancelled = true;
-    };
-  }, [seriesStreams, safeOpts]);
+  const vodDiscovery = useQuery(
+    vodDiscoveryShelvesQueryOptions(
+      creds,
+      {
+        hideAdult,
+        parentalUnlocked,
+        recentIds: recentMovieIds,
+        favoriteIds: favoriteMovieIds,
+      },
+      discoveryReady
+    )
+  );
+  const seriesDiscovery = useQuery(
+    seriesDiscoveryShelvesQueryOptions(
+      creds,
+      {
+        hideAdult,
+        parentalUnlocked,
+        recentIds: recentSeriesIds,
+        favoriteIds: favoriteSeriesIds,
+      },
+      discoveryReady
+    )
+  );
+
+  const vodCount = sumCategoryCounts(slimVod.data?.countByCategoryId);
+  const seriesCount = sumCategoryCounts(slimSeries.data?.countByCategoryId);
+  const shelvesLoading =
+    discoveryReady &&
+    (vodDiscovery.isLoading || seriesDiscovery.isLoading);
 
   const toggleFavoriteMovie = useCallback(
     (m: VodStream, mid: number) => {
@@ -154,50 +184,41 @@ export function HomePageRich() {
     [toggleFavorite]
   );
 
-  const topRatedMovies = useMemo(
-    () =>
-      buildTopRatedMovies(topRatedMovieStreams, {
-        hideAdult,
-        parentalUnlocked,
+  const attachMovieShelves = useCallback(
+    (items: Parameters<typeof attachMovieDiscoveryShelfItems>[0]) =>
+      attachMovieDiscoveryShelfItems(items, {
         isFavorite: (id) => isFavorite("movie", id),
-        toggleFavorite: toggleFavoriteMovie,
-        limit: 18,
-        minRating: 0,
+        toggleFavoriteMovie,
+        playMovie,
       }),
-    [
-      topRatedMovieStreams,
-      hideAdult,
-      parentalUnlocked,
-      isFavorite,
-      toggleFavoriteMovie,
-    ]
+    [isFavorite, toggleFavoriteMovie, playMovie]
   );
 
-  const newUpdatedSeries = useMemo(
-    () =>
-      buildNewSeries(newUpdatedSeriesStreams, {
-        hideAdult,
-        parentalUnlocked,
+  const attachSeriesShelves = useCallback(
+    (items: Parameters<typeof attachSeriesDiscoveryShelfItems>[0]) =>
+      attachSeriesDiscoveryShelfItems(items, {
         isFavorite: (id) => isFavorite("series", id),
-        toggleFavorite: toggleFavoriteSeries,
-        limit: 18,
+        toggleFavoriteSeries,
       }),
-    [
-      newUpdatedSeriesStreams,
-      hideAdult,
-      parentalUnlocked,
-      isFavorite,
-      toggleFavoriteSeries,
-    ]
+    [isFavorite, toggleFavoriteSeries]
+  );
+
+  const topRatedMovies = useMemo(
+    () => attachMovieShelves(vodDiscovery.data?.topRated ?? []),
+    [vodDiscovery.data?.topRated, attachMovieShelves]
+  );
+  const newUpdatedSeries = useMemo(
+    () => attachSeriesShelves(seriesDiscovery.data?.newlyAdded ?? []),
+    [seriesDiscovery.data?.newlyAdded, attachSeriesShelves]
   );
 
   const tvHub = useTvHomeHubModel({
     greetingName,
     creds,
-    movies: vodStreams,
-    series: seriesStreams,
-    vodLoading: vodCatalog.isLoading,
-    seriesLoading: seriesCatalog.isLoading,
+    vodCount,
+    seriesCount,
+    vodLoading: slimVod.isLoading,
+    seriesLoading: slimSeries.isLoading,
     recents,
     favorites,
     hideAdult,
@@ -212,7 +233,7 @@ export function HomePageRich() {
     return (
       <div className="tv-home tv-home--rich space-y-8">
         <TvHomeHub {...tvHub} />
-        {(vodCatalog.isLoading || topRatedMovieStreams.length > 0) && (
+        {(shelvesLoading || topRatedMovies.length > 0) && (
           <TvHomeRow
             title={DISCOVERY_SHELF_META.vod_top_rated_movies.title}
             seeAllHref="/app/movies"
@@ -222,36 +243,27 @@ export function HomePageRich() {
               hideTitle
               seeAllHref="/app/movies"
             >
-              {vodCatalog.isLoading
+              {shelvesLoading && topRatedMovies.length === 0
                 ? null
-                : topRatedMovieStreams.slice(0, 8).map((m) => {
-                    const mid = parsePositiveRouteId(m.stream_id);
-                    if (mid == null) return null;
-                    return (
-                      <div key={mid} className="tv-home-shelf-card">
-                        <MediaCard
-                          title={m.name}
-                          poster={m.stream_icon}
-                          panelServer={creds.server}
-                          rating={m.rating}
-                          href={`/app/movies/${mid}`}
-                          isFavorite={isFavorite("movie", mid)}
-                          onToggleFavorite={() =>
-                            toggleFavorite({
-                              kind: "movie",
-                              id: mid,
-                              name: m.name,
-                              icon: m.stream_icon,
-                            })
-                          }
-                        />
-                      </div>
-                    );
-                  })}
+                : topRatedMovies.slice(0, 8).map((m) => (
+                    <div key={m.id} className="tv-home-shelf-card">
+                      <MediaCard
+                        title={m.title}
+                        poster={m.poster}
+                        panelServer={creds.server}
+                        rating={m.rating}
+                        href={m.href}
+                        detailHref={m.detailHref}
+                        onClick={m.onClick}
+                        isFavorite={m.isFavorite}
+                        onToggleFavorite={m.onToggleFavorite}
+                      />
+                    </div>
+                  ))}
             </TvShelf>
           </TvHomeRow>
         )}
-        {(seriesCatalog.isLoading || newUpdatedSeriesStreams.length > 0) && (
+        {(shelvesLoading || newUpdatedSeries.length > 0) && (
           <TvHomeRow
             title={DISCOVERY_SHELF_META.vod_new_series.title}
             seeAllHref="/app/series"
@@ -261,31 +273,20 @@ export function HomePageRich() {
               hideTitle
               seeAllHref="/app/series"
             >
-              {seriesCatalog.isLoading
+              {shelvesLoading && newUpdatedSeries.length === 0
                 ? null
-                : newUpdatedSeriesStreams.slice(0, 8).map((s) => {
-                    const sid = parsePositiveRouteId(s.series_id);
-                    if (sid == null) return null;
-                    return (
-                      <div key={sid} className="tv-home-shelf-card">
-                        <MediaCard
-                          title={s.name}
-                          poster={s.cover}
-                          panelServer={creds.server}
-                          href={`/app/series/${sid}`}
-                          isFavorite={isFavorite("series", sid)}
-                          onToggleFavorite={() =>
-                            toggleFavorite({
-                              kind: "series",
-                              id: sid,
-                              name: s.name,
-                              icon: s.cover,
-                            })
-                          }
-                        />
-                      </div>
-                    );
-                  })}
+                : newUpdatedSeries.slice(0, 8).map((s) => (
+                    <div key={s.id} className="tv-home-shelf-card">
+                      <MediaCard
+                        title={s.title}
+                        poster={s.poster}
+                        panelServer={creds.server}
+                        href={s.href}
+                        isFavorite={s.isFavorite}
+                        onToggleFavorite={s.onToggleFavorite}
+                      />
+                    </div>
+                  ))}
             </TvShelf>
           </TvHomeRow>
         )}
@@ -297,9 +298,9 @@ export function HomePageRich() {
     <div className="space-y-10 pt-4 border-t border-white/5">
       <HomeRegionalTrendingSection
         creds={creds}
-        movies={vodStreams}
-        series={seriesStreams}
-        vodLoading={vodCatalog.isLoading || seriesCatalog.isLoading}
+        movies={undefined}
+        series={undefined}
+        vodLoading={shelvesLoading}
         recents={recents}
         favorites={favorites}
         hideAdult={hideAdult}
@@ -322,7 +323,7 @@ export function HomePageRich() {
             </Link>
           }
         />
-        {vodCatalog.isLoading || topRatedMovies.length === 0 ? (
+        {shelvesLoading || topRatedMovies.length === 0 ? (
           <SkeletonGrid count={12} />
         ) : (
           <TvSpatialGrid className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
@@ -330,6 +331,8 @@ export function HomePageRich() {
               <MediaCard
                 key={m.id}
                 href={m.href}
+                detailHref={m.detailHref}
+                onClick={m.onClick}
                 poster={m.poster}
                 title={m.title}
                 subtitle={m.subtitle}
@@ -355,7 +358,7 @@ export function HomePageRich() {
             </Link>
           }
         />
-        {seriesCatalog.isLoading || newUpdatedSeries.length === 0 ? (
+        {shelvesLoading || newUpdatedSeries.length === 0 ? (
           <SkeletonGrid count={12} />
         ) : (
           <TvSpatialGrid className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">

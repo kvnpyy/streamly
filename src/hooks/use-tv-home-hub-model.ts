@@ -25,8 +25,10 @@ import { usePrefs } from "@/store/preferences";
 type UseTvHomeHubModelArgs = {
   greetingName: string;
   creds: XtreamCredentials;
-  movies: VodStream[] | undefined;
-  series: SeriesItem[] | undefined;
+  movies?: VodStream[] | undefined;
+  series?: SeriesItem[] | undefined;
+  vodCount?: number;
+  seriesCount?: number;
   vodLoading: boolean;
   seriesLoading: boolean;
   recents: RecentItem[];
@@ -44,6 +46,8 @@ export function useTvHomeHubModel({
   creds,
   movies,
   series,
+  vodCount,
+  seriesCount,
   vodLoading,
   seriesLoading,
   recents,
@@ -151,8 +155,8 @@ export function useTvHomeHubModel({
     vodLoading,
     seriesLoading,
     liveCount: safeLiveChannels.length,
-    vodCount: movies?.length,
-    seriesCount: series?.length,
+    vodCount: vodCount ?? movies?.length,
+    seriesCount: seriesCount ?? series?.length,
     favoritesCount: favorites.length,
     topRatedMovies: [],
     trendingMovies: [],

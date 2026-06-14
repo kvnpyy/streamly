@@ -8,7 +8,7 @@ import {
   type LiveCategorySortMode,
 } from "@/lib/live-category-sort";
 import { looksAdult } from "@/lib/utils";
-import { liveCatalogQueryOptions } from "@/lib/live-catalog-query";
+import { slimLiveCatalogQueryOptions } from "@/lib/live-catalog-query";
 import { browseAccountKey, usePrefs } from "@/store/preferences";
 import { useAuth } from "@/store/auth";
 import { useQuery } from "@tanstack/react-query";
@@ -52,7 +52,7 @@ export function LiveCategorySortSection() {
   const setBrowsePref = usePrefs((s) => s.setBrowsePref);
 
   const catalog = useQuery({
-    ...liveCatalogQueryOptions(creds!),
+    ...slimLiveCatalogQueryOptions(creds!),
     enabled: !!creds,
   });
 
