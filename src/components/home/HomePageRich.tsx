@@ -21,6 +21,10 @@ import { slimSeriesCatalogQueryOptions } from "@/lib/slim-series-catalog-query";
 import { slimVodCatalogQueryOptions } from "@/lib/slim-vod-catalog-query";
 import { vodDiscoveryShelvesQueryOptions } from "@/lib/vod-discovery-shelves-query";
 import { useCatalogPlay } from "@/hooks/use-catalog-play";
+import {
+  useInteractionReady,
+  useLibraryHeavyWorkReady,
+} from "@/hooks/use-interaction-ready";
 import { useLivingRoomHomeLayout } from "@/lib/use-living-room-home-layout";
 import type { LiveStream, SeriesItem, VodStream } from "@/lib/xtream-types";
 import { useAuth } from "@/store/auth";
@@ -64,9 +68,15 @@ export function HomePageRich() {
 
   const [catalogFetchReady, setCatalogFetchReady] = useState(false);
   const [discoveryReady, setDiscoveryReady] = useState(false);
+  const interactionReady = useInteractionReady();
+  const heavyWorkReady = useLibraryHeavyWorkReady(interactionReady);
   const discoveryOn = isDiscoveryShelvesEnabled();
 
   useEffect(() => {
+    if (!heavyWorkReady) {
+      queueMicrotask(() => setCatalogFetchReady(false));
+      return;
+    }
     const enable = () => setCatalogFetchReady(true);
     if (typeof requestIdleCallback !== "undefined") {
       const id = requestIdleCallback(enable, { timeout: 3_000 });
@@ -74,7 +84,7 @@ export function HomePageRich() {
     }
     const t = setTimeout(enable, 800);
     return () => clearTimeout(t);
-  }, []);
+  }, [heavyWorkReady]);
 
   useEffect(() => {
     if (!catalogFetchReady || !discoveryOn) {
@@ -309,6 +319,7 @@ export function HomePageRich() {
         toggleFavoriteMovie={toggleFavoriteMovie}
         toggleFavoriteSeries={toggleFavoriteSeries}
         toggleFavoriteLive={toggleFavoriteLive}
+        enabled={heavyWorkReady}
       />
       <section>
         <SectionHeader

@@ -11,6 +11,17 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.2.25",
+    date: "2026-06-13",
+    summary: "Fix Chrome click blocking — defer EPG scans and home discovery until after interaction.",
+    highlights: [
+      "EPG cache readiness stops polling after warmup instead of scanning the full store every 1.5s.",
+      "Library home defers IndexedDB EPG hydration and prefs rehydrate so navigation stays clickable.",
+      "Desktop Chrome no longer auto-loads heavy home shelves — opt in via Load recommendations.",
+      "Slim catalog APIs parse with res.json() to avoid worker structured-clone overhead.",
+    ],
+  },
+  {
     version: "0.2.24",
     date: "2026-06-13",
     summary: "Fix Chrome freeze on initial load — eliminate remaining full-catalog client fetches.",

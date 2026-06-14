@@ -24,9 +24,7 @@ async function fetchSlimLiveCatalog(
   if (!res.ok) {
     throw new Error(`Live catalogue failed (${res.status}).`);
   }
-  const text = await res.text();
-  const { parseCatalogJson } = await import("@/lib/parse-catalog-json");
-  const data = (await parseCatalogJson(text)) as LiveCatalogBundle;
+  const data = (await res.json()) as LiveCatalogBundle;
   return toSlimLiveCatalog(data);
 }
 

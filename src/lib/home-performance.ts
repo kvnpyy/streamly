@@ -1,14 +1,15 @@
 /** Home page performance — heavy catalog/discovery is opt-in or deferred. */
 
-function envEnabled(name: string): boolean {
-  const v = process.env[name]?.trim();
-  return v === "1" || v === "true";
-}
-
 /** When false, home never auto-loads movie/series recommendation shelves. */
 export function isHomeAutoRichDisabled(): boolean {
   const v = process.env.NEXT_PUBLIC_HOME_AUTO_RICH?.trim();
-  return v === "0" || v === "false";
+  if (v === "0" || v === "false") return true;
+  if (v === "1" || v === "true") return false;
+  if (typeof window === "undefined") return false;
+  /** Desktop mouse/trackpad: never auto-fetch shelves — user opts in via button. */
+  const finePointer = window.matchMedia("(pointer: fine)").matches;
+  const desktopWidth = window.innerWidth >= 1024;
+  return finePointer && desktopWidth;
 }
 
 /** Idle delay before auto-loading home recommendations (default on). */

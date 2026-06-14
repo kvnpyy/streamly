@@ -25,9 +25,7 @@ async function fetchSlimSeriesCatalog(
   if (!res.ok) {
     throw new Error(`Series catalog failed (${res.status}).`);
   }
-  const text = await res.text();
-  const { parseCatalogJson } = await import("@/lib/parse-catalog-json");
-  const data = (await parseCatalogJson(text)) as SeriesCatalogBundle;
+  const data = (await res.json()) as SeriesCatalogBundle;
   return toSlimSeriesCatalog(data);
 }
 

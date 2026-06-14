@@ -4,6 +4,8 @@
  */
 
 import { EPG_CACHE_TTL_MS } from "@/lib/epg-constants";
+import { scheduleWhenIdle } from "@/lib/defer-idle";
+import { isLibraryHomePath } from "@/lib/home-route";
 import {
   idbForEachBatch,
   idbPutEntries,
@@ -24,6 +26,23 @@ let diskHydrateStarted = false;
 let hydratePromise: Promise<void> | null = null;
 let flushTimer: ReturnType<typeof setTimeout> | null = null;
 const dirtyKeys = new Set<string>();
+/** Avoid scanning 5k+ keys on every trending poll. */
+const accountTitleCounts = new Map<string, number>();
+
+function accountPrefix(server: string, username: string): string {
+  return `${server}|${username}|`;
+}
+
+function recomputeAccountCount(prefix: string, store: Store, now = Date.now()): number {
+  let count = 0;
+  for (const [k, entry] of Object.entries(store)) {
+    if (!k.startsWith(prefix)) continue;
+    if (now - entry.at > EPG_CACHE_TTL_MS) continue;
+    count++;
+  }
+  accountTitleCounts.set(prefix, count);
+  return count;
+}
 
 function cacheKey(server: string, username: string, streamId: number): string {
   return `${server}|${username}|${streamId}`;
@@ -66,6 +85,7 @@ async function hydrateFromDisk(): Promise<void> {
       pruneExpired(memory, now);
       trimMemory(memory);
     });
+    accountTitleCounts.clear();
   } catch {
     /* idb blocked / private mode */
   }
@@ -75,7 +95,10 @@ async function hydrateFromDisk(): Promise<void> {
 function scheduleDiskHydrate(): void {
   if (diskHydrateStarted || typeof window === "undefined") return;
   diskHydrateStarted = true;
-  void whenEpgLocalCacheHydrated();
+  const deferMs = isLibraryHomePath(window.location.pathname) ? 12_000 : 600;
+  scheduleWhenIdle(() => {
+    void whenEpgLocalCacheHydrated();
+  }, deferMs);
 }
 
 /**
@@ -115,10 +138,15 @@ function touchEntry(
 ): void {
   const store = ensureMemory();
   const k = cacheKey(server, username, streamId);
+  const had = store[k] != null;
   store[k] = { title, at: Date.now() };
   dirtyKeys.add(k);
   trimMemory(store);
   scheduleFlush();
+  const prefix = accountPrefix(server, username);
+  if (!had) {
+    accountTitleCounts.set(prefix, (accountTitleCounts.get(prefix) ?? 0) + 1);
+  }
 }
 
 /** Read a cached title from the hot memory layer (null until hydrated). */
@@ -159,6 +187,7 @@ export function setCachedEpgTitlesBatch(
   pruneExpired(store, now);
   trimMemory(store);
   scheduleFlush();
+  accountTitleCounts.delete(accountPrefix(server, username));
 }
 
 export function getBulkCachedEpgTitles(
@@ -199,15 +228,10 @@ export function countCachedEpgTitlesForAccount(
   username: string
 ): number {
   const store = ensureMemory();
-  const prefix = `${server}|${username}|`;
-  const now = Date.now();
-  let count = 0;
-  for (const [k, entry] of Object.entries(store)) {
-    if (!k.startsWith(prefix)) continue;
-    if (now - entry.at > EPG_CACHE_TTL_MS) continue;
-    count++;
-  }
-  return count;
+  const prefix = accountPrefix(server, username);
+  const cached = accountTitleCounts.get(prefix);
+  if (cached !== undefined) return cached;
+  return recomputeAccountCount(prefix, store);
 }
 
 export function listCachedEpgTitlesForAccount(

@@ -37,6 +37,7 @@ type HomeRegionalTrendingSectionProps = {
   toggleFavoriteMovie: (m: VodStream, mid: number) => void;
   toggleFavoriteSeries: (s: SeriesItem, sid: number) => void;
   toggleFavoriteLive: (stream: LiveStream) => void;
+  enabled?: boolean;
 };
 
 export function HomeRegionalTrendingSection({
@@ -52,6 +53,7 @@ export function HomeRegionalTrendingSection({
   toggleFavoriteMovie,
   toggleFavoriteSeries,
   toggleFavoriteLive,
+  enabled = true,
 }: HomeRegionalTrendingSectionProps) {
   const play = usePlayer((s) => s.play);
   const discoveryOn = isDiscoveryShelvesEnabled();
@@ -71,7 +73,7 @@ export function HomeRegionalTrendingSection({
     tvRegion,
     recents,
     favorites,
-    enabled: discoveryOn,
+    enabled: discoveryOn && enabled,
   });
 
   const regional = useRegionalTrending({
@@ -89,7 +91,7 @@ export function HomeRegionalTrendingSection({
     toggleFavoriteMovie,
     toggleFavoriteSeries,
     tvRegion,
-    enabled: discoveryOn,
+    enabled: discoveryOn && enabled,
   });
 
   if (!discoveryOn || (!regional.show && !regional.loading)) return null;

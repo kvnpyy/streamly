@@ -12,7 +12,7 @@ export const TRENDING_MIN_CACHED_EPG_TITLES = 10;
 /** Max wait before trending runs even if cache is still sparse. */
 export const TRENDING_EPG_WARMUP_MS = 6_000;
 
-const POLL_MS = 1_500;
+const POLL_MS = 4_000;
 
 /**
  * Tracks how many EPG titles are cached for an account and when trending
@@ -36,23 +36,38 @@ export function useEpgCacheReadiness(
     }
 
     let cancelled = false;
+    let poll: number | null = null;
+
+    const stopPoll = () => {
+      if (poll !== null) {
+        window.clearInterval(poll);
+        poll = null;
+      }
+    };
 
     const refresh = async () => {
       await whenEpgLocalCacheHydrated();
       if (cancelled) return;
-      setCount(countCachedEpgTitlesForAccount(server, username));
+      const next = countCachedEpgTitlesForAccount(server, username);
+      setCount(next);
+      if (next >= TRENDING_MIN_CACHED_EPG_TITLES) stopPoll();
     };
 
     void refresh();
-    const poll = setInterval(() => void refresh(), POLL_MS);
-    const warmup = setTimeout(() => {
-      if (!cancelled) setWarmupDone(true);
+    poll = window.setInterval(() => {
+      void refresh();
+    }, POLL_MS);
+
+    const warmup = window.setTimeout(() => {
+      if (cancelled) return;
+      setWarmupDone(true);
+      stopPoll();
     }, TRENDING_EPG_WARMUP_MS);
 
     return () => {
       cancelled = true;
-      clearInterval(poll);
-      clearTimeout(warmup);
+      stopPoll();
+      window.clearTimeout(warmup);
     };
   }, [enabled, server, username]);
 

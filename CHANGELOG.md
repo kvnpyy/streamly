@@ -9,6 +9,16 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.2.25] — 2026-06-13
+
+### Fixed
+- **Chrome clicks blocked while scrolling** — stop EPG cache readiness from scanning thousands of IndexedDB keys every 1.5s; defer EPG hydrate on the library home route; gate home discovery shelves behind the first user interaction.
+- **Desktop home auto-load** — recommendation shelves no longer auto-fetch on fine-pointer desktop; use the “Load recommendations” prompt instead.
+
+### Changed
+- Slim catalog fetches use `res.json()` directly (no worker round-trip for small payloads).
+- IndexedDB EPG hydration yields to the main thread between batches.
+
 ## [0.2.24] — 2026-06-13
 
 ### Fixed

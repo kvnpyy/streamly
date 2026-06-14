@@ -25,9 +25,7 @@ async function fetchSlimVodCatalog(
   if (!res.ok) {
     throw new Error(`Movie catalog failed (${res.status}).`);
   }
-  const text = await res.text();
-  const { parseCatalogJson } = await import("@/lib/parse-catalog-json");
-  const data = (await parseCatalogJson(text)) as VodCatalogBundle;
+  const data = (await res.json()) as VodCatalogBundle;
   return toSlimVodCatalog(data);
 }
 
