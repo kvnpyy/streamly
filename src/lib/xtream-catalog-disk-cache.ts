@@ -39,13 +39,14 @@ function filePath(key: string): string {
 
 export async function readLiveCatalogDisk(
   key: string,
-  nowMs = Date.now()
+  nowMs = Date.now(),
+  opts?: { allowStale?: boolean }
 ): Promise<LiveCatalogBundle | null> {
   try {
     const raw = await readFile(filePath(key), "utf8");
     const env = JSON.parse(raw) as DiskEnvelope;
     if (!env?.bundle || typeof env.expiresAt !== "number") return null;
-    if (env.expiresAt <= nowMs) return null;
+    if (env.expiresAt <= nowMs && !opts?.allowStale) return null;
     if (!Array.isArray(env.bundle.categories) || !Array.isArray(env.bundle.streams)) {
       return null;
     }

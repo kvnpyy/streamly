@@ -1,6 +1,7 @@
 "use client";
 
 import { BrandMark } from "@/components/BrandMark";
+import { CommunityDiscordLink } from "@/components/CommunityDiscordLink";
 import { PlaylistSwitcher } from "@/components/PlaylistSwitcher";
 import { APP_NAV } from "@/lib/nav-config";
 import { SITE_NAME } from "@/lib/site-brand";
@@ -89,6 +90,10 @@ export function TvTopNav() {
             </Link>
           )}
           <PlaylistSwitcher className="hidden md:flex" />
+          <CommunityDiscordLink
+            label="Discord"
+            className="hidden sm:inline-flex min-h-9 px-3 py-2 rounded-xl text-sm font-medium text-[#c7ceff] hover:text-[#e0e4ff] hover:bg-[#5865F2]/12 transition-colors"
+          />
           <Link
             href="/app/settings"
             data-tv-card-root

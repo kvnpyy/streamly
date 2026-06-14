@@ -1,5 +1,6 @@
 "use client";
 
+import { CommunityDiscordSidebarLink } from "@/components/CommunityDiscordSidebarLink";
 import { APP_NAV } from "@/lib/nav-config";
 import { BrandMark } from "@/components/BrandMark";
 import { useTvBrowser } from "@/components/TvBrowserProvider";
@@ -154,6 +155,7 @@ export function Sidebar() {
             </span>
           )}
         </a>
+        <CommunityDiscordSidebarLink collapsed={collapsed} />
         <a
           href={feedbackFormUrlWithContext({
             surface: "sidebar",

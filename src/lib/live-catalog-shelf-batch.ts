@@ -25,6 +25,20 @@ export type ShelfBatchResponse = {
   totalCategories: number;
 };
 
+export type ShelfBatchResponse = {
+  shelves: ShelfBatchItem[];
+  nextOffset: number;
+  hasMore: boolean;
+  /** Categories in this region that have at least one channel. */
+  totalCategories: number;
+};
+
+const RETRYABLE_STATUSES = new Set([502, 503, 504, 429]);
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export async function fetchLiveShelfBatch(
   creds: XtreamCredentials,
   opts: {
@@ -43,16 +57,25 @@ export async function fetchLiveShelfBatch(
   url.searchParams.set("count", String(opts.count));
   url.searchParams.set("limit", String(opts.limitPerShelf));
 
-  const res = await fetch(url.toString(), {
-    method: "GET",
-    headers: catalogHeaders(creds),
-    signal: opts.signal,
-    cache: "default",
-  });
-  if (!res.ok) {
-    throw new Error(`Could not load shelves (${res.status}).`);
+  let lastStatus = 0;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    if (opts.signal?.aborted) {
+      throw new DOMException("Aborted", "AbortError");
+    }
+    const res = await fetch(url.toString(), {
+      method: "GET",
+      headers: catalogHeaders(creds),
+      signal: opts.signal,
+      cache: "default",
+    });
+    if (res.ok) {
+      return (await res.json()) as ShelfBatchResponse;
+    }
+    lastStatus = res.status;
+    if (!RETRYABLE_STATUSES.has(res.status) || attempt >= 2) break;
+    await sleep(350 * (attempt + 1));
   }
-  return (await res.json()) as ShelfBatchResponse;
+  throw new Error(`Could not load shelves (${lastStatus || "network"}).`);
 }
 
 export function shelfBatchToMeta(items: ShelfBatchItem[]): LiveShelfMeta[] {

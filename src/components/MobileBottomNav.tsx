@@ -1,5 +1,6 @@
 "use client";
 
+import { CommunityDiscordSidebarLink } from "@/components/CommunityDiscordSidebarLink";
 import { useTvBrowser } from "@/components/TvBrowserProvider";
 import { MOBILE_NAV_MORE, MOBILE_NAV_PRIMARY } from "@/lib/nav-config";
 import { feedbackFormUrlWithContext } from "@/lib/feedback-url";
@@ -169,6 +170,10 @@ export function MobileBottomNav() {
                   </Link>
                 );
               })}
+              <CommunityDiscordSidebarLink
+                className="rounded-xl px-3 py-3 text-sm text-(--text-dim) active:bg-(--bg-2)"
+                onNavigate={closeSheet}
+              />
               <a
                 href={feedbackFormUrlWithContext({
                   surface: "mobile_sheet",

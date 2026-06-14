@@ -117,6 +117,8 @@ function TvLiveBrowsePaged({
     shelvesBuilding,
     shelvesReadyToReveal,
     loadingMoreCategories,
+    shelfError,
+    retryShelves,
     loadMoreShelves,
     resetVisible,
   } = useLiveShelfBrowse({
@@ -165,6 +167,19 @@ function TvLiveBrowsePaged({
         <div className="flex items-center justify-between gap-3">
           <RegionPicker region={region} onChange={handleRegionChange} />
         </div>
+        {shelfError ? (
+          <div className="rounded-xl border border-(--danger)/35 bg-(--danger)/10 px-4 py-4 text-sm text-(--text-dim) space-y-3">
+            <p>{shelfError}</p>
+            <button
+              type="button"
+              data-tv-card-root
+              onClick={retryShelves}
+              className="inline-flex min-h-11 items-center rounded-xl btn-brand px-4 text-sm font-medium text-white"
+            >
+              Try again
+            </button>
+          </div>
+        ) : null}
         <LiveShelfList<LiveShelfMeta>
           items={allShelves}
           visibleCount={visibleShelfCount}

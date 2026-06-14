@@ -99,7 +99,8 @@ export async function GET(req: NextRequest) {
       hasMore: nextOffset < filtered.length,
       totalCategories: filtered.length,
     });
-  } catch {
+  } catch (err) {
+    console.error("[live/shelf-batch]", err);
     return NextResponse.json(
       { error: "Could not load shelf batch." },
       { status: 502 }

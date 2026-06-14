@@ -60,6 +60,8 @@ function WebLiveBrowsePagedInner({ creds, openChannel }: WebLiveBrowsePagedProps
     shelvesBuilding,
     shelvesReadyToReveal,
     loadingMoreCategories,
+    shelfError,
+    retryShelves,
     loadMoreShelves,
     resetVisible,
     totalCategoriesInRegion,
@@ -191,6 +193,19 @@ function WebLiveBrowsePagedInner({ creds, openChannel }: WebLiveBrowsePagedProps
           </p>
           <WebRegionPicker region={region} onChange={handleRegionChange} />
         </div>
+
+        {shelfError ? (
+          <div className="rounded-xl border border-(--danger)/35 bg-(--danger)/10 px-4 py-4 text-sm text-(--text-dim) space-y-3">
+            <p>{shelfError}</p>
+            <button
+              type="button"
+              onClick={retryShelves}
+              className="inline-flex min-h-10 items-center rounded-xl btn-brand px-4 text-sm font-medium text-white"
+            >
+              Try again
+            </button>
+          </div>
+        ) : null}
 
         <LiveShelfList
           items={allShelves}

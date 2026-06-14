@@ -61,13 +61,31 @@ export async function getCachedLiveCatalogEntry(creds: {
     return entry;
   }
 
-  const bundle = await fetchLiveCatalogOnServer(creds);
-  void writeLiveCatalogDisk(key, bundle).catch(() => {});
-  const entry = normalizeBundle(bundle);
-  cache.set(key, entry);
-  if (cache.size > 4) {
-    const oldest = [...cache.entries()].sort((a, b) => a[1].at - b[1].at)[0];
-    if (oldest) cache.delete(oldest[0]);
+  try {
+    const bundle = await fetchLiveCatalogOnServer(creds);
+    void writeLiveCatalogDisk(key, bundle).catch(() => {});
+    const entry = normalizeBundle(bundle);
+    cache.set(key, entry);
+    if (cache.size > 4) {
+      const oldest = [...cache.entries()].sort((a, b) => a[1].at - b[1].at)[0];
+      if (oldest) cache.delete(oldest[0]);
+    }
+    return entry;
+  } catch {
+    const stale = await readLiveCatalogDisk(key, now, { allowStale: true });
+    if (stale) {
+      const bundle: LiveCatalogBundle = {
+        categories: stale.categories,
+        streams: stale.streams,
+        countByCategoryId: stale.countByCategoryId,
+        streamIdsByCategory:
+          stale.streamIdsByCategory ??
+          buildStreamIdsByCategory(stale.streams),
+      };
+      const entry = normalizeBundle(bundle);
+      cache.set(key, entry);
+      return entry;
+    }
+    throw new Error("Could not load live catalog.");
   }
-  return entry;
 }

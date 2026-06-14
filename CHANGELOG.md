@@ -9,6 +9,14 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.2.26] — 2026-06-14
+
+### Added
+- **Discord visibility in the app** — sidebar link, mobile More menu, TV top nav, and a dismissible community strip on logged-in pages (in addition to Settings).
+
+### Fixed
+- **Live TV shelf 502 errors** — stale disk catalog fallback when upstream refresh fails; client retries and in-page “Try again” instead of unhandled rejections (Sentry `/app/live`).
+
 ## [0.2.25] — 2026-06-13
 
 ### Fixed

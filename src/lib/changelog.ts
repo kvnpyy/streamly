@@ -11,6 +11,16 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.2.26",
+    date: "2026-06-14",
+    summary: "Discord links across logged-in app chrome; Live TV shelf 502 resilience.",
+    highlights: [
+      "Join Discord in sidebar, mobile More menu, TV nav, and a dismissible strip on app pages.",
+      "Live shelf batch uses stale catalog cache when upstream refresh fails.",
+      "Shelf load failures show Try again instead of crashing the Live TV page.",
+    ],
+  },
+  {
     version: "0.2.25",
     date: "2026-06-13",
     summary: "Fix Chrome click blocking — defer EPG scans and home discovery until after interaction.",

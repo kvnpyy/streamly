@@ -45,6 +45,7 @@ export function useLiveShelfBrowse({
   const [visibleShelfCount, setVisibleShelfCount] = useState(initialVisible);
   const [loading, setLoading] = useState(false);
   const [bootstrapping, setBootstrapping] = useState(true);
+  const [shelfError, setShelfError] = useState<string | null>(null);
   const [hasMoreCategories, setHasMoreCategories] = useState(true);
   const [totalCategoriesInRegion, setTotalCategoriesInRegion] = useState<
     number | null
@@ -139,6 +140,7 @@ export function useLiveShelfBrowse({
       setHasMoreCategories(true);
       setTotalCategoriesInRegion(null);
       setBootstrapping(true);
+      setShelfError(null);
     });
 
     void (async () => {
@@ -171,6 +173,11 @@ export function useLiveShelfBrowse({
         visibleRef.current = built.length;
         setVisibleShelfCount(built.length);
         prefetchNext();
+      } catch (e) {
+        if (cancelled || session !== sessionRef.current) return;
+        const msg =
+          e instanceof Error ? e.message : "Could not load live categories.";
+        setShelfError(msg);
       } finally {
         if (!cancelled && session === sessionRef.current) {
           setBootstrapping(false);
@@ -277,11 +284,50 @@ export function useLiveShelfBrowse({
   const hasMore =
     visibleShelfCount < allShelves.length || hasMoreCategories;
 
+  const retryShelves = useCallback(() => {
+    resetForRegion();
+    sessionRef.current += 1;
+    const session = sessionRef.current;
+    categoryOffsetRef.current = 0;
+    hasMoreRef.current = true;
+    prefetchedRef.current = null;
+    setShelfError(null);
+    setBootstrapping(true);
+    setLoading(true);
+
+    void (async () => {
+      try {
+        const batch = await fetchBatch(0, SHELVES_PER_FETCH);
+        if (session !== sessionRef.current) return;
+        if (batch.length) {
+          allShelvesRef.current = batch;
+          setAllShelves(batch);
+          const vis = Math.min(initialVisible, batch.length);
+          visibleRef.current = vis;
+          setVisibleShelfCount(vis);
+        }
+        prefetchNext();
+      } catch (e) {
+        if (session !== sessionRef.current) return;
+        const msg =
+          e instanceof Error ? e.message : "Could not load live categories.";
+        setShelfError(msg);
+      } finally {
+        if (session === sessionRef.current) {
+          setBootstrapping(false);
+          setLoading(false);
+        }
+      }
+    })();
+  }, [resetForRegion, fetchBatch, prefetchNext, initialVisible]);
+
   return {
     allShelves,
     visibleShelfCount,
     hasMore,
     shelvesBuilding: loading,
+    shelfError,
+    retryShelves,
     moreCategoriesPending: hasMoreCategories,
     shelvesReadyToReveal,
     loadingMoreCategories: loading,
