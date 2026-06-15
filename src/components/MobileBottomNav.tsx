@@ -135,9 +135,7 @@ export function MobileBottomNav() {
     };
   }, [sheetOpen, closeSheet]);
 
-  useEffect(() => {
-    if (playerOpen) closeSheet();
-  }, [playerOpen, closeSheet]);
+  const showSheet = sheetOpen && !playerOpen;
 
   if (!mounted || playerOpen) return null;
 
@@ -179,7 +177,7 @@ export function MobileBottomNav() {
                 ? "text-(--brand) bg-(--brand)/14 shadow-[inset_0_1px_0_rgba(255,255,255,0.07)]"
                 : "text-(--text-muted) active:bg-(--bg-2)"
             )}
-            aria-expanded={sheetOpen}
+            aria-expanded={showSheet}
             aria-haspopup="dialog"
           >
             <Menu className="size-6 shrink-0 pointer-events-none" />
@@ -188,7 +186,7 @@ export function MobileBottomNav() {
         </div>
       </nav>
 
-      {sheetOpen && (
+      {showSheet && (
         <div
           className="lg:hidden fixed inset-0 z-[110] touch-manipulation"
           role="dialog"
