@@ -40,12 +40,14 @@ export async function fetchLiveShelfPreviews(
     signal: opts.signal,
     cache: "default",
   });
+  const data = (await res.json()) as {
+    shelves?: Record<string, ShelfPreviewPayload>;
+    catalogUnavailable?: boolean;
+  };
+  if (data.catalogUnavailable) return {};
   if (!res.ok) {
     throw new Error(`Could not load shelf previews (${res.status}).`);
   }
-  const data = (await res.json()) as {
-    shelves?: Record<string, ShelfPreviewPayload>;
-  };
   return data.shelves ?? {};
 }
 

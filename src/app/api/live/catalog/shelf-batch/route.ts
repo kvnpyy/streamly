@@ -101,9 +101,12 @@ export async function GET(req: NextRequest) {
     });
   } catch (err) {
     console.error("[live/shelf-batch]", err);
-    return NextResponse.json(
-      { error: "Could not load shelf batch." },
-      { status: 502 }
-    );
+    return NextResponse.json({
+      shelves: [],
+      nextOffset: offset,
+      hasMore: false,
+      totalCategories: 0,
+      catalogUnavailable: true,
+    });
   }
 }

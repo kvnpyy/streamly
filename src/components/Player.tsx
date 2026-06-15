@@ -1,5 +1,6 @@
 "use client";
 
+import { mobileShellMediaQuery } from "@/lib/shell-layout";
 import { cn, formatTime } from "@/lib/utils";
 import { useShortEPG, useFullEPG, decodeEpgText } from "@/lib/hooks";
 import {
@@ -54,7 +55,7 @@ import {
 import { PlayerAutoplayNextOverlay } from "@/components/player/PlayerAutoplayNextOverlay";
 import { PlayerSeekBar } from "@/components/player/PlayerSeekBar";
 import { PlayerStallOverlay } from "@/components/player/PlayerStallOverlay";
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, motion, useIsPresent } from "framer-motion";
 import type Hls from "hls.js";
 import type { Level } from "hls.js";
 import {
@@ -102,7 +103,7 @@ import {
   VolumeX,
   X,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import dynamic from "next/dynamic";
 
 const PlayerEpgDrawer = dynamic(
@@ -189,6 +190,46 @@ function activateFlipControl(
   action();
 }
 
+function useMobileShellViewport(): boolean {
+  return useSyncExternalStore(
+    (onStoreChange) => {
+      if (typeof window === "undefined") return () => {};
+      const mq = window.matchMedia(mobileShellMediaQuery());
+      mq.addEventListener("change", onStoreChange);
+      return () => mq.removeEventListener("change", onStoreChange);
+    },
+    () =>
+      typeof window !== "undefined" &&
+      window.matchMedia(mobileShellMediaQuery()).matches,
+    () => false
+  );
+}
+
+/** Direct child of `AnimatePresence` — disable hit-testing while exit animation runs. */
+function PlayerBackdrop({
+  instantTransition,
+  children,
+}: {
+  instantTransition: boolean;
+  children: React.ReactNode;
+}) {
+  const isPresent = useIsPresent();
+  return (
+    <motion.div
+      initial={instantTransition ? false : { opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={instantTransition ? undefined : { opacity: 0 }}
+      transition={{ duration: instantTransition ? 0 : 0.18 }}
+      className={cn(
+        "fixed inset-0 z-[130] bg-black flex flex-col sm:flex-row items-stretch sm:items-center justify-center p-0 sm:p-6 min-h-0 touch-manipulation",
+        !isPresent && "pointer-events-none"
+      )}
+    >
+      {children}
+    </motion.div>
+  );
+}
+
 export function PlayerOverlay() {
   const { current, open, close, flip, playlist, index } = usePlayer();
   const hlsRuntime = useHlsRuntime(open);
@@ -202,14 +243,10 @@ export function PlayerOverlay() {
     if (typeof navigator === "undefined") return false;
     return isAmazonSilkUserAgent(navigator.userAgent || "");
   }, []);
+  const mobileShellViewport = useMobileShellViewport();
   const mobileLikeViewport = useMemo(() => {
-    if (typeof window === "undefined") return false;
-    return (
-      tvBrowser ||
-      silkLikeClient ||
-      window.matchMedia("(max-width: 768px)").matches
-    );
-  }, [tvBrowser, silkLikeClient]);
+    return tvBrowser || silkLikeClient || mobileShellViewport;
+  }, [tvBrowser, silkLikeClient, mobileShellViewport]);
   const chromiumDesktopClient = useMemo(() => {
     if (typeof navigator === "undefined") return false;
     return isChromiumBasedDesktopBrowser();
@@ -1763,18 +1800,19 @@ export function PlayerOverlay() {
     window.addEventListener("popstate", onPopState);
     return () => {
       window.removeEventListener("popstate", onPopState);
-      if (playerHistoryActiveRef.current && window.history.state?.playerOpen) {
-        playerHistoryActiveRef.current = false;
-        window.setTimeout(() => {
-          try {
-            if (window.history.state?.playerOpen) {
-              window.history.back();
-            }
-          } catch {
-            /* noop */
+      if (!playerHistoryActiveRef.current) return;
+      playerHistoryActiveRef.current = false;
+      window.setTimeout(() => {
+        // User may have reopened playback before this sentinel pop runs.
+        if (usePlayer.getState().open) return;
+        try {
+          if (window.history.state?.playerOpen) {
+            window.history.back();
           }
-        }, 0);
-      }
+        } catch {
+          /* noop */
+        }
+      }, 0);
     };
   }, [open, requestClose]);
 
@@ -1981,43 +2019,30 @@ export function PlayerOverlay() {
     );
   }, [epgHeaderListings, clockMs]);
 
+  const instantPlayerTransition =
+    quickVodPlayerOpen || mobileLikeViewport || chromiumDesktopClient;
+
   return (
     <AnimatePresence>
       {open && current && (
-        <motion.div
+        <PlayerBackdrop
           key="player"
-          initial={
-            quickVodPlayerOpen || mobileLikeViewport || chromiumDesktopClient
-              ? false
-              : { opacity: 0 }
-          }
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          transition={{
-            duration:
-              quickVodPlayerOpen || mobileLikeViewport || chromiumDesktopClient
-                ? 0
-                : 0.18,
-          }}
-          className="fixed inset-0 z-[60] bg-black flex flex-col sm:flex-row items-stretch sm:items-center justify-center p-0 sm:p-6 min-h-0 touch-manipulation"
+          instantTransition={instantPlayerTransition}
         >
           <motion.div
             initial={
-              quickVodPlayerOpen || mobileLikeViewport || chromiumDesktopClient
+              instantPlayerTransition
                 ? false
                 : { scale: 0.96, y: 20 }
             }
             animate={{ scale: 1, y: 0 }}
             exit={
-              quickVodPlayerOpen || mobileLikeViewport || chromiumDesktopClient
+              instantPlayerTransition
                 ? undefined
                 : { scale: 0.96, y: 20 }
             }
             transition={{
-              duration:
-                quickVodPlayerOpen || mobileLikeViewport || chromiumDesktopClient
-                  ? 0
-                  : 0.22,
+              duration: instantPlayerTransition ? 0 : 0.22,
               ease: [0.2, 0.8, 0.2, 1],
             }}
             ref={containerRef}
@@ -2488,7 +2513,7 @@ export function PlayerOverlay() {
                   onKeyDown={swallowRemoteActivateKeys}
                   onPointerDown={swallowControlPointer}
                   onClick={swallowControlPointer}
-                  className="absolute bottom-0 inset-x-0 z-[8] overflow-visible p-3 sm:p-5 bg-gradient-to-t from-black/85 to-transparent"
+                  className="absolute bottom-0 inset-x-0 z-[8] overflow-visible p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:p-5 sm:pb-5 bg-gradient-to-t from-black/85 to-transparent"
                 >
                   {(tvBrowser || silkLikeClient) && (
                     <TvPlayerRemoteHints
@@ -2711,7 +2736,7 @@ export function PlayerOverlay() {
               )}
             </AnimatePresence>
           </motion.div>
-        </motion.div>
+        </PlayerBackdrop>
       )}
     </AnimatePresence>
   );

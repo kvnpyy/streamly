@@ -492,6 +492,12 @@ html.player-immersive .player-immersive-surface video {
   cursor: none !important;
 }
 
+/* Phone/tablet shell: never let fixed chrome sit above the player layer */
+html[data-player-open] [data-mobile-bottom-nav] {
+  display: none !important;
+  pointer-events: none !important;
+}
+
 /* Windows Chrome/Brave live (hls.js + MSE): keep the decode layer cheap to composite */
 .player-chromium-live-surface video {
   will-change: auto;

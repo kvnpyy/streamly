@@ -9,6 +9,37 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.2.32] — 2026-06-14
+
+### Fixed
+- **Mobile player controls blocked by bottom nav** — hide the tab bar while playback is open; raise player z-index above chrome; safe-area padding on control bar.
+- **Cannot reopen player after close (continue watching)** — fix browse UI stuck empty after rapid close/reopen; skip stale `history.back()` when user already started playback again.
+
+## [0.2.31] — 2026-06-14
+
+### Fixed
+- **Page unresponsive after Discord dismiss (scroll only)** — remove `touchend` preventDefault that poisoned taps on iOS; drop `content-visibility` on live shelves (broken hit targets after layout shift); hide Discord strip on mobile; defer shelf EPG on phones; close ghost-opened category overlays on dismiss.
+
+## [0.2.30] — 2026-06-14
+
+### Fixed
+- **Discord banner dismiss freezes mobile** — defer `localStorage` write; collapse animation instead of instant unmount; block iOS ghost-tap bleed-through; debounce live shelf auto-load after layout shifts.
+
+## [0.2.29] — 2026-06-14
+
+### Fixed
+- **Mobile navigation feels frozen between pages** — bottom nav uses non-blocking transitions; live shelf bootstrap fetches one batch then yields; catalog prefetch deferred on phones; live search context scoped to main content only.
+
+## [0.2.28] — 2026-06-14
+
+### Fixed
+- **Mobile bottom navigation not clickable** — nav portals to `document.body` with a higher z-index; cookie banner and version badge sit above the bar instead of covering it; touch-friendly tap targets on iOS/Android.
+
+## [0.2.27] — 2026-06-14
+
+### Fixed
+- **Live TV shelf 502 (Sentry `/app/live`)** — serve stale disk catalog before blocking on upstream; shelf APIs return a degraded empty payload instead of HTTP 502; client never throws unhandled rejections on load-more or prefetch.
+
 ## [0.2.26] — 2026-06-14
 
 ### Added

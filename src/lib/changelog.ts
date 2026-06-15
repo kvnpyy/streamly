@@ -11,6 +11,66 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.2.32",
+    date: "2026-06-14",
+    summary: "Mobile player controls no longer sit under the tab bar; continue watching works after closing playback.",
+    highlights: [
+      "Bottom navigation hides during playback so fullscreen and transport controls are tappable.",
+      "Fix browse page stuck blank after closing the player (race in mount gate).",
+      "History cleanup no longer cancels a new play session if you tap continue watching right after close.",
+    ],
+  },
+  {
+    version: "0.2.31",
+    date: "2026-06-14",
+    summary: "Fix scroll-only freeze after dismissing the Discord banner.",
+    highlights: [
+      "Removed touchend preventDefault that blocked all taps on iOS after dismiss.",
+      "Live shelf rows no longer use content-visibility (misaligned touch targets after layout shift).",
+      "Discord strip hidden on mobile; shelf EPG deferred on phones; category overlay cleared on dismiss.",
+    ],
+  },
+  {
+    version: "0.2.30",
+    date: "2026-06-14",
+    summary: "Fix mobile freeze when dismissing the Discord community banner.",
+    highlights: [
+      "Dismiss defers localStorage so large IPTV session blobs cannot block the main thread.",
+      "Banner collapses smoothly and blocks iOS ghost taps on content below.",
+      "Live shelf scroll loader ignores layout shifts for 450ms after loads settle.",
+    ],
+  },
+  {
+    version: "0.2.29",
+    date: "2026-06-14",
+    summary: "Mobile page-to-page navigation stays responsive under heavy live shelf loads.",
+    highlights: [
+      "Bottom nav uses React transitions so taps register immediately while the next page loads.",
+      "Live shelf bootstrap loads one category batch then defers the rest — no more chained fetches blocking the main thread.",
+      "Catalog prefetch waits longer on phones; leaving Live aborts in-flight shelf requests.",
+    ],
+  },
+  {
+    version: "0.2.28",
+    date: "2026-06-14",
+    summary: "Fix mobile bottom navigation taps blocked by overlays and stacking.",
+    highlights: [
+      "Bottom nav renders in a body portal at z-100 so page content cannot steal touches.",
+      "Cookie consent and version badge offset above the nav bar on /app routes.",
+      "Nav links use touch-manipulation and solid backdrop for reliable iOS taps.",
+    ],
+  },
+  {
+    version: "0.2.27",
+    date: "2026-06-14",
+    summary: "Complete Live TV shelf 502 fix — stale-first catalog and graceful degradation.",
+    highlights: [
+      "Expired disk catalog is served immediately while upstream refresh runs in the background.",
+      "Shelf batch and preview APIs return empty shelves with catalogUnavailable instead of HTTP 502.",
+      "Load-more and prefetch paths set in-page errors instead of unhandled promise rejections.",
+    ],
+  },
+  {
     version: "0.2.26",
     date: "2026-06-14",
     summary: "Discord links across logged-in app chrome; Live TV shelf 502 resilience.",

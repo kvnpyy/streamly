@@ -350,6 +350,8 @@ export function LiveShelfBrowsePage({
         )
       ) : catalog.isFetched && !catalog.isError ? (
         <WebLiveBrowsePaged creds={creds} openChannel={shelfOpenChannel} />
+      ) : !catalog.isError ? (
+        <SkeletonGrid variant="tile" count={4} />
       ) : null}
     </div>
   );

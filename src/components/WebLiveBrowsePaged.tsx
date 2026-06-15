@@ -11,8 +11,14 @@ import {
 import type { LiveShelfMeta } from "@/lib/live-category-shelf";
 import { useLiveOpenCategory } from "@/hooks/use-live-open-category";
 import { useLiveShelfBrowse } from "@/hooks/use-live-shelf-browse";
+import { useDeferredMount } from "@/hooks/use-deferred-mount";
 import { useShelfNowPlayingMap } from "@/hooks/use-shelf-now-playing";
 import { useLiveBrowseUi } from "@/store/live-browse-ui";
+import {
+  CHROME_LAYOUT_SHIFT_EVENT,
+  isMobileShellWidth,
+  mobileShellMediaQuery,
+} from "@/lib/shell-layout";
 import type { XtreamCredentials } from "@/lib/xtream-types";
 import { usePlayer } from "@/store/player";
 import { usePrefs } from "@/store/preferences";
@@ -24,6 +30,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
 } from "react";
 
 const MAX_PER_SHELF = 6;
@@ -109,11 +116,26 @@ function WebLiveBrowsePagedInner({ creds, openChannel }: WebLiveBrowsePagedProps
     return out;
   }, [allShelves, visibleShelfCount]);
 
+  const mobileShell = useSyncExternalStore(
+    (onStoreChange) => {
+      const mq = window.matchMedia(mobileShellMediaQuery());
+      mq.addEventListener("change", onStoreChange);
+      return () => mq.removeEventListener("change", onStoreChange);
+    },
+    () => isMobileShellWidth(),
+    () => false
+  );
+  const shelfEpgReady = useDeferredMount(
+    mobileShell ? 2_500 : 120,
+    mobileShell ? 8_000 : 2_400
+  );
+
   const shelfNowPlayingMap = useShelfNowPlayingMap(
     creds,
     shelfEpgChannels,
     categoryNameById,
-    shelfEpgChannels.length > 0
+    shelfEpgReady && shelfEpgChannels.length > 0,
+    mobileShell ? 16 : 48
   );
 
   useEffect(() => {
@@ -157,19 +179,37 @@ function WebLiveBrowsePagedInner({ creds, openChannel }: WebLiveBrowsePagedProps
   );
 
   const loadMoreSentinelRef = useRef<HTMLDivElement>(null);
+  const shelfLoadSettledAtRef = useRef(0);
+  useEffect(() => {
+    if (!shelvesBuilding) {
+      shelfLoadSettledAtRef.current = Date.now();
+    }
+  }, [shelvesBuilding]);
+
+  useEffect(() => {
+    const onChromeShift = () => {
+      shelfLoadSettledAtRef.current = Date.now();
+    };
+    window.addEventListener(CHROME_LAYOUT_SHIFT_EVENT, onChromeShift);
+    return () =>
+      window.removeEventListener(CHROME_LAYOUT_SHIFT_EVENT, onChromeShift);
+  }, []);
+
   useEffect(() => {
     if (!hasMore || shelvesBuilding) return;
     const el = loadMoreSentinelRef.current;
     if (!el) return;
     const observer = new IntersectionObserver(
       (entries) => {
-        if (entries.some((e) => e.isIntersecting)) loadMoreShelves();
+        if (!entries.some((e) => e.isIntersecting)) return;
+        if (Date.now() - shelfLoadSettledAtRef.current < (mobileShell ? 900 : 450)) return;
+        loadMoreShelves();
       },
       { rootMargin: "280px" }
     );
     observer.observe(el);
     return () => observer.disconnect();
-  }, [hasMore, shelvesBuilding, loadMoreShelves]);
+  }, [hasMore, shelvesBuilding, loadMoreShelves, mobileShell]);
 
   return (
     <div className="space-y-6 py-2">

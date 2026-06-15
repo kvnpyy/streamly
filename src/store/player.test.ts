@@ -90,4 +90,15 @@ describe("usePlayer flip", () => {
     expect(usePlayer.getState().current?.streamId).toBe(102);
     expect(usePlayer.getState().index).toBe(1);
   });
+
+  it("play reopens after close without clearing current", () => {
+    usePlayer.getState().play(s1);
+    expect(usePlayer.getState().open).toBe(true);
+    usePlayer.getState().close();
+    expect(usePlayer.getState().open).toBe(false);
+    expect(usePlayer.getState().current?.id).toBe(1);
+    usePlayer.getState().play(s2);
+    expect(usePlayer.getState().open).toBe(true);
+    expect(usePlayer.getState().current?.id).toBe(2);
+  });
 });

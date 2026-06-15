@@ -4,6 +4,7 @@ import type { LiveShelfMeta } from "@/lib/live-category-shelf";
 import type { TvRegion } from "@/lib/geo-continent";
 import {
   fetchLiveShelfBatch,
+  SHELF_CATALOG_UNAVAILABLE_MSG,
   shelfBatchToMeta,
 } from "@/lib/live-catalog-shelf-batch";
 import type { XtreamCredentials } from "@/lib/xtream-types";
@@ -13,6 +14,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { scheduleWhenIdle } from "@/lib/defer-idle";
 
 /** Server allows up to 24 categories per shelf-batch request. */
 const SHELVES_PER_FETCH = 24;
@@ -82,6 +84,10 @@ export function useLiveShelfBrowse({
         limitPerShelf: previewLimit,
         signal,
       });
+      if (res.catalogUnavailable) {
+        setShelfError(SHELF_CATALOG_UNAVAILABLE_MSG);
+        return [];
+      }
       categoryOffsetRef.current = res.nextOffset;
       hasMoreRef.current = res.hasMore;
       setHasMoreCategories(res.hasMore);
@@ -132,6 +138,7 @@ export function useLiveShelfBrowse({
 
     const session = sessionRef.current;
     let cancelled = false;
+    const abort = new AbortController();
 
     queueMicrotask(() => {
       if (cancelled || session !== sessionRef.current) return;
@@ -143,51 +150,45 @@ export function useLiveShelfBrowse({
       setShelfError(null);
     });
 
-    void (async () => {
-      setLoading(true);
-      try {
+    const cancelBootstrap = scheduleWhenIdle(() => {
+      if (cancelled || session !== sessionRef.current) return;
+
+      void (async () => {
         const { yieldToMain } = await import("@/lib/yield-to-main");
-        let built: LiveShelfMeta[] = [];
-        let firstPaint = true;
-        while (!cancelled && session === sessionRef.current) {
-          const batch = await fetchBatch(
-            categoryOffsetRef.current,
-            SHELVES_PER_FETCH
-          );
+        await yieldToMain();
+        if (cancelled || session !== sessionRef.current) return;
+
+        setLoading(true);
+        try {
+          const batch = await fetchBatch(0, SHELVES_PER_FETCH, abort.signal);
           if (cancelled || session !== sessionRef.current) return;
           if (batch.length) {
-            built = [...built, ...batch];
-            allShelvesRef.current = built;
-            setAllShelves(built);
-            const vis = firstPaint
-              ? Math.min(initialVisible, built.length)
-              : built.length;
-            firstPaint = false;
+            allShelvesRef.current = batch;
+            setAllShelves(batch);
+            const vis = Math.min(initialVisible, batch.length);
             visibleRef.current = vis;
             setVisibleShelfCount(vis);
           }
-          if (!hasMoreRef.current) break;
-          await yieldToMain();
+          prefetchNext();
+        } catch (e) {
+          if (cancelled || session !== sessionRef.current) return;
+          if (e instanceof DOMException && e.name === "AbortError") return;
+          const msg =
+            e instanceof Error ? e.message : "Could not load live categories.";
+          setShelfError(msg);
+        } finally {
+          if (!cancelled && session === sessionRef.current) {
+            setBootstrapping(false);
+            setLoading(false);
+          }
         }
-        if (cancelled || session !== sessionRef.current) return;
-        visibleRef.current = built.length;
-        setVisibleShelfCount(built.length);
-        prefetchNext();
-      } catch (e) {
-        if (cancelled || session !== sessionRef.current) return;
-        const msg =
-          e instanceof Error ? e.message : "Could not load live categories.";
-        setShelfError(msg);
-      } finally {
-        if (!cancelled && session === sessionRef.current) {
-          setBootstrapping(false);
-          setLoading(false);
-        }
-      }
-    })();
+      })();
+    }, 120);
 
     return () => {
       cancelled = true;
+      cancelBootstrap();
+      abort.abort();
     };
   }, [
     enabled,
@@ -251,6 +252,11 @@ export function useLiveShelfBrowse({
         if (session !== sessionRef.current) return;
         if (shelves.length) appendShelves(shelves);
         revealAllBufferedDeferred();
+      } catch (e) {
+        if (session !== sessionRef.current) return;
+        const msg =
+          e instanceof Error ? e.message : "Could not load live categories.";
+        setShelfError(msg);
       } finally {
         if (session === sessionRef.current) {
           busyRef.current = false;

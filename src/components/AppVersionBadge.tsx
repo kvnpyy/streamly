@@ -1,7 +1,11 @@
 "use client";
 
 import { getAppVersionLabel } from "@/lib/app-version";
+import { MOBILE_BOTTOM_NAV_CLEARANCE } from "@/lib/shell-layout";
+import { cn } from "@/lib/utils";
+import { usePlayer } from "@/store/player";
 import Link from "next/link";
+import type { CSSProperties } from "react";
 
 /**
  * Subtle build label — links to /changelog for release notes.
@@ -9,8 +13,20 @@ import Link from "next/link";
  */
 export function AppVersionBadge() {
   const label = getAppVersionLabel();
+  const playerOpen = usePlayer((s) => s.open);
+  if (playerOpen) return null;
   return (
-    <div className="fixed bottom-1 right-2 z-[200]">
+    <div
+      className={cn(
+        "fixed right-2 z-[90] pointer-events-auto",
+        "max-lg:bottom-[var(--mobile-bottom-nav-clearance)] lg:bottom-1"
+      )}
+      style={
+        {
+          ["--mobile-bottom-nav-clearance" as string]: MOBILE_BOTTOM_NAV_CLEARANCE,
+        } as CSSProperties
+      }
+    >
       <Link
         href="/changelog"
         title="What's new — release notes"

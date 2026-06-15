@@ -12,12 +12,14 @@ import { useAuthBootstrapReady } from "@/components/AuthSessionBootstrap";
 import dynamic from "next/dynamic";
 import { useTvBrowser } from "@/components/TvBrowserProvider";
 import { cn } from "@/lib/utils";
+import { MOBILE_BOTTOM_NAV_CLEARANCE } from "@/lib/shell-layout";
 import { peekAuthSessionBridge, useAuth, useAuthStoreHydrated } from "@/store/auth";
 import { useSession } from "next-auth/react";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, type ReactNode } from "react";
+import { useEffect, type CSSProperties, type ReactNode } from "react";
 import { LiveSearchProvider } from "@/lib/live-search-context";
 import { LIVE_PAGE_PATH } from "@/lib/use-live-page-search";
+import { usePlayerDocumentOpen } from "@/lib/use-player-open";
 import { usePlayer } from "@/store/player";
 
 const PlayerOverlay = dynamic(
@@ -39,6 +41,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const tv = useTvBrowser();
   /** Unmount browse UI during playback so EPG scans, virtual lists, and images don't compete with video. */
   const playerOpen = usePlayer((s) => s.open);
+  usePlayerDocumentOpen();
   const creds = useAuth((s) => s.creds);
   const persistReady = useAuthStoreHydrated();
   const cookieReady = useAuthBootstrapReady();
@@ -50,9 +53,6 @@ export function AppShell({ children }: { children: ReactNode }) {
   const sessionKnown = sessionStatus !== "loading";
   const isSearchPage = pathname === "/app/search";
   const isLivePage = pathname === LIVE_PAGE_PATH;
-
-  const wrapLiveSearch = (node: ReactNode) =>
-    isLivePage ? <LiveSearchProvider>{node}</LiveSearchProvider> : node;
 
   useEffect(() => {
     if (!authGateReady || creds) return;
@@ -100,8 +100,16 @@ export function AppShell({ children }: { children: ReactNode }) {
               "relative flex-1 min-w-0 min-h-screen flex flex-col",
               tv
                 ? "pb-0"
-                : "pb-[calc(4.25rem+env(safe-area-inset-bottom,0px))] lg:pb-0"
+                : "pb-[var(--mobile-bottom-nav-clearance)] lg:pb-0"
             )}
+            style={
+              tv
+                ? undefined
+                : ({
+                    ["--mobile-bottom-nav-clearance" as string]:
+                      MOBILE_BOTTOM_NAV_CLEARANCE,
+                  } as CSSProperties)
+            }
           >
             {tv ? <TvTopNav /> : <TopBar />}
             <div className="relative flex-1 min-h-0 flex flex-col">
@@ -144,15 +152,26 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   /* ── TV layout: full-width, no sidebar, sticky top nav ── */
   if (tv) {
-    return wrapLiveSearch(
+    return (
       <div className="min-h-screen flex flex-col bg-(--bg-0)">
         <TvTopNav />
-        <main className="flex-1 min-h-0 min-w-0 overflow-y-auto">
-          <div className="w-full max-w-[1920px] mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6">
-            <CommunityDiscordStrip className="mb-4" />
-            <BrowseMountGate frozen={playerOpen}>{children}</BrowseMountGate>
-          </div>
-        </main>
+        {isLivePage ? (
+          <LiveSearchProvider>
+            <main className="flex-1 min-h-0 min-w-0 overflow-y-auto">
+              <div className="w-full max-w-[1920px] mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6">
+                <CommunityDiscordStrip className="mb-4" />
+                <BrowseMountGate frozen={playerOpen}>{children}</BrowseMountGate>
+              </div>
+            </main>
+          </LiveSearchProvider>
+        ) : (
+          <main className="flex-1 min-h-0 min-w-0 overflow-y-auto">
+            <div className="w-full max-w-[1920px] mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6">
+              <CommunityDiscordStrip className="mb-4" />
+              <BrowseMountGate frozen={playerOpen}>{children}</BrowseMountGate>
+            </div>
+          </main>
+        )}
         <PlayerOverlay />
         {isLivePage ? <LiveCategoryOverlayHost /> : null}
         <AppVersionBadge />
@@ -160,27 +179,41 @@ export function AppShell({ children }: { children: ReactNode }) {
     );
   }
 
-  /* ── Desktop / mobile layout ── */
-  return wrapLiveSearch(
-    <div className="flex min-h-screen">
-      <Sidebar />
-      <main
+  const mainColumn = (
+    <main
+      className={cn(
+        "flex-1 min-w-0 min-h-screen flex flex-col",
+        "pb-[var(--mobile-bottom-nav-clearance)] lg:pb-0"
+      )}
+      style={
+        {
+          ["--mobile-bottom-nav-clearance" as string]:
+            MOBILE_BOTTOM_NAV_CLEARANCE,
+        } as CSSProperties
+      }
+    >
+      <TopBar />
+      <div
         className={cn(
-          "flex-1 min-w-0 min-h-screen flex flex-col",
-          "pb-[calc(4.25rem+env(safe-area-inset-bottom,0px))] lg:pb-0"
+          "flex-1 px-3 sm:px-6 lg:px-8",
+          isSearchPage ? "pt-1 pb-4 sm:pt-3 sm:pb-6" : "py-4 sm:py-6"
         )}
       >
-        <TopBar />
-        <div
-          className={cn(
-            "flex-1 px-3 sm:px-6 lg:px-8",
-            isSearchPage ? "pt-1 pb-4 sm:pt-3 sm:pb-6" : "py-4 sm:py-6"
-          )}
-        >
-          <CommunityDiscordStrip className="mb-4" />
-          <BrowseMountGate frozen={playerOpen}>{children}</BrowseMountGate>
-        </div>
-      </main>
+        <CommunityDiscordStrip className="mb-4" />
+        <BrowseMountGate frozen={playerOpen}>{children}</BrowseMountGate>
+      </div>
+    </main>
+  );
+
+  /* ── Desktop / mobile layout ── */
+  return (
+    <div className="flex min-h-screen">
+      <Sidebar />
+      {isLivePage ? (
+        <LiveSearchProvider>{mainColumn}</LiveSearchProvider>
+      ) : (
+        mainColumn
+      )}
       <MobileBottomNav />
       <PlayerOverlay />
       {isLivePage ? <LiveCategoryOverlayHost /> : null}

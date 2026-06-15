@@ -4,21 +4,77 @@ import { CommunityDiscordSidebarLink } from "@/components/CommunityDiscordSideba
 import { useTvBrowser } from "@/components/TvBrowserProvider";
 import { MOBILE_NAV_MORE, MOBILE_NAV_PRIMARY } from "@/lib/nav-config";
 import { feedbackFormUrlWithContext } from "@/lib/feedback-url";
+import { MOBILE_BOTTOM_NAV_CLEARANCE } from "@/lib/shell-layout";
 import { cn } from "@/lib/utils";
 import { signOutFully } from "@/lib/sign-out-client";
-import { LogOut, Menu, MessageSquare, Settings } from "lucide-react";
+import { usePlayer } from "@/store/player";
+import { LogOut, Menu, MessageSquare, Settings, type LucideIcon } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore, useTransition } from "react";
+import { createPortal } from "react-dom";
 
 const SHEET_DISMISS_PX = 72;
+
+function subscribeNoop() {
+  return () => {};
+}
+
+function navItemActive(pathname: string, href: string): boolean {
+  return href === "/app" ? pathname === "/app" : pathname.startsWith(href);
+}
+
+function MobileNavTab({
+  href,
+  label,
+  icon: Icon,
+  active,
+  pending,
+  onNavigate,
+}: {
+  href: string;
+  label: string;
+  icon: LucideIcon;
+  active: boolean;
+  pending: boolean;
+  onNavigate: (href: string) => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={() => onNavigate(href)}
+      aria-current={active ? "page" : undefined}
+      aria-busy={pending || undefined}
+      className={cn(
+        "relative flex flex-col items-center justify-center gap-1 min-w-0 flex-1 min-h-12 py-2 rounded-xl text-[10px] font-medium transition-colors touch-manipulation select-none",
+        active || pending
+          ? "text-(--brand) bg-(--brand)/14 shadow-[inset_0_1px_0_rgba(255,255,255,0.07)]"
+          : "text-(--text-muted) active:bg-(--bg-2)"
+      )}
+    >
+      <Icon
+        className={cn(
+          "size-6 shrink-0 pointer-events-none",
+          (active || pending) && "stroke-[2.5px]"
+        )}
+      />
+      <span className="truncate max-w-full px-0.5 pointer-events-none">
+        {label.replace(" TV", "")}
+      </span>
+    </button>
+  );
+}
 
 export function MobileBottomNav() {
   const pathname = usePathname();
   const router = useRouter();
   const tv = useTvBrowser();
+  const playerOpen = usePlayer((s) => s.open);
+  const [isPending, startTransition] = useTransition();
+  const [pendingHref, setPendingHref] = useState<string | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [sheetDragY, setSheetDragY] = useState(0);
+  const mounted = useSyncExternalStore(subscribeNoop, () => true, () => false);
   const sheetDragYRef = useRef(0);
   const handleRef = useRef<HTMLDivElement>(null);
 
@@ -27,6 +83,17 @@ export function MobileBottomNav() {
     setSheetDragY(0);
     sheetDragYRef.current = 0;
   }, []);
+
+  const navigate = useCallback(
+    (href: string) => {
+      if (navItemActive(pathname, href)) return;
+      setPendingHref(href);
+      startTransition(() => {
+        router.push(href);
+      });
+    },
+    [pathname, router]
+  );
 
   useEffect(() => {
     if (!sheetOpen) return;
@@ -68,32 +135,35 @@ export function MobileBottomNav() {
     };
   }, [sheetOpen, closeSheet]);
 
-  return (
+  useEffect(() => {
+    if (playerOpen) closeSheet();
+  }, [playerOpen, closeSheet]);
+
+  if (!mounted || playerOpen) return null;
+
+  return createPortal(
     <>
       <nav
-        className="lg:hidden fixed bottom-0 inset-x-0 z-40 glass border-t border-(--line) pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-1.5 px-1"
+        data-mobile-bottom-nav
+        className="lg:hidden fixed bottom-0 inset-x-0 z-[100] pointer-events-auto touch-manipulation border-t border-(--line) bg-(--bg-1)/95 backdrop-blur-md pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-1.5 px-1 shadow-[0_-8px_32px_rgba(0,0,0,0.35)]"
+        style={{ WebkitTransform: "translateZ(0)" }}
         aria-label="Main navigation"
       >
-        <div className="flex items-stretch justify-around gap-0.5 max-w-lg mx-auto">
+        <div className="relative z-10 flex items-stretch justify-around gap-0.5 max-w-lg mx-auto">
           {MOBILE_NAV_PRIMARY.map(({ href, label, icon: Icon }) => {
-            const active =
-              href === "/app"
-                ? pathname === "/app"
-                : pathname.startsWith(href);
+            const active = navItemActive(pathname, href);
+            const pending =
+              isPending && pendingHref === href && !active;
             return (
-              <Link
+              <MobileNavTab
                 key={href}
                 href={href}
-                className={cn(
-                  "flex flex-col items-center justify-center gap-1 min-w-0 flex-1 min-h-12 py-2 rounded-xl text-[10px] font-medium transition-colors",
-                  active
-                    ? "text-(--brand) bg-(--brand)/14 shadow-[inset_0_1px_0_rgba(255,255,255,0.07)]"
-                    : "text-(--text-muted) active:bg-(--bg-2)"
-                )}
-              >
-                <Icon className={cn("size-6 shrink-0", active && "stroke-[2.5px]")} />
-                <span className="truncate max-w-full px-0.5">{label.replace(" TV", "")}</span>
-              </Link>
+                label={label}
+                icon={Icon}
+                active={active}
+                pending={pending}
+                onNavigate={navigate}
+              />
             );
           })}
           <button
@@ -104,22 +174,26 @@ export function MobileBottomNav() {
               setSheetOpen(true);
             }}
             className={cn(
-              "flex flex-col items-center justify-center gap-1 min-w-0 flex-1 min-h-12 py-2 rounded-xl text-[10px] font-medium transition-colors",
-              sheetOpen || MOBILE_NAV_MORE.some((x) => pathname.startsWith(x.href))
+              "relative flex flex-col items-center justify-center gap-1 min-w-0 flex-1 min-h-12 py-2 rounded-xl text-[10px] font-medium transition-colors touch-manipulation select-none",
+              sheetOpen || MOBILE_NAV_MORE.some((x) => navItemActive(pathname, x.href))
                 ? "text-(--brand) bg-(--brand)/14 shadow-[inset_0_1px_0_rgba(255,255,255,0.07)]"
                 : "text-(--text-muted) active:bg-(--bg-2)"
             )}
             aria-expanded={sheetOpen}
             aria-haspopup="dialog"
           >
-            <Menu className="size-6 shrink-0" />
-            <span className="truncate">More</span>
+            <Menu className="size-6 shrink-0 pointer-events-none" />
+            <span className="truncate pointer-events-none">More</span>
           </button>
         </div>
       </nav>
 
       {sheetOpen && (
-        <div className="lg:hidden fixed inset-0 z-50" role="dialog" aria-modal="true">
+        <div
+          className="lg:hidden fixed inset-0 z-[110] touch-manipulation"
+          role="dialog"
+          aria-modal="true"
+        >
           <button
             type="button"
             className="absolute inset-0 bg-black/55 backdrop-blur-[2px]"
@@ -132,6 +206,7 @@ export function MobileBottomNav() {
               transform: sheetDragY ? `translateY(${sheetDragY}px)` : undefined,
               transition:
                 sheetDragY === 0 ? "transform 0.2s ease-out" : undefined,
+              marginBottom: MOBILE_BOTTOM_NAV_CLEARANCE,
             }}
           >
             <div
@@ -147,14 +222,22 @@ export function MobileBottomNav() {
             </div>
             <div className="space-y-1 overflow-y-auto flex-1 min-h-0 touch-pan-y">
               {MOBILE_NAV_MORE.map(({ href, label, icon: Icon }) => {
-                const active = pathname.startsWith(href);
+                const active = navItemActive(pathname, href);
                 return (
                   <Link
                     key={href}
                     href={href}
-                    onClick={closeSheet}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      closeSheet();
+                      if (navItemActive(pathname, href)) return;
+                      setPendingHref(href);
+                      startTransition(() => {
+                        router.push(href);
+                      });
+                    }}
                     className={cn(
-                      "flex items-center gap-3 rounded-xl px-3 py-3 text-sm transition-colors",
+                      "flex items-center gap-3 rounded-xl px-3 py-3 text-sm transition-colors touch-manipulation",
                       active
                         ? "bg-(--bg-3) text-(--text)"
                         : "text-(--text-dim) active:bg-(--bg-2)"
@@ -198,7 +281,7 @@ export function MobileBottomNav() {
               </Link>
               <button
                 type="button"
-                className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-sm text-(--text-dim) active:bg-(--bg-2) text-left"
+                className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-sm text-(--text-dim) active:bg-(--bg-2) text-left touch-manipulation"
                 onClick={() => {
                   closeSheet();
                   void signOutFully().then(() => router.replace("/login"));
@@ -211,6 +294,7 @@ export function MobileBottomNav() {
           </div>
         </div>
       )}
-    </>
+    </>,
+    document.body
   );
 }

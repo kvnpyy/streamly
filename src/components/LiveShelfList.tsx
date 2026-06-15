@@ -29,10 +29,7 @@ function LiveShelfListInner<T>({
   return (
     <div className="space-y-6">
       {visible.map((item, index) => (
-        <div
-          key={itemKey(item, index)}
-          className="[content-visibility:auto] [contain-intrinsic-size:220px] [contain:layout_paint]"
-        >
+        <div key={itemKey(item, index)}>
           {renderItem(item, index)}
         </div>
       ))}

@@ -100,7 +100,7 @@ export function HomeRecentTile({
           className={cn(
             "absolute inset-0 grid place-items-center transition-opacity bg-black/25",
             onPlay
-              ? "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
+              ? "opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 [@media(hover:hover)]:group-focus-within:opacity-100"
               : "opacity-0 group-hover:opacity-100"
           )}
         >

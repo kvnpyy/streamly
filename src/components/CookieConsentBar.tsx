@@ -7,12 +7,19 @@ import {
   type CookieConsentChoice,
 } from "@/lib/cookie-consent";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
+import { useEffect, useState, type CSSProperties } from "react";
+import { MOBILE_BOTTOM_NAV_CLEARANCE } from "@/lib/shell-layout";
+import { cn } from "@/lib/utils";
+import { usePlayer } from "@/store/player";
 
 const SHOW = isCookieConsentBannerEnabled();
 
 export function CookieConsentBar() {
+  const pathname = usePathname();
+  const playerOpen = usePlayer((s) => s.open);
   const [visible, setVisible] = useState(false);
+  const onAppRoute = pathname.startsWith("/app");
 
   useEffect(() => {
     if (!SHOW) return;
@@ -41,13 +48,26 @@ export function CookieConsentBar() {
     }
   }
 
-  if (!SHOW || !visible) return null;
+  if (!SHOW || !visible || playerOpen) return null;
 
   return (
     <div
       role="dialog"
       aria-label="Cookie preferences"
-      className="fixed bottom-0 inset-x-0 z-[200] p-3 sm:p-4 pointer-events-none"
+      className={cn(
+        "fixed inset-x-0 z-[120] p-3 sm:p-4 pointer-events-none",
+        onAppRoute
+          ? "max-lg:bottom-[var(--mobile-bottom-nav-clearance)] lg:bottom-0"
+          : "bottom-0"
+      )}
+      style={
+        onAppRoute
+          ? ({
+              ["--mobile-bottom-nav-clearance" as string]:
+                MOBILE_BOTTOM_NAV_CLEARANCE,
+            } as CSSProperties)
+          : undefined
+      }
     >
       <div className="max-w-lg mx-auto pointer-events-auto rounded-2xl border border-(--line) bg-(--bg-1)/95 backdrop-blur-md shadow-[0_-8px_40px_rgba(0,0,0,0.35)] px-4 py-4 space-y-3">
         <p className="text-sm text-(--text) leading-relaxed">

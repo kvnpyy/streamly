@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 
 /**
  * Unmount browse UI while the player is open (saves TV RAM).
- * Remount one frame after close so media teardown and history cleanup finish first.
+ * Remount synchronously on close so continue-watching taps are never dropped.
  */
 export function BrowseMountGate({
   frozen,
@@ -14,16 +14,15 @@ export function BrowseMountGate({
   children: ReactNode;
 }) {
   const [mounted, setMounted] = useState(!frozen);
+  const cycleRef = useRef(0);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
+    const cycle = ++cycleRef.current;
     if (frozen) {
-      queueMicrotask(() => setMounted(false));
+      if (cycleRef.current === cycle) setMounted(false);
       return;
     }
-    const id = window.requestAnimationFrame(() => {
-      setMounted(true);
-    });
-    return () => window.cancelAnimationFrame(id);
+    if (cycleRef.current === cycle) setMounted(true);
   }, [frozen]);
 
   if (!mounted) return null;

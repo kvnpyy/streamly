@@ -23,7 +23,12 @@ export type ShelfBatchResponse = {
   hasMore: boolean;
   /** Categories in this region that have at least one channel. */
   totalCategories: number;
+  /** Upstream catalog could not be loaded — UI should show retry, not throw. */
+  catalogUnavailable?: boolean;
 };
+
+export const SHELF_CATALOG_UNAVAILABLE_MSG =
+  "Live TV categories are temporarily unavailable. Try again shortly.";
 
 const RETRYABLE_STATUSES = new Set([502, 503, 504, 429]);
 
@@ -49,7 +54,6 @@ export async function fetchLiveShelfBatch(
   url.searchParams.set("count", String(opts.count));
   url.searchParams.set("limit", String(opts.limitPerShelf));
 
-  let lastStatus = 0;
   for (let attempt = 0; attempt < 3; attempt++) {
     if (opts.signal?.aborted) {
       throw new DOMException("Aborted", "AbortError");
@@ -61,13 +65,28 @@ export async function fetchLiveShelfBatch(
       cache: "default",
     });
     if (res.ok) {
-      return (await res.json()) as ShelfBatchResponse;
+      const data = (await res.json()) as ShelfBatchResponse;
+      if (data.catalogUnavailable) {
+        return {
+          shelves: [],
+          nextOffset: opts.offset,
+          hasMore: false,
+          totalCategories: 0,
+          catalogUnavailable: true,
+        };
+      }
+      return data;
     }
-    lastStatus = res.status;
     if (!RETRYABLE_STATUSES.has(res.status) || attempt >= 2) break;
     await sleep(350 * (attempt + 1));
   }
-  throw new Error(`Could not load shelves (${lastStatus || "network"}).`);
+  return {
+    shelves: [],
+    nextOffset: opts.offset,
+    hasMore: false,
+    totalCategories: 0,
+    catalogUnavailable: true,
+  };
 }
 
 export function shelfBatchToMeta(items: ShelfBatchItem[]): LiveShelfMeta[] {

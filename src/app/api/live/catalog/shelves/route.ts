@@ -84,10 +84,8 @@ export async function GET(req: NextRequest) {
     }
 
     return NextResponse.json({ shelves });
-  } catch {
-    return NextResponse.json(
-      { error: "Could not load shelf previews." },
-      { status: 502 }
-    );
+  } catch (err) {
+    console.error("[live/shelves]", err);
+    return NextResponse.json({ shelves: {}, catalogUnavailable: true });
   }
 }
