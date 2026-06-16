@@ -1,3 +1,7 @@
+import {
+  normalizeVodLanguageCode,
+  vodItemMatchesLanguage,
+} from "@/lib/vod-language";
 import { safeLower, safeStr } from "@/lib/utils";
 import {
   materializeSeriesIds,
@@ -14,6 +18,8 @@ export type ListVodItemsOpts = {
   limit?: number;
   sort?: VodCatalogSort;
   q?: string;
+  /** Canonical language code (EN, FR, …) from title/category prefixes. */
+  lang?: string;
   streamIds?: number[];
 };
 
@@ -99,6 +105,46 @@ function filterSeriesByQuery(streams: SeriesItem[], q: string): SeriesItem[] {
   return streams.filter((s) => safeLower(s.name).includes(needle));
 }
 
+function categoryNameById(
+  categories: VodCatalogBundle["categories"] | SeriesCatalogBundle["categories"]
+): Map<string, string> {
+  return new Map(
+    (categories ?? []).map((c) => [String(c.category_id), c.category_name])
+  );
+}
+
+function filterVodByLanguage(
+  streams: VodStream[],
+  lang: string | undefined,
+  catNames: Map<string, string>
+): VodStream[] {
+  const code = normalizeVodLanguageCode(lang);
+  if (!code) return streams;
+  return streams.filter((s) =>
+    vodItemMatchesLanguage(
+      s.name,
+      code,
+      catNames.get(String(s.category_id))
+    )
+  );
+}
+
+function filterSeriesByLanguage(
+  streams: SeriesItem[],
+  lang: string | undefined,
+  catNames: Map<string, string>
+): SeriesItem[] {
+  const code = normalizeVodLanguageCode(lang);
+  if (!code) return streams;
+  return streams.filter((s) =>
+    vodItemMatchesLanguage(
+      s.name,
+      code,
+      catNames.get(String(s.category_id))
+    )
+  );
+}
+
 export function listVodItemsFromBundle(
   bundle: VodCatalogBundle,
   streamById: Map<number, VodStream>,
@@ -129,7 +175,9 @@ export function listVodItemsFromBundle(
     }
   }
 
+  const catNames = categoryNameById(bundle.categories);
   streams = filterVodByQuery(streams, opts.q ?? "");
+  streams = filterVodByLanguage(streams, opts.lang, catNames);
   if (sort !== "added") streams = sortVodStreams(streams, sort);
 
   const total = streams.length;
@@ -167,7 +215,9 @@ export function listSeriesItemsFromBundle(
     }
   }
 
+  const catNames = categoryNameById(bundle.categories);
   items = filterSeriesByQuery(items, opts.q ?? "");
+  items = filterSeriesByLanguage(items, opts.lang, catNames);
   if (sort !== "added") items = sortSeriesItems(items, sort);
 
   const total = items.length;

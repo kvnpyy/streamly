@@ -35,6 +35,8 @@ export type BrowsePrefs = {
   liveView?: "list" | "guide";
   moviesCategory?: string | "all";
   seriesCategory?: string | "all";
+  moviesLanguage?: string | "all";
+  seriesLanguage?: string | "all";
   /** How live category rails / pickers sort groups for this Xtream login. */
   liveCategorySortMode?: "provider" | "az" | "manual";
   /** Ordered `category_id` strings when `liveCategorySortMode === "manual"`. */

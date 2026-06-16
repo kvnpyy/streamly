@@ -17,6 +17,7 @@ export type SeriesItemsQueryParams = {
   limit?: number;
   sort?: CatalogSort;
   q?: string;
+  lang?: string;
   streamIds?: number[];
 };
 
@@ -51,6 +52,8 @@ export async function fetchSeriesItemsPage(
   }
   const q = params.q?.trim();
   if (q) url.searchParams.set("q", q);
+  const lang = params.lang?.trim();
+  if (lang) url.searchParams.set("lang", lang);
   if (params.streamIds?.length) {
     url.searchParams.set("ids", params.streamIds.slice(0, 48).join(","));
   }
@@ -84,6 +87,7 @@ export function seriesItemsQueryOptions(
   const offset = params.offset ?? 0;
   const limit = params.limit ?? VOD_ITEMS_MAX_LIMIT;
   const idsKey = params.streamIds?.join(",") ?? "";
+  const lang = params.lang?.trim() ?? "";
 
   return {
     queryKey: [
@@ -94,6 +98,7 @@ export function seriesItemsQueryOptions(
       limit,
       sort,
       q,
+      lang,
       idsKey,
     ] as const,
     queryFn: ({ signal }) => fetchSeriesItemsPage(creds, params, signal),
