@@ -2,9 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
   resolveStoredVodResumeSec,
   shouldPersistVodResume,
+  storedVodResumeSec,
   vodAbsoluteSec,
   vodRelativeSec,
 } from "@/lib/player-vod-resume";
+import type { PlayerSource } from "@/store/player";
 
 describe("vodAbsoluteSec", () => {
   it("returns element time for direct playback", () => {
@@ -52,6 +54,27 @@ describe("shouldPersistVodResume", () => {
 
   it("persists mid-playback positions", () => {
     expect(shouldPersistVodResume(600, 3600)).toBe(true);
+  });
+});
+
+describe("storedVodResumeSec", () => {
+  const series: PlayerSource = {
+    kind: "series",
+    id: 1,
+    streamId: 99,
+    title: "Ep",
+    url: "/api/stream?u=x&type=vod",
+  };
+
+  it("returns null when nothing saved or too early", () => {
+    expect(
+      storedVodResumeSec("acct", series, () => undefined)
+    ).toBeNull();
+    expect(storedVodResumeSec("acct", series, () => 10)).toBeNull();
+  });
+
+  it("returns saved position when past the resume threshold", () => {
+    expect(storedVodResumeSec("acct", series, () => 120)).toBe(120);
   });
 });
 

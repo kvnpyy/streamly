@@ -65,3 +65,16 @@ export function shouldPersistVodResume(
     absoluteSec < durationSec - 45
   );
 }
+
+/** Saved wall-clock resume for a title, or null when start-from-beginning applies. */
+export function storedVodResumeSec(
+  accountKey: string | undefined,
+  current: PlayerSource | null,
+  getVodResume: (storageKey: string) => number | undefined
+): number | null {
+  const key = vodResumeStorageKey(accountKey, current);
+  if (!key) return null;
+  const stored = getVodResume(key);
+  if (stored == null || stored < 15) return null;
+  return stored;
+}

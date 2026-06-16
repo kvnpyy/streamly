@@ -233,7 +233,7 @@ export function releaseVodTranscodePlayback(proxyUrl: string): void {
 /** Start server transcode before Play (focus / hover) so first segment is ready sooner. */
 export function warmVodTranscodePlay(
   proxyUrl: string,
-  opts?: { compatMse?: boolean }
+  opts?: { compatMse?: boolean; seekSec?: number }
 ): void {
   if (!isVodTranscodeEnabledClient()) return;
   if (!canVodTranscodeProxyUrl(proxyUrl)) return;

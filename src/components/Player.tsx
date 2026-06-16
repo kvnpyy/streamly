@@ -29,6 +29,7 @@ import { useAuth } from "@/store/auth";
 import { usePlayer, type PlayerSource } from "@/store/player";
 import {
   shouldPersistVodResume,
+  storedVodResumeSec,
   type VodTimelineHold,
   vodResumeStorageKey,
 } from "@/lib/player-vod-resume";
@@ -819,25 +820,46 @@ export function PlayerOverlay() {
       isVodTranscodeEnabledClient() &&
       vodNeedsServerTranscodePrep(current.containerExt, current.url) &&
       canVodTranscodeProxyUrl(current.url);
+    const accountKey = creds ? browseAccountKey(creds) : undefined;
+    const resumeSec = storedVodResumeSec(
+      accountKey,
+      current,
+      usePrefs.getState().getVodResume
+    );
+    const seekSec =
+      resumeSec != null ? Math.floor(resumeSec) : undefined;
+    vodResumeLockedRef.current = false;
     queueMicrotask(() => {
       if (preferServerTranscode) {
         vodTriedTranscodeRef.current = true;
         setVodTranscodeBoost(true);
         warmVodTranscodePlay(current.url, {
           compatMse: tvBrowser || silkLikeClient,
+          seekSec,
         });
+        if (seekSec != null && seekSec >= 15) {
+          vodTimelineHoldRef.current = {
+            absoluteTimeSec: seekSec,
+            startOffsetSec: seekSec,
+          };
+          vodResumeLockedRef.current = true;
+        } else {
+          vodTimelineHoldRef.current = null;
+        }
         setVodPlaybackUrl(
           appendVodTranscodeHls(current.url, {
             compatMse: tvBrowser || silkLikeClient,
+            seekSec,
           })
         );
       } else {
+        vodTimelineHoldRef.current = null;
         setVodPlaybackUrl(current.url);
         setVodTranscodeBoost(false);
         vodTriedTranscodeRef.current = false;
       }
     });
-  }, [open, current, tvBrowser, silkLikeClient]);
+  }, [open, current, creds, tvBrowser, silkLikeClient]);
 
   // iOS / older WebKit: redundant playsinline attrs avoid fullscreen-only decode paths.
   useEffect(() => {
@@ -1844,6 +1866,8 @@ export function PlayerOverlay() {
     usesTranscode: usesTranscodePlayback,
     startOffsetSecRef: vodStartOffsetRef,
     encodedSecRelRef: vodEncodedSecRef,
+    accountKey: creds ? browseAccountKey(creds) : undefined,
+    compatMse: tvBrowser || silkLikeClient,
   });
 
   const progress =

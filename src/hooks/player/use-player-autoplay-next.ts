@@ -7,8 +7,15 @@ import {
   shouldAutoplayOnEnded,
   shouldOfferAutoplayNext,
 } from "@/lib/player-autoplay-next";
+import { storedVodResumeSec } from "@/lib/player-vod-resume";
 import { shouldTreatTranscodeAsEnded } from "@/lib/player-transcode-playback-end";
+import {
+  isVodTranscodeEnabledClient,
+  vodNeedsServerTranscodePrep,
+  warmVodTranscodePlay,
+} from "@/lib/vod-transcode-url";
 import type { PlayerPlaylist, PlayerSource } from "@/store/player";
+import { browseAccountKey, usePrefs } from "@/store/preferences";
 import {
   useCallback,
   useEffect,
@@ -30,6 +37,8 @@ export type UsePlayerAutoplayNextParams = {
   usesTranscode?: boolean;
   startOffsetSecRef?: RefObject<number>;
   encodedSecRelRef?: RefObject<number>;
+  accountKey?: string;
+  compatMse?: boolean;
 };
 
 export type UsePlayerAutoplayNextResult = {
@@ -56,6 +65,8 @@ export function usePlayerAutoplayNext(
     usesTranscode = false,
     startOffsetSecRef,
     encodedSecRelRef,
+    accountKey,
+    compatMse = false,
   } = p;
 
   const nextEpisode = useMemo(
@@ -115,6 +126,30 @@ export function usePlayerAutoplayNext(
   useEffect(() => {
     if (countdownSec === 0) advanceToNext();
   }, [countdownSec, advanceToNext]);
+
+  /** Prime server transcode for the next episode during the countdown. */
+  useEffect(() => {
+    if (!open || !shouldOffer || !nextEpisode) return;
+    if (!isVodTranscodeEnabledClient()) return;
+    if (
+      !vodNeedsServerTranscodePrep(
+        nextEpisode.containerExt,
+        nextEpisode.url
+      )
+    ) {
+      return;
+    }
+    const resumeSec = storedVodResumeSec(
+      accountKey,
+      nextEpisode,
+      usePrefs.getState().getVodResume
+    );
+    warmVodTranscodePlay(nextEpisode.url, {
+      compatMse,
+      seekSec:
+        resumeSec != null ? Math.floor(resumeSec) : undefined,
+    });
+  }, [open, shouldOffer, nextEpisode, accountKey, compatMse]);
 
   useEffect(() => {
     if (!usesTranscode || !open || dismissedForEpisode || watchCreditsForEpisode) {

@@ -521,7 +521,7 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
               const raw = xhr.responseText?.trim();
               const body =
                 raw && !raw.startsWith("<") ? raw.slice(0, 240) : null;
-              if (xhr.status === 503) {
+              if (xhr.status === 503 || xhr.status === 502) {
                 // Server is still encoding the first segment — keep prep UI, let hls.js retry.
                 setVodPrepProgress((p) => Math.min(92, Math.max(p, 20) + 3));
                 return;
