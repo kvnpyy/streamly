@@ -11,6 +11,16 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.2.34",
+    date: "2026-06-16",
+    summary: "Filter Movies and Series by language when your playlist mixes EN, FR, NL, and other dubbed rows.",
+    highlights: [
+      "Language dropdown on Movies and Series — pick English, French, Dutch, and other codes detected in your catalog.",
+      "Filters the full paginated grid server-side so browse stays fast on large playlists.",
+      "Selection persists per account and syncs to the URL (?lang=EN).",
+    ],
+  },
+  {
     version: "0.2.32",
     date: "2026-06-14",
     summary: "Mobile player controls no longer sit under the tab bar; continue watching works after closing playback.",

@@ -9,6 +9,11 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.2.34] — 2026-06-16
+
+### Added
+- **Language filter on Movies and Series** — filter mixed-language catalogs by provider prefixes (e.g. `EN -`, `FR -`, `[NL]`); server-side pagination, per-account preference, and `?lang=` URL sync.
+
 ## [0.2.32] — 2026-06-14
 
 ### Fixed
