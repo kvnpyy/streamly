@@ -144,7 +144,6 @@ function SeriesPageInner({
   const { selectedLanguage, setLanguage, languageActive } = useVodLanguageBrowse({
     accountKey,
     prefKey: "seriesLanguage",
-    languages: catalogLanguages,
     searchParams,
     pathname,
     router,
@@ -467,7 +466,7 @@ function SeriesPageInner({
                   hideAdult={hideAdultGenres}
                 />
                 <VodLanguageFilter
-                  languages={catalogLanguages}
+                  detectedLanguages={catalogLanguages}
                   value={selectedLanguage}
                   onChange={setLanguage}
                 />

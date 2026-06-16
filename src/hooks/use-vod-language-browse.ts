@@ -1,6 +1,6 @@
 "use client";
 
-import { normalizeVodLanguageCode } from "@/lib/vod-language";
+import { normalizeVodLanguageCode, isKnownVodLanguageCode } from "@/lib/vod-language";
 import { usePrefs } from "@/store/preferences";
 import type { AppRouterInstance } from "next/dist/shared/lib/app-router-context.shared-runtime";
 import type { ReadonlyURLSearchParams } from "next/navigation";
@@ -11,13 +11,11 @@ type LanguagePrefKey = "moviesLanguage" | "seriesLanguage";
 export function useVodLanguageBrowse(opts: {
   accountKey: string;
   prefKey: LanguagePrefKey;
-  languages: string[];
   searchParams: ReadonlyURLSearchParams;
   pathname: string;
   router: AppRouterInstance;
 }) {
-  const { accountKey, prefKey, languages, searchParams, pathname, router } =
-    opts;
+  const { accountKey, prefKey, searchParams, pathname, router } = opts;
 
   const savedLanguage = usePrefs(
     (s) => s.browseByAccount[accountKey]?.[prefKey]
@@ -27,15 +25,13 @@ export function useVodLanguageBrowse(opts: {
     string | "all" | null
   >(null);
 
-  const languageSet = useMemo(() => new Set(languages), [languages]);
-
   const fromUrlLanguage = useMemo(() => {
     const raw = searchParams.get("lang")?.trim();
     if (!raw || raw === "all") return null;
     const code = normalizeVodLanguageCode(raw);
-    if (!code || !languageSet.has(code)) return null;
+    if (!code || !isKnownVodLanguageCode(code)) return null;
     return code;
-  }, [searchParams, languageSet]);
+  }, [searchParams]);
 
   const prefsLanguage: string | "all" =
     savedLanguage === undefined
@@ -47,9 +43,7 @@ export function useVodLanguageBrowse(opts: {
   const selectedBase = languageOverride ?? fromUrlLanguage ?? prefsLanguage;
 
   const selectedLanguage =
-    selectedBase !== "all" &&
-    languages.length > 0 &&
-    !languageSet.has(String(selectedBase))
+    selectedBase !== "all" && !isKnownVodLanguageCode(String(selectedBase))
       ? "all"
       : selectedBase;
 

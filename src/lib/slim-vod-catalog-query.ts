@@ -1,5 +1,5 @@
 import { catalogKeys, CATALOG_STALE_MS } from "@/lib/catalog-queries";
-import { toSlimVodCatalog, type SlimVodCatalog } from "@/lib/slim-vod-catalog";
+import { parseSlimCatalogResponse, type SlimVodCatalog } from "@/lib/slim-vod-catalog";
 import type { VodCatalogBundle } from "@/lib/vod-catalog-bundle";
 import type { XtreamCredentials } from "@/lib/xtream-types";
 import type { UseQueryOptions } from "@tanstack/react-query";
@@ -25,8 +25,8 @@ async function fetchSlimVodCatalog(
   if (!res.ok) {
     throw new Error(`Movie catalog failed (${res.status}).`);
   }
-  const data = (await res.json()) as VodCatalogBundle;
-  return toSlimVodCatalog(data);
+  const data = (await res.json()) as VodCatalogBundle & SlimVodCatalog;
+  return parseSlimCatalogResponse(data);
 }
 
 /** Categories + counts only — movie rows load per page from `/api/vod/items`. */

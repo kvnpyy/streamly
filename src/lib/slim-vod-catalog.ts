@@ -21,7 +21,17 @@ type SlimCatalogSource = {
 
 function toSlimCatalog(bundle: SlimCatalogSource): SlimVodCatalog {
   const categories = bundle.categories ?? [];
-  const languages = collectVodLanguages(bundle.streams ?? [], categories);
+  const presetLanguages = Array.isArray(
+    (bundle as Partial<SlimVodCatalog>).languages
+  )
+    ? (bundle as SlimVodCatalog).languages
+    : undefined;
+  const streams = bundle.streams ?? [];
+  const languages =
+    presetLanguages ??
+    (streams.length > 0
+      ? collectVodLanguages(streams, categories)
+      : collectVodLanguages([], categories));
   const counts = bundle.countByCategoryId ?? {};
   if (Object.keys(counts).length > 0) {
     return {
@@ -64,4 +74,18 @@ export function slimVodCatalogBody(bundle: VodCatalogBundle): SlimVodCatalog {
 
 export function slimSeriesCatalogBody(bundle: SeriesCatalogBundle): SlimSeriesCatalog {
   return toSlimSeriesCatalog(bundle);
+}
+
+/** Client parse for slim catalog API responses — keep server-computed languages. */
+export function parseSlimCatalogResponse(
+  data: Partial<SlimVodCatalog & VodCatalogBundle>
+): SlimVodCatalog {
+  if (data.streams?.length) {
+    return toSlimCatalog(data as VodCatalogBundle);
+  }
+  return {
+    categories: data.categories ?? [],
+    countByCategoryId: data.countByCategoryId ?? {},
+    languages: data.languages ?? collectVodLanguages([], data.categories ?? []),
+  };
 }
