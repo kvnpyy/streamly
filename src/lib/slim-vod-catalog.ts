@@ -17,14 +17,13 @@ type SlimCatalogSource = {
   streams?: Array<{ category_id: string | number; name: string }>;
   countByCategoryId?: Record<string, number>;
   idsByCategory?: Record<string, number[]>;
+  languages?: string[];
 };
 
 function toSlimCatalog(bundle: SlimCatalogSource): SlimVodCatalog {
   const categories = bundle.categories ?? [];
-  const presetLanguages = Array.isArray(
-    (bundle as Partial<SlimVodCatalog>).languages
-  )
-    ? (bundle as SlimVodCatalog).languages
+  const presetLanguages = Array.isArray(bundle.languages)
+    ? bundle.languages
     : undefined;
   const streams = bundle.streams ?? [];
   const languages =
@@ -78,10 +77,19 @@ export function slimSeriesCatalogBody(bundle: SeriesCatalogBundle): SlimSeriesCa
 
 /** Client parse for slim catalog API responses — keep server-computed languages. */
 export function parseSlimCatalogResponse(
-  data: Partial<SlimVodCatalog & VodCatalogBundle>
+  data: Partial<SlimVodCatalog> & {
+    categories?: Category[];
+    countByCategoryId?: Record<string, number>;
+    streams?: Array<{ category_id: string | number; name: string }>;
+  }
 ): SlimVodCatalog {
   if (data.streams?.length) {
-    return toSlimCatalog(data as VodCatalogBundle);
+    return toSlimCatalog({
+      categories: data.categories ?? [],
+      streams: data.streams,
+      countByCategoryId: data.countByCategoryId,
+      languages: data.languages,
+    });
   }
   return {
     categories: data.categories ?? [],
