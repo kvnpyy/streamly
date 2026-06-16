@@ -23,6 +23,7 @@ export type CatalogGridBaseParams = {
   categoryId: string | "all";
   sort?: CatalogSort;
   q?: string;
+  lang?: string;
 };
 
 export type CatalogItemsPage = {
@@ -69,12 +70,14 @@ export function vodCatalogGridInfiniteKey(
 ) {
   const q = params.q?.trim() ?? "";
   const sort = params.sort ?? "added";
+  const lang = params.lang?.trim() ?? "";
   return [
     ...catalogKeys.vodCatalog(creds),
     "items-infinite",
     params.categoryId,
     sort,
     q,
+    lang,
     VOD_GRID_PAGE_SIZE,
   ] as const;
 }
@@ -85,12 +88,14 @@ export function seriesCatalogGridInfiniteKey(
 ) {
   const q = params.q?.trim() ?? "";
   const sort = params.sort ?? "added";
+  const lang = params.lang?.trim() ?? "";
   return [
     ...catalogKeys.seriesCatalog(creds),
     "items-infinite",
     params.categoryId,
     sort,
     q,
+    lang,
     VOD_GRID_PAGE_SIZE,
   ] as const;
 }
@@ -105,6 +110,7 @@ export async function fetchVodCatalogGridPage(
     categoryId: params.categoryId,
     sort: params.sort,
     q: params.q,
+    lang: params.lang,
     offset,
     limit: VOD_GRID_PAGE_SIZE,
   };
@@ -121,6 +127,7 @@ export async function fetchSeriesCatalogGridPage(
     categoryId: params.categoryId,
     sort: params.sort,
     q: params.q,
+    lang: params.lang,
     offset,
     limit: VOD_GRID_PAGE_SIZE,
   };

@@ -1,3 +1,4 @@
+import { collectVodLanguages } from "@/lib/vod-language";
 import type { Category } from "@/lib/xtream-types";
 import type { SeriesCatalogBundle, VodCatalogBundle } from "@/lib/vod-catalog-bundle";
 
@@ -5,23 +6,28 @@ import type { SeriesCatalogBundle, VodCatalogBundle } from "@/lib/vod-catalog-bu
 export type SlimVodCatalog = {
   categories: Category[];
   countByCategoryId: Record<string, number>;
+  /** Language codes detected from title/category prefixes (EN, FR, …). */
+  languages: string[];
 };
 
 export type SlimSeriesCatalog = SlimVodCatalog;
 
 type SlimCatalogSource = {
   categories: Category[];
-  streams?: Array<{ category_id: string | number }>;
+  streams?: Array<{ category_id: string | number; name: string }>;
   countByCategoryId?: Record<string, number>;
   idsByCategory?: Record<string, number[]>;
 };
 
 function toSlimCatalog(bundle: SlimCatalogSource): SlimVodCatalog {
+  const categories = bundle.categories ?? [];
+  const languages = collectVodLanguages(bundle.streams ?? [], categories);
   const counts = bundle.countByCategoryId ?? {};
   if (Object.keys(counts).length > 0) {
     return {
-      categories: bundle.categories ?? [],
+      categories,
       countByCategoryId: counts,
+      languages,
     };
   }
   const fromIndex = bundle.idsByCategory;
@@ -30,7 +36,7 @@ function toSlimCatalog(bundle: SlimCatalogSource): SlimVodCatalog {
     for (const [cid, ids] of Object.entries(fromIndex)) {
       countByCategoryId[cid] = ids?.length ?? 0;
     }
-    return { categories: bundle.categories ?? [], countByCategoryId };
+    return { categories, countByCategoryId, languages };
   }
   const countByCategoryId: Record<string, number> = {};
   for (const s of bundle.streams ?? []) {
@@ -38,8 +44,9 @@ function toSlimCatalog(bundle: SlimCatalogSource): SlimVodCatalog {
     countByCategoryId[cid] = (countByCategoryId[cid] ?? 0) + 1;
   }
   return {
-    categories: bundle.categories ?? [],
+    categories,
     countByCategoryId,
+    languages,
   };
 }
 
