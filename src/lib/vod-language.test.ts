@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildVodLanguageFeaturedOptions,
   collectVodLanguages,
   extractVodLanguageCode,
   normalizeVodLanguageCode,
   vodItemMatchesLanguage,
   vodLanguageLabel,
 } from "@/lib/vod-language";
+import { parseSlimCatalogResponse } from "@/lib/slim-vod-catalog";
 import type { Category } from "@/lib/xtream-types";
 
 describe("extractVodLanguageCode", () => {
@@ -66,5 +68,26 @@ describe("vodLanguageLabel", () => {
   it("returns friendly labels", () => {
     expect(vodLanguageLabel("EN")).toBe("English");
     expect(vodLanguageLabel("FR")).toBe("French");
+  });
+});
+
+describe("buildVodLanguageFeaturedOptions", () => {
+  it("puts detected languages first then popular shortcuts", () => {
+    const featured = buildVodLanguageFeaturedOptions(["TR", "PL"]);
+    expect(featured[0]).toBe("TR");
+    expect(featured[1]).toBe("PL");
+    expect(featured).toContain("EN");
+    expect(featured).toContain("FR");
+  });
+});
+
+describe("parseSlimCatalogResponse", () => {
+  it("keeps server-computed languages when streams are omitted", () => {
+    const slim = parseSlimCatalogResponse({
+      categories: [{ category_id: "1", category_name: "Action", parent_id: 0 }],
+      countByCategoryId: { "1": 10 },
+      languages: ["EN", "FR", "NL"],
+    });
+    expect(slim.languages).toEqual(["EN", "FR", "NL"]);
   });
 });

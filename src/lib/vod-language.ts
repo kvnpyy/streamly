@@ -220,3 +220,51 @@ export function isVodLanguageFilterActive(
 ): boolean {
   return Boolean(lang && lang !== "all");
 }
+
+/** All language codes the filter UI and server accept. */
+export const ALL_VOD_LANGUAGE_CODES: readonly string[] = Object.keys(
+  VOD_LANGUAGE_LABELS
+).sort((a, b) => vodLanguageLabel(a).localeCompare(vodLanguageLabel(b)));
+
+/** Popular shortcuts shown before opening the full picker. */
+export const POPULAR_VOD_LANGUAGE_CODES: readonly string[] = [
+  "EN",
+  "FR",
+  "NL",
+  "DE",
+  "ES",
+  "IT",
+  "PT",
+  "PL",
+  "TR",
+  "AR",
+  "RU",
+  "JA",
+  "KO",
+  "ZH",
+];
+
+export function isKnownVodLanguageCode(
+  code: string | null | undefined
+): boolean {
+  const normalized = normalizeVodLanguageCode(code);
+  return Boolean(normalized && VOD_LANGUAGE_LABELS[normalized]);
+}
+
+/** Detected catalog codes first, then popular shortcuts (deduped). */
+export function buildVodLanguageFeaturedOptions(detected: string[]): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const raw of detected) {
+    const code = normalizeVodLanguageCode(raw);
+    if (!code || seen.has(code)) continue;
+    seen.add(code);
+    out.push(code);
+  }
+  for (const code of POPULAR_VOD_LANGUAGE_CODES) {
+    if (seen.has(code)) continue;
+    seen.add(code);
+    out.push(code);
+  }
+  return out;
+}

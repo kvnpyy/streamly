@@ -145,7 +145,6 @@ function MoviesPageInner({
   const { selectedLanguage, setLanguage, languageActive } = useVodLanguageBrowse({
     accountKey,
     prefKey: "moviesLanguage",
-    languages: catalogLanguages,
     searchParams,
     pathname,
     router,
@@ -473,7 +472,7 @@ function MoviesPageInner({
                   hideAdult={hideAdultGenres}
                 />
                 <VodLanguageFilter
-                  languages={catalogLanguages}
+                  detectedLanguages={catalogLanguages}
                   value={selectedLanguage}
                   onChange={setLanguage}
                 />
