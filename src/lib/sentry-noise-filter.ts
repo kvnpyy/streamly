@@ -1,4 +1,4 @@
-import type { ErrorEvent, EventHint } from "@sentry/nextjs";
+import type { ErrorEvent } from "@sentry/nextjs";
 
 /** Tampermonkey/Greasemonkey userscripts and browser extensions. */
 const THIRD_PARTY_FRAME_RE =
@@ -16,10 +16,7 @@ export function isThirdPartyScriptFrame(path: string): boolean {
 }
 
 /** Drop extension/userscript errors before they reach Sentry. */
-export function shouldDropSentryClientEvent(
-  event: ErrorEvent,
-  _hint?: EventHint
-): boolean {
+export function shouldDropSentryClientEvent(event: ErrorEvent): boolean {
   const frames =
     event.exception?.values?.flatMap((v) => v.stacktrace?.frames ?? []) ?? [];
   if (frames.length === 0) return false;

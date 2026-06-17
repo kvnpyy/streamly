@@ -9,6 +9,14 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.2.35] — 2026-06-17
+
+### Fixed
+- **Sentry noise from browser userscripts** — drop extension/userscript errors (`app://`, `*.user.js`) in client `beforeSend` so third-party scripts on `/login` do not create production alerts.
+
+### Changed
+- **Sentry automation prompt** — committed to repo; noise issues are auto-ignored with a comment instead of leaving alerts open.
+
 ## [0.2.32] — 2026-06-14
 
 ### Fixed

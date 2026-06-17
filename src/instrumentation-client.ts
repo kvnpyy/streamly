@@ -21,8 +21,8 @@ Sentry.init({
     /requestPictureInPicture.*Metadata for the video element are not loaded yet/i,
     /Failed to execute 'requestPictureInPicture'/i,
   ],
-  beforeSend(event, hint) {
-    if (shouldDropSentryClientEvent(event, hint)) return null;
+  beforeSend(event) {
+    if (shouldDropSentryClientEvent(event)) return null;
 
     const err = event.exception?.values?.[0];
     const value = err?.value ?? "";

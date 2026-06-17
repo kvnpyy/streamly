@@ -11,6 +11,15 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.2.35",
+    date: "2026-06-17",
+    summary: "Filter browser userscript errors out of Sentry so third-party scripts do not trigger production alerts.",
+    highlights: [
+      "Client beforeSend drops extension and Tampermonkey-style stack frames (app://, *.user.js).",
+      "Sentry automation prompt committed — noise issues auto-ignored with a comment.",
+    ],
+  },
+  {
     version: "0.2.32",
     date: "2026-06-14",
     summary: "Mobile player controls no longer sit under the tab bar; continue watching works after closing playback.",
