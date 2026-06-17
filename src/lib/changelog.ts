@@ -11,6 +11,17 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.2.37",
+    date: "2026-06-17",
+    summary: "Faster episode start and fix for series playback jumping backward and looping.",
+    highlights: [
+      "Transcode warm (hover/focus) no longer blocks — ffmpeg starts in the background before Play.",
+      "Single ffprobe pass, 2s HLS segments, and pre-warm on resume/next episode cut cold-start latency.",
+      "Fix growing HLS manifest refresh resetting playhead to 0 (backward seek / loop on TV and desktop).",
+      "Cache get_series_info for 5 minutes — series pages load faster on repeat visits.",
+    ],
+  },
+  {
     version: "0.2.35",
     date: "2026-06-17",
     summary: "Filter browser userscript errors out of Sentry so third-party scripts do not trigger production alerts.",

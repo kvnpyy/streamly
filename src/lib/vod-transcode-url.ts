@@ -242,7 +242,7 @@ export function warmVodTranscodePlay(
 
   const now = Date.now();
   if (warmInFlight.has(url)) return;
-  if (now - (warmLastAt.get(url) ?? 0) < 45_000) return;
+  if (now - (warmLastAt.get(url) ?? 0) < 20_000) return;
 
   warmInFlight.add(url);
   void fetch(url, { method: "HEAD", credentials: "same-origin" })

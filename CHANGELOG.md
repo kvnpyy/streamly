@@ -9,6 +9,15 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.2.37] — 2026-06-17
+
+### Fixed
+- **Series playback jumping backward and looping** — growing transcode HLS manifests re-fired `MANIFEST_PARSED` and reset playhead to 0; now only bootstraps once; edge nudges preserve current time.
+- **Slow episode start** — non-blocking transcode warm, single ffprobe, 2s segments, pre-warm resume/next episode, MP4 HEAD probe, cached `get_series_info`.
+
+### Changed
+- **Transcode edge watchdog** — nudge only when buffer is nearly dry (≤3s ahead), debounced to avoid seek storms.
+
 ## [0.2.35] — 2026-06-17
 
 ### Fixed

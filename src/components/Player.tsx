@@ -839,6 +839,21 @@ export function PlayerOverlay() {
     });
   }, [open, current, tvBrowser, silkLikeClient]);
 
+  /** Pre-warm the next episode while the current one plays (series binge). */
+  useEffect(() => {
+    if (!open || !playlist || playlist.kind !== "series" || index < 0) return;
+    const next = playlist.items[index + 1];
+    if (!next) return;
+    if (
+      isVodTranscodeEnabledClient() &&
+      vodNeedsServerTranscodePrep(next.containerExt, next.url)
+    ) {
+      warmVodTranscodePlay(next.url, {
+        compatMse: tvBrowser || silkLikeClient,
+      });
+    }
+  }, [open, playlist, index, tvBrowser, silkLikeClient]);
+
   // iOS / older WebKit: redundant playsinline attrs avoid fullscreen-only decode paths.
   useEffect(() => {
     if (!open || !current) return;

@@ -330,13 +330,17 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
       };
     }
 
-    /** VOD only: Range probe before assigning src (live skips). Returns false if probe failed hard. */
+    /** VOD only: lightweight availability check before assigning src (live skips). */
     const probeVodThenPlayNative = async (): Promise<boolean> => {
       if (!isLive) {
+        const ext = (current.containerExt ?? "").toLowerCase().replace(/^\./, "");
+        const likelyMp4 = ext === "mp4" || ext === "m4v";
         try {
           const probe = await fetch(url, {
-            method: "GET",
-            headers: { Range: "bytes=0-0" },
+            method: likelyMp4 ? "HEAD" : "GET",
+            ...(likelyMp4
+              ? {}
+              : { headers: { Range: "bytes=0-0" } }),
             cache: "no-store",
             signal: probeSignal,
           });
@@ -567,6 +571,9 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
 
       /** Intentionally no periodic `startLoad(-1)` — it fights hls.js live playlist refresh and causes visible black/rebuffer loops on many panels. */
 
+      /** Growing EVENT transcode playlists re-fire MANIFEST_PARSED — never restart at 0 mid-play. */
+      let transcodeManifestBootstrapped = false;
+
       hls.on(Hls.Events.MANIFEST_PARSED, () => {
         if (cancelled) return;
         resetNetErrStreak();
@@ -574,12 +581,15 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
         if (vodTranscodeHls) {
           setVodPrepProgress((p) => Math.max(p, 48));
           setCurrentLevel(-1);
-          try {
-            hls.startLoad(0);
-          } catch {
-            /* noop */
+          if (!transcodeManifestBootstrapped) {
+            transcodeManifestBootstrapped = true;
+            try {
+              hls.startLoad(0);
+            } catch {
+              /* noop */
+            }
+            void tryAutoplay();
           }
-          void tryAutoplay();
           return;
         }
         runStabilizeBrowserFriendlyCodecs();
@@ -851,7 +861,12 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
                 break;
               }
               try {
-                hls.startLoad(0);
+                const vv = videoRef.current;
+                const pos =
+                  vv && Number.isFinite(vv.currentTime)
+                    ? Math.max(0, vv.currentTime)
+                    : 0;
+                hls.startLoad(pos);
               } catch {
                 /* noop */
               }
@@ -1049,8 +1064,9 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
 
     stallTimer.current = setTimeout(runStallWatchdog, stallMs);
 
-    /** When the encode edge stalls, reload the growing manifest before the buffer runs dry. */
+    /** When the encode edge stalls, nudge manifest load without resetting playhead. */
     let transcodeEndSignaled = false;
+    let lastEdgeNudgeAt = 0;
     const vodEdgeWatch =
       vodTranscodeHls
         ? window.setInterval(() => {
@@ -1086,13 +1102,17 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
               bufEnd = Math.max(bufEnd, vv.buffered.end(bi));
             }
             const ahead = bufEnd - vv.currentTime;
-            if (ahead > 8) return;
+            /** Only nudge when buffer is nearly dry — frequent startLoad causes snap-back loops. */
+            if (ahead > 3) return;
+            const now = Date.now();
+            if (now - lastEdgeNudgeAt < 6000) return;
+            lastEdgeNudgeAt = now;
             try {
               hls.startLoad(Math.max(0, vv.currentTime));
             } catch {
               /* noop */
             }
-          }, 2500)
+          }, 3000)
         : null;
 
     return () => {

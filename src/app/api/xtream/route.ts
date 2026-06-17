@@ -12,6 +12,7 @@ import {
 import { extractXtreamEpgPayload } from "@/lib/xtream";
 import {
   getXtreamUpstreamCached,
+  isXtreamSeriesInfoCacheAction,
   setXtreamUpstreamCached,
   xtreamUpstreamCacheKey,
 } from "@/lib/xtream-upstream-cache";
@@ -72,7 +73,9 @@ export async function GET(req: NextRequest) {
   }
   const upstreamCacheKey = xtreamUpstreamCacheKey(creds, cacheParams);
   const cacheableUpstream =
-    isXtreamCatalogCacheAction(action) || epgAction;
+    isXtreamCatalogCacheAction(action) ||
+    epgAction ||
+    isXtreamSeriesInfoCacheAction(action);
   if (cacheableUpstream) {
     const hit = getXtreamUpstreamCached(upstreamCacheKey);
     if (hit) {
