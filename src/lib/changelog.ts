@@ -11,6 +11,18 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.3.0",
+    date: "2026-06-19",
+    summary:
+      "Smart TV onboarding, GitHub Discussions for feedback, and Live Continue Watching fixes.",
+    highlights: [
+      "/tv setup page with QR code, PIN pairing, and Samsung/LG/Fire TV guides.",
+      "GitHub Discussions — Feedback & Ideas thread linked from footer, Settings, and README.",
+      "Live Continue Watching plays from recents when catalog lookup fails.",
+      "TV PIN codes persist in SQLite across restarts and multi-instance deploys.",
+    ],
+  },
+  {
     version: "0.2.40",
     date: "2026-06-19",
     summary: "GitHub Discussions for low-friction feedback; changelog links across the site.",

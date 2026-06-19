@@ -40,11 +40,11 @@ Practical write-ups on the live site — not just README bullets:
 
 ## What's new
 
-**Latest release: [v0.2.40](https://iptvwebplayer.org/changelog)** (June 2026)
+**Latest release: [v0.3.0](https://iptvwebplayer.org/changelog)** (June 2026)
 
-- **GitHub Discussions** enabled — [Feedback & Ideas](https://github.com/kvnpyy/streamly/discussions/7) thread for feature thoughts (no issue required)
+- **Smart TV setup** at [/tv](https://iptvwebplayer.org/tv) — QR + PIN pairing
+- **GitHub Discussions** — [Feedback & Ideas](https://github.com/kvnpyy/streamly/discussions/7)
 - **CHANGELOG.md** + live [/changelog](https://iptvwebplayer.org/changelog) page
-- Version badge in the app links to release notes
 
 See the full **[changelog](./CHANGELOG.md)** or **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/changelog)** for earlier releases.
 

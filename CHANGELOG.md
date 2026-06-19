@@ -9,6 +9,25 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+---
+
+## [0.3.0] — 2026-06-19
+
+Production bundle: Smart TV onboarding, GitHub Discussions community links, and Continue Watching reliability.
+
+### Added
+- **Smart TV setup page** (`/tv`) — QR code, PIN pairing, per-platform guides.
+- **GitHub Discussions** — Feedback & Ideas thread; links in footer, Settings, README.
+- **TV app store scaffolds** — `tv-apps/` wrappers for Samsung, LG, and Fire TV.
+- **Persistent TV PIN pairing** — codes stored in SQLite.
+
+### Fixed
+- **Live TV Continue Watching sometimes did nothing** — play from saved recents when catalog lookup fails.
+- **Movies Continue Watching** — resume from recent metadata when catalog enrichment misses.
+
+### Changed
+- **Native TV browsers** — reduced motion for snappier channel zapping.
+
 ## [0.2.40] — 2026-06-19
 
 ### Added
