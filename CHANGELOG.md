@@ -9,6 +9,20 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.2.39] — 2026-06-19
+
+### Added
+- **Smart TV setup page** (`/tv`) — QR code, PIN pairing steps, and per-platform guides (Samsung, LG, Fire TV, Android TV).
+- **TV app store scaffolds** — `tv-apps/` wrappers for Samsung Tizen, LG webOS, and Fire TV submission.
+- **Persistent TV PIN pairing** — codes stored in SQLite so linking survives restarts and multi-process deploys.
+
+### Fixed
+- **Live TV Continue Watching sometimes did nothing** — play from saved recents when catalog lookup fails; touch-friendly Watch overlay on media cards.
+- **Movies Continue Watching** — resume playback from recent metadata when catalog enrichment misses.
+
+### Changed
+- **Native TV browsers** — reduced motion for snappier channel zapping on Tizen, webOS, and Silk.
+
 ## [0.2.37] — 2026-06-17
 
 ### Fixed

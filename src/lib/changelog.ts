@@ -11,6 +11,18 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.2.39",
+    date: "2026-06-19",
+    summary:
+      "Smart TV onboarding, persistent PIN pairing, and reliable Live Continue Watching.",
+    highlights: [
+      "/tv setup page with QR code, PIN steps, and Samsung/LG/Fire TV guides.",
+      "TV PIN codes persist in SQLite — survives restarts and multi-instance VPS deploys.",
+      "Live Continue Watching plays from recents when catalog lookup fails; touch-friendly Watch buttons.",
+      "tv-apps/ scaffolds for Samsung, LG, and Fire TV store wrappers.",
+    ],
+  },
+  {
     version: "0.2.37",
     date: "2026-06-17",
     summary: "Faster episode start and fix for series playback jumping backward and looping.",
