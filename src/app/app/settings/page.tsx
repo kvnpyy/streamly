@@ -2,6 +2,7 @@
 
 import { LiveCategorySortSection } from "@/components/LiveCategorySortSection";
 import { CommunityDiscordLink } from "@/components/CommunityDiscordLink";
+import { CommunityGitHubFeedbackLink } from "@/components/CommunityGitHubFeedbackLink";
 import { MarketingEmailPreferences } from "@/components/MarketingEmailPreferences";
 import { ProviderAccountsPanel } from "@/components/ProviderAccountsPanel";
 import { SectionHeader } from "@/components/SectionHeader";
@@ -163,12 +164,17 @@ export default function SettingsPage() {
         <h3 className="text-base font-semibold mb-2">Community</h3>
         <p className="text-sm text-(--text-dim) mb-4 leading-relaxed">
           Join the {SITE_NAME} Discord for setup help, release notes, and chat with
-          other users. Email is still best for account and privacy requests.
+          other users. Share feature ideas on GitHub Discussions — no issue required.
+          Email is still best for account and privacy requests.
         </p>
         <div className="flex flex-wrap gap-2">
           <CommunityDiscordLink
             label="Join Discord"
             className="min-h-11 px-4 rounded-lg bg-[#5865F2]/15 border border-[#5865F2]/35 hover:border-[#5865F2]/55 text-sm font-medium text-[#c7ceff]"
+          />
+          <CommunityGitHubFeedbackLink
+            label="Feedback & Ideas"
+            className="min-h-11 px-4 rounded-lg bg-(--bg-3) border border-(--line) hover:border-(--line-2) text-sm font-medium inline-flex items-center"
           />
           <a
             href={feedbackFormUrlWithContext({

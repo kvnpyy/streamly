@@ -13,6 +13,13 @@ export const FEEDBACK_FORM_URL =
   process.env.NEXT_PUBLIC_FEEDBACK_FORM_URL?.trim() ||
   "https://form.typeform.com/to/e9haRFsv";
 
+export const GITHUB_REPO_URL = "https://github.com/kvnpyy/streamly";
+
+/** Pinned "Feedback & Ideas" thread — low-friction ideas without opening an issue. */
+export const GITHUB_DISCUSSIONS_FEEDBACK_URL =
+  process.env.NEXT_PUBLIC_GITHUB_DISCUSSIONS_FEEDBACK_URL?.trim() ||
+  "https://github.com/kvnpyy/streamly/discussions/7";
+
 const DEFAULT_DISCORD_INVITE_URL = "https://discord.gg/QGFKJt9t7A";
 
 /** Public Discord invite — set empty in env to hide community links. */

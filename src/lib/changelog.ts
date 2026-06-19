@@ -11,6 +11,16 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.2.40",
+    date: "2026-06-19",
+    summary: "GitHub Discussions for low-friction feedback; changelog links across the site.",
+    highlights: [
+      "GitHub Discussions enabled with a pinned Feedback & Ideas thread — share thoughts without opening an issue.",
+      "Footer, Settings, blog shell, and README link to Discussions alongside Discord.",
+      "CHANGELOG.md and /changelog stay in sync for release notes on GitHub and the live site.",
+    ],
+  },
+  {
     version: "0.2.39",
     date: "2026-06-19",
     summary:

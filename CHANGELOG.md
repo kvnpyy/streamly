@@ -9,6 +9,15 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.2.40] — 2026-06-19
+
+### Added
+- **GitHub Discussions** — enabled on the repo with a **Feedback & Ideas** thread for feature thoughts (no issue required).
+- **Community links** — footer, Settings, blog shell, and README point to Discussions alongside Discord.
+
+### Changed
+- Changelog page cross-links **CHANGELOG.md** on GitHub and **GitHub Discussions** for feedback.
+
 ## [0.2.39] — 2026-06-19
 
 ### Added
