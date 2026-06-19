@@ -58,6 +58,9 @@ import {
   liveStreamToPlayerSource,
 } from "@/lib/live-flip-playlist";
 import { openLiveShelfChannel } from "@/lib/open-live-shelf-channel";
+import { buildLiveRecentStreams } from "@/lib/live-recent-streams";
+import { buildLivePlayUrl } from "@/lib/xtream";
+import { useContinueRecentPlay } from "@/hooks/use-continue-recent-play";
 import { usePlayer } from "@/store/player";
 import { usePrefs } from "@/store/preferences";
 import { nowPlayingTitleFromListings } from "@/lib/hooks";
@@ -613,28 +616,25 @@ export function LiveGridPageInner({ shell }: { shell: LivePageShell }) {
         limit: 12,
         signal,
       }),
-    enabled: recentLiveIds.length > 0 && catalog.isFetched ,
+    enabled: recentLiveIds.length > 0,
     staleTime: 60_000,
+    retry: 2,
     structuralSharing: false,
   });
 
-  const liveRecentStreams = useMemo(() => {
-    const byId = new Map(
-      (recentStreamsQuery.data ?? []).map((s) => [s.stream_id, s])
-    );
-    return recents
-      .filter((r) => r.kind === "live")
-      .slice(0, 12)
-      .map((recent) => ({ recent, stream: byId.get(recent.id) }))
-      .filter(
-        (
-          x
-        ): x is {
-          recent: (typeof recents)[0];
-          stream: NonNullable<typeof x.stream>;
-        } => x.stream !== undefined
-      );
-  }, [recents, recentStreamsQuery.data]);
+  const liveRecentStreams = useMemo(
+    () => buildLiveRecentStreams(recents, recentStreamsQuery.data),
+    [recents, recentStreamsQuery.data]
+  );
+
+  const { playRecent: playLiveRecent } = useContinueRecentPlay(
+    creds,
+    recents,
+    play,
+    addRecent,
+    undefined,
+    displayVisible
+  );
 
   const liveDiscoveryBlocks =
     discoveryEpgEnabled || trendingOnTvShelfEnabled ? (
@@ -880,11 +880,12 @@ export function LiveGridPageInner({ shell }: { shell: LivePageShell }) {
                   streamId={recent.id}
                   creds={creds}
                   skipTileEpg
+                  warmPlaybackUrl={buildLivePlayUrl(creds, stream)}
                   title={recent.name}
                   poster={recent.icon}
                   posterFit="contain"
                   badge="Live"
-                  onClick={() => openChannel(stream)}
+                  onClick={() => playLiveRecent(recent)}
                   isFavorite={isFavorite("live", recent.id)}
                   onToggleFavorite={() =>
                     toggleFavorite({

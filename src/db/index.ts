@@ -30,7 +30,17 @@ type ColumnInfo = { name: string };
  * (which is all SQLite allows in ALTER TABLE anyway).
  */
 function runStartupMigrations(driver: InstanceType<typeof Database>): void {
+  const tableExists = (table: string): boolean => {
+    const row = driver
+      .prepare(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ? LIMIT 1"
+      )
+      .get(table) as { name: string } | undefined;
+    return Boolean(row);
+  };
+
   const addIfMissing = (table: string, column: string, definition: string) => {
+    if (!tableExists(table)) return;
     const cols = driver.pragma(`table_info(${table})`) as ColumnInfo[];
     if (!cols.some((c) => c.name === column)) {
       driver.prepare(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`).run();
@@ -72,6 +82,28 @@ function runStartupMigrations(driver: InstanceType<typeof Database>): void {
       synced_at INTEGER NOT NULL
     );
   `);
+
+  driver.exec(`
+    CREATE TABLE IF NOT EXISTS tv_pair_codes (
+      pin TEXT PRIMARY KEY NOT NULL,
+      payload TEXT NOT NULL,
+      expires_at INTEGER NOT NULL,
+      created_at INTEGER NOT NULL
+    );
+  `);
+
+  driver.exec(`
+    CREATE TABLE IF NOT EXISTS tv_pair_redeem_buckets (
+      ip TEXT PRIMARY KEY NOT NULL,
+      count INTEGER NOT NULL,
+      reset_at INTEGER NOT NULL
+    );
+  `);
+}
+
+/** @internal Vitest only — clears the singleton between test files. */
+export function __resetDbCacheForTests(): void {
+  cached = undefined;
 }
 
 let cached: BetterSQLite3Database<typeof schema> | undefined;

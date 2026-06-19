@@ -161,7 +161,14 @@ export function MediaCard({
           </Link>
         )}
 
-        <div className="absolute inset-x-0 bottom-0 p-3 translate-y-2 group-hover:translate-y-0 opacity-0 group-hover:opacity-100 transition-all">
+        <div
+          className={cn(
+            "absolute inset-x-0 bottom-0 p-3 transition-all",
+            onClick
+              ? "translate-y-0 opacity-100 [@media(hover:hover)]:translate-y-2 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:translate-y-0 [@media(hover:hover)]:group-hover:opacity-100 [@media(hover:hover)]:group-focus-within:translate-y-0 [@media(hover:hover)]:group-focus-within:opacity-100"
+              : "translate-y-2 opacity-0 group-hover:translate-y-0 group-hover:opacity-100"
+          )}
+        >
           <span className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg btn-brand">
             <Play className="size-3.5 fill-white" /> Watch
           </span>

@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=1920, height=1080, initial-scale=1, user-scalable=no"/>
+  <title>Streamly</title>
+  <style>
+    html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #06070b; }
+    iframe { border: 0; width: 100%; height: 100%; }
+  </style>
+</head>
+<body>
+  <!-- Change STREAMLY_URL before building the .wgt package -->
+  <iframe
+    id="app"
+    src="https://iptvwebplayer.org/login"
+    allow="autoplay; fullscreen; encrypted-media"
+    title="Streamly IPTV Player"
+  ></iframe>
+  <script>
+    (function () {
+      var params = new URLSearchParams(window.location.search);
+      var base = params.get("url") || "https://iptvwebplayer.org";
+      var path = params.get("path") || "/login";
+      document.getElementById("app").src = base.replace(/\/$/, "") + path;
+    })();
+  </script>
+</body>
+</html>

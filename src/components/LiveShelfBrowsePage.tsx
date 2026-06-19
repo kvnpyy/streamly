@@ -27,6 +27,8 @@ import {
   type TvRegion,
 } from "@/lib/geo-continent";
 import { buildLivePlayUrl } from "@/lib/xtream";
+import { buildLiveRecentStreams } from "@/lib/live-recent-streams";
+import { useContinueRecentPlay } from "@/hooks/use-continue-recent-play";
 import type { Category, LiveStream, XtreamCredentials } from "@/lib/xtream-types";
 import { usePlayer } from "@/store/player";
 import { usePrefs } from "@/store/preferences";
@@ -175,28 +177,23 @@ export function LiveShelfBrowsePage({
         limit: 12,
         signal,
       }),
-    enabled: recentLiveIds.length > 0 && catalog.isFetched,
+    enabled: recentLiveIds.length > 0,
     staleTime: 60_000,
+    retry: 2,
     structuralSharing: false,
   });
 
-  const liveRecentStreams = useMemo(() => {
-    const byId = new Map(
-      (recentStreamsQuery.data ?? []).map((s) => [s.stream_id, s])
-    );
-    return recents
-      .filter((r) => r.kind === "live")
-      .slice(0, 12)
-      .map((recent) => ({ recent, stream: byId.get(recent.id) }))
-      .filter(
-        (
-          x
-        ): x is {
-          recent: (typeof recents)[0];
-          stream: NonNullable<typeof x.stream>;
-        } => x.stream !== undefined
-      );
-  }, [recents, recentStreamsQuery.data]);
+  const liveRecentStreams = useMemo(
+    () => buildLiveRecentStreams(recents, recentStreamsQuery.data),
+    [recents, recentStreamsQuery.data]
+  );
+
+  const { playRecent: playLiveRecent } = useContinueRecentPlay(
+    creds,
+    recents,
+    play,
+    addRecent
+  );
 
   const liveSearchToolbar = (
     <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full lg:w-auto">
@@ -266,7 +263,7 @@ export function LiveShelfBrowsePage({
                   poster={recent.icon}
                   posterFit="contain"
                   badge="Live"
-                  onClick={() => shelfOpenChannel(stream)}
+                  onClick={() => playLiveRecent(recent)}
                   isFavorite={isFavorite("live", recent.id)}
                   onToggleFavorite={() =>
                     toggleFavorite({

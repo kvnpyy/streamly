@@ -100,3 +100,22 @@ export const discoverySportsCache = sqliteTable("discovery_sports_cache", {
 });
 
 export type DiscoverySportsCache = typeof discoverySportsCache.$inferSelect;
+
+/** One-time TV linking PINs — persisted so multi-instance / restart-safe pairing works. */
+export const tvPairCodes = sqliteTable("tv_pair_codes", {
+  pin: text("pin").primaryKey(),
+  /** AES-256-GCM encrypted `{ creds }` — same format as session cookies. */
+  payload: text("payload").notNull(),
+  expiresAt: integer("expires_at", { mode: "timestamp_ms" }).notNull(),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+});
+
+/** Per-IP redeem attempt buckets for TV PIN pairing. */
+export const tvPairRedeemBuckets = sqliteTable("tv_pair_redeem_buckets", {
+  ip: text("ip").primaryKey(),
+  count: integer("count").notNull(),
+  resetAt: integer("reset_at", { mode: "timestamp_ms" }).notNull(),
+});
+
+export type TvPairCode = typeof tvPairCodes.$inferSelect;
+export type TvPairRedeemBucket = typeof tvPairRedeemBuckets.$inferSelect;

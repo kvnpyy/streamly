@@ -1,0 +1,16 @@
+{
+  "id": "org.streamly.iptv",
+  "version": "1.0.0",
+  "vendor": "Streamly",
+  "type": "web",
+  "main": "index.html",
+  "title": "Streamly",
+  "icon": "icon.png",
+  "largeIcon": "icon.png",
+  "bgColor": "#06070b",
+  "iconColor": "#7c5cff",
+  "disableBackHistoryAPI": true,
+  "handlesRelaunch": {
+    "onNewIntent": "extensive"
+  }
+}

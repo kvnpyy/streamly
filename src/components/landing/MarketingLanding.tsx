@@ -459,6 +459,12 @@ export function MarketingLanding() {
                 </a>
               ))}
               <Link
+                href="/tv"
+                className="min-h-10 inline-flex items-center hover:text-(--text) landing-focus-ring rounded"
+              >
+                Smart TV
+              </Link>
+              <Link
                 href="/blog"
                 className="min-h-10 inline-flex items-center hover:text-(--text) landing-focus-ring rounded"
               >

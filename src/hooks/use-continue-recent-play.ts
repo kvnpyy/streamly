@@ -2,6 +2,7 @@
 
 import {
   buildPlayerSourceFromRecent,
+  buildMoviePlayerSourceFromRecent,
   computeContinueProgressPct,
   continueDetailHref,
   recentResumeStorageKey,
@@ -11,6 +12,10 @@ import {
   liveStreamToPlayerSource,
   stubLiveStreamFromRecent,
 } from "@/lib/live-flip-playlist";
+import {
+  liveRecentFlipStreams,
+} from "@/lib/live-recent-streams";
+import type { LiveStream } from "@/lib/xtream-types";
 import type { XtreamCredentials } from "@/lib/xtream-types";
 import type { PlayerPlaylist } from "@/store/player";
 import type { PlayerSource } from "@/store/player";
@@ -32,7 +37,8 @@ export function useContinueRecentPlay(
   recents: RecentItem[],
   play: PlayFn,
   addRecent: (item: Omit<RecentItem, "lastAt" | "addedAt">) => void,
-  liveFlipStreams?: RecentItem[]
+  liveFlipStreams?: RecentItem[],
+  liveFlipCatalog?: LiveStream[]
 ) {
   const router = useRouter();
   const accountKey = useMemo(() => browseAccountKey(creds), [creds]);
@@ -42,8 +48,13 @@ export function useContinueRecentPlay(
     (recent: RecentItem) => {
       if (recent.kind === "live") {
         const stream = stubLiveStreamFromRecent(recent);
+        const flipFromCatalog = liveFlipCatalog?.length
+          ? liveRecentFlipStreams(stream, liveFlipCatalog, recents)
+          : null;
         const flipSource = liveFlipStreams ?? recents.filter((r) => r.kind === "live");
-        const flipStreams = flipSource.map(stubLiveStreamFromRecent);
+        const flipStreams = flipFromCatalog
+          ? flipFromCatalog
+          : flipSource.map(stubLiveStreamFromRecent);
         play(liveStreamToPlayerSource(creds, stream), {
           playlist: buildLiveFlipPlaylist(
             creds,
@@ -61,10 +72,16 @@ export function useContinueRecentPlay(
         return;
       }
 
+      if (recent.kind === "movie") {
+        play(buildMoviePlayerSourceFromRecent(creds, recent));
+        addRecent(recent);
+        return;
+      }
+
       const href = continueDetailHref(recent);
       if (href) router.push(href);
     },
-    [creds, recents, liveFlipStreams, play, addRecent, router]
+    [creds, recents, liveFlipStreams, liveFlipCatalog, play, addRecent, router]
   );
 
   const progressPctFor = useCallback(
