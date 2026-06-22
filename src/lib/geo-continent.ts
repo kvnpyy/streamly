@@ -143,6 +143,17 @@ const CODE_TO_REGION: Record<string, TvRegion> = {
   IS: "Europe", ISL: "Europe",
   MD: "Europe",
   XK: "Europe",
+  // Regional IPTV blocks (not ISO countries)
+  EU: "Europe",
+  AFR: "Africa",
+  AFRICA: "Africa",
+  ASIA: "Asia",
+  NA: "North America",
+  LAT: "Latin America",
+  LATAM: "Latin America",
+  ARAB: "Middle East",
+  ARABIC: "Middle East",
+
   // Non-standard IPTV provider abbreviations
   SCO: "Europe",  // Scotland
   WAL: "Europe",  // Wales
@@ -251,6 +262,7 @@ const PREFIX_ALIAS_TO_ISO: Record<string, string> = {
   GBR: "GB",
   UK: "GB",
   ENG: "GB",
+  ALB: "AL",
 };
 
 /**
@@ -282,6 +294,33 @@ function northAmericaCategoryContext(categoryName: string): boolean {
     iso === "CA" ||
     categoryHas24_7(categoryName)
   );
+}
+
+/**
+ * Map an ISO 3166-1 alpha-2 country code (from IP headers) to a TV region.
+ */
+export function detectRegionFromCountryCode(
+  countryCode: string | null | undefined
+): TvRegion | null {
+  if (!countryCode?.trim()) return null;
+  const iso = countryCode.trim().toUpperCase();
+  if (iso.length !== 2) return null;
+  return countryIsoToTvRegion(iso);
+}
+
+/** Default VOD language filter for a TV region (null = show all languages). */
+export function defaultVodLanguageForRegion(
+  region: TvRegion
+): string | null {
+  switch (region) {
+    case "North America":
+    case "Oceania":
+      return "EN";
+    case "Latin America":
+      return "ES";
+    default:
+      return null;
+  }
 }
 
 /**
@@ -392,7 +431,9 @@ export function normalizeCountryIso(token: string | null | undefined): string | 
   if (isLanguageOnlyPrefix(u)) return null;
   if (PREFIX_ALIAS_TO_ISO[u]) return PREFIX_ALIAS_TO_ISO[u]!;
   if (u.length === 2 && CODE_TO_REGION[u]) return u;
-  return PREFIX_ALIAS_TO_ISO[u] ?? null;
+  // 3–6 letter provider codes (ALB, SWE, …) and regional blocks (EU, LATAM)
+  if (CODE_TO_REGION[u]) return PREFIX_ALIAS_TO_ISO[u] ?? u;
+  return null;
 }
 
 /** ISO-2 from a category title (prefix + full country names). */

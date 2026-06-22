@@ -10,6 +10,8 @@ type Props = {
   countLabel: string;
   onClear: () => void;
   className?: string;
+  eyebrow?: string;
+  clearLabel?: string;
 };
 
 export function ActiveCategoryFilterBar({
@@ -18,6 +20,8 @@ export function ActiveCategoryFilterBar({
   countLabel,
   onClear,
   className,
+  eyebrow = "Category filter on",
+  clearLabel = "All categories",
 }: Props) {
   return (
     <div
@@ -33,7 +37,7 @@ export function ActiveCategoryFilterBar({
       </div>
       <div className="min-w-0 flex-1">
         <div className="text-[11px] font-semibold uppercase tracking-wider text-(--brand-2)">
-          Category filter on
+          {eyebrow}
         </div>
         <div className="mt-0.5 text-base font-semibold tracking-tight text-(--text) line-clamp-2 break-words min-w-0">
           {categoryName}
@@ -52,7 +56,7 @@ export function ActiveCategoryFilterBar({
         className="inline-flex items-center gap-1.5 shrink-0 rounded-lg border border-(--line) bg-(--bg-2) px-3 py-2 text-xs font-medium text-(--text) transition-colors hover:border-(--brand)/45 hover:bg-(--bg-3)"
       >
         <X className="size-3.5 opacity-80" aria-hidden />
-        All categories
+        {clearLabel}
       </button>
     </div>
   );

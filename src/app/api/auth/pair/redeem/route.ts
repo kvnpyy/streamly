@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic";
 /** Exchange a one-time PIN for an HttpOnly session cookie (same shape as password login). */
 export async function POST(req: NextRequest) {
   const ip = clientIp(req);
-  if (!pairingRedeemAllowed(ip)) {
+  if (!(await pairingRedeemAllowed(ip))) {
     return NextResponse.json(
       { error: "Too many attempts. Wait a few minutes." },
       { status: 429 }
@@ -30,7 +30,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "PIN required" }, { status: 400 });
   }
 
-  const creds = redeemPairCode(String(pin));
+  const creds = await redeemPairCode(String(pin));
   if (!creds) {
     return NextResponse.json(
       { error: "Invalid or expired code. Generate a new one on your phone." },

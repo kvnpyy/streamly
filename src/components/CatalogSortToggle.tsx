@@ -1,9 +1,9 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import { ArrowDownAZ, Star, TrendingUp } from "lucide-react";
+import { ArrowDownAZ, Calendar, Star, TrendingUp } from "lucide-react";
 
-export type CatalogSort = "added" | "rating" | "name";
+export type CatalogSort = "added" | "rating" | "name" | "release_date";
 
 const SORT_ITEMS: {
   value: CatalogSort;
@@ -11,6 +11,11 @@ const SORT_ITEMS: {
   icon: React.ReactNode;
 }[] = [
   { value: "added", label: "New", icon: <TrendingUp className="size-3.5" /> },
+  {
+    value: "release_date",
+    label: "Release",
+    icon: <Calendar className="size-3.5" />,
+  },
   { value: "rating", label: "Rating", icon: <Star className="size-3.5" /> },
   { value: "name", label: "A-Z", icon: <ArrowDownAZ className="size-3.5" /> },
 ];
@@ -18,6 +23,7 @@ const SORT_ITEMS: {
 export function catalogSortLabel(sort: CatalogSort): string | null {
   if (sort === "rating") return "Highest rated";
   if (sort === "name") return "A–Z";
+  if (sort === "release_date") return "Newest release";
   return null;
 }
 

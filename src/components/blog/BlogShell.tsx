@@ -1,4 +1,5 @@
 import { BrandMark } from "@/components/BrandMark";
+import { CommunityGitHubFeedbackLink } from "@/components/CommunityGitHubFeedbackLink";
 import { SITE_NAME } from "@/lib/site-brand";
 import Link from "next/link";
 import type { ReactNode } from "react";
@@ -27,6 +28,10 @@ export function BlogShell({
             <Link href="/changelog" className="hover:text-(--text) transition-colors">
               Changelog
             </Link>
+            <CommunityGitHubFeedbackLink
+              label="Feedback"
+              className="hover:text-(--text) transition-colors text-(--text-muted)"
+            />
             <Link href="/" className="hover:text-(--text) transition-colors">
               Home
             </Link>

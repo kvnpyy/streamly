@@ -24,7 +24,7 @@ export async function POST() {
     return NextResponse.json({ error: "Invalid session" }, { status: 401 });
   }
 
-  const pin = issuePairCode(creds);
+  const pin = await issuePairCode(creds);
   return NextResponse.json({
     pin,
     expiresInSeconds: Math.floor(PAIR_TTL_MS / 1000),

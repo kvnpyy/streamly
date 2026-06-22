@@ -21,6 +21,7 @@ import { LiveSearchProvider } from "@/lib/live-search-context";
 import { LIVE_PAGE_PATH } from "@/lib/use-live-page-search";
 import { usePlayerDocumentOpen } from "@/lib/use-player-open";
 import { usePlayer } from "@/store/player";
+import { useGeoDefaultsBootstrap } from "@/hooks/use-geo-defaults-bootstrap";
 
 const PlayerOverlay = dynamic(
   () => import("@/components/Player").then((m) => ({ default: m.PlayerOverlay })),
@@ -53,6 +54,8 @@ export function AppShell({ children }: { children: ReactNode }) {
   const sessionKnown = sessionStatus !== "loading";
   const isSearchPage = pathname === "/app/search";
   const isLivePage = pathname === LIVE_PAGE_PATH;
+
+  useGeoDefaultsBootstrap();
 
   useEffect(() => {
     if (!authGateReady || creds) return;

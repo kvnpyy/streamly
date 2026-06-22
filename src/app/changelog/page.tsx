@@ -47,6 +47,15 @@ export default function ChangelogPage() {
             >
               GitHub CHANGELOG.md
             </a>
+            . Ideas and feedback welcome in{" "}
+            <a
+              href="https://github.com/kvnpyy/streamly/discussions/7"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-(--brand-2) underline underline-offset-2"
+            >
+              GitHub Discussions
+            </a>
             .
           </p>
         </header>

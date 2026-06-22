@@ -9,6 +9,7 @@ import { useCatalogPageReady } from "@/hooks/use-catalog-page-ready";
 import { isDiscoveryShelvesEnabled, DISCOVERY_SHELF_META } from "@/lib/discovery";
 import { attachSeriesDiscoveryShelfItems } from "@/lib/attach-discovery-shelf-items";
 import { VodGenreBar } from "@/components/VodGenreBar";
+import { VodLanguageFilter } from "@/components/VodLanguageFilter";
 import { MediaCard } from "@/components/MediaCard";
 import { SectionHeader, SkeletonGrid } from "@/components/SectionHeader";
 import { useDebouncedValue } from "@/lib/use-debounce";
@@ -37,6 +38,8 @@ import {
 } from "@/components/CatalogSortToggle";
 import { shouldUseInstantCatalogGrid } from "@/lib/catalog-sort";
 import { useTvPresentation } from "@/lib/use-living-room-home-layout";
+import { useVodLanguageBrowse } from "@/hooks/use-vod-language-browse";
+import { vodLanguageLabel } from "@/lib/vod-language";
 import { scheduleWhenIdle } from "@/lib/defer-idle";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
@@ -136,6 +139,16 @@ function SeriesPageInner({
   );
 
   const countById = slimCatalog.data?.countByCategoryId ?? {};
+  const catalogLanguages = slimCatalog.data?.languages ?? [];
+
+  const { selectedLanguage, setLanguage, languageActive } = useVodLanguageBrowse({
+    accountKey,
+    prefKey: "seriesLanguage",
+    searchParams,
+    pathname,
+    router,
+  });
+
   const catalogMetaReady = catalogReady && slimCatalog.isSuccess;
 
   const filteredCats = useMemo(() => {
@@ -183,8 +196,9 @@ function SeriesPageInner({
       categoryId: selected,
       sort,
       q: qFilter.trim() || undefined,
+      lang: languageActive ? selectedLanguage : undefined,
     }),
-    [selected, sort, qFilter]
+    [selected, sort, qFilter, languageActive, selectedLanguage]
   );
 
   const itemsPage = useInfiniteQuery({
@@ -308,12 +322,18 @@ function SeriesPageInner({
 
   const [discoveryReady, setDiscoveryReady] = useState(false);
   useEffect(() => {
-    if (selected !== "all" || qFilter || slimCatalog.isLoading || !discoveryOn) {
+    if (
+      selected !== "all" ||
+      qFilter ||
+      languageActive ||
+      slimCatalog.isLoading ||
+      !discoveryOn
+    ) {
       queueMicrotask(() => setDiscoveryReady(false));
       return;
     }
     return scheduleWhenIdle(() => setDiscoveryReady(true), 2_500);
-  }, [selected, qFilter, slimCatalog.isLoading, discoveryOn]);
+  }, [selected, qFilter, languageActive, slimCatalog.isLoading, discoveryOn]);
 
   const discoveryShelves = useQuery(
     seriesDiscoveryShelvesQueryOptions(
@@ -400,6 +420,7 @@ function SeriesPageInner({
         genreShelves.map((s) => `${s.categoryId}:${s.items.length}`).join(","),
         selected,
         qFilter,
+        selectedLanguage,
       ].join("|"),
     [
       showDiscovery,
@@ -410,6 +431,7 @@ function SeriesPageInner({
       genreShelves,
       selected,
       qFilter,
+      selectedLanguage,
     ]
   );
 
@@ -434,13 +456,20 @@ function SeriesPageInner({
               className="mb-0"
             />
             {!cats.isLoading && (
-              <VodGenreBar
-                categories={filteredCats}
-                value={selected}
-                onChange={setCategory}
-                countById={countById}
-                hideAdult={hideAdultGenres}
-              />
+              <div className="flex flex-wrap items-center gap-2">
+                <VodGenreBar
+                  categories={filteredCats}
+                  value={selected}
+                  onChange={setCategory}
+                  countById={countById}
+                  hideAdult={hideAdultGenres}
+                />
+                <VodLanguageFilter
+                  detectedLanguages={catalogLanguages}
+                  value={selectedLanguage}
+                  onChange={setLanguage}
+                />
+              </div>
             )}
           </div>
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full lg:w-auto shrink-0">
@@ -501,6 +530,19 @@ function SeriesPageInner({
             />
           ))}
         </div>
+      )}
+
+      {languageActive && (
+        <ActiveCategoryFilterBar
+          eyebrow="Language filter on"
+          categoryName={vodLanguageLabel(selectedLanguage)}
+          count={seriesLoading ? undefined : totalInView}
+          countLabel={
+            visible.length === 1 ? "series in view" : "series in view"
+          }
+          clearLabel="All languages"
+          onClear={() => setLanguage("all")}
+        />
       )}
 
       {selected !== "all" && (

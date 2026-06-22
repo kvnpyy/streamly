@@ -2,6 +2,7 @@
 
 import {
   cn,
+  formatTime,
   normalizeContainerExt,
   parsePositiveRouteId,
   vodContainerUiHint,
@@ -31,7 +32,7 @@ import { pickSimilarSeries } from "@/lib/similar-titles";
 import { ArrowLeft, Check, Heart, Play, Star } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 function SeriesDetailSkeleton() {
   return (
@@ -214,6 +215,7 @@ export default function SeriesDetail() {
       const show = info.data?.info;
       if (!creds || seriesId == null || !show?.name) return;
       const playUrl = buildSeriesEpisodePlayUrl(creds, ep);
+      warmVodTranscodePlay(playUrl, { compatMse: tvBrowser });
       const ext = inferVodContainerExtFromProxyUrl(
         playUrl,
         ep.container_extension || "mkv"
@@ -239,8 +241,22 @@ export default function SeriesDetail() {
         meta: seriesEpisodeRecentMeta(season, ep),
       });
     },
-    [creds, seriesId, info.data, play, episodePlaylist, addRecent]
+    [creds, seriesId, info.data, play, episodePlaylist, addRecent, tvBrowser]
   );
+
+  /** Prime transcode for the episode users are most likely to play first. */
+  useEffect(() => {
+    if (!creds || orderedEpisodes.length === 0) return;
+    const pick =
+      resumeTarget ??
+      ({
+        season: orderedEpisodes[0]!.season,
+        episode: orderedEpisodes[0]!.ep,
+      } as const);
+    warmVodTranscodePlay(buildSeriesEpisodePlayUrl(creds, pick.episode), {
+      compatMse: tvBrowser,
+    });
+  }, [creds, resumeTarget, orderedEpisodes, tvBrowser]);
 
   if (!creds) {
     return <SeriesDetailSkeleton />;
@@ -494,6 +510,14 @@ export default function SeriesDetail() {
               resumeStreamId != null &&
               Number.isFinite(epStreamId) &&
               epStreamId === resumeStreamId;
+            const showProgress =
+              watch?.progressPct != null && watch.progressPct > 0;
+            const remainingSec =
+              watch &&
+              watch.durationSec > 0 &&
+              watch.status === "in_progress"
+                ? Math.max(0, watch.durationSec - watch.resumeSec)
+                : null;
             const warmTranscode = () => {
               warmVodTranscodePlay(playUrl, { compatMse: tvBrowser });
             };
@@ -506,8 +530,10 @@ export default function SeriesDetail() {
                 className={cn(
                   "w-full text-left card p-3 flex items-center gap-4 hover:border-(--line-2) hover:bg-(--bg-3) transition-colors group",
                   isResumeEpisode &&
-                    "border-(--brand)/45 bg-(--brand)/5 ring-1 ring-(--brand)/25",
-                  watch?.status === "completed" && !isResumeEpisode && "opacity-90"
+                    "border-(--brand)/55 bg-(--brand)/10 ring-2 ring-(--brand)/30 border-l-4 border-l-(--brand)",
+                  watch?.status === "completed" &&
+                    !isResumeEpisode &&
+                    "border-l-4 border-l-emerald-500/70"
                 )}
               >
                 <div className="size-20 sm:size-28 shrink-0 rounded-lg overflow-hidden bg-(--bg-3) relative">
@@ -530,31 +556,47 @@ export default function SeriesDetail() {
                     ) : null;
                   })()}
                   {watch?.status === "completed" && (
-                    <div className="absolute top-1.5 left-1.5 size-6 rounded-full bg-black/55 grid place-items-center">
-                      <Check className="size-3.5 text-white" strokeWidth={2.5} />
-                    </div>
-                  )}
-                  {watch?.progressPct != null && watch.progressPct > 0 && (
-                    <div
-                      className="absolute bottom-0 left-0 right-0 h-1 bg-white/25"
-                      aria-hidden
-                    >
+                    <>
                       <div
-                        className={cn(
-                          "h-full transition-[width] duration-300",
-                          watch.status === "completed"
-                            ? "bg-emerald-400/90"
-                            : "bg-(--danger)"
-                        )}
-                        style={{ width: `${watch.progressPct}%` }}
+                        className="absolute inset-0 bg-black/30 pointer-events-none"
+                        aria-hidden
                       />
+                      <div className="absolute top-1.5 left-1.5 z-10 inline-flex items-center gap-1 rounded-md bg-emerald-500/90 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white shadow-sm">
+                        <Check className="size-3" strokeWidth={2.5} />
+                        Done
+                      </div>
+                    </>
+                  )}
+                  {isResumeEpisode && (
+                    <div className="absolute inset-x-0 top-0 z-10 bg-gradient-to-b from-(--brand)/95 via-(--brand)/80 to-transparent px-2 pt-1.5 pb-5 pointer-events-none">
+                      <span className="text-[11px] font-bold uppercase tracking-wider text-white drop-shadow-sm">
+                        Continue here
+                      </span>
                     </div>
                   )}
-                  <div className="absolute inset-0 grid place-items-center bg-black/0 group-hover:bg-black/35 transition-colors">
+                  <div className="absolute inset-0 grid place-items-center bg-black/0 group-hover:bg-black/35 transition-colors pointer-events-none">
                     <div className="size-9 rounded-full btn-brand grid place-items-center opacity-0 group-hover:opacity-100 transition-opacity">
                       <Play className="size-4 fill-white" />
                     </div>
                   </div>
+                  {showProgress && (
+                    <div
+                      className="absolute bottom-0 left-0 right-0 z-10 h-2 bg-black/50 pointer-events-none"
+                      aria-hidden
+                    >
+                      <div
+                        className={cn(
+                          "h-full transition-[width] duration-300 shadow-[0_0_8px_rgba(0,0,0,0.35)]",
+                          watch!.status === "completed"
+                            ? "bg-emerald-400"
+                            : isResumeEpisode
+                              ? "bg-(--brand)"
+                              : "bg-(--danger)"
+                        )}
+                        style={{ width: `${watch!.progressPct}%` }}
+                      />
+                    </div>
+                  )}
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2 flex-wrap">
@@ -562,12 +604,12 @@ export default function SeriesDetail() {
                       Episode {ep.episode_num}
                     </div>
                     {isResumeEpisode && (
-                      <span className="text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded-md bg-(--brand)/20 text-(--brand) border border-(--brand)/30">
-                        Resume
+                      <span className="text-xs font-bold uppercase tracking-wide px-2.5 py-1 rounded-lg bg-(--brand) text-white shadow-[0_0_12px_rgba(124,92,255,0.45)]">
+                        Continue watching
                       </span>
                     )}
-                    {watch?.status === "completed" && (
-                      <span className="text-[10px] font-medium uppercase tracking-wide px-1.5 py-0.5 rounded-md border border-emerald-500/35 text-emerald-200/90 bg-emerald-500/10">
+                    {watch?.status === "completed" && !isResumeEpisode && (
+                      <span className="text-[11px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded-md border border-emerald-500/45 text-emerald-100 bg-emerald-500/20">
                         Watched
                       </span>
                     )}
@@ -595,17 +637,32 @@ export default function SeriesDetail() {
                   <div className="font-medium text-(--text) truncate">
                     {ep.title}
                   </div>
+                  {isResumeEpisode &&
+                    remainingSec != null &&
+                    remainingSec > 0 && (
+                      <div className="text-xs text-(--brand) font-semibold mt-0.5 tabular-nums sm:hidden">
+                        {formatTime(remainingSec)} left
+                        {watch?.progressPct != null
+                          ? ` · ${watch.progressPct}% watched`
+                          : ""}
+                      </div>
+                    )}
                   {ep.info?.plot && (
                     <div className="text-xs text-(--text-dim) line-clamp-2 mt-1">
                       {ep.info.plot}
                     </div>
                   )}
                 </div>
-                {ep.info?.duration && (
-                  <div className="text-xs text-(--text-muted) shrink-0 hidden sm:block">
-                    {ep.info.duration}
-                  </div>
-                )}
+                <div className="shrink-0 hidden sm:flex flex-col items-end gap-0.5 text-xs tabular-nums">
+                  {ep.info?.duration && (
+                    <span className="text-(--text-muted)">{ep.info.duration}</span>
+                  )}
+                  {isResumeEpisode && remainingSec != null && remainingSec > 0 && (
+                    <span className="text-(--brand) font-semibold">
+                      {formatTime(remainingSec)} left
+                    </span>
+                  )}
+                </div>
               </button>
             );
           }}

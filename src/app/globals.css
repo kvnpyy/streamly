@@ -63,6 +63,16 @@ html.stream-silk-hint {
   }
 }
 
+/* Native TV browsers (Tizen, webOS, Silk) — lighter motion keeps zapping snappy. */
+html[data-native-tv="true"] *,
+html[data-native-tv="true"] *::before,
+html[data-native-tv="true"] *::after {
+  animation-duration: 0.001ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.08s !important;
+  scroll-behavior: auto !important;
+}
+
 html,
 body {
   background: var(--bg-0);

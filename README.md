@@ -19,7 +19,7 @@ custom HLS player, TV remote navigation, EPG guide, parental controls, and more.
 
 **No ads. No tracking by default. Fully open source.**
 
-**Live demo:** [iptvwebplayer.org](https://iptvwebplayer.org) · **Community:** [Discord](https://discord.gg/QGFKJt9t7A)
+**Live demo:** [iptvwebplayer.org](https://iptvwebplayer.org) · **Community:** [Discord](https://discord.gg/QGFKJt9t7A) · [Feedback & Ideas](https://github.com/kvnpyy/streamly/discussions/7) · [Changelog](https://iptvwebplayer.org/changelog)
 
 ---
 
@@ -40,11 +40,11 @@ Practical write-ups on the live site — not just README bullets:
 
 ## What's new
 
-**Latest release: [v0.2.14](https://iptvwebplayer.org/changelog)** (June 2026)
+**Latest release: [v0.3.0](https://iptvwebplayer.org/changelog)** (June 2026)
 
-- GitHub README **Featured guides** — all four blog posts linked
+- **Smart TV setup** at [/tv](https://iptvwebplayer.org/tv) — QR + PIN pairing
+- **GitHub Discussions** — [Feedback & Ideas](https://github.com/kvnpyy/streamly/discussions/7)
 - **CHANGELOG.md** + live [/changelog](https://iptvwebplayer.org/changelog) page
-- Version badge in the app links to release notes
 
 See the full **[changelog](./CHANGELOG.md)** or **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/changelog)** for earlier releases.
 
@@ -261,6 +261,10 @@ Features: spatial D-pad navigation, large touch targets, hardware Back button ex
 
 PRs and issues welcome. Run `npm run dev` to get started. Please run
 `npm run predeploy` (lint + build) before opening a PR.
+
+- **Ideas & feedback** → [GitHub Discussions — Feedback & Ideas](https://github.com/kvnpyy/streamly/discussions/7) (no issue required)
+- **Bugs** → [GitHub Issues](https://github.com/kvnpyy/streamly/issues)
+- **Chat** → [Discord](https://discord.gg/QGFKJt9t7A)
 
 ---
 

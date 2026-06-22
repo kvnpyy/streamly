@@ -37,7 +37,23 @@ export function xtreamUpstreamCacheKey(
   return createHash("sha256").update(raw).digest("hex");
 }
 
+const SERIES_INFO_TTL_MS = Math.max(
+  60_000,
+  Math.min(
+    900_000,
+    parseInt(process.env.XTREAM_SERIES_INFO_CACHE_TTL_SEC || "300", 10) *
+      1000 || 300_000
+  )
+);
+
+export function isXtreamSeriesInfoCacheAction(
+  action: string | null | undefined
+): boolean {
+  return action === "get_series_info";
+}
+
 function ttlForAction(action: string | null): number | null {
+  if (action && isXtreamSeriesInfoCacheAction(action)) return SERIES_INFO_TTL_MS;
   if (action && isXtreamCatalogCacheAction(action)) return CATALOG_TTL_MS;
   if (action && isXtreamEpgAction(action)) return EPG_TTL_MS;
   return null;

@@ -166,7 +166,7 @@ export const LANDING_FAQ = [
   {
     question: "Is there a community or support chat?",
     answer:
-      "Yes — join the official Streamly Discord (discord.gg/QGFKJt9t7A) for setup help, release notes, and feedback from other users. Email is still best for account, privacy, and legal requests. You can also find the invite in the site footer or Settings.",
+      "Yes — join the official Streamly Discord (discord.gg/QGFKJt9t7A) for setup help, release notes, and chat. Share feature ideas in GitHub Discussions (Feedback & Ideas) without opening an issue. Email is still best for account, privacy, and legal requests. Links are in the site footer or Settings.",
   },
 ] as const;
 

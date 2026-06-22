@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<widget xmlns="http://www.w3.org/ns/widgets"
+        xmlns:tizen="http://tizen.org/ns/widgets"
+        id="https://iptvwebplayer.org/tizen"
+        version="1.0.0"
+        viewmodes="maximized">
+  <tizen:application id="org.streamly.iptv" package="org.streamly.iptv" required_version="6.0"/>
+  <content src="index.html"/>
+  <name>Streamly</name>
+  <description>IPTV web player for your Xtream or M3U subscription. Bring your own provider.</description>
+  <author href="https://iptvwebplayer.org" email="support@iptvwebplayer.org">Streamly</author>
+  <icon src="icon.png"/>
+  <tizen:privilege name="http://tizen.org/privilege/internet"/>
+  <tizen:profile name="tv-samsung"/>
+  <tizen:setting screen-orientation="landscape" context-menu="enable" background-support="disable" encryption="disable" install-location="auto" hwkey-event="enable"/>
+  <access origin="*" subdomains="true"/>
+</widget>

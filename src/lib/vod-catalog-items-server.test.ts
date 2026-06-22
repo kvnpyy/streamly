@@ -33,6 +33,20 @@ const vodStreams: VodStream[] = [
     stream_icon: "",
     rating: "9.0",
   },
+  {
+    stream_id: 4,
+    name: "EN - English Title",
+    category_id: "10",
+    stream_icon: "",
+    rating: "7.0",
+  },
+  {
+    stream_id: 5,
+    name: "FR - French Title",
+    category_id: "10",
+    stream_icon: "",
+    rating: "7.5",
+  },
 ];
 
 const vodBundle: VodCatalogBundle = {
@@ -41,15 +55,16 @@ const vodBundle: VodCatalogBundle = {
     { category_id: "20", category_name: "Drama", parent_id: 0 },
   ],
   streams: vodStreams,
-  countByCategoryId: { "10": 2, "20": 1 },
-  idsByCategory: { "10": [1, 2], "20": [3] },
+  countByCategoryId: { "10": 4, "20": 1 },
+  idsByCategory: { "10": [1, 2, 4, 5], "20": [3] },
 };
 
 describe("toSlimVodCatalog", () => {
   it("strips streams and keeps counts", () => {
     const slim = toSlimVodCatalog(vodBundle);
     expect(slim.categories).toHaveLength(2);
-    expect(slim.countByCategoryId).toEqual({ "10": 2, "20": 1 });
+    expect(slim.countByCategoryId).toEqual({ "10": 4, "20": 1 });
+    expect(slim.languages).toEqual(["EN", "FR"]);
     expect("streams" in slim).toBe(false);
   });
 });
@@ -63,8 +78,18 @@ describe("listVodItemsFromBundle", () => {
       offset: 0,
       limit: 10,
     });
-    expect(page.total).toBe(2);
-    expect(page.items.map((m) => m.stream_id)).toEqual([1, 2]);
+    expect(page.total).toBe(4);
+    expect(page.items.map((m) => m.stream_id)).toEqual([1, 2, 4, 5]);
+  });
+
+  it("filters by language server-side", () => {
+    const page = listVodItemsFromBundle(vodBundle, byId, {
+      categoryId: "all",
+      lang: "EN",
+      limit: 10,
+    });
+    expect(page.total).toBe(1);
+    expect(page.items[0]?.name).toBe("EN - English Title");
   });
 
   it("filters by query server-side", () => {
@@ -83,7 +108,36 @@ describe("listVodItemsFromBundle", () => {
       sort: "rating",
       limit: 10,
     });
-    expect(page.items.map((m) => m.stream_id)).toEqual([3, 1, 2]);
+    expect(page.items.map((m) => m.stream_id)).toEqual([3, 1, 5, 4, 2]);
+  });
+
+  it("sorts by release date using year in title", () => {
+    const streams: VodStream[] = [
+      {
+        stream_id: 10,
+        name: "Old Film (2010)",
+        category_id: "10",
+        stream_icon: "",
+      },
+      {
+        stream_id: 11,
+        name: "New Film (2024)",
+        category_id: "10",
+        stream_icon: "",
+      },
+    ];
+    const bundle: VodCatalogBundle = {
+      categories: [{ category_id: "10", category_name: "Action", parent_id: 0 }],
+      streams,
+      countByCategoryId: { "10": 2 },
+      idsByCategory: { "10": [10, 11] },
+    };
+    const page = listVodItemsFromBundle(bundle, vodStreamByIdMap(streams), {
+      categoryId: "all",
+      sort: "release_date",
+      limit: 10,
+    });
+    expect(page.items.map((m) => m.stream_id)).toEqual([11, 10]);
   });
 
   it("materializes explicit ids", () => {

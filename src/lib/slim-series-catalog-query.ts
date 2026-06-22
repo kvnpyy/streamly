@@ -1,5 +1,5 @@
 import { catalogKeys, CATALOG_STALE_MS } from "@/lib/catalog-queries";
-import { toSlimSeriesCatalog, type SlimSeriesCatalog } from "@/lib/slim-vod-catalog";
+import { parseSlimCatalogResponse, type SlimSeriesCatalog } from "@/lib/slim-vod-catalog";
 import type { SeriesCatalogBundle } from "@/lib/vod-catalog-bundle";
 import type { XtreamCredentials } from "@/lib/xtream-types";
 import type { UseQueryOptions } from "@tanstack/react-query";
@@ -25,8 +25,8 @@ async function fetchSlimSeriesCatalog(
   if (!res.ok) {
     throw new Error(`Series catalog failed (${res.status}).`);
   }
-  const data = (await res.json()) as SeriesCatalogBundle;
-  return toSlimSeriesCatalog(data);
+  const data = (await res.json()) as SeriesCatalogBundle & SlimSeriesCatalog;
+  return parseSlimCatalogResponse(data);
 }
 
 /** Categories + counts only — series rows load per page from `/api/series/items`. */

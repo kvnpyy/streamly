@@ -1,5 +1,6 @@
 import { BrandMark } from "@/components/BrandMark";
 import { CommunityDiscordLink } from "@/components/CommunityDiscordLink";
+import { CommunityGitHubFeedbackLink } from "@/components/CommunityGitHubFeedbackLink";
 import { LandingHeroPreview } from "@/components/landing/LandingHeroPreview";
 import { LandingSectionEyebrow } from "@/components/landing/LandingSectionEyebrow";
 import { UserContentDisclaimer } from "@/components/UserContentDisclaimer";
@@ -418,7 +419,11 @@ export function MarketingLanding() {
                     Open player
                     <ChevronRight className="size-4" aria-hidden />
                   </Link>
-                  <CommunityDiscordLink
+                  <CommunityGitHubFeedbackLink
+                label="Feedback"
+                className="min-h-10 hover:text-(--text) landing-focus-ring rounded px-0.5 text-(--text-muted)"
+              />
+              <CommunityDiscordLink
                     label="Join Discord"
                     className="landing-focus-ring inline-flex items-center justify-center gap-2 rounded-xl border border-[#5865F2]/35 bg-[#5865F2]/10 px-6 py-3.5 text-sm font-medium text-[#c7ceff] min-h-12 w-full sm:w-auto hover:bg-[#5865F2]/18 hover:border-[#5865F2]/50"
                   />
@@ -459,6 +464,12 @@ export function MarketingLanding() {
                 </a>
               ))}
               <Link
+                href="/tv"
+                className="min-h-10 inline-flex items-center hover:text-(--text) landing-focus-ring rounded"
+              >
+                Smart TV
+              </Link>
+              <Link
                 href="/blog"
                 className="min-h-10 inline-flex items-center hover:text-(--text) landing-focus-ring rounded"
               >
@@ -470,6 +481,10 @@ export function MarketingLanding() {
               >
                 Changelog
               </Link>
+              <CommunityGitHubFeedbackLink
+                label="Feedback"
+                className="min-h-10 hover:text-(--text) landing-focus-ring rounded px-0.5 text-(--text-muted)"
+              />
               <CommunityDiscordLink
                 label="Discord"
                 className="min-h-10 hover:text-(--text) landing-focus-ring rounded px-0.5 text-(--text-muted)"
@@ -502,6 +517,10 @@ export function MarketingLanding() {
             >
               Changelog
             </Link>
+            <CommunityGitHubFeedbackLink
+              label="Feedback"
+              className="min-h-10 underline underline-offset-2 hover:text-(--text) landing-focus-ring text-(--text-muted)"
+            />
             <CommunityDiscordLink
               label="Discord"
               className="min-h-10 underline underline-offset-2 hover:text-(--text) landing-focus-ring text-(--text-muted)"

@@ -9,6 +9,69 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+---
+
+## [0.4.0] — 2026-06-22
+
+Regional filtering, VOD browse improvements, and IP-based defaults.
+
+### Fixed
+- **North America region filter leaked foreign channels** — `|EU|`, `|ALB|`, and other IPTV regional prefixes are now recognized; category drill-down and see-all overlays respect the active region.
+- **Movies/Series English filter hid discovery shelves** — genre rows and trending rails stay visible when a language filter is active.
+
+### Added
+- **Release date sort** for Movies and Series.
+- **IP-based defaults** — Live TV region and VOD language default from geolocation (timezone fallback).
+
+## [0.3.0] — 2026-06-19
+
+Production bundle: Smart TV onboarding, GitHub Discussions community links, and Continue Watching reliability.
+
+### Added
+- **Smart TV setup page** (`/tv`) — QR code, PIN pairing, per-platform guides.
+- **GitHub Discussions** — Feedback & Ideas thread; links in footer, Settings, README.
+- **TV app store scaffolds** — `tv-apps/` wrappers for Samsung, LG, and Fire TV.
+- **Persistent TV PIN pairing** — codes stored in SQLite.
+
+### Fixed
+- **Live TV Continue Watching sometimes did nothing** — play from saved recents when catalog lookup fails.
+- **Movies Continue Watching** — resume from recent metadata when catalog enrichment misses.
+
+### Changed
+- **Native TV browsers** — reduced motion for snappier channel zapping.
+
+## [0.2.40] — 2026-06-19
+
+### Added
+- **GitHub Discussions** — enabled on the repo with a **Feedback & Ideas** thread for feature thoughts (no issue required).
+- **Community links** — footer, Settings, blog shell, and README point to Discussions alongside Discord.
+
+### Changed
+- Changelog page cross-links **CHANGELOG.md** on GitHub and **GitHub Discussions** for feedback.
+
+## [0.2.39] — 2026-06-19
+
+### Added
+- **Smart TV setup page** (`/tv`) — QR code, PIN pairing steps, and per-platform guides (Samsung, LG, Fire TV, Android TV).
+- **TV app store scaffolds** — `tv-apps/` wrappers for Samsung Tizen, LG webOS, and Fire TV submission.
+- **Persistent TV PIN pairing** — codes stored in SQLite so linking survives restarts and multi-process deploys.
+
+### Fixed
+- **Live TV Continue Watching sometimes did nothing** — play from saved recents when catalog lookup fails; touch-friendly Watch overlay on media cards.
+- **Movies Continue Watching** — resume playback from recent metadata when catalog enrichment misses.
+
+### Changed
+- **Native TV browsers** — reduced motion for snappier channel zapping on Tizen, webOS, and Silk.
+
+## [0.2.37] — 2026-06-17
+
+### Fixed
+- **Series playback jumping backward and looping** — growing transcode HLS manifests re-fired `MANIFEST_PARSED` and reset playhead to 0; now only bootstraps once; edge nudges preserve current time.
+- **Slow episode start** — non-blocking transcode warm, single ffprobe, 2s segments, pre-warm resume/next episode, MP4 HEAD probe, cached `get_series_info`.
+
+### Changed
+- **Transcode edge watchdog** — nudge only when buffer is nearly dry (≤3s ahead), debounced to avoid seek storms.
+
 ## [0.2.35] — 2026-06-17
 
 ### Fixed

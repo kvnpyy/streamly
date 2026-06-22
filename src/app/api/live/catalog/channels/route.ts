@@ -1,4 +1,5 @@
 import { parseTvRegion } from "@/lib/geo-continent";
+import { filterStreamsForTvRegion } from "@/lib/live-category-shelf";
 import { getCachedLiveCatalogEntry } from "@/lib/live-catalog-server-cache";
 import { materializeStreamIds } from "@/lib/live-catalog-stream-map";
 import { collectRegionalChannelSample } from "@/lib/live-regional-channel-sample";
@@ -96,9 +97,19 @@ export async function GET(req: NextRequest) {
         ? idsForAll(index, limit)
         : lookupStreamIdsForCategory(index, categoryId) ?? [];
 
-    return NextResponse.json({
-      streams: materializeStreamIds(streamById, ids, limit),
-    });
+    let streams = materializeStreamIds(streamById, ids, limit);
+
+    if (categoryId !== "all" && tvRegion !== "All") {
+      const categoryName =
+        bundle.categories.find((c) => String(c.category_id) === categoryId)
+          ?.category_name ?? "";
+      streams = filterStreamsForTvRegion(streams, tvRegion, categoryName).slice(
+        0,
+        limit
+      );
+    }
+
+    return NextResponse.json({ streams });
   } catch {
     return NextResponse.json(
       { error: "Could not load channels for this category." },

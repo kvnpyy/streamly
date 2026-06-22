@@ -110,13 +110,8 @@ function WebLiveBrowseLegacy({
 
   const { openCategory, closeCategory } = useLiveOpenCategory();
 
-  useEffect(() => {
-    if (storedRegion === null) {
-      setStoredRegion(detectRegionFromTimezone());
-    }
-  }, [storedRegion, setStoredRegion]);
-
-  const region: TvRegion = coerceTvRegion(storedRegion) ?? "All";
+  const region: TvRegion =
+    coerceTvRegion(storedRegion) ?? detectRegionFromTimezone();
   const serverCounts = hasLiveServerCategoryCounts(countByCategoryId);
 
   const deferredCats = useDeferredValue(categories);

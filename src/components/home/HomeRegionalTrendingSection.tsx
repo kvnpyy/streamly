@@ -22,7 +22,6 @@ import type {
 import type { Favorite, RecentItem } from "@/store/preferences";
 import { usePlayer } from "@/store/player";
 import { usePrefs } from "@/store/preferences";
-import { useEffect } from "react";
 
 type HomeRegionalTrendingSectionProps = {
   creds: XtreamCredentials;
@@ -58,15 +57,9 @@ export function HomeRegionalTrendingSection({
   const play = usePlayer((s) => s.play);
   const discoveryOn = isDiscoveryShelvesEnabled();
   const storedRegion = usePrefs((s) => s.tvRegionFilter);
-  const setStoredRegion = usePrefs((s) => s.setTvRegionFilter);
 
-  useEffect(() => {
-    if (storedRegion === null) {
-      setStoredRegion(detectRegionFromTimezone());
-    }
-  }, [storedRegion, setStoredRegion]);
-
-  const tvRegion: TvRegion = coerceTvRegion(storedRegion) ?? "All";
+  const tvRegion: TvRegion =
+    coerceTvRegion(storedRegion) ?? detectRegionFromTimezone();
 
   const trendingOnTv = useTrendingOnTv({
     creds,

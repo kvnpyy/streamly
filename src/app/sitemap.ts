@@ -16,6 +16,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
   return [
     { url: `${origin}/`, lastModified: last, changeFrequency: "weekly", priority: 1 },
     { url: `${origin}/login`, lastModified: last, changeFrequency: "monthly", priority: 0.9 },
+    { url: `${origin}/tv`, lastModified: last, changeFrequency: "monthly", priority: 0.85 },
     { url: `${origin}/blog`, lastModified: last, changeFrequency: "weekly", priority: 0.75 },
     ...blogEntries,
     {

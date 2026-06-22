@@ -3,6 +3,7 @@
 import { useTvBrowser } from "@/components/TvBrowserProvider";
 import { SITE_NAME } from "@/lib/site-brand";
 import { Loader2, Smartphone, Tv } from "lucide-react";
+import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
 type IssueResponse = { pin: string; expiresInSeconds: number };
@@ -65,7 +66,10 @@ export function TvPairingCard() {
       <p className="text-sm text-(--text-dim) mb-4 leading-relaxed">
         Sign in on your phone or computer here first. Generate a 6-digit code, then on the TV open{" "}
         <strong className="text-(--text)">Sign in → Link with PIN</strong> and type it — no server URL
-        or password on the remote.
+        or password on the remote.{" "}
+        <Link href="/tv" className="text-(--brand-2) underline underline-offset-2 hover:text-(--text)">
+          TV setup guide
+        </Link>
       </p>
       {tv && (
         <div className="mb-4 flex gap-2 rounded-xl border border-(--brand)/25 bg-(--brand)/5 px-3 py-2 text-xs text-(--text-dim)">

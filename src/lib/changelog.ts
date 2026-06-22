@@ -11,6 +11,63 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.4.0",
+    date: "2026-06-22",
+    summary:
+      "Regional filtering fixes, release-date sort, and IP-based region/language defaults.",
+    highlights: [
+      "North America filter no longer shows |EU|, |ALB|, and other foreign IPTV category blocks.",
+      "Category see-all and list view respect the active TV region.",
+      "Release date sort for Movies and Series; discovery shelves stay visible with language filters.",
+      "Live TV region and VOD language default from IP geolocation (timezone fallback).",
+    ],
+  },
+  {
+    version: "0.3.0",
+    date: "2026-06-19",
+    summary:
+      "Smart TV onboarding, GitHub Discussions for feedback, and Live Continue Watching fixes.",
+    highlights: [
+      "/tv setup page with QR code, PIN pairing, and Samsung/LG/Fire TV guides.",
+      "GitHub Discussions — Feedback & Ideas thread linked from footer, Settings, and README.",
+      "Live Continue Watching plays from recents when catalog lookup fails.",
+      "TV PIN codes persist in SQLite across restarts and multi-instance deploys.",
+    ],
+  },
+  {
+    version: "0.2.40",
+    date: "2026-06-19",
+    summary: "GitHub Discussions for low-friction feedback; changelog links across the site.",
+    highlights: [
+      "GitHub Discussions enabled with a pinned Feedback & Ideas thread — share thoughts without opening an issue.",
+      "Footer, Settings, blog shell, and README link to Discussions alongside Discord.",
+      "CHANGELOG.md and /changelog stay in sync for release notes on GitHub and the live site.",
+    ],
+  },
+  {
+    version: "0.2.39",
+    date: "2026-06-19",
+    summary:
+      "Smart TV onboarding, persistent PIN pairing, and reliable Live Continue Watching.",
+    highlights: [
+      "/tv setup page with QR code, PIN steps, and Samsung/LG/Fire TV guides.",
+      "TV PIN codes persist in SQLite — survives restarts and multi-instance VPS deploys.",
+      "Live Continue Watching plays from recents when catalog lookup fails; touch-friendly Watch buttons.",
+      "tv-apps/ scaffolds for Samsung, LG, and Fire TV store wrappers.",
+    ],
+  },
+  {
+    version: "0.2.37",
+    date: "2026-06-17",
+    summary: "Faster episode start and fix for series playback jumping backward and looping.",
+    highlights: [
+      "Transcode warm (hover/focus) no longer blocks — ffmpeg starts in the background before Play.",
+      "Single ffprobe pass, 2s HLS segments, and pre-warm on resume/next episode cut cold-start latency.",
+      "Fix growing HLS manifest refresh resetting playhead to 0 (backward seek / loop on TV and desktop).",
+      "Cache get_series_info for 5 minutes — series pages load faster on repeat visits.",
+    ],
+  },
+  {
     version: "0.2.35",
     date: "2026-06-17",
     summary: "Filter browser userscript errors out of Sentry so third-party scripts do not trigger production alerts.",

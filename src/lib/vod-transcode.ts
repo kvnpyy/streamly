@@ -91,8 +91,8 @@ function manifestHttpWaitMs(): number {
 }
 
 function hlsSegmentSeconds(): number {
-  const n = parseFloat(process.env.STREAM_TRANSCODE_HLS_TIME ?? "4");
-  return Number.isFinite(n) && n >= 2 && n <= 8 ? n : 4;
+  const n = parseFloat(process.env.STREAM_TRANSCODE_HLS_TIME ?? "2");
+  return Number.isFinite(n) && n >= 2 && n <= 8 ? n : 2;
 }
 
 function transcodeStallKillMs(): number {
@@ -171,9 +171,9 @@ function upstreamReferer(upstreamUrl: string): string {
 function ffmpegInputArgs(referer: string): string[] {
   const args = [
     "-probesize",
-    "5M",
+    "2M",
     "-analyzeduration",
-    "1.5M",
+    "750K",
     "-user_agent",
     IPTV_UA_VOD,
   ];
@@ -181,15 +181,15 @@ function ffmpegInputArgs(referer: string): string[] {
   return args;
 }
 
-function ffprobeInputArgs(referer: string): string[] {
+function ffprobeInputArgs(referer: string, fast = false): string[] {
   const args = [
     "-hide_banner",
     "-loglevel",
     "error",
     "-probesize",
-    "12M",
+    fast ? "1M" : "8M",
     "-analyzeduration",
-    "3M",
+    fast ? "750K" : "2M",
     "-user_agent",
     IPTV_UA_VOD,
   ];
@@ -197,42 +197,69 @@ function ffprobeInputArgs(referer: string): string[] {
   return args;
 }
 
-/** Quick remote probe — picks copy vs transcode (usually &lt;5s vs minutes of encode). */
-async function probeStreamCodec(
-  upstream: string,
-  stream: "v" | "a"
-): Promise<string | null> {
+function ffprobeBinary(): string {
+  const configured = process.env.STREAM_FFMPEG_PATH?.trim();
+  if (configured) {
+    const dir = path.dirname(configured);
+    const base = path.basename(configured);
+    if (/ffmpeg/i.test(base)) {
+      return path.join(dir, base.replace(/ffmpeg/i, "ffprobe"));
+    }
+  }
+  return "ffprobe";
+}
+
+type ProbedCodecs = { video: string | null; audio: string | null };
+
+/** One ffprobe round-trip for both streams — halves provider latency vs dual probes. */
+async function probeStreamCodecs(upstream: string): Promise<ProbedCodecs> {
   const referer = upstreamReferer(upstream);
-  const select = stream === "v" ? "v:0" : "a:0";
   const args = [
-    ...ffprobeInputArgs(referer),
+    ...ffprobeInputArgs(referer, true),
     "-select_streams",
-    select,
+    "v:0,a:0",
     "-show_entries",
-    "stream=codec_name",
+    "stream=codec_name,codec_type",
     "-of",
-    "default=noprint_wrappers=1:nokey=1",
+    "json",
     upstream,
   ];
 
   return new Promise((resolve) => {
-    const proc = spawn("ffprobe", args, { stdio: ["ignore", "pipe", "pipe"] });
+    const proc = spawn(ffprobeBinary(), args, {
+      stdio: ["ignore", "pipe", "pipe"],
+    });
     let out = "";
     const timer = setTimeout(() => {
       proc.kill("SIGKILL");
-      resolve(null);
-    }, 14_000);
+      resolve({ video: null, audio: null });
+    }, 10_000);
     proc.stdout?.on("data", (c: Buffer) => {
       out += c.toString();
     });
     proc.on("error", () => {
       clearTimeout(timer);
-      resolve(null);
+      resolve({ video: null, audio: null });
     });
     proc.on("close", () => {
       clearTimeout(timer);
-      const codec = out.trim().split(/\s+/)[0] || null;
-      resolve(codec);
+      try {
+        const parsed = JSON.parse(out) as {
+          streams?: Array<{ codec_type?: string; codec_name?: string }>;
+        };
+        let video: string | null = null;
+        let audio: string | null = null;
+        for (const stream of parsed.streams ?? []) {
+          const type = stream.codec_type?.toLowerCase();
+          const name = stream.codec_name?.trim() || null;
+          if (!name) continue;
+          if (type === "video" && !video) video = name;
+          if (type === "audio" && !audio) audio = name;
+        }
+        resolve({ video, audio });
+      } catch {
+        resolve({ video: null, audio: null });
+      }
     });
   });
 }
@@ -254,7 +281,7 @@ async function probeDurationSec(upstream: string): Promise<number | null> {
     upstream,
   ];
   return new Promise((resolve) => {
-    const proc = spawn("ffprobe", args, { stdio: ["ignore", "pipe", "pipe"] });
+    const proc = spawn(ffprobeBinary(), args, { stdio: ["ignore", "pipe", "pipe"] });
     let out = "";
     const timer = setTimeout(() => {
       proc.kill("SIGKILL");
@@ -309,10 +336,9 @@ async function resolveJobMeta(job: TranscodeJob): Promise<JobMeta> {
     return cached;
   }
 
-  const [videoCodec, audioCodec] = await Promise.all([
-    probeStreamCodec(job.upstream, "v"),
-    probeStreamCodec(job.upstream, "a"),
-  ]);
+  const { video: videoCodec, audio: audioCodec } = await probeStreamCodecs(
+    job.upstream
+  );
   const plan = planFromProbeCodecs(videoCodec, audioCodec, {
     maxHeight: transcodeMaxHeight(),
   });
@@ -772,7 +798,7 @@ async function waitForReady(
       notifyWaiters(job, true);
       return true;
     }
-    await new Promise((r) => setTimeout(r, 200));
+    await new Promise((r) => setTimeout(r, 100));
   }
   const late = await readManifestIfReady(job.dir);
   if (late) {
@@ -1099,7 +1125,10 @@ async function beginTranscodeJob(job: TranscodeJob): Promise<void> {
 
   beginTranscodeInflight.add(job.key);
   try {
-    const upstreamErr = await validateVodUpstreamReadable(job.upstream);
+    const [upstreamErr, meta] = await Promise.all([
+      validateVodUpstreamReadable(job.upstream),
+      resolveJobMeta(job),
+    ]);
     if (upstreamErr) {
       job.state = "failed";
       job.error = upstreamErr;
@@ -1126,7 +1155,6 @@ async function beginTranscodeJob(job: TranscodeJob): Promise<void> {
       return;
     }
 
-    const meta = await resolveJobMeta(job);
     job.durationSec = meta.durationSec;
     const plan = meta.plan;
     if (job.state === "failed") return;
@@ -1208,8 +1236,16 @@ export async function handleVodTranscodeRequest(opts: {
   }
 
   if (media === MANIFEST_NAME) {
-    await ensureTranscodeJobContiguous(job);
+    void ensureTranscodeJobContiguous(job);
     void ensureEncodingContinues(job);
+    /** Warm requests (HEAD) must not block — kick ffmpeg and return immediately. */
+    if (opts.head) {
+      return {
+        status: 202,
+        contentType: "application/vnd.apple.mpegurl",
+        extraHeaders: { "retry-after": "1" },
+      };
+    }
     const manifestWait = transcodeManifestWaitMs(opts.seekSec ?? 0, {
       httpWaitMs: manifestHttpWaitMs(),
       playlistWaitMs: waitForPlaylistMs(),

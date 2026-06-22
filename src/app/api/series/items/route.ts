@@ -17,7 +17,7 @@ function readCreds(req: NextRequest) {
 }
 
 function parseSort(raw: string | null): VodCatalogSort {
-  if (raw === "rating" || raw === "name") return raw;
+  if (raw === "rating" || raw === "name" || raw === "release_date") return raw;
   return "added";
 }
 
@@ -36,6 +36,7 @@ export async function GET(req: NextRequest) {
   const limit = Number(sp.get("limit"));
   const sort = parseSort(sp.get("sort"));
   const q = sp.get("q")?.trim() ?? "";
+  const lang = sp.get("lang")?.trim() ?? "";
   const idsParam = sp.get("ids")?.trim();
   const streamIds = idsParam
     ? idsParam
@@ -52,6 +53,7 @@ export async function GET(req: NextRequest) {
       limit,
       sort,
       q,
+      lang: lang || undefined,
       streamIds,
     });
     return NextResponse.json(page);

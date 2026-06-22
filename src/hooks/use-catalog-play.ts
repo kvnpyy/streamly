@@ -2,6 +2,7 @@
 
 import type { MediaShelfItem } from "@/components/MediaShelf";
 import { buildImageProxy, buildStreamUrl } from "@/lib/xtream";
+import { buildMoviePlayerSourceFromRecent } from "@/lib/continue-watching";
 import type { SeriesItem, VodStream } from "@/lib/xtream-types";
 import { parsePositiveRouteId } from "@/lib/utils";
 import { useAuth } from "@/store/auth";
@@ -62,15 +63,38 @@ export function useCatalogPlay() {
       }
       return items.map((item) => {
         const movie = byId.get(item.id);
-        if (!movie) return item;
+        if (movie) {
+          return {
+            ...item,
+            onClick: () => playMovie(movie),
+            detailHref: item.href,
+          };
+        }
         return {
           ...item,
-          onClick: () => playMovie(movie),
+          onClick: () => {
+            play(
+              buildMoviePlayerSourceFromRecent(creds, {
+                kind: "movie",
+                id: item.id,
+                name: item.title,
+                icon: item.poster,
+                addedAt: 0,
+                lastAt: 0,
+              })
+            );
+            addRecent({
+              kind: "movie",
+              id: item.id,
+              name: item.title,
+              icon: item.poster,
+            });
+          },
           detailHref: item.href,
         };
       });
     },
-    [playMovie]
+    [creds, play, addRecent, playMovie]
   );
 
   return {
