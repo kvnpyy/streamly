@@ -11,6 +11,16 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.4.2",
+    date: "2026-06-22",
+    summary: "Saved playlists restore reliably when signing in on a new device.",
+    highlights: [
+      "Wait for Streamly session before restoring encrypted provider accounts — fixes empty library on new devices.",
+      "Auto-save cookie-only IPTV sessions to your Streamly account when you sign in later.",
+      "Onboarding shows your saved playlists so you can pick one without re-entering credentials.",
+    ],
+  },
+  {
     version: "0.4.1",
     date: "2026-06-22",
     summary: "Fix series episodes looping at the end of transcoded playback.",

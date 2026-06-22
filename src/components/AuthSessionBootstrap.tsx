@@ -1,17 +1,25 @@
 "use client";
 
+import { persistIptvAfterBrowserLogin } from "@/lib/persist-iptv-session-client";
+import {
+  activateSavedProviderOnServer,
+  fetchIptvSessionCredsFromApi,
+  listSavedProviderAccounts,
+  pickSavedProviderAccountId,
+} from "@/lib/restore-saved-providers";
+import { scheduleWhenIdle } from "@/lib/defer-idle";
 import { xtream } from "@/lib/xtream";
 import type { XtreamCredentials } from "@/lib/xtream-types";
-import { scheduleWhenIdle } from "@/lib/defer-idle";
 import { restoreAuthSessionBridge, useAuth } from "@/store/auth";
 import { usePrefs } from "@/store/preferences";
-import { getSession } from "next-auth/react";
+import { useSession } from "next-auth/react";
 import { usePathname } from "next/navigation";
 import {
   createContext,
   useContext,
   useEffect,
   useLayoutEffect,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -23,22 +31,38 @@ export function useAuthBootstrapReady() {
   return useContext(AuthBootstrapReadyContext);
 }
 
-const SESSION_FETCH_MS = 8000;
 const SESSION_VALIDATE_MS = 12000;
 const SAFETY_UNBLOCK_MS = 12000;
 
 export function AuthSessionBootstrap({ children }: { children: ReactNode }) {
   const [ready, setReady] = useState(false);
   const pathname = usePathname();
+  const { data: session, status: sessionStatus } = useSession();
+  const syncedToServerRef = useRef<string | null>(null);
 
   /** Re-apply after login → /app SPA nav (Providers does not remount). */
   useLayoutEffect(() => {
     restoreAuthSessionBridge();
   }, [pathname]);
 
+  /** When Streamly signs in after a cookie-only IPTV session, persist to the server. */
+  useEffect(() => {
+    const uid = session?.user?.id;
+    if (sessionStatus !== "authenticated" || !uid) return;
+    const creds = useAuth.getState().creds;
+    if (!creds) return;
+    const syncKey = `${uid}:${creds.server}:${creds.username}`;
+    if (syncedToServerRef.current === syncKey) return;
+    syncedToServerRef.current = syncKey;
+    scheduleWhenIdle(() => {
+      void persistIptvAfterBrowserLogin(creds).catch(() => {
+        syncedToServerRef.current = null;
+      });
+    }, 800);
+  }, [sessionStatus, session?.user?.id]);
+
   useEffect(() => {
     let cancelled = false;
-    /** Use `number` — `@types/node` makes `ReturnType<typeof setTimeout>` a NodeJS.Timeout. */
     let safetyId: number | null = null;
 
     const finish = () => {
@@ -85,105 +109,63 @@ export function AuthSessionBootstrap({ children }: { children: ReactNode }) {
       }
     };
 
-    const fetchSessionCreds = async (): Promise<XtreamCredentials | null> => {
-      const ac = new AbortController();
-      const fetchTimer: number = window.setTimeout(() => ac.abort(), SESSION_FETCH_MS);
-      try {
-        const r = await fetch(`${window.location.origin}/api/iptv/session`, {
-          credentials: "include",
-          cache: "no-store",
-          signal: ac.signal,
-        });
-        let data: { creds?: XtreamCredentials | null } = {};
-        try {
-          data = await r.json();
-        } catch {
-          data = {};
-        }
-        const creds = data.creds;
-        if (
-          creds &&
-          typeof creds.server === "string" &&
-          typeof creds.username === "string" &&
-          typeof creds.password === "string"
-        ) {
-          return creds;
-        }
-      } finally {
-        window.clearTimeout(fetchTimer);
+    const applyCreds = (creds: XtreamCredentials, savedId?: string) => {
+      useAuth.getState().setCreds(creds);
+      if (savedId) {
+        usePrefs.getState().setActiveSavedProviderAccountId(savedId);
       }
-      return null;
+      finish();
+      scheduleWhenIdle(() => void validateAccount(creds), 2_500);
     };
 
     const run = async () => {
+      const origin = window.location.origin;
+
       try {
-        let creds = await fetchSessionCreds();
-        if (creds) {
-          const sessionCreds = creds;
-          useAuth.getState().setCreds(sessionCreds);
-          finish();
-          scheduleWhenIdle(() => void validateAccount(sessionCreds), 2_500);
+        const cookieCreds = await fetchIptvSessionCredsFromApi(origin);
+        if (cancelled) return;
+        if (cookieCreds) {
+          applyCreds(cookieCreds);
           return;
         }
 
         /**
-         * Signed-in Stream user but no IPTV cookie (new device, cleared cookies,
-         * or cookie rotation). Re-activate the most recently used saved provider
-         * (GET list is ordered by `updatedAt` desc) so /app loads without retyping.
+         * Wait for NextAuth before giving up on server-side saved playlists.
+         * Previously `getSession()` on first paint often returned null on a new
+         * device, so restore never ran and users saw an empty library.
          */
-        const stream = await getSession();
-        if (cancelled || !stream?.user?.id) {
+        if (sessionStatus === "loading") return;
+
+        if (sessionStatus !== "authenticated" || !session?.user?.id) {
           finish();
           return;
         }
 
-        const listR = await fetch(`${window.location.origin}/api/provider-accounts`, {
-          credentials: "include",
-          cache: "no-store",
-        });
-        const listJson = (await listR.json().catch(() => ({}))) as {
-          accounts?: { id: string }[];
-        };
-        const accounts = listJson.accounts ?? [];
+        const accounts = await listSavedProviderAccounts(origin);
+        if (cancelled) return;
         if (accounts.length === 0) {
           finish();
           return;
         }
 
         const prefId = usePrefs.getState().activeSavedProviderAccountId;
-        const chosenId =
-          typeof prefId === "string" &&
-          accounts.some((a) => a.id === prefId)
-            ? prefId
-            : typeof accounts[0]?.id === "string"
-              ? accounts[0].id
-              : undefined;
+        const chosenId = pickSavedProviderAccountId(accounts, prefId);
         if (!chosenId) {
           finish();
           return;
         }
 
-        const actR = await fetch(
-          `${window.location.origin}/api/provider-accounts/${encodeURIComponent(chosenId)}/activate`,
-          { method: "POST", credentials: "include" }
-        );
-        if (!actR.ok) {
+        const activated = await activateSavedProviderOnServer(origin, chosenId);
+        if (cancelled) return;
+        if (!activated) {
           finish();
           return;
         }
 
-        creds = await fetchSessionCreds();
-        if (
-          creds &&
-          typeof creds.server === "string" &&
-          typeof creds.username === "string" &&
-          typeof creds.password === "string"
-        ) {
-          const activatedCreds = creds;
-          useAuth.getState().setCreds(activatedCreds);
-          usePrefs.getState().setActiveSavedProviderAccountId(chosenId);
-          finish();
-          scheduleWhenIdle(() => void validateAccount(activatedCreds), 2_500);
+        const restored = await fetchIptvSessionCredsFromApi(origin);
+        if (cancelled) return;
+        if (restored) {
+          applyCreds(restored, chosenId);
           return;
         }
       } catch {
@@ -199,7 +181,7 @@ export function AuthSessionBootstrap({ children }: { children: ReactNode }) {
       unsub();
       if (safetyId !== null) window.clearTimeout(safetyId);
     };
-  }, []);
+  }, [sessionStatus, session?.user?.id]);
 
   return (
     <AuthBootstrapReadyContext.Provider value={ready}>

@@ -13,6 +13,17 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.4.2] — 2026-06-22
+
+Saved playlists restore reliably when signing in on a new device.
+
+### Fixed
+- **Missing playlists on new devices** — session bootstrap now waits for Streamly sign-in before loading encrypted provider accounts instead of giving up on first paint.
+- **Cookie-only sessions not synced** — IPTV credentials stored only on one device are auto-saved to your Streamly account when you sign in there.
+
+### Added
+- **Saved playlist picker on onboarding** — choose from your cloud-saved playlists without re-entering Xtream credentials when auto-restore cannot reach the provider.
+
 ## [0.4.1] — 2026-06-22
 
 Fix series episodes looping at the end of transcoded (MKV) playback.
