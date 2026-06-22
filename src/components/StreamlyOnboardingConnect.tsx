@@ -9,6 +9,7 @@ import {
   fetchSavedProviderAccounts,
 } from "@/lib/provider-account-client";
 import { persistIptvAfterBrowserLogin } from "@/lib/persist-iptv-session-client";
+import { useAutoActivateSavedPlaylist } from "@/hooks/use-auto-activate-saved-playlist";
 import { tryParseM3uPortalUrl } from "@/lib/provider-account-label";
 import { SITE_NAME, SITE_TAGLINE } from "@/lib/site-brand";
 import { cn, normalizeServer } from "@/lib/utils";
@@ -29,7 +30,7 @@ import { signOutFully } from "@/lib/sign-out-client";
 import { usePrefs } from "@/store/preferences";
 import { useSession } from "next-auth/react";
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 type Tab = "xtream" | "m3u" | "pin";
 
@@ -79,8 +80,10 @@ export function StreamlyOnboardingConnect() {
     });
   }, [tab]);
 
-  /** PIN tab is TV-only; once Streamly is signed in we never show it (avoid setState in an effect). */
-  const activeTab: Tab = streamlySignedIn && tab === "pin" ? "xtream" : tab;
+  /** PIN pairing stays available on TV even when Streamly is signed in (link from phone). */
+  const showPinTab = tv || !streamlySignedIn;
+  const activeTab: Tab =
+    !tv && streamlySignedIn && tab === "pin" ? "xtream" : tab;
 
   useEffect(() => {
     let cancelled = false;
@@ -122,7 +125,7 @@ export function StreamlyOnboardingConnect() {
     };
   }, [streamlySignedIn]);
 
-  async function activateSavedPlaylist(id: string) {
+  const activateSavedPlaylist = useCallback(async (id: string) => {
     setActivatingId(id);
     setSavedError(null);
     try {
@@ -137,7 +140,14 @@ export function StreamlyOnboardingConnect() {
     } finally {
       setActivatingId(null);
     }
-  }
+  }, [setAccount, setActiveSavedId, setCreds]);
+
+  useAutoActivateSavedPlaylist({
+    enabled: streamlySignedIn && !loading && activatingId === null,
+    playlists: savedPlaylists,
+    loading: savedLoading,
+    onActivate: activateSavedPlaylist,
+  });
 
   async function submitPasswordLogin(e: React.FormEvent) {
     e.preventDefault();
@@ -234,6 +244,9 @@ export function StreamlyOnboardingConnect() {
       setCreds(creds);
       setAccount(account);
       writeAuthSessionBridge(creds, account);
+      if (streamlySignedIn) {
+        await persistIptvAfterBrowserLogin(creds);
+      }
       setLoading(false);
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Could not link TV";
@@ -242,7 +255,6 @@ export function StreamlyOnboardingConnect() {
     }
   }
 
-  const showPinTab = !streamlySignedIn;
   const tabs = useMemo(() => {
     const core = [
       { id: "xtream" as const, label: "Xtream" },
@@ -295,8 +307,9 @@ export function StreamlyOnboardingConnect() {
                 Your saved playlists
               </p>
               <p className="text-xs text-(--text-dim) mb-3 leading-relaxed">
-                Pick a playlist from your Streamly account — no need to re-enter credentials on
-                this device.
+                {tv
+                  ? "We’re connecting your library automatically. You can also pick a playlist below, use PIN from your phone, or open Settings in the top bar."
+                  : "Pick a playlist from your Streamly account — no need to re-enter credentials on this device."}
               </p>
               {savedError && (
                 <div className="text-xs rounded-lg border border-(--danger)/25 bg-(--danger)/10 text-(--danger) px-3 py-2 mb-3">

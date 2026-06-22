@@ -2,10 +2,8 @@
 
 import { persistIptvAfterBrowserLogin } from "@/lib/persist-iptv-session-client";
 import {
-  activateSavedProviderOnServer,
   fetchIptvSessionCredsFromApi,
-  listSavedProviderAccounts,
-  pickSavedProviderAccountId,
+  restoreSavedProviderSession,
 } from "@/lib/restore-saved-providers";
 import { scheduleWhenIdle } from "@/lib/defer-idle";
 import { xtream } from "@/lib/xtream";
@@ -26,19 +24,27 @@ import {
 
 const AuthBootstrapReadyContext = createContext(false);
 
-/** False until session bootstrap finishes (cookie probe + safety timeouts — never infinite). */
+/** False until session bootstrap finishes (cookie probe + saved-playlist restore — never infinite). */
 export function useAuthBootstrapReady() {
   return useContext(AuthBootstrapReadyContext);
 }
 
 const SESSION_VALIDATE_MS = 12000;
-const SAFETY_UNBLOCK_MS = 12000;
+/** Max wait while Streamly session or saved-playlist restore is still in flight. */
+const SAFETY_UNBLOCK_MS = 28000;
+const RESTORE_RETRY_MS = 2_500;
 
 export function AuthSessionBootstrap({ children }: { children: ReactNode }) {
   const [ready, setReady] = useState(false);
   const pathname = usePathname();
   const { data: session, status: sessionStatus } = useSession();
   const syncedToServerRef = useRef<string | null>(null);
+  const restoreInFlightRef = useRef(false);
+  const sessionStatusRef = useRef(sessionStatus);
+
+  useEffect(() => {
+    sessionStatusRef.current = sessionStatus;
+  }, [sessionStatus]);
 
   /** Re-apply after login → /app SPA nav (Providers does not remount). */
   useLayoutEffect(() => {
@@ -66,7 +72,7 @@ export function AuthSessionBootstrap({ children }: { children: ReactNode }) {
     let safetyId: number | null = null;
 
     const finish = () => {
-      if (cancelled) return;
+      if (cancelled || restoreInFlightRef.current) return;
       if (safetyId !== null) {
         window.clearTimeout(safetyId);
         safetyId = null;
@@ -87,7 +93,11 @@ export function AuthSessionBootstrap({ children }: { children: ReactNode }) {
       };
     }
 
-    safetyId = window.setTimeout(finish, SAFETY_UNBLOCK_MS);
+    safetyId = window.setTimeout(() => {
+      if (restoreInFlightRef.current) return;
+      if (sessionStatusRef.current === "loading") return;
+      finish();
+    }, SAFETY_UNBLOCK_MS);
 
     const validateAccount = async (creds: XtreamCredentials) => {
       try {
@@ -118,6 +128,22 @@ export function AuthSessionBootstrap({ children }: { children: ReactNode }) {
       scheduleWhenIdle(() => void validateAccount(creds), 2_500);
     };
 
+    const tryRestoreSaved = async (origin: string) => {
+      const prefId = usePrefs.getState().activeSavedProviderAccountId;
+      for (let attempt = 0; attempt < 2; attempt++) {
+        if (cancelled) return false;
+        const restored = await restoreSavedProviderSession(origin, prefId);
+        if (restored) {
+          applyCreds(restored.creds, restored.savedId);
+          return true;
+        }
+        if (attempt === 0) {
+          await new Promise((r) => window.setTimeout(r, RESTORE_RETRY_MS));
+        }
+      }
+      return false;
+    };
+
     const run = async () => {
       const origin = window.location.origin;
 
@@ -129,11 +155,6 @@ export function AuthSessionBootstrap({ children }: { children: ReactNode }) {
           return;
         }
 
-        /**
-         * Wait for NextAuth before giving up on server-side saved playlists.
-         * Previously `getSession()` on first paint often returned null on a new
-         * device, so restore never ran and users saw an empty library.
-         */
         if (sessionStatus === "loading") return;
 
         if (sessionStatus !== "authenticated" || !session?.user?.id) {
@@ -141,43 +162,25 @@ export function AuthSessionBootstrap({ children }: { children: ReactNode }) {
           return;
         }
 
-        const accounts = await listSavedProviderAccounts(origin);
-        if (cancelled) return;
-        if (accounts.length === 0) {
-          finish();
-          return;
-        }
-
-        const prefId = usePrefs.getState().activeSavedProviderAccountId;
-        const chosenId = pickSavedProviderAccountId(accounts, prefId);
-        if (!chosenId) {
-          finish();
-          return;
-        }
-
-        const activated = await activateSavedProviderOnServer(origin, chosenId);
-        if (cancelled) return;
-        if (!activated) {
-          finish();
-          return;
-        }
-
-        const restored = await fetchIptvSessionCredsFromApi(origin);
-        if (cancelled) return;
-        if (restored) {
-          applyCreds(restored, chosenId);
-          return;
+        restoreInFlightRef.current = true;
+        try {
+          const restored = await tryRestoreSaved(origin);
+          if (cancelled) return;
+          if (!restored) finish();
+        } finally {
+          restoreInFlightRef.current = false;
         }
       } catch {
-        /* offline, aborted, or non-JSON */
+        restoreInFlightRef.current = false;
+        finish();
       }
-      finish();
     };
 
     void run();
 
     return () => {
       cancelled = true;
+      restoreInFlightRef.current = false;
       unsub();
       if (safetyId !== null) window.clearTimeout(safetyId);
     };

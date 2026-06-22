@@ -98,9 +98,10 @@ export function TvTopNav() {
             href="/app/settings"
             data-tv-card-root
             title="Settings"
-            className="flex items-center justify-center size-9 rounded-xl text-(--text-muted) hover:text-(--text) hover:bg-(--bg-2)/60 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--brand)/55"
+            className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium text-(--text-dim) hover:text-(--text) hover:bg-(--bg-2)/60 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--brand)/55 min-h-11"
           >
-            <Settings className="size-4" />
+            <Settings className="size-4 shrink-0" />
+            <span>Settings</span>
           </Link>
         </div>
       </div>

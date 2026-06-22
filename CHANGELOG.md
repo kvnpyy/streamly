@@ -13,6 +13,18 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.4.4] — 2026-06-22
+
+TV auto-login restores cloud-saved playlists without retyping credentials.
+
+### Fixed
+- **TV Streamly auto-login without IPTV cookie** — session bootstrap now waits for cloud playlist restore (with retry) instead of dropping users on the connect screen while restore is still running.
+- **Onboarding auto-restore** — if bootstrap cannot reach the provider, the connect screen automatically activates your most recent saved playlist.
+- **PIN pairing on signed-in TVs** — TV users with a Streamly session can still link from a phone via PIN (previously hidden).
+
+### Added
+- **TV navigation** — labeled Settings and playlist switcher in the top bar; loading message while playlists restore.
+
 ## [0.4.3] — 2026-06-22
 
 Fix mobile playlist switching and TV home freeze / duplicate greeting.

@@ -79,9 +79,18 @@ export function AppShell({ children }: { children: ReactNode }) {
   }, [authGateReady, creds, sessionKnown, streamlySignedIn]);
 
   if (!authGateReady) {
+    const restoringPlaylists =
+      sessionKnown && streamlySignedIn && !creds;
     return (
       <div className="min-h-screen grid place-items-center px-6">
-        <div className="size-10 border-2 border-white/15 border-t-(--brand-2) rounded-full animate-spin" />
+        <div className="flex flex-col items-center gap-4 max-w-sm text-center">
+          <div className="size-10 border-2 border-white/15 border-t-(--brand-2) rounded-full animate-spin" />
+          <p className="text-sm text-(--text-muted)">
+            {restoringPlaylists
+              ? "Restoring your saved playlists…"
+              : "Loading your session…"}
+          </p>
+        </div>
       </div>
     );
   }

@@ -88,3 +88,26 @@ export async function activateSavedProviderOnServer(
   );
   return r.ok;
 }
+
+export type RestoreSavedProviderResult = {
+  creds: XtreamCredentials;
+  savedId: string;
+};
+
+/**
+ * Load saved provider list, activate the best match, and read back the IPTV session cookie.
+ * Used on new devices / TVs where only the Streamly login cookie survived.
+ */
+export async function restoreSavedProviderSession(
+  origin: string,
+  preferredId?: string | null
+): Promise<RestoreSavedProviderResult | null> {
+  const accounts = await listSavedProviderAccounts(origin);
+  const chosenId = pickSavedProviderAccountId(accounts, preferredId);
+  if (!chosenId) return null;
+  const activated = await activateSavedProviderOnServer(origin, chosenId);
+  if (!activated) return null;
+  const creds = await fetchIptvSessionCredsFromApi(origin);
+  if (!creds) return null;
+  return { creds, savedId: chosenId };
+}

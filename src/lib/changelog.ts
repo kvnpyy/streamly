@@ -11,6 +11,16 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.4.4",
+    date: "2026-06-22",
+    summary: "TV auto-login restores cloud-saved playlists without retyping credentials.",
+    highlights: [
+      "Bootstrap waits for saved-playlist restore (with retry) before showing the connect screen on TVs.",
+      "Onboarding auto-activates your last saved playlist; PIN pairing stays available when Streamly is signed in.",
+      "TV top bar shows labeled Settings and a playlist switcher for managing saved providers.",
+    ],
+  },
+  {
     version: "0.4.3",
     date: "2026-06-22",
     summary: "Fix mobile playlist switching and TV home freeze / duplicate greeting.",
