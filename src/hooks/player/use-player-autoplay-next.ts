@@ -79,7 +79,7 @@ export function usePlayerAutoplayNext(
 
   useEffect(() => {
     advancedRef.current = false;
-    setFinaleCountdown(null);
+    queueMicrotask(() => setFinaleCountdown(null));
   }, [episodeKey]);
 
   const dismissedForEpisode =
@@ -160,10 +160,10 @@ export function usePlayerAutoplayNext(
 
   useEffect(() => {
     if (!showFinaleCard) {
-      setFinaleCountdown(null);
+      queueMicrotask(() => setFinaleCountdown(null));
       return;
     }
-    setFinaleCountdown(AUTOPLAY_COUNTDOWN_SEC);
+    queueMicrotask(() => setFinaleCountdown(AUTOPLAY_COUNTDOWN_SEC));
   }, [showFinaleCard, episodeKey]);
 
   useEffect(() => {
