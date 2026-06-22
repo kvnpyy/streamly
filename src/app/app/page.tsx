@@ -7,6 +7,7 @@ import {
   isHomeAutoRichDisabled,
 } from "@/lib/home-performance";
 import { scheduleLiveBrowseUiReady } from "@/lib/live-page-performance";
+import { useLivingRoomHomeLayout } from "@/lib/use-living-room-home-layout";
 import { useDeferredMount } from "@/hooks/use-deferred-mount";
 import { useAuth } from "@/store/auth";
 import { useEffect, useState } from "react";
@@ -29,29 +30,37 @@ const HomePageRich = dynamic(
 
 export default function HomePage() {
   const creds = useAuth((s) => s.creds)!;
+  const livingRoomHome = useLivingRoomHomeLayout();
   const interactiveReady = useDeferredMount(160, 2_200);
   const [showRich, setShowRich] = useState(false);
   useEffect(() => {
-    if (isHomeAutoRichDisabled() || showRich || !interactiveReady) return;
+    /** TV browsers: never auto-load heavy shelves — duplicates the light hub and freezes remotes. */
+    if (livingRoomHome || isHomeAutoRichDisabled() || showRich || !interactiveReady) {
+      return;
+    }
     return scheduleLiveBrowseUiReady(
       () => setShowRich(true),
       HOME_AUTO_RICH_DELAY_MS
     );
-  }, [showRich, interactiveReady]);
+  }, [livingRoomHome, showRich, interactiveReady]);
 
   if (!interactiveReady) {
     return <HomeStaticShell />;
   }
 
   const showRichPrompt = !showRich;
+  /** Rich TV hub replaces the light shell — rendering both duplicated "Hey …" and doubled catalog work. */
+  const hideLightShell = livingRoomHome && showRich;
 
   return (
     <>
-      <HomePageLight
-        creds={creds}
-        showRichPrompt={showRichPrompt}
-        onLoadRich={() => setShowRich(true)}
-      />
+      {!hideLightShell && (
+        <HomePageLight
+          creds={creds}
+          showRichPrompt={showRichPrompt}
+          onLoadRich={() => setShowRich(true)}
+        />
+      )}
       {showRich && <HomePageRich />}
     </>
   );

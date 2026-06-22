@@ -118,7 +118,13 @@ export function TvHomeHub({
     <div className="tv-home">
       <header className="tv-home__hero">
         <h1 className="tv-home__greeting">
-          Hey <span>{greetingName}</span>
+          {greetingName === "there" ? (
+            <>What are we watching?</>
+          ) : (
+            <>
+              Hey <span>{greetingName}</span>
+            </>
+          )}
         </h1>
         <TvHomeQuickNav
           items={[

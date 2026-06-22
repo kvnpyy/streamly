@@ -13,6 +13,16 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.4.3] — 2026-06-22
+
+Fix mobile playlist switching and TV home freeze / duplicate greeting.
+
+### Fixed
+- **Mobile playlist menu** — dropdown renders in a portal above the bottom nav, with larger touch targets and a deferred outside-tap dismiss so switching and adding playlists works on phones.
+- **Settings playlist anchor** — `#playlists` scrolls to saved playlists; `?add=playlist` opens the add form.
+- **TV home duplicate greeting** — light and rich TV hubs no longer render together; heavy shelves no longer auto-load on TV (manual opt-in only).
+- **TV playlist access** — playlist switcher is always visible in TV top navigation.
+
 ## [0.4.2] — 2026-06-22
 
 Saved playlists restore reliably when signing in on a new device.

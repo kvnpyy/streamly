@@ -89,7 +89,7 @@ export function TvTopNav() {
               <span className="hidden sm:inline">Search</span>
             </Link>
           )}
-          <PlaylistSwitcher className="hidden md:flex" />
+          <PlaylistSwitcher compact className="shrink-0" />
           <CommunityDiscordLink
             label="Discord"
             className="hidden sm:inline-flex min-h-9 px-3 py-2 rounded-xl text-sm font-medium text-[#c7ceff] hover:text-[#e0e4ff] hover:bg-[#5865F2]/12 transition-colors"

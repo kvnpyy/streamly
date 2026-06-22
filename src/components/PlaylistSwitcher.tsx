@@ -16,10 +16,21 @@ import {
   type KeyboardEvent,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
+  useSyncExternalStore,
   useState,
 } from "react";
+import { createPortal } from "react-dom";
+
+function subscribeNoop() {
+  return () => {};
+}
+
+export const PLAYLIST_SETTINGS_HREF = "/app/settings?add=playlist#playlists";
+
+type MenuPos = { top: number; left: number; width: number };
 
 /**
  * Saved IPTV provider accounts (requires Streamly sign-in); switches cookie + auth store + React Query caches.
@@ -43,6 +54,8 @@ export function PlaylistSwitcher({
   const [open, setOpen] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [switchError, setSwitchError] = useState<string | null>(null);
+  const [menuPos, setMenuPos] = useState<MenuPos | null>(null);
+  const portalReady = useSyncExternalStore(subscribeNoop, () => true, () => false);
 
   const {
     data: rows = [],
@@ -56,6 +69,31 @@ export function PlaylistSwitcher({
   });
 
   const rootRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    const trigger = triggerRef.current;
+    if (!trigger) return;
+    const update = () => {
+      const r = trigger.getBoundingClientRect();
+      const width = Math.min(
+        Math.max(r.width, 240),
+        Math.min(window.innerWidth * 0.92, 352)
+      );
+      let left = r.right - width;
+      left = Math.max(8, Math.min(left, window.innerWidth - width - 8));
+      setMenuPos({ top: r.bottom + 6, left, width });
+    };
+    update();
+    window.addEventListener("resize", update);
+    window.addEventListener("scroll", update, true);
+    return () => {
+      window.removeEventListener("resize", update);
+      window.removeEventListener("scroll", update, true);
+    };
+  }, [open]);
 
   // Refetch when onboarding flow saves a new account (cross-component broadcast).
   useEffect(() => {
@@ -67,15 +105,25 @@ export function PlaylistSwitcher({
   }, [refetch]);
 
   useEffect(() => {
-    function onPointerDown(ev: MouseEvent | PointerEvent) {
-      const root = rootRef.current;
-      if (!open || !root) return;
-      const t = ev.target as Node;
-      if (!root.contains(t)) setOpen(false);
-    }
     if (!open) return;
-    window.addEventListener("pointerdown", onPointerDown, true);
-    return () => window.removeEventListener("pointerdown", onPointerDown, true);
+    let cancelled = false;
+    let removeListener: (() => void) | null = null;
+    const timer = window.setTimeout(() => {
+      if (cancelled) return;
+      function onPointerDown(ev: MouseEvent | PointerEvent) {
+        const t = ev.target as Node;
+        if (rootRef.current?.contains(t) || menuRef.current?.contains(t)) return;
+        setOpen(false);
+      }
+      window.addEventListener("pointerdown", onPointerDown, true);
+      removeListener = () =>
+        window.removeEventListener("pointerdown", onPointerDown, true);
+    }, 0);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+      removeListener?.();
+    };
   }, [open]);
 
   const activeRow = useMemo(
@@ -119,21 +167,121 @@ export function PlaylistSwitcher({
 
   if (status !== "authenticated") return null;
 
+  const menu =
+    open && menuPos && portalReady
+      ? createPortal(
+          <div
+            ref={menuRef}
+            role="listbox"
+            aria-label="Saved playlists"
+            className="fixed z-[120] rounded-xl border border-(--line) bg-(--bg-1) shadow-[0_20px_50px_rgba(0,0,0,0.45)] overflow-hidden touch-manipulation"
+            style={{
+              top: menuPos.top,
+              left: menuPos.left,
+              width: menuPos.width,
+              maxHeight: "min(70dvh, 420px)",
+              overflowY: "auto",
+            }}
+          >
+            {listErrorMsg && (
+              <div className="px-3 py-2 text-[11px] text-(--danger) border-b border-(--danger)/25">
+                {listErrorMsg}
+              </div>
+            )}
+
+            {loadingList ? (
+              <div className="flex items-center gap-2 px-3 py-3 text-xs text-(--text-muted)">
+                <Loader2 className="size-3.5 animate-spin" aria-hidden /> Loading…
+              </div>
+            ) : rows.length === 0 ? (
+              <div className="px-3 py-3 text-xs text-(--text-muted) text-center">
+                No saved playlists yet.
+              </div>
+            ) : (
+              <div className="py-1">
+                {rows.map((row) => {
+                  const sel = activeSavedId === row.id;
+                  const isBusy = busyId === row.id;
+                  return (
+                    <button
+                      key={row.id}
+                      type="button"
+                      role="option"
+                      aria-selected={sel}
+                      disabled={busyId !== null}
+                      onClick={() => void onPick(row.id)}
+                      className={cn(
+                        "w-full text-left px-3 py-3 text-xs transition-colors flex items-center gap-2.5 touch-manipulation min-h-11",
+                        sel
+                          ? "bg-(--brand)/14 text-(--text)"
+                          : "hover:bg-(--bg-2) active:bg-(--bg-2) text-(--text-dim)"
+                      )}
+                    >
+                      <span
+                        className={cn(
+                          "shrink-0 size-4 rounded-full flex items-center justify-center transition-colors",
+                          sel
+                            ? "bg-(--brand)"
+                            : "border border-(--line-2) bg-(--bg-3)"
+                        )}
+                      >
+                        {sel && !isBusy && <Check className="size-2.5 text-white" />}
+                        {isBusy && <Loader2 className="size-2.5 animate-spin text-white" />}
+                      </span>
+                      <span className="font-medium truncate flex-1">{row.label}</span>
+                      {sel && (
+                        <span className="text-[10px] text-(--brand) font-semibold shrink-0">
+                          Active
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            <div className="border-t border-(--line) flex items-center gap-0.5 px-1 py-1">
+              <Link
+                href={PLAYLIST_SETTINGS_HREF}
+                onClick={() => setOpen(false)}
+                className="flex-1 flex items-center gap-2 px-2.5 py-2.5 rounded-lg hover:bg-(--bg-2) active:bg-(--bg-2) text-xs text-(--text-muted) hover:text-(--text) transition-colors min-h-11 touch-manipulation"
+              >
+                <Plus className="size-3.5 text-(--brand)" />
+                Add playlist
+              </Link>
+              <Link
+                href="/app/settings#playlists"
+                onClick={() => setOpen(false)}
+                className="flex items-center gap-1.5 px-2.5 py-2.5 rounded-lg hover:bg-(--bg-2) active:bg-(--bg-2) text-xs text-(--text-muted) hover:text-(--text) transition-colors min-h-11 touch-manipulation"
+              >
+                <Settings2 className="size-3.5" />
+                Manage
+              </Link>
+            </div>
+          </div>,
+          document.body
+        )
+      : null;
+
   return (
     <div ref={rootRef} className={cn("relative shrink-0", className)}>
       <button
+        ref={triggerRef}
         type="button"
         aria-expanded={open}
         aria-haspopup="listbox"
-        disabled={busyId !== null || loadingList}
-        onClick={() => setOpen((o) => !o)}
+        disabled={busyId !== null}
+        onClick={() => {
+          if (loadingList) void refetch();
+          setOpen((o) => !o);
+        }}
         onKeyDown={(e: KeyboardEvent<HTMLButtonElement>) => {
           if (e.key === "Escape") setOpen(false);
         }}
         title="Switch playlist"
         aria-label={compact ? `Switch playlist (${summaryLabel})` : undefined}
         className={cn(
-          "rounded-xl border border-(--line) bg-(--bg-2) text-(--text-dim) hover:border-(--brand)/40 hover:text-(--text) transition-colors disabled:opacity-55",
+          "rounded-xl border border-(--line) bg-(--bg-2) text-(--text-dim) hover:border-(--brand)/40 hover:text-(--text) transition-colors disabled:opacity-55 touch-manipulation",
           compact
             ? "inline-flex size-9 items-center justify-center"
             : "flex items-center gap-1.5 min-h-9 max-w-[10.5rem] sm:max-w-[14rem] pl-2.5 pr-2 text-[11px] sm:text-xs"
@@ -160,90 +308,7 @@ export function PlaylistSwitcher({
           <Loader2 className="size-3.5 animate-spin shrink-0" aria-hidden />
         ) : null}
       </button>
-
-      {open && (
-        <div
-          role="listbox"
-          aria-label="Saved playlists"
-          className="absolute right-0 z-50 mt-1.5 min-w-[15rem] max-w-[min(90vw,22rem)] rounded-xl border border-(--line) bg-(--bg-1) shadow-[0_20px_50px_rgba(0,0,0,0.45)] overflow-hidden"
-        >
-          {listErrorMsg && (
-            <div className="px-3 py-2 text-[11px] text-(--danger) border-b border-(--danger)/25">
-              {listErrorMsg}
-            </div>
-          )}
-
-          {loadingList ? (
-            <div className="flex items-center gap-2 px-3 py-3 text-xs text-(--text-muted)">
-              <Loader2 className="size-3.5 animate-spin" aria-hidden /> Loading…
-            </div>
-          ) : rows.length === 0 ? (
-            <div className="px-3 py-3 text-xs text-(--text-muted) text-center">
-              No saved playlists yet.
-            </div>
-          ) : (
-            <div className="py-1">
-              {rows.map((row) => {
-                const sel = activeSavedId === row.id;
-                const isBusy = busyId === row.id;
-                return (
-                  <button
-                    key={row.id}
-                    type="button"
-                    role="option"
-                    aria-selected={sel}
-                    disabled={busyId !== null}
-                    onClick={() => void onPick(row.id)}
-                    className={cn(
-                      "w-full text-left px-3 py-2.5 text-xs transition-colors flex items-center gap-2.5",
-                      sel
-                        ? "bg-(--brand)/14 text-(--text)"
-                        : "hover:bg-(--bg-2) text-(--text-dim)"
-                    )}
-                  >
-                    <span
-                      className={cn(
-                        "shrink-0 size-4 rounded-full flex items-center justify-center transition-colors",
-                        sel
-                          ? "bg-(--brand)"
-                          : "border border-(--line-2) bg-(--bg-3)"
-                      )}
-                    >
-                      {sel && !isBusy && <Check className="size-2.5 text-white" />}
-                      {isBusy && <Loader2 className="size-2.5 animate-spin text-white" />}
-                    </span>
-                    <span className="font-medium truncate flex-1">{row.label}</span>
-                    {sel && (
-                      <span className="text-[10px] text-(--brand) font-semibold shrink-0">
-                        Active
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-          )}
-
-          <div className="border-t border-(--line) flex items-center gap-0.5 px-1 py-1">
-            <Link
-              href="/app/settings#playlists"
-              onClick={() => setOpen(false)}
-              className="flex-1 flex items-center gap-2 px-2.5 py-2 rounded-lg hover:bg-(--bg-2) text-xs text-(--text-muted) hover:text-(--text) transition-colors"
-            >
-              <Plus className="size-3.5 text-(--brand)" />
-              Add playlist
-            </Link>
-            <Link
-              href="/app/settings#playlists"
-              onClick={() => setOpen(false)}
-              className="flex items-center gap-1.5 px-2.5 py-2 rounded-lg hover:bg-(--bg-2) text-xs text-(--text-muted) hover:text-(--text) transition-colors"
-            >
-              <Settings2 className="size-3.5" />
-              Manage
-            </Link>
-          </div>
-        </div>
-      )}
+      {menu}
     </div>
   );
 }

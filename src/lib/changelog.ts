@@ -11,6 +11,16 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.4.3",
+    date: "2026-06-22",
+    summary: "Fix mobile playlist switching and TV home freeze / duplicate greeting.",
+    highlights: [
+      "Playlist menu portals above the mobile nav with proper touch targets and deferred dismiss.",
+      "Settings #playlists anchor opens the add-playlist form; TV nav always shows the playlist switcher.",
+      "TV home no longer auto-loads heavy shelves or renders light + rich hubs at once.",
+    ],
+  },
+  {
     version: "0.4.2",
     date: "2026-06-22",
     summary: "Saved playlists restore reliably when signing in on a new device.",
