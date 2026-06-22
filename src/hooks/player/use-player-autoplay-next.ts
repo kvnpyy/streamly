@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  AUTOPLAY_COUNTDOWN_SEC,
   autoplayDisplayCountdownSec,
   episodeAutoplayKey,
   getSeriesNextEpisode,
@@ -68,6 +69,7 @@ export function usePlayerAutoplayNext(
   const [dismissedKey, setDismissedKey] = useState<string | null>(null);
   const [watchCreditsKey, setWatchCreditsKey] = useState<string | null>(null);
   const [finaleOffer, setFinaleOffer] = useState(false);
+  const [finaleCountdown, setFinaleCountdown] = useState<number | null>(null);
   const advancedRef = useRef(false);
   const onPlayNextRef = useRef(onPlayNext);
 
@@ -77,6 +79,7 @@ export function usePlayerAutoplayNext(
 
   useEffect(() => {
     advancedRef.current = false;
+    setFinaleCountdown(null);
   }, [episodeKey]);
 
   const dismissedForEpisode =
@@ -96,7 +99,7 @@ export function usePlayerAutoplayNext(
     hasNextEpisode,
   });
 
-  const countdownSec = useMemo(
+  const positionCountdownSec = useMemo(
     () =>
       autoplayDisplayCountdownSec({
         durationSec,
@@ -113,8 +116,8 @@ export function usePlayerAutoplayNext(
   }, [hasNextEpisode]);
 
   useEffect(() => {
-    if (countdownSec === 0) advanceToNext();
-  }, [countdownSec, advanceToNext]);
+    if (positionCountdownSec === 0) advanceToNext();
+  }, [positionCountdownSec, advanceToNext]);
 
   useEffect(() => {
     if (!usesTranscode || !open || dismissedForEpisode || watchCreditsForEpisode) {
@@ -151,6 +154,29 @@ export function usePlayerAutoplayNext(
     startOffsetSecRef,
     encodedSecRelRef,
   ]);
+
+  const showFinaleCard =
+    finaleOffer && hasNextEpisode && !dismissedForEpisode && !watchCreditsForEpisode;
+
+  useEffect(() => {
+    if (!showFinaleCard) {
+      setFinaleCountdown(null);
+      return;
+    }
+    setFinaleCountdown(AUTOPLAY_COUNTDOWN_SEC);
+  }, [showFinaleCard, episodeKey]);
+
+  useEffect(() => {
+    if (finaleCountdown == null || finaleCountdown <= 0) return;
+    const timer = window.setTimeout(() => {
+      setFinaleCountdown((c) => (c == null || c <= 1 ? 0 : c - 1));
+    }, 1000);
+    return () => window.clearTimeout(timer);
+  }, [finaleCountdown]);
+
+  useEffect(() => {
+    if (finaleCountdown === 0) advanceToNext();
+  }, [finaleCountdown, advanceToNext]);
 
   useEffect(() => {
     const v = videoRef.current;
@@ -199,9 +225,13 @@ export function usePlayerAutoplayNext(
   }, [advanceToNext]);
 
   const visibleCountdown =
-    countdownSec != null && countdownSec > 0 ? countdownSec : null;
-  const showFinaleCard =
-    finaleOffer && hasNextEpisode && !dismissedForEpisode && !watchCreditsForEpisode;
+    showFinaleCard
+      ? finaleCountdown != null && finaleCountdown > 0
+        ? finaleCountdown
+        : null
+      : positionCountdownSec != null && positionCountdownSec > 0
+        ? positionCountdownSec
+        : null;
 
   return {
     visible:
@@ -210,7 +240,7 @@ export function usePlayerAutoplayNext(
       !watchCreditsForEpisode &&
       ((shouldOffer && visibleCountdown != null) || showFinaleCard),
     nextEpisode,
-    countdownSec: showFinaleCard ? (visibleCountdown ?? 1) : visibleCountdown,
+    countdownSec: visibleCountdown,
     cancelAutoplay,
     playNextNow,
     watchCredits,

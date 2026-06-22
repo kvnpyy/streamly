@@ -514,6 +514,7 @@ export function PlayerOverlay() {
       vodStartOffsetRef.current = 0;
       vodEncodedSecRef.current = 0;
     }
+    vodResumeLockedRef.current = false;
     queueMicrotask(() => {
       if (hold) {
         setTime(hold.absoluteTimeSec);

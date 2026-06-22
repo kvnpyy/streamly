@@ -11,6 +11,16 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+---
+
+## [0.4.1] — 2026-06-22
+
+Fix series episodes looping at the end of transcoded (MKV) playback.
+
+### Fixed
+- **Series replay loop at episode end** — stop hls.js after finale, detect encode-edge stall and backward snap-back, and advance autoplay even when duration metadata is missing.
+- **Next-episode resume** — reset resume lock when switching episodes so binge playback starts cleanly.
+
 ## [0.4.0] — 2026-06-22
 
 Regional filtering, VOD browse improvements, and IP-based defaults.

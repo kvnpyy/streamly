@@ -11,6 +11,16 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.4.1",
+    date: "2026-06-22",
+    summary: "Fix series episodes looping at the end of transcoded playback.",
+    highlights: [
+      "Stop hls.js manifest polling when a transcoded episode reaches the encode edge — prevents snap-back to segment 0.",
+      "Detect backward playhead jumps and encode-caught-up finale even without reliable duration metadata.",
+      "Finale autoplay countdown works when duration hints are wrong; resume lock resets on episode change.",
+    ],
+  },
+  {
     version: "0.4.0",
     date: "2026-06-22",
     summary:

@@ -46,7 +46,13 @@ import {
   vodResumeStorageKey,
 } from "@/lib/player-vod-resume";
 import { mapHlsAudioTracks } from "@/lib/player-audio-tracks";
-import { shouldTreatTranscodeAsEnded } from "@/lib/player-transcode-playback-end";
+import {
+  detectTranscodeBackwardSnap,
+  isAtTranscodeBufferEdge,
+  isEncodeCaughtUp,
+  shouldTreatTranscodeAsEnded,
+  signalTranscodePlaybackEnded,
+} from "@/lib/player-transcode-playback-end";
 import { browseAccountKey, usePrefs } from "@/store/preferences";
 import type { PlayerSource } from "@/store/player";
 import type { useHlsRuntime } from "@/hooks/use-hls-runtime";
@@ -811,6 +817,19 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
           }
           // Live: let hls.js retry fragments — edge `startLoad(-1)` on every frag error causes pause/freeze loops.
           if (!isLive && fragish) {
+            const vv = videoRef.current;
+            if (vodTranscodeHls && vv) {
+              const atEnd = shouldTreatTranscodeAsEnded({
+                video: vv,
+                startOffsetSec: vodStartOffsetRef.current,
+                durationSec: vodDurationHintRef.current,
+                encodedSecRel: vodEncodedSecRef.current,
+              });
+              if (atEnd) {
+                signalTranscodePlaybackEnded({ video: vv, hls });
+                return;
+              }
+            }
             try {
               const vv = videoRef.current;
               const pos =
@@ -862,6 +881,19 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
               }
               try {
                 const vv = videoRef.current;
+                if (
+                  vodTranscodeHls &&
+                  vv &&
+                  shouldTreatTranscodeAsEnded({
+                    video: vv,
+                    startOffsetSec: vodStartOffsetRef.current,
+                    durationSec: vodDurationHintRef.current,
+                    encodedSecRel: vodEncodedSecRef.current,
+                  })
+                ) {
+                  signalTranscodePlaybackEnded({ video: vv, hls });
+                  break;
+                }
                 const pos =
                   vv && Number.isFinite(vv.currentTime)
                     ? Math.max(0, vv.currentTime)
@@ -902,6 +934,19 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
               } else {
                 try {
                   const vv = videoRef.current;
+                  if (
+                    vodTranscodeHls &&
+                    vv &&
+                    shouldTreatTranscodeAsEnded({
+                      video: vv,
+                      startOffsetSec: vodStartOffsetRef.current,
+                      durationSec: vodDurationHintRef.current,
+                      encodedSecRel: vodEncodedSecRef.current,
+                    })
+                  ) {
+                    signalTranscodePlaybackEnded({ video: vv, hls });
+                    break;
+                  }
                   const pos =
                     vodTranscodeHls && vv && Number.isFinite(vv.currentTime)
                       ? Math.max(0, vv.currentTime)
@@ -1067,33 +1112,58 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
     /** When the encode edge stalls, nudge manifest load without resetting playhead. */
     let transcodeEndSignaled = false;
     let lastEdgeNudgeAt = 0;
+    let maxSeenRelTime = 0;
+    let edgeStallTicks = 0;
     const vodEdgeWatch =
       vodTranscodeHls
         ? window.setInterval(() => {
             if (cancelled) return;
             const vv = videoRef.current;
             const hls = hlsRef.current;
-            if (!vv || !hls || vv.paused) return;
+            if (!vv || !hls || transcodeEndSignaled) return;
+            if (vv.paused && vv.ended) return;
+
+            const rel = vv.currentTime;
+            if (rel > maxSeenRelTime + 0.25) {
+              maxSeenRelTime = rel;
+              edgeStallTicks = 0;
+            }
+
+            if (detectTranscodeBackwardSnap(rel, maxSeenRelTime)) {
+              transcodeEndSignaled = true;
+              signalTranscodePlaybackEnded({ video: vv, hls });
+              return;
+            }
 
             const durationSec = vodDurationHintRef.current;
+            const encodedSecRel = vodEncodedSecRef.current;
             const atFinale = shouldTreatTranscodeAsEnded({
               video: vv,
               startOffsetSec: vodStartOffsetRef.current,
               durationSec,
-              encodedSecRel: vodEncodedSecRef.current,
+              encodedSecRel,
             });
 
             if (atFinale) {
               if (!transcodeEndSignaled) {
                 transcodeEndSignaled = true;
-                try {
-                  vv.pause();
-                } catch {
-                  /* noop */
-                }
-                vv.dispatchEvent(new Event("ended"));
+                signalTranscodePlaybackEnded({ video: vv, hls });
               }
               return;
+            }
+
+            if (isAtTranscodeBufferEdge(vv)) {
+              edgeStallTicks += 1;
+              if (
+                edgeStallTicks >= 3 &&
+                isEncodeCaughtUp(rel, encodedSecRel)
+              ) {
+                transcodeEndSignaled = true;
+                signalTranscodePlaybackEnded({ video: vv, hls });
+                return;
+              }
+            } else {
+              edgeStallTicks = 0;
             }
 
             if (vv.ended) return;
@@ -1104,6 +1174,7 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
             const ahead = bufEnd - vv.currentTime;
             /** Only nudge when buffer is nearly dry — frequent startLoad causes snap-back loops. */
             if (ahead > 3) return;
+            if (isEncodeCaughtUp(rel, encodedSecRel)) return;
             const now = Date.now();
             if (now - lastEdgeNudgeAt < 6000) return;
             lastEdgeNudgeAt = now;
