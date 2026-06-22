@@ -11,6 +11,16 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.4.5",
+    date: "2026-06-22",
+    summary: "Lean TV navigation with visible Playlists and Settings; lighter home screen.",
+    highlights: [
+      "TV top bar trimmed to Home/Live/Movies/Series with pinned Playlists + Settings (no duplicate Search or Discord).",
+      "Removed heavy “Load home shelves” card on TV home — use Live TV or Movies for full catalogs.",
+      "Discord strip hidden on living-room layout for faster paint.",
+    ],
+  },
+  {
     version: "0.4.4",
     date: "2026-06-22",
     summary: "TV auto-login restores cloud-saved playlists without retyping credentials.",

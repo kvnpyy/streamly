@@ -35,8 +35,6 @@ type TvHomeLightProps = {
   addRecent: (f: Omit<Favorite, "addedAt">) => void;
   isFavorite: (kind: Favorite["kind"], id: number) => boolean;
   toggleFavorite: (f: Omit<Favorite, "addedAt">) => void;
-  showRichPrompt: boolean;
-  onLoadRich: () => void;
 };
 
 export function TvHomeLight({
@@ -50,8 +48,6 @@ export function TvHomeLight({
   addRecent,
   isFavorite,
   toggleFavorite,
-  showRichPrompt,
-  onLoadRich,
 }: TvHomeLightProps) {
   const vodResumeSec = usePrefs((s) => s.vodResumeSec);
   const accountKey = useMemo(() => browseAccountKey(creds), [creds]);
@@ -168,23 +164,6 @@ export function TvHomeLight({
             ))}
           </TvShelf>
         </TvHomeRow>
-      )}
-
-      {showRichPrompt && (
-        <div className="tv-home__rich-prompt card p-6 text-center space-y-3 mx-4">
-          <p className="text-sm text-(--text-muted) text-pretty">
-            On now, trending, and movie shelves load your full catalog and may
-            pause older TVs. Open Live TV or Movies instead, or load shelves
-            here.
-          </p>
-          <button
-            type="button"
-            onClick={onLoadRich}
-            className="inline-flex items-center justify-center h-11 px-6 rounded-xl btn-brand text-sm font-medium"
-          >
-            Load home shelves
-          </button>
-        </div>
       )}
     </div>
   );

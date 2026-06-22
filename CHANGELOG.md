@@ -13,6 +13,17 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.4.5] — 2026-06-22
+
+Lean TV navigation with visible Playlists and Settings; lighter home screen.
+
+### Fixed
+- **TV nav overflow** — duplicate Search and crowded items pushed Playlists/Settings off-screen; core nav is now Home/Live/Movies/Series with My List, Search, Playlists, and Settings pinned on the right.
+- **TV home performance** — removed the “Load home shelves” card on living-room home (open Live TV or Movies instead).
+
+### Changed
+- Discord community strip hidden on TV layout for snappier load.
+
 ## [0.4.4] — 2026-06-22
 
 TV auto-login restores cloud-saved playlists without retyping credentials.

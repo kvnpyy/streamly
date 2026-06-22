@@ -93,8 +93,6 @@ export function HomePageLight({
         addRecent={addRecent}
         isFavorite={isFavorite}
         toggleFavorite={toggleFavorite}
-        showRichPrompt={showRichPrompt}
-        onLoadRich={onLoadRich}
       />
     );
   }

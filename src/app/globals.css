@@ -344,6 +344,19 @@ html[data-samsung-tv="true"] .live-channel-search__input {
 }
 
 /* ── TV home (living-room hub) ───────────────────────────────────────── */
+.tv-top-nav__tools {
+  flex-shrink: 0;
+}
+
+html[data-living-room="true"] .tv-top-nav__core {
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+html[data-living-room="true"] .tv-top-nav__core::-webkit-scrollbar {
+  display: none;
+}
+
 .tv-home {
   display: flex;
   flex-direction: column;

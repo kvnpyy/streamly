@@ -38,10 +38,13 @@ type MenuPos = { top: number; left: number; width: number };
 export function PlaylistSwitcher({
   className,
   compact = false,
+  tvNav = false,
 }: {
   className?: string;
   /** Icon-only trigger for narrow top bars (phones). */
   compact?: boolean;
+  /** Living-room top bar — labeled control sized for remotes. */
+  tvNav?: boolean;
 }) {
   const { status } = useSession();
   const qc = useQueryClient();
@@ -165,7 +168,25 @@ export function PlaylistSwitcher({
     [busyId, setCreds, setAccount, setActiveSavedId, qc, refetch]
   );
 
-  if (status !== "authenticated") return null;
+  if (status !== "authenticated") {
+    if (tvNav) {
+      return (
+        <Link
+          href={PLAYLIST_SETTINGS_HREF}
+          data-tv-card-root
+          title="Playlists"
+          className={cn(
+            "tv-top-nav__tool flex items-center gap-1.5 min-h-11 px-3 py-2 rounded-xl text-sm font-medium text-(--text-dim) hover:text-(--text) hover:bg-(--bg-2)/60 transition-colors",
+            className
+          )}
+        >
+          <ListMusic className="size-4 shrink-0 text-(--brand-2)" aria-hidden />
+          <span>Playlists</span>
+        </Link>
+      );
+    }
+    return null;
+  }
 
   const menu =
     open && menuPos && portalReady
@@ -279,18 +300,30 @@ export function PlaylistSwitcher({
           if (e.key === "Escape") setOpen(false);
         }}
         title="Switch playlist"
-        aria-label={compact ? `Switch playlist (${summaryLabel})` : undefined}
+        aria-label={
+          compact && !tvNav ? `Switch playlist (${summaryLabel})` : undefined
+        }
         className={cn(
           "rounded-xl border border-(--line) bg-(--bg-2) text-(--text-dim) hover:border-(--brand)/40 hover:text-(--text) transition-colors disabled:opacity-55 touch-manipulation",
-          compact
-            ? "inline-flex size-9 items-center justify-center"
-            : "flex items-center gap-1.5 min-h-9 max-w-[10.5rem] sm:max-w-[14rem] pl-2.5 pr-2 text-[11px] sm:text-xs"
+          tvNav
+            ? "flex items-center gap-1.5 min-h-11 px-3 py-2 text-sm font-medium max-w-[11rem] border-transparent bg-transparent hover:bg-(--bg-2)/60"
+            : compact
+              ? "inline-flex size-9 items-center justify-center"
+              : "flex items-center gap-1.5 min-h-9 max-w-[10.5rem] sm:max-w-[14rem] pl-2.5 pr-2 text-[11px] sm:text-xs"
         )}
       >
-        <ListMusic className="size-3.5 shrink-0 text-(--brand-2)" aria-hidden />
-        {!compact && (
+        <ListMusic
+          className={cn(
+            "shrink-0 text-(--brand-2)",
+            tvNav ? "size-4" : "size-3.5"
+          )}
+          aria-hidden
+        />
+        {(tvNav || !compact) && (
           <>
-            <span className="truncate min-w-0 font-medium">{summaryLabel}</span>
+            <span className="truncate min-w-0 font-medium">
+              {tvNav && !activeRow ? "Playlists" : summaryLabel}
+            </span>
             {busyId !== null ? (
               <Loader2 className="size-3.5 animate-spin shrink-0" aria-hidden />
             ) : (
@@ -304,7 +337,7 @@ export function PlaylistSwitcher({
             )}
           </>
         )}
-        {compact && busyId !== null ? (
+        {compact && !tvNav && busyId !== null ? (
           <Loader2 className="size-3.5 animate-spin shrink-0" aria-hidden />
         ) : null}
       </button>
