@@ -17,6 +17,9 @@ export const CHANGELOG: readonly ChangelogEntry[] = [
       "Smart TV onboarding, GitHub Discussions for feedback, and Live Continue Watching fixes.",
     highlights: [
       "/tv setup page with QR code, PIN pairing, and Samsung/LG/Fire TV guides.",
+      "PWA 192/512 icons for Android TV and Fire TV Add to Home.",
+      "PIN login guide and dismissible TV quick-tips banner on native TV browsers.",
+      "export-tv-app-icons.sh for Samsung/LG store package assets.",
       "GitHub Discussions — Feedback & Ideas thread linked from footer, Settings, and README.",
       "Live Continue Watching plays from recents when catalog lookup fails.",
       "TV PIN codes persist in SQLite across restarts and multi-instance deploys.",

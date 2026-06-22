@@ -17,9 +17,13 @@ Production bundle: Smart TV onboarding, GitHub Discussions community links, and 
 
 ### Added
 - **Smart TV setup page** (`/tv`) — QR code, PIN pairing, per-platform guides.
+- **PWA install icons (192 / 512)** — Add to Home on Android TV and Fire TV.
+- **TV PIN login guide** — step-by-step PIN flow on login and connect screens.
+- **TV quick-tips banner** — bookmark, Comfort TV mode, and pairing hints after sign-in.
 - **GitHub Discussions** — Feedback & Ideas thread; links in footer, Settings, README.
 - **TV app store scaffolds** — `tv-apps/` wrappers for Samsung, LG, and Fire TV.
 - **Persistent TV PIN pairing** — codes stored in SQLite.
+- **`scripts/export-tv-app-icons.sh`** — store icon export for Tizen/webOS packages.
 
 ### Fixed
 - **Live TV Continue Watching sometimes did nothing** — play from saved recents when catalog lookup fails.
