@@ -5,7 +5,8 @@ Thin store packages that load the Streamly web app in a fullscreen browser shell
 ## Before you submit
 
 1. Set the production URL in each platform config (replace `https://iptvwebplayer.org`).
-2. Self-hosters: use your own HTTPS origin (required by Samsung/LG/Amazon).
+2. Run `bash scripts/export-tv-app-icons.sh` to pull 512×512 icons into `tizen/` and `webos/`.
+3. Self-hosters: use your own HTTPS origin (required by Samsung/LG/Amazon).
 3. Prepare store assets: 512×512 icon, 1920×1080 screenshots from a real TV.
 4. Privacy policy URL: `https://iptvwebplayer.org/legal/privacy` (or your instance).
 5. Position the listing as a **media player** — users bring their own IPTV subscription.

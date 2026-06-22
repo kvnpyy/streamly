@@ -1,6 +1,7 @@
 "use client";
 
 import { StreamIdentityCard } from "@/components/StreamIdentityCard";
+import { TvPinLoginGuide } from "@/components/TvPinLoginGuide";
 import { BrandMark } from "@/components/BrandMark";
 import { CommunityDiscordLink } from "@/components/CommunityDiscordLink";
 import { UserContentDisclaimer } from "@/components/UserContentDisclaimer";
@@ -285,12 +286,7 @@ function LoginPageInner() {
 
           {activeTab === "pin" ? (
             <form onSubmit={submitPinLogin} className="space-y-5">
-              <div className="rounded-xl border border-(--line) bg-(--bg-3)/80 px-4 py-3 text-sm text-(--text-dim) leading-relaxed">
-                On your <strong className="text-(--text)">phone or computer</strong>, open{" "}
-                {SITE_NAME} → Settings →{" "}
-                <strong className="text-(--text)">Link a TV with a PIN</strong>, then type
-                the 6-digit code here.
-              </div>
+              <TvPinLoginGuide />
 
               <label className="block">
                 <div className="flex items-center gap-2 text-xs text-(--text-dim) mb-2 font-medium">

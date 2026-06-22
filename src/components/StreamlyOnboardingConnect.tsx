@@ -1,6 +1,7 @@
 "use client";
 
 import { BrandMark } from "@/components/BrandMark";
+import { TvPinLoginGuide } from "@/components/TvPinLoginGuide";
 import { UserContentDisclaimer } from "@/components/UserContentDisclaimer";
 import { useTvBrowser } from "@/components/TvBrowserProvider";
 import { detectTvBrowser } from "@/lib/tv-browser";
@@ -242,12 +243,7 @@ export function StreamlyOnboardingConnect() {
 
           {activeTab === "pin" ? (
             <form onSubmit={submitPinLogin} className="space-y-5">
-              <div className="rounded-xl border border-(--line) bg-(--bg-3)/80 px-4 py-3 text-sm text-(--text-dim) leading-relaxed">
-                On another device where you&apos;re already logged in, open{" "}
-                <strong className="text-(--text)">{SITE_NAME}</strong> ? Settings ?{" "}
-                <strong className="text-(--text)">Link a TV with a PIN</strong>, then
-                enter the code here.
-              </div>
+              <TvPinLoginGuide variant="onboarding" />
 
               <label className="block">
                 <div className="flex items-center gap-2 text-xs text-(--text-dim) mb-2 font-medium">

@@ -7,10 +7,12 @@ export default function manifest(): MetadataRoute.Manifest {
     short_name: SITE_NAME,
     description: SITE_TAGLINE,
     start_url: "/login",
+    scope: "/",
     display: "standalone",
     background_color: "#06070b",
     theme_color: "#06070b",
     orientation: "any",
+    categories: ["entertainment", "video"],
     icons: [
       {
         src: "/icon",
@@ -22,6 +24,24 @@ export default function manifest(): MetadataRoute.Manifest {
         sizes: "180x180",
         type: "image/png",
         purpose: "any",
+      },
+      {
+        src: "/pwa-icon/192",
+        sizes: "192x192",
+        type: "image/png",
+        purpose: "any",
+      },
+      {
+        src: "/pwa-icon/512",
+        sizes: "512x512",
+        type: "image/png",
+        purpose: "any",
+      },
+      {
+        src: "/pwa-icon/512",
+        sizes: "512x512",
+        type: "image/png",
+        purpose: "maskable",
       },
     ],
   };
