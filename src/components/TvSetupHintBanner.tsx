@@ -4,9 +4,42 @@ import { useNativeTvUa } from "@/components/TvBrowserProvider";
 import { SITE_NAME } from "@/lib/site-brand";
 import { Bookmark, Settings2, Tv, X } from "lucide-react";
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useSyncExternalStore } from "react";
 
 const DISMISS_KEY = "streamly-tv-setup-hint-dismissed-v1";
+
+function subscribeDismiss(callback: () => void) {
+  const onStorage = (e: StorageEvent) => {
+    if (e.key === DISMISS_KEY) callback();
+  };
+  window.addEventListener("storage", onStorage);
+  return () => window.removeEventListener("storage", onStorage);
+}
+
+function readDismissed(): boolean {
+  try {
+    return localStorage.getItem(DISMISS_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function useTvHintDismissed(): [boolean, () => void] {
+  const dismissed = useSyncExternalStore(
+    subscribeDismiss,
+    readDismissed,
+    () => false
+  );
+  const dismiss = useCallback(() => {
+    try {
+      localStorage.setItem(DISMISS_KEY, "1");
+    } catch {
+      /* noop */
+    }
+    window.dispatchEvent(new StorageEvent("storage", { key: DISMISS_KEY }));
+  }, []);
+  return [dismissed, dismiss];
+}
 
 const TIPS = [
   {
@@ -28,28 +61,9 @@ const TIPS = [
 
 export function TvSetupHintBanner() {
   const nativeTv = useNativeTvUa();
-  const [visible, setVisible] = useState(false);
+  const [dismissed, dismiss] = useTvHintDismissed();
 
-  useEffect(() => {
-    if (!nativeTv) return;
-    try {
-      if (localStorage.getItem(DISMISS_KEY) === "1") return;
-      setVisible(true);
-    } catch {
-      setVisible(true);
-    }
-  }, [nativeTv]);
-
-  const dismiss = useCallback(() => {
-    setVisible(false);
-    try {
-      localStorage.setItem(DISMISS_KEY, "1");
-    } catch {
-      /* noop */
-    }
-  }, []);
-
-  if (!visible) return null;
+  if (!nativeTv || dismissed) return null;
 
   return (
     <section
