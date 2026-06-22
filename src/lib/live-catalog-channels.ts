@@ -32,7 +32,7 @@ export async function fetchLiveCategoryChannels(
     url.searchParams.set("ids", opts.streamIds.slice(0, 48).join(","));
   } else {
     url.searchParams.set("categoryId", opts.categoryId === "all" ? "all" : String(opts.categoryId));
-    if (opts.categoryId === "all" && opts.tvRegion && opts.tvRegion !== "All") {
+    if (opts.tvRegion && opts.tvRegion !== "All") {
       url.searchParams.set("region", opts.tvRegion);
     }
   }
@@ -59,7 +59,7 @@ export function liveCategoryChannelsQueryOptions(
   tvRegion?: TvRegion
 ): UseQueryOptions<LiveStream[], Error> {
   const regionKey =
-    categoryId === "all" && tvRegion && tvRegion !== "All" ? tvRegion : "";
+    tvRegion && tvRegion !== "All" ? tvRegion : "";
   return {
     queryKey: [
       ...catalogKeys.live(creds),

@@ -386,7 +386,6 @@ function SeriesPageInner({
     discoveryOn &&
     selected === "all" &&
     !qFilter &&
-    !languageActive &&
     sort === "added" &&
     !slimCatalog.isLoading;
 

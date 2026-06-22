@@ -17,7 +17,7 @@ function readCreds(req: NextRequest) {
 }
 
 function parseSort(raw: string | null): VodCatalogSort {
-  if (raw === "rating" || raw === "name") return raw;
+  if (raw === "rating" || raw === "name" || raw === "release_date") return raw;
   return "added";
 }
 

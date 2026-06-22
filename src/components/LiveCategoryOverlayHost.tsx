@@ -3,6 +3,10 @@
 import { TvCategoryView } from "@/components/TvCategoryView";
 import { useLiveOpenCategory } from "@/hooks/use-live-open-category";
 import { useShelfNowPlayingMap } from "@/hooks/use-shelf-now-playing";
+import {
+  coerceTvRegion,
+  detectRegionFromTimezone,
+} from "@/lib/geo-continent";
 import { liveCategoryChannelsQueryOptions } from "@/lib/live-catalog-channels";
 import { LIVE_LIST_MAX_CHANNELS } from "@/lib/live-guide-limits";
 import { openLiveCategoryChannel } from "@/lib/open-live-shelf-channel";
@@ -26,6 +30,9 @@ export function LiveCategoryOverlayHost() {
   const playerOpen = usePlayer((s) => s.open);
   const activeStreamId = usePlayer((s) => s.current?.id);
   const addRecent = usePrefs((s) => s.addRecent);
+  const storedTvRegion = usePrefs((s) => s.tvRegionFilter);
+  const tvRegion =
+    coerceTvRegion(storedTvRegion) ?? detectRegionFromTimezone();
   const { openCategoryId, openCategoryTitle, closeCategory } =
     useLiveOpenCategory();
 
@@ -40,7 +47,8 @@ export function LiveCategoryOverlayHost() {
       creds!,
       openCategoryId ?? "all",
       LIVE_LIST_MAX_CHANNELS,
-      Boolean(creds && openCategoryId)
+      Boolean(creds && openCategoryId),
+      tvRegion
     )
   );
 

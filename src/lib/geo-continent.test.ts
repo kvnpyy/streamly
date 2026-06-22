@@ -37,6 +37,17 @@ describe("categoryMatchesRegion", () => {
     expect(categoryMatchesRegion("Canada | News", "North America")).toBe(true);
     expect(categoryMatchesRegion("UK | Sports", "North America")).toBe(false);
   });
+
+  it("excludes EU and ALB provider blocks from North America", () => {
+    expect(categoryMatchesRegion("|EU| SWEDEN HD", "North America")).toBe(
+      false
+    );
+    expect(categoryMatchesRegion("|ALB| CHILDREN", "North America")).toBe(
+      false
+    );
+    expect(categoryMatchesRegion("|EU| SW MAX PPV", "Europe")).toBe(true);
+    expect(categoryMatchesRegion("|ALB| DOCUMENTARY", "Europe")).toBe(true);
+  });
 });
 
 describe("streamMatchesRegion", () => {

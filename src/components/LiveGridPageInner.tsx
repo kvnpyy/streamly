@@ -218,7 +218,7 @@ export function LiveGridPageInner({ shell }: { shell: LivePageShell }) {
       deferredSelected,
       LIVE_LIST_MAX_CHANNELS,
       shouldLoadChannelList,
-      deferredSelected === "all" ? tvRegionForChannels : undefined
+      tvRegionForChannels
     )
   );
 

@@ -382,7 +382,6 @@ function MoviesPageInner({
     discoveryOn &&
     selected === "all" &&
     !qFilter &&
-    !languageActive &&
     sort === "added" &&
     !slimCatalog.isLoading;
 

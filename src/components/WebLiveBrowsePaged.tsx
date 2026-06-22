@@ -52,13 +52,7 @@ function WebLiveBrowsePagedInner({ creds, openChannel }: WebLiveBrowsePagedProps
   const { openCategory, closeCategory } = useLiveOpenCategory();
   const setShelfEpgHints = useLiveBrowseUi((s) => s.setShelfEpgHints);
 
-  useEffect(() => {
-    if (storedRegion === null) {
-      setStoredRegion(detectRegionFromTimezone());
-    }
-  }, [storedRegion, setStoredRegion]);
-
-  const region: TvRegion = coerceTvRegion(storedRegion) ?? "All";
+  const region: TvRegion = coerceTvRegion(storedRegion) ?? detectRegionFromTimezone();
 
   const {
     allShelves,

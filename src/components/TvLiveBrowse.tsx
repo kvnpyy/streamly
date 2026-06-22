@@ -102,13 +102,8 @@ function TvLiveBrowsePaged({
   const setStoredRegion = usePrefs((s) => s.setTvRegionFilter);
   const { openCategory, closeCategory } = useLiveOpenCategory();
 
-  useEffect(() => {
-    if (storedRegion === null) {
-      setStoredRegion(detectRegionFromTimezone());
-    }
-  }, [storedRegion, setStoredRegion]);
-
-  const region: TvRegion = coerceTvRegion(storedRegion) ?? "All";
+  const region: TvRegion =
+    coerceTvRegion(storedRegion) ?? detectRegionFromTimezone();
 
   const {
     allShelves,
@@ -232,17 +227,8 @@ function TvLiveBrowseFull({
 
   const { openCategory, closeCategory } = useLiveOpenCategory();
 
-  // Auto-detect region on first visit (storedRegion === null)
-  useEffect(() => {
-    if (storedRegion === null) {
-      const detected = detectRegionFromTimezone();
-      setStoredRegion(detected);
-    }
-  }, [storedRegion, setStoredRegion]);
-
-  // The active region — use "All" while auto-detecting to avoid flash
-  const region: TvRegion = coerceTvRegion(storedRegion) ?? "All";
-
+  const region: TvRegion =
+    coerceTvRegion(storedRegion) ?? detectRegionFromTimezone();
   const serverCounts = hasLiveServerCategoryCounts(countByCategoryId);
   const deferredStreams = useDeferredValue(streams);
 

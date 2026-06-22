@@ -89,15 +89,9 @@ export function LiveShelfBrowsePage({
   const recents = usePrefs((s) => s.recents);
   const favorites = usePrefs((s) => s.favorites);
   const storedRegion = usePrefs((s) => s.tvRegionFilter);
-  const setStoredRegion = usePrefs((s) => s.setTvRegionFilter);
   const [categoryBrowseOpen, setCategoryBrowseOpen] = useState(false);
   const [guideReady, setGuideReady] = useState(false);
 
-  useEffect(() => {
-    if (storedRegion === null) {
-      setStoredRegion(detectRegionFromTimezone());
-    }
-  }, [storedRegion, setStoredRegion]);
 
   const tvRegion: TvRegion =
     coerceTvRegion(storedRegion) ?? detectRegionFromTimezone();

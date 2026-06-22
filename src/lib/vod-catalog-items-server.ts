@@ -10,7 +10,7 @@ import {
 import type { SeriesItem, VodStream } from "@/lib/xtream-types";
 import type { SeriesCatalogBundle, VodCatalogBundle } from "@/lib/vod-catalog-bundle";
 
-export type VodCatalogSort = "added" | "rating" | "name";
+export type VodCatalogSort = "added" | "rating" | "name" | "release_date";
 
 export type ListVodItemsOpts = {
   categoryId?: string | "all";
@@ -65,6 +65,24 @@ function idsForCategory(
   return index[String(categoryId)] ?? [];
 }
 
+function parseReleaseYear(item: {
+  year?: string;
+  releaseDate?: string;
+  release_date?: string;
+  name?: string;
+}): number {
+  const rd = item.releaseDate || item.release_date;
+  if (rd) {
+    const y = parseInt(rd.slice(0, 4), 10);
+    if (y > 1900) return y;
+  }
+  const y = item.year?.trim();
+  if (y && /^\d{4}$/.test(y)) return parseInt(y, 10);
+  const m = item.name?.match(/\b(19|20)\d{2}\b/);
+  if (m) return parseInt(m[0]!, 10);
+  return 0;
+}
+
 function sortVodStreams(streams: VodStream[], sort: VodCatalogSort): VodStream[] {
   if (sort === "added" || streams.length < 2) return streams;
   const copy = streams.slice();
@@ -73,6 +91,10 @@ function sortVodStreams(streams: VodStream[], sort: VodCatalogSort): VodStream[]
       (a, b) =>
         (parseFloat(b.rating || "0") || 0) - (parseFloat(a.rating || "0") || 0)
     );
+    return copy;
+  }
+  if (sort === "release_date") {
+    copy.sort((a, b) => parseReleaseYear(b) - parseReleaseYear(a));
     return copy;
   }
   copy.sort((a, b) => safeStr(a.name).localeCompare(safeStr(b.name)));
@@ -87,6 +109,10 @@ function sortSeriesItems(streams: SeriesItem[], sort: VodCatalogSort): SeriesIte
       (a, b) =>
         (parseFloat(b.rating || "0") || 0) - (parseFloat(a.rating || "0") || 0)
     );
+    return copy;
+  }
+  if (sort === "release_date") {
+    copy.sort((a, b) => parseReleaseYear(b) - parseReleaseYear(a));
     return copy;
   }
   copy.sort((a, b) => safeStr(a.name).localeCompare(safeStr(b.name)));

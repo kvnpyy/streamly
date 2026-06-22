@@ -111,6 +111,35 @@ describe("listVodItemsFromBundle", () => {
     expect(page.items.map((m) => m.stream_id)).toEqual([3, 1, 5, 4, 2]);
   });
 
+  it("sorts by release date using year in title", () => {
+    const streams: VodStream[] = [
+      {
+        stream_id: 10,
+        name: "Old Film (2010)",
+        category_id: "10",
+        stream_icon: "",
+      },
+      {
+        stream_id: 11,
+        name: "New Film (2024)",
+        category_id: "10",
+        stream_icon: "",
+      },
+    ];
+    const bundle: VodCatalogBundle = {
+      categories: [{ category_id: "10", category_name: "Action", parent_id: 0 }],
+      streams,
+      countByCategoryId: { "10": 2 },
+      idsByCategory: { "10": [10, 11] },
+    };
+    const page = listVodItemsFromBundle(bundle, vodStreamByIdMap(streams), {
+      categoryId: "all",
+      sort: "release_date",
+      limit: 10,
+    });
+    expect(page.items.map((m) => m.stream_id)).toEqual([11, 10]);
+  });
+
   it("materializes explicit ids", () => {
     const page = listVodItemsFromBundle(vodBundle, byId, {
       streamIds: [2, 1],
