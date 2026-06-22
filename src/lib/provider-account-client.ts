@@ -2,6 +2,7 @@
  * Browser client for `/api/provider-accounts` saved Xtream identities.
  */
 
+import { fetchIptvSessionCredsFromApi } from "@/lib/restore-saved-providers";
 import type { AuthResponse, XtreamCredentials } from "@/lib/xtream-types";
 
 export type SavedProviderAccountRow = {
@@ -12,26 +13,6 @@ export type SavedProviderAccountRow = {
 
 const origin =
   typeof window !== "undefined" ? window.location.origin : "";
-
-async function fetchIptvSessionCreds(): Promise<XtreamCredentials | null> {
-  const sess = await fetch(`${origin}/api/iptv/session`, {
-    credentials: "include",
-    cache: "no-store",
-  });
-  const json = (await sess.json()) as {
-    creds?: { server: string; username: string; password: string } | null;
-  };
-  const c = json.creds;
-  if (
-    !c ||
-    typeof c.server !== "string" ||
-    typeof c.username !== "string" ||
-    typeof c.password !== "string"
-  ) {
-    return null;
-  }
-  return c;
-}
 
 export async function fetchSavedProviderAccounts(): Promise<
   SavedProviderAccountRow[]
@@ -69,7 +50,7 @@ export async function activateSavedProviderAccount(
     throw new Error(data.error || `Activate failed (${r.status}).`);
   }
 
-  const creds = await fetchIptvSessionCreds();
+  const creds = await fetchIptvSessionCredsFromApi(origin);
   if (!creds) {
     throw new Error("Cookie session missing after activate.");
   }

@@ -4,6 +4,10 @@ import { BrandMark } from "@/components/BrandMark";
 import { UserContentDisclaimer } from "@/components/UserContentDisclaimer";
 import { useTvBrowser } from "@/components/TvBrowserProvider";
 import { detectTvBrowser } from "@/lib/tv-browser";
+import {
+  activateSavedProviderAccount,
+  fetchSavedProviderAccounts,
+} from "@/lib/provider-account-client";
 import { persistIptvAfterBrowserLogin } from "@/lib/persist-iptv-session-client";
 import { tryParseM3uPortalUrl } from "@/lib/provider-account-label";
 import { SITE_NAME, SITE_TAGLINE } from "@/lib/site-brand";
@@ -22,6 +26,7 @@ import {
 } from "lucide-react";
 import { Turnstile } from "@marsidev/react-turnstile";
 import { signOutFully } from "@/lib/sign-out-client";
+import { usePrefs } from "@/store/preferences";
 import { useSession } from "next-auth/react";
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -40,6 +45,14 @@ export function StreamlyOnboardingConnect() {
   const needsClientTurnstile = Boolean(TURNSTILE_SITE_KEY) && !tv;
   const setCreds = useAuth((s) => s.setCreds);
   const setAccount = useAuth((s) => s.setAccount);
+  const setActiveSavedId = usePrefs((s) => s.setActiveSavedProviderAccountId);
+
+  const [savedPlaylists, setSavedPlaylists] = useState<
+    { id: string; label: string }[]
+  >([]);
+  const [savedLoading, setSavedLoading] = useState(false);
+  const [savedError, setSavedError] = useState<string | null>(null);
+  const [activatingId, setActivatingId] = useState<string | null>(null);
 
   const [server, setServer] = useState("");
   const [username, setUsername] = useState("");
@@ -68,6 +81,63 @@ export function StreamlyOnboardingConnect() {
 
   /** PIN tab is TV-only; once Streamly is signed in we never show it (avoid setState in an effect). */
   const activeTab: Tab = streamlySignedIn && tab === "pin" ? "xtream" : tab;
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!streamlySignedIn) {
+      queueMicrotask(() => {
+        if (!cancelled) {
+          setSavedPlaylists([]);
+          setSavedLoading(false);
+          setSavedError(null);
+        }
+      });
+      return () => {
+        cancelled = true;
+      };
+    }
+    queueMicrotask(() => {
+      if (!cancelled) {
+        setSavedLoading(true);
+        setSavedError(null);
+      }
+    });
+    void fetchSavedProviderAccounts()
+      .then((rows) => {
+        if (!cancelled) setSavedPlaylists(rows);
+      })
+      .catch((e) => {
+        if (!cancelled) {
+          setSavedPlaylists([]);
+          setSavedError(
+            e instanceof Error ? e.message : "Could not load saved playlists."
+          );
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setSavedLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [streamlySignedIn]);
+
+  async function activateSavedPlaylist(id: string) {
+    setActivatingId(id);
+    setSavedError(null);
+    try {
+      const { creds, account } = await activateSavedProviderAccount(id);
+      setCreds(creds);
+      if (account) setAccount(account);
+      const merged = account ?? useAuth.getState().account;
+      if (merged) writeAuthSessionBridge(creds, merged);
+      setActiveSavedId(id);
+    } catch (e) {
+      setSavedError(e instanceof Error ? e.message : "Could not activate playlist.");
+    } finally {
+      setActivatingId(null);
+    }
+  }
 
   async function submitPasswordLogin(e: React.FormEvent) {
     e.preventDefault();
@@ -218,6 +288,51 @@ export function StreamlyOnboardingConnect() {
               </p>
             </div>
           </div>
+
+          {streamlySignedIn && (savedLoading || savedPlaylists.length > 0 || savedError) ? (
+            <div className="mb-6 rounded-xl border border-(--brand)/25 bg-(--brand)/[0.05] p-4">
+              <p className="text-sm font-semibold text-(--text) mb-1">
+                Your saved playlists
+              </p>
+              <p className="text-xs text-(--text-dim) mb-3 leading-relaxed">
+                Pick a playlist from your Streamly account — no need to re-enter credentials on
+                this device.
+              </p>
+              {savedError && (
+                <div className="text-xs rounded-lg border border-(--danger)/25 bg-(--danger)/10 text-(--danger) px-3 py-2 mb-3">
+                  {savedError}
+                </div>
+              )}
+              {savedLoading ? (
+                <div className="flex items-center gap-2 text-xs text-(--text-muted) py-1">
+                  <span className="size-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  Loading saved playlists…
+                </div>
+              ) : (
+                <div className="space-y-1.5">
+                  {savedPlaylists.map((row) => (
+                    <button
+                      key={row.id}
+                      type="button"
+                      disabled={activatingId !== null}
+                      onClick={() => void activateSavedPlaylist(row.id)}
+                      className="w-full text-left rounded-lg border border-(--line) bg-(--bg-2)/80 px-3 py-2.5 text-sm text-(--text) hover:border-(--brand)/40 transition-colors disabled:opacity-55 flex items-center justify-between gap-2"
+                    >
+                      <span className="truncate font-medium">{row.label}</span>
+                      {activatingId === row.id ? (
+                        <span className="size-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin shrink-0" />
+                      ) : (
+                        <ChevronRight className="size-4 text-(--text-muted) shrink-0" />
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
+              <p className="text-[11px] text-(--text-muted) mt-3">
+                Or connect a different provider below.
+              </p>
+            </div>
+          ) : null}
 
           <div className="flex flex-wrap gap-1 p-1 bg-(--bg-3) rounded-xl mb-6">
             {tabs.map(({ id, label }) => (

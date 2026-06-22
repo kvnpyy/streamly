@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  detectTranscodeBackwardSnap,
   isAtTranscodeBufferEdge,
+  isEncodeCaughtUp,
   isNearEpisodeEnd,
   shouldTreatTranscodeAsEnded,
 } from "./player-transcode-playback-end";
@@ -63,5 +65,30 @@ describe("shouldTreatTranscodeAsEnded", () => {
         encodedSecRel: 120,
       })
     ).toBe(false);
+  });
+
+  it("ends when encoder caught up even without a reliable duration hint", () => {
+    expect(
+      shouldTreatTranscodeAsEnded({
+        video: mockVideo({ currentTime: 599, bufferedEnd: 599.4 }),
+        startOffsetSec: 0,
+        durationSec: 0,
+        encodedSecRel: 600,
+      })
+    ).toBe(true);
+  });
+});
+
+describe("isEncodeCaughtUp", () => {
+  it("is true when playhead is at the encode frontier", () => {
+    expect(isEncodeCaughtUp(599, 600)).toBe(true);
+    expect(isEncodeCaughtUp(100, 600)).toBe(false);
+  });
+});
+
+describe("detectTranscodeBackwardSnap", () => {
+  it("detects hls snap-back loops", () => {
+    expect(detectTranscodeBackwardSnap(12, 580)).toBe(true);
+    expect(detectTranscodeBackwardSnap(578, 580)).toBe(false);
   });
 });

@@ -11,6 +11,26 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.4.2",
+    date: "2026-06-22",
+    summary: "Saved playlists restore reliably when signing in on a new device.",
+    highlights: [
+      "Wait for Streamly session before restoring encrypted provider accounts — fixes empty library on new devices.",
+      "Auto-save cookie-only IPTV sessions to your Streamly account when you sign in later.",
+      "Onboarding shows your saved playlists so you can pick one without re-entering credentials.",
+    ],
+  },
+  {
+    version: "0.4.1",
+    date: "2026-06-22",
+    summary: "Fix series episodes looping at the end of transcoded playback.",
+    highlights: [
+      "Stop hls.js manifest polling when a transcoded episode reaches the encode edge — prevents snap-back to segment 0.",
+      "Detect backward playhead jumps and encode-caught-up finale even without reliable duration metadata.",
+      "Finale autoplay countdown works when duration hints are wrong; resume lock resets on episode change.",
+    ],
+  },
+  {
     version: "0.4.0",
     date: "2026-06-22",
     summary:
