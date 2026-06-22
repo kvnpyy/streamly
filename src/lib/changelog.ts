@@ -11,6 +11,18 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.4.0",
+    date: "2026-06-22",
+    summary:
+      "Regional filtering fixes, release-date sort, and IP-based region/language defaults.",
+    highlights: [
+      "North America filter no longer shows |EU|, |ALB|, and other foreign IPTV category blocks.",
+      "Category see-all and list view respect the active TV region.",
+      "Release date sort for Movies and Series; discovery shelves stay visible with language filters.",
+      "Live TV region and VOD language default from IP geolocation (timezone fallback).",
+    ],
+  },
+  {
     version: "0.3.0",
     date: "2026-06-19",
     summary:

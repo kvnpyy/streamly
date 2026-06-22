@@ -11,6 +11,18 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.4.0] — 2026-06-22
+
+Regional filtering, VOD browse improvements, and IP-based defaults.
+
+### Fixed
+- **North America region filter leaked foreign channels** — `|EU|`, `|ALB|`, and other IPTV regional prefixes are now recognized; category drill-down and see-all overlays respect the active region.
+- **Movies/Series English filter hid discovery shelves** — genre rows and trending rails stay visible when a language filter is active.
+
+### Added
+- **Release date sort** for Movies and Series.
+- **IP-based defaults** — Live TV region and VOD language default from geolocation (timezone fallback).
+
 ## [0.3.0] — 2026-06-19
 
 Production bundle: Smart TV onboarding, GitHub Discussions community links, and Continue Watching reliability.

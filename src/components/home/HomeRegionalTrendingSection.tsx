@@ -22,7 +22,6 @@ import type {
 import type { Favorite, RecentItem } from "@/store/preferences";
 import { usePlayer } from "@/store/player";
 import { usePrefs } from "@/store/preferences";
-import { useEffect } from "react";
 
 type HomeRegionalTrendingSectionProps = {
   creds: XtreamCredentials;

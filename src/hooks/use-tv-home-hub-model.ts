@@ -19,7 +19,7 @@ import { looksAdult } from "@/lib/utils";
 import type { SeriesItem, VodStream, XtreamCredentials } from "@/lib/xtream-types";
 import type { Favorite, RecentItem } from "@/store/preferences";
 import type { PlayerPlaylist, PlayerSource } from "@/store/player";
-import { useCallback, useEffect, useMemo } from "react";
+import { useCallback, useMemo } from "react";
 import { usePrefs } from "@/store/preferences";
 
 type UseTvHomeHubModelArgs = {
