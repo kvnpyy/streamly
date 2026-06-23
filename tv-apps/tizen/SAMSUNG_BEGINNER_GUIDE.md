@@ -38,7 +38,13 @@ You need this to **sign** the app package before upload.
    Or download manually:
    https://download.tizen.org/sdk/Installer/tizen-sdk_10.0/web-cli_Tizen_SDK_10.0_macos-64.bin
 
-2. Install:
+2. Install (**do not double-click** the `.bin` file — macOS will show “unsupported format”):
+
+   ```bash
+   npm run tv:store:tizen-install
+   ```
+
+   Or manually:
    ```bash
    cd ~/Downloads
    chmod +x web-cli_Tizen_SDK_10.0_macos-64.bin

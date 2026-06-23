@@ -11,6 +11,16 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.4.0",
+    date: "2026-06-23",
+    summary: "Edit saved IPTV playlists after adding them.",
+    highlights: [
+      "Edit server URL, username, password, and name from Settings → Saved playlists.",
+      "Password field is optional when editing — leave blank to keep the current password.",
+      "Credentials are re-verified with your provider before saving changes.",
+    ],
+  },
+  {
     version: "0.3.1",
     date: "2026-06-22",
     summary: "Smart TV store submission package for Samsung, LG, Fire TV, and Android TV.",

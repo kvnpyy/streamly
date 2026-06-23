@@ -56,10 +56,13 @@ RECOMMENDED FOR STREAMLY (web TV app, sign + package only)
   CLI installer (~326 MB) — enough for certificate + tizen package commands:
   $CLI_MAC
 
-  After download, in Terminal:
+  After download, in Terminal (do **not** double-click the `.bin` — Archive Utility cannot open it):
     cd ~/Downloads
     chmod +x web-cli_Tizen_SDK_10.0_macos-64.bin
-    ./web-cli_Tizen_SDK_10.0_macos-64.bin
+    ./web-cli_Tizen_SDK_10.0_macos-64.bin --accept-license --no-java-check ~/tizen-studio
+
+  Or one command from the Streamly project:
+    npm run tv:store:tizen-install
 
   Default install folder: ~/tizen-studio
 

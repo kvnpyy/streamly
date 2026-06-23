@@ -11,6 +11,13 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.4.0] — 2026-06-23
+
+Edit saved IPTV playlists after adding them.
+
+### Added
+- **Edit saved playlists** — update server URL, username, password, and name from Settings (password optional to keep current).
+
 ## [0.3.1] — 2026-06-22
 
 Smart TV store submission package for Samsung, LG, Fire TV, and Android TV.
