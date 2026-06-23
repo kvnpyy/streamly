@@ -8,7 +8,38 @@
 
   var params = new URLSearchParams(window.location.search);
   var base = (params.get("url") || DEFAULT_BASE).replace(/\/$/, "");
-  var path = params.get("path") || DEFAULT_PATH;
+
+  function pathFromAppControl() {
+    try {
+      if (!window.tizen || !tizen.application) return null;
+      var app = tizen.application.getCurrentApplication();
+      var req = app && app.getRequestedAppControl && app.getRequestedAppControl();
+      if (!req || !req.appControl || !req.appControl.data) return null;
+      var data = req.appControl.data;
+      for (var i = 0; i < data.length; i++) {
+        if (data[i].key !== "PAYLOAD" || !data[i].value || !data[i].value[0]) continue;
+        var raw = data[i].value[0];
+        var parsed = JSON.parse(raw);
+        if (parsed && parsed.path) return parsed.path;
+        if (parsed && parsed.values) {
+          var inner =
+            typeof parsed.values === "string" ? JSON.parse(parsed.values) : parsed.values;
+          if (inner && inner.path) return inner.path;
+        }
+      }
+    } catch {
+      /* ignore — fall back to default path */
+    }
+    return null;
+  }
+
+  function navigateTo(path) {
+    var next = base + (path.startsWith("/") ? path : "/" + path);
+    src = next;
+    if (frame) frame.src = next;
+  }
+
+  var path = pathFromAppControl() || params.get("path") || DEFAULT_PATH;
   var src = base + (path.startsWith("/") ? path : "/" + path);
 
   var frame = document.getElementById("app");
@@ -58,6 +89,18 @@
       /* cross-origin — let the hosted app handle back */
     }
   });
+
+  /** Samsung Smart Hub preview tile — eden_resume while app is running */
+  try {
+    if (window.tizen && window.tizen.application) {
+      document.addEventListener("appcontrol", function () {
+        var deepPath = pathFromAppControl();
+        if (deepPath) navigateTo(deepPath);
+      });
+    }
+  } catch {
+    /* noop */
+  }
 
   /** webOS — Back button */
   document.addEventListener(

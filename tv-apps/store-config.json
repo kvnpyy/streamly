@@ -2,7 +2,7 @@
   "appName": "Streamly",
   "appTitle": "Streamly — IPTV Player",
   "packageId": "org.streamly.iptv",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "vendor": "Streamly",
   "productionUrl": "https://iptvwebplayer.org",
   "startPath": "/login",
