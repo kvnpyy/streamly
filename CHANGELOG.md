@@ -11,6 +11,17 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.3.1] — 2026-06-22
+
+Smart TV store submission package for Samsung, LG, Fire TV, and Android TV.
+
+### Added
+- **TV store build scripts** — `npm run tv:store:icons` and `npm run tv:store:package` produce unsigned `.wgt` / `.ipk`.
+- **Store listing copy** — `tv-apps/store-listings/` and master checklist `tv-apps/STORE_SUBMISSION.md`.
+- **Shared TV wrapper shell** — loading state, error retry, and remote back-key handling.
+- **Platform icons** — Samsung, LG, Fire TV, and Android TV sizes from production PWA.
+- **Android TV TWA scaffold** — Bubblewrap manifest and optional `/.well-known/assetlinks.json` route.
+
 ## [0.3.0] — 2026-06-19
 
 Production bundle: Smart TV onboarding, GitHub Discussions community links, and Continue Watching reliability.

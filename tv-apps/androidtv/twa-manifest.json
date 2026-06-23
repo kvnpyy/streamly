@@ -1,0 +1,40 @@
+{
+  "packageId": "org.streamly.iptv",
+  "host": "iptvwebplayer.org",
+  "name": "Streamly",
+  "launcherName": "Streamly",
+  "display": "standalone",
+  "themeColor": "#06070B",
+  "navigationColor": "#06070B",
+  "backgroundColor": "#06070B",
+  "enableNotifications": false,
+  "startUrl": "/login",
+  "iconUrl": "https://iptvwebplayer.org/pwa-icon/512",
+  "maskableIconUrl": "https://iptvwebplayer.org/pwa-icon/512",
+  "monochromeIconUrl": "https://iptvwebplayer.org/pwa-icon/512",
+  "splashScreenFadeOutDuration": 300,
+  "signingKey": {
+    "path": "./android-signing-key.keystore",
+    "alias": "streamly"
+  },
+  "appVersionName": "1.0.0",
+  "appVersionCode": 1,
+  "shortcuts": [],
+  "generatorApp": "bubblewrap-cli",
+  "fallbackType": "webview",
+  "features": {
+    "playBilling": false,
+    "locationDelegation": false
+  },
+  "alphaDependencies": {
+    "enabled": false
+  },
+  "isChromeOSOnly": false,
+  "isMetaQuest": false,
+  "minSdkVersion": 21,
+  "orientation": "default",
+  "fingerprints": [],
+  "additionalTrustedOrigins": [],
+  "retainedBundles": [],
+  "appVersion": "1.0.0"
+}

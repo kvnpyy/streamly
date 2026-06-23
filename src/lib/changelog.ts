@@ -11,6 +11,17 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.3.1",
+    date: "2026-06-22",
+    summary: "Smart TV store submission package for Samsung, LG, Fire TV, and Android TV.",
+    highlights: [
+      "npm run tv:store:package builds unsigned Samsung .wgt and LG .ipk packages.",
+      "Store listing copy and STORE_SUBMISSION.md checklist for all major TV stores.",
+      "Shared TV wrapper shell with loading, error retry, and back-key support.",
+      "Android TV TWA scaffold and optional /.well-known/assetlinks.json route.",
+    ],
+  },
+  {
     version: "0.3.0",
     date: "2026-06-19",
     summary:

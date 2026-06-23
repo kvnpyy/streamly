@@ -1,6 +1,6 @@
 {
   "name": "iptv-player",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -31,7 +31,9 @@
     "app:status": "bash scripts/run.sh status",
     "app:logs": "bash scripts/run.sh logs",
     "app:install": "bash scripts/run.sh install",
-    "app:autostart": "bash scripts/run.sh autostart"
+    "app:autostart": "bash scripts/run.sh autostart",
+    "tv:store:icons": "bash scripts/export-tv-app-icons.sh",
+    "tv:store:package": "bash scripts/build-tv-store-packages.sh"
   },
   "dependencies": {
     "@marsidev/react-turnstile": "^1.5.2",

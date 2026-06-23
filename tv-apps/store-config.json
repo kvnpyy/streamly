@@ -1,0 +1,17 @@
+{
+  "appName": "Streamly",
+  "appTitle": "Streamly — IPTV Player",
+  "packageId": "org.streamly.iptv",
+  "version": "1.0.0",
+  "vendor": "Streamly",
+  "productionUrl": "https://iptvwebplayer.org",
+  "startPath": "/login",
+  "tvSetupPath": "/tv",
+  "privacyUrl": "https://iptvwebplayer.org/legal/privacy",
+  "termsUrl": "https://iptvwebplayer.org/legal/terms",
+  "supportUrl": "https://iptvwebplayer.org/tv",
+  "supportEmail": "support@iptvwebplayer.org",
+  "changelogUrl": "https://iptvwebplayer.org/changelog",
+  "shortDescription": "IPTV player for your Xtream or M3U subscription. Live TV, movies, series, and EPG in one app.",
+  "longDescription": "Streamly is a modern IPTV front-end for your own subscription. Sign in with Xtream Codes or an M3U playlist from your provider — we do not sell channels.\n\n• Live TV with EPG and channel guides\n• Movies and series with posters and resume\n• PIN pairing — link your TV from your phone without typing passwords\n• TV remote-friendly layout for Samsung, LG, Fire TV, and Android TV\n\nYou need an active IPTV subscription from your provider. Streamly is the player only."
+}

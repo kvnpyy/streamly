@@ -2,6 +2,9 @@
 
 Fire TV supports **Web Apps** in the Amazon Appstore without shipping an APK. The store listing points at your HTTPS URL; Silk opens it fullscreen.
 
+**Listing copy:** `../store-listings/amazon-firetv.md`  
+**Full checklist:** `../STORE_SUBMISSION.md`
+
 ## Configure
 
 1. Production URL: `https://iptvwebplayer.org` (or your self-hosted origin).

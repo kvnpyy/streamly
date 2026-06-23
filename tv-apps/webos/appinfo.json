@@ -5,10 +5,12 @@
   "type": "web",
   "main": "index.html",
   "title": "Streamly",
+  "appDescription": "IPTV player for your Xtream or M3U subscription. Live TV, movies, series, and EPG.",
   "icon": "icon.png",
-  "largeIcon": "icon.png",
+  "largeIcon": "icon-130.png",
   "bgColor": "#06070b",
   "iconColor": "#7c5cff",
+  "resolution": "1920x1080",
   "disableBackHistoryAPI": true,
   "handlesRelaunch": {
     "onNewIntent": "extensive"

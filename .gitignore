@@ -64,3 +64,6 @@ Stream.app/
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# TV store build output (unsigned packages; regenerate with npm run tv:store:package)
+/tv-apps/dist/

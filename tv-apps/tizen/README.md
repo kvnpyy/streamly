@@ -11,15 +11,19 @@
 2. Add `icon.png` (117×117 minimum; 512×512 recommended for store listing).
 3. Update `config.xml` `id`, `author`, and `description` if rebranding.
 
-## Build
+## Build (unsigned, for structure check)
+
+```bash
+npm run tv:store:package
+# → tv-apps/dist/streamly-samsung-tizen-1.0.0-unsigned.wgt
+```
+
+Sign in Tizen Studio before Seller Office upload:
 
 ```bash
 cd tv-apps/tizen
-# Create project in Tizen Studio pointing at this folder, or:
 tizen package -t wgt -s <your-certificate-profile> .
 ```
-
-Output: `Streamly.wgt` (name varies by project).
 
 ## Test on TV
 
