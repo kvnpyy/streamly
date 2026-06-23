@@ -14,18 +14,67 @@ You already created a Samsung seller account. **Important:** the screen in your 
 
 ---
 
-## Part B — Install Tizen Studio (Mac)
+## Part B — Install Tizen SDK (Mac)
 
 You need this to **sign** the app package before upload.
 
-1. Go to https://developer.tizen.org/development/tizen-studio/download
-2. Download **Tizen Studio** for macOS and run the installer.
-3. Open **Package Manager** (installed with Tizen Studio).
-4. Install these extensions:
-   - **Tizen SDK tools**
-   - **TV Extensions** (Samsung TV)
-   - **Samsung Certificate Extension** (if offered)
-5. Wait for downloads to finish (can take 20–40 minutes).
+### Why the Samsung site confused you
+
+| What you opened | What it actually is |
+|-----------------|---------------------|
+| [samsungtizenos.com/docs/.../dotnet/vscode/...](https://samsungtizenos.com/docs/sdk-tools/dotnet/vscode/tizen-studio/common-tools/overview) | New **docs** for .NET + VS Code — **no download button** |
+| `developer.tizen.org/.../download` | **Redirects** to samsungtizenos.com — also no installer |
+
+**The real installers** are on `download.tizen.org` (verified live). See [DOWNLOAD_LINKS.md](./DOWNLOAD_LINKS.md).
+
+### Option A — CLI only (~326 MB) — recommended
+
+1. In Terminal, run from the Streamly project:
+   ```bash
+   npm run tv:store:tizen-setup -- --open
+   ```
+   This opens the official CLI installer in your browser.
+
+   Or download manually:
+   https://download.tizen.org/sdk/Installer/tizen-sdk_10.0/web-cli_Tizen_SDK_10.0_macos-64.bin
+
+2. Install:
+   ```bash
+   cd ~/Downloads
+   chmod +x web-cli_Tizen_SDK_10.0_macos-64.bin
+   ./web-cli_Tizen_SDK_10.0_macos-64.bin
+   ```
+   Default location: `~/tizen-studio`
+
+3. Add Tizen to your shell (`~/.zshrc`):
+   ```bash
+   export PATH="$HOME/tizen-studio/tools:$HOME/tizen-studio/tools/ide/bin:$PATH"
+   ```
+   Then run `source ~/.zshrc`.
+
+### Option B — Full IDE (~1.8 GB)
+
+If you prefer a graphical app:
+https://download.tizen.org/sdk/Installer/Latest/Baseline_Tizen_Studio_macos-64.dmg
+
+Or smaller Web IDE (~700 MB):
+https://download.tizen.org/sdk/Installer/tizen-sdk_10.0/web-ide_Tizen_SDK_10.0_macos-64.dmg
+
+### After install — Samsung TV extensions (required)
+
+1. Open **Package Manager**:
+   ```bash
+   ~/tizen-studio/package-manager/package-manager.bin
+   ```
+   (Or **Tools → Package Manager** in Tizen Studio.)
+
+2. **Extension SDK** tab → click **Install** next to:
+   - **TV Extensions** (latest)
+   - **Samsung Certificate Extension** (version **2.0.73+** required)
+
+   Official Samsung guide: [Installing TV SDK](https://developer.samsung.com/smarttv/develop/getting-started/setting-up-sdk/installing-tv-sdk.html)
+
+3. Wait for downloads (20–40 minutes on first run).
 
 ---
 
@@ -61,25 +110,20 @@ This creates:
 
 ## Part E — Sign the `.wgt` file
 
-### Option 1 — Command line (after Tizen CLI is installed)
+After you create a certificate profile (Part C), sign from the project:
+
+```bash
+TIZEN_CERT_PROFILE=streamly-tv npm run tv:store:sign-tizen
+```
+
+Replace `streamly-tv` with your Certificate Manager profile name.
+
+### Manual command
 
 ```bash
 cd tv-apps/tizen
 tizen package -t wgt -s streamly-tv .
 ```
-
-Replace `streamly-tv` with your Certificate Manager profile name.
-
-Output: a **signed** `.wgt` in the `tizen` folder.
-
-### Option 2 — Tizen Studio GUI
-
-1. **File** → **Import** → **Tizen** → **Tizen Web Project**
-2. Select folder: `iptv-player/tv-apps/tizen`
-3. Right-click project → **Build Signed Package**
-4. Choose your certificate profile and password.
-
-Keep the signed `.wgt` file — you upload this to Samsung.
 
 ---
 
@@ -168,7 +212,9 @@ You will get email updates on approval or requested changes.
 
 | Problem | Fix |
 |---------|-----|
-| Portal only shows Android / Watch | Use https://seller.samsungapps.com/tv/ in Chrome |
+| No download on samsungtizenos.com | Use [DOWNLOAD_LINKS.md](./DOWNLOAD_LINKS.md) or `npm run tv:store:tizen-setup -- --open` |
+| Landed on .NET / VS Code docs | Wrong section — Streamly is a **Web TV** app; use CLI installer above |
+| `tizen: command not found` | Add `~/tizen-studio/tools` to PATH in `~/.zshrc` |
 | “Browser not supported” | Switch to Chrome or Edge |
 | Pre-test fails on package | Re-sign with TV certificate profile, not mobile |
 | App blank on TV | Confirm TV has internet; URL is https://iptvwebplayer.org/login |

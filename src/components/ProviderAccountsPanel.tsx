@@ -2,7 +2,9 @@
 
 import {
   activateSavedProviderAccount,
+  fetchSavedProviderAccount,
   fetchSavedProviderAccounts,
+  updateSavedProviderAccount,
   type SavedProviderAccountRow as Row,
 } from "@/lib/provider-account-client";
 import {
@@ -20,6 +22,7 @@ import {
   Eye,
   EyeOff,
   Loader2,
+  Pencil,
   Plus,
   Radio,
   Save,
@@ -56,6 +59,18 @@ export function ProviderAccountsPanel() {
   const [addError, setAddError] = useState<string | null>(null);
   const [addSuccess, setAddSuccess] = useState<string | null>(null);
   const serverInputRef = useRef<HTMLInputElement>(null);
+
+  // Edit form state
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editServer, setEditServer] = useState("");
+  const [editUsername, setEditUsername] = useState("");
+  const [editPassword, setEditPassword] = useState("");
+  const [editLabel, setEditLabel] = useState("");
+  const [showEditPassword, setShowEditPassword] = useState(false);
+  const [editBusy, setEditBusy] = useState(false);
+  const [editLoading, setEditLoading] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+  const [editSuccess, setEditSuccess] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (status !== "authenticated") return;
@@ -96,6 +111,41 @@ export function ProviderAccountsPanel() {
     setShowAddForm(false);
     resetAddForm();
   }, [resetAddForm]);
+
+  const resetEditForm = useCallback(() => {
+    setEditingId(null);
+    setEditServer("");
+    setEditUsername("");
+    setEditPassword("");
+    setEditLabel("");
+    setEditError(null);
+    setEditSuccess(null);
+    setShowEditPassword(false);
+  }, []);
+
+  const startEdit = useCallback(
+    async (id: string) => {
+      closeAddForm();
+      setEditingId(id);
+      setEditLoading(true);
+      setEditError(null);
+      setEditSuccess(null);
+      setEditPassword("");
+      setShowEditPassword(false);
+      try {
+        const detail = await fetchSavedProviderAccount(id);
+        setEditServer(detail.server);
+        setEditUsername(detail.username);
+        setEditLabel(detail.label);
+      } catch (e) {
+        setEditError(e instanceof Error ? e.message : "Could not load playlist.");
+        setEditingId(null);
+      } finally {
+        setEditLoading(false);
+      }
+    },
+    [closeAddForm]
+  );
 
   if (status !== "authenticated") return null;
 
@@ -139,29 +189,60 @@ export function ProviderAccountsPanel() {
     }
   }
 
-  async function renameAccount(id: string, current: string) {
-    const next = window.prompt("Playlist name", current)?.trim();
-    if (!next || next === current) return;
-    setBusyId(id);
-    setError(null);
+  async function handleEditSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!editingId) return;
+
+    setEditError(null);
+    setEditSuccess(null);
+
+    const server = normalizeServer(editServer);
+    const username = editUsername.trim();
+    const label = editLabel.trim() || providerLabelFromCreds({ server, username });
+
+    if (!server) {
+      setEditError("Server URL is required.");
+      return;
+    }
+    if (!username) {
+      setEditError("Username is required.");
+      return;
+    }
+
+    const creds: { server: string; username: string; password?: string } = {
+      server,
+      username,
+    };
+    if (editPassword) {
+      creds.password = editPassword;
+    }
+
+    setEditBusy(true);
     try {
-      const r = await fetch(
-        `${window.location.origin}/api/provider-accounts/${encodeURIComponent(id)}`,
-        {
-          method: "PATCH",
-          credentials: "include",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ label: next }),
-        }
-      );
-      if (!r.ok) {
-        const data = (await r.json().catch(() => ({}))) as { error?: string };
-        setError(data.error || "Rename failed.");
-        return;
+      await updateSavedProviderAccount(editingId, { label, creds });
+
+      const isActive = activeSavedId === editingId;
+      if (isActive) {
+        const { creds: activatedCreds, account } =
+          await activateSavedProviderAccount(editingId);
+        setCreds(activatedCreds);
+        if (account) setAccount(account);
+        const merged = account ?? useAuth.getState().account;
+        if (merged) writeAuthSessionBridge(activatedCreds, merged);
+        await qc.invalidateQueries();
       }
+
+      setEditSuccess("Playlist updated.");
       await load();
+      await qc.invalidateQueries({ queryKey: ["saved-provider-accounts"] });
+
+      setTimeout(() => {
+        resetEditForm();
+      }, 1200);
+    } catch (e) {
+      setEditError(e instanceof Error ? e.message : "Update failed.");
     } finally {
-      setBusyId(null);
+      setEditBusy(false);
     }
   }
 
@@ -246,9 +327,16 @@ export function ProviderAccountsPanel() {
         </div>
         <button
           type="button"
-          onClick={showAddForm ? closeAddForm : () => setShowAddForm(true)}
+          onClick={
+            showAddForm
+              ? closeAddForm
+              : () => {
+                  resetEditForm();
+                  setShowAddForm(true);
+                }
+          }
           className="shrink-0 h-8 px-3 rounded-lg btn-brand text-xs font-medium inline-flex items-center gap-1.5 disabled:opacity-50"
-          disabled={addBusy}
+          disabled={addBusy || editBusy}
         >
           {showAddForm ? (
             <>
@@ -480,11 +568,16 @@ export function ProviderAccountsPanel() {
                   )}
                   <button
                     type="button"
-                    disabled={busyId !== null}
-                    onClick={() => void renameAccount(row.id, row.label)}
-                    className="h-8 px-3 rounded-lg bg-(--bg-2) border border-(--line) text-xs hover:border-(--line-2) disabled:opacity-50"
+                    disabled={busyId !== null || editBusy || editLoading}
+                    onClick={() => void startEdit(row.id)}
+                    className="h-8 px-3 rounded-lg bg-(--bg-2) border border-(--line) text-xs hover:border-(--line-2) disabled:opacity-50 inline-flex items-center gap-1"
                   >
-                    Rename
+                    {editLoading && editingId === row.id ? (
+                      <Loader2 className="size-3.5 animate-spin" />
+                    ) : (
+                      <Pencil className="size-3.5" />
+                    )}
+                    Edit
                   </button>
                   <button
                     type="button"
@@ -495,6 +588,125 @@ export function ProviderAccountsPanel() {
                     <Trash2 className="size-3.5" /> Remove
                   </button>
                 </div>
+
+                {editingId === row.id && (
+                  <form
+                    onSubmit={(e) => void handleEditSubmit(e)}
+                    className="mt-3 pt-3 border-t border-(--line) space-y-3"
+                  >
+                    {editError && (
+                      <div className="text-xs rounded-lg border border-(--danger)/25 bg-(--danger)/10 text-(--danger) px-3 py-2">
+                        {editError}
+                      </div>
+                    )}
+                    {editSuccess && (
+                      <div className="text-xs rounded-lg border border-green-500/25 bg-green-500/10 text-green-400 px-3 py-2 flex items-center gap-2">
+                        <Check className="size-3.5" /> {editSuccess}
+                      </div>
+                    )}
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="sm:col-span-2">
+                        <label className="block text-xs text-(--text-muted) mb-1 font-medium">
+                          Server URL
+                        </label>
+                        <input
+                          type="text"
+                          value={editServer}
+                          onChange={(e) => setEditServer(e.target.value)}
+                          placeholder="http://provider.com:8080"
+                          autoComplete="off"
+                          disabled={editBusy || editLoading}
+                          className="w-full h-10 px-3 rounded-lg bg-(--bg-3) border border-(--line) text-sm focus:border-(--brand)/50 outline-none disabled:opacity-60"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-(--text-muted) mb-1 font-medium">
+                          Username
+                        </label>
+                        <input
+                          type="text"
+                          value={editUsername}
+                          onChange={(e) => setEditUsername(e.target.value)}
+                          placeholder="username"
+                          autoComplete="username"
+                          disabled={editBusy || editLoading}
+                          className="w-full h-10 px-3 rounded-lg bg-(--bg-3) border border-(--line) text-sm focus:border-(--brand)/50 outline-none disabled:opacity-60"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-(--text-muted) mb-1 font-medium">
+                          Password
+                        </label>
+                        <div className="relative">
+                          <input
+                            type={showEditPassword ? "text" : "password"}
+                            value={editPassword}
+                            onChange={(e) => setEditPassword(e.target.value)}
+                            placeholder="Leave blank to keep current"
+                            autoComplete="new-password"
+                            disabled={editBusy || editLoading}
+                            className="w-full h-10 px-3 pr-9 rounded-lg bg-(--bg-3) border border-(--line) text-sm focus:border-(--brand)/50 outline-none disabled:opacity-60"
+                          />
+                          <button
+                            type="button"
+                            tabIndex={-1}
+                            onClick={() => setShowEditPassword((v) => !v)}
+                            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-(--text-muted) hover:text-(--text)"
+                          >
+                            {showEditPassword ? (
+                              <EyeOff className="size-4" />
+                            ) : (
+                              <Eye className="size-4" />
+                            )}
+                          </button>
+                        </div>
+                      </div>
+                      <div className="sm:col-span-2">
+                        <label className="block text-xs text-(--text-muted) mb-1 font-medium">
+                          Name
+                        </label>
+                        <input
+                          type="text"
+                          value={editLabel}
+                          onChange={(e) => setEditLabel(e.target.value)}
+                          placeholder="e.g. My IPTV"
+                          autoComplete="off"
+                          disabled={editBusy || editLoading}
+                          className="w-full h-10 px-3 rounded-lg bg-(--bg-3) border border-(--line) text-sm focus:border-(--brand)/50 outline-none disabled:opacity-60"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="submit"
+                        disabled={editBusy || editLoading}
+                        className="min-h-9 px-4 rounded-lg btn-brand text-xs font-medium inline-flex items-center gap-2 disabled:opacity-50"
+                      >
+                        {editBusy ? (
+                          <>
+                            <Loader2 className="size-3.5 animate-spin" />
+                            Verifying & saving…
+                          </>
+                        ) : (
+                          <>
+                            <Save className="size-3.5" />
+                            Save changes
+                          </>
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={editBusy}
+                        onClick={resetEditForm}
+                        className="min-h-9 px-4 rounded-lg bg-(--bg-2) border border-(--line) text-xs hover:border-(--line-2) disabled:opacity-50"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </form>
+                )}
               </li>
             );
           })}

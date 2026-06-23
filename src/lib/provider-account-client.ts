@@ -10,6 +10,13 @@ export type SavedProviderAccountRow = {
   createdAt?: string | Date;
 };
 
+export type SavedProviderAccountDetail = {
+  id: string;
+  label: string;
+  server: string;
+  username: string;
+};
+
 const origin =
   typeof window !== "undefined" ? window.location.origin : "";
 
@@ -48,6 +55,44 @@ export async function fetchSavedProviderAccounts(): Promise<
     throw new Error(data.error || `Could not load accounts (${r.status}).`);
   }
   return data.accounts ?? [];
+}
+
+export async function fetchSavedProviderAccount(
+  id: string
+): Promise<SavedProviderAccountDetail> {
+  const r = await fetch(
+    `${origin}/api/provider-accounts/${encodeURIComponent(id)}`,
+    { credentials: "include", cache: "no-store" }
+  );
+  const data = (await r.json().catch(() => ({}))) as SavedProviderAccountDetail & {
+    error?: string;
+  };
+  if (!r.ok) {
+    throw new Error(data.error || `Could not load account (${r.status}).`);
+  }
+  return data;
+}
+
+export async function updateSavedProviderAccount(
+  id: string,
+  body: {
+    label?: string;
+    creds?: { server?: string; username?: string; password?: string };
+  }
+): Promise<void> {
+  const r = await fetch(
+    `${origin}/api/provider-accounts/${encodeURIComponent(id)}`,
+    {
+      method: "PATCH",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }
+  );
+  const data = (await r.json().catch(() => ({}))) as { error?: string };
+  if (!r.ok) {
+    throw new Error(data.error || `Update failed (${r.status}).`);
+  }
 }
 
 /**

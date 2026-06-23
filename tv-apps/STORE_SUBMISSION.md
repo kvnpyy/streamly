@@ -33,7 +33,7 @@ npm run tv:store:package  # Build unsigned .wgt + .ipk in tv-apps/dist/
 
 ### Your steps
 
-1. Install [Tizen Studio](https://developer.tizen.org/development/tizen-studio/download) + Samsung TV extension.
+1. Install Tizen SDK — see [tv-apps/tizen/DOWNLOAD_LINKS.md](tizen/DOWNLOAD_LINKS.md) or run `npm run tv:store:tizen-setup -- --open` (CLI ~326 MB). Do **not** use the samsungtizenos.com VS Code/.NET docs page — it has no installer. Official TV guide: [Installing TV SDK](https://developer.samsung.com/smarttv/develop/getting-started/setting-up-sdk/installing-tv-sdk.html).
 2. Register at [TV Seller Office](https://seller.samsungapps.com/tv/) — use Chrome or Edge, not the Galaxy Store (mobile) portal.
 3. Create a **certificate profile** in Tizen Studio (Certificate Manager).
 4. Open `tv-apps/tizen` as a Tizen Web project, or sign the unsigned `.wgt`:

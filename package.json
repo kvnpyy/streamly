@@ -33,7 +33,9 @@
     "app:install": "bash scripts/run.sh install",
     "app:autostart": "bash scripts/run.sh autostart",
     "tv:store:icons": "bash scripts/export-tv-app-icons.sh",
-    "tv:store:package": "bash scripts/build-tv-store-packages.sh"
+    "tv:store:package": "bash scripts/build-tv-store-packages.sh",
+    "tv:store:tizen-setup": "bash scripts/tizen-sdk-setup.sh",
+    "tv:store:sign-tizen": "bash scripts/sign-tizen-wgt.sh"
   },
   "dependencies": {
     "@marsidev/react-turnstile": "^1.5.2",
