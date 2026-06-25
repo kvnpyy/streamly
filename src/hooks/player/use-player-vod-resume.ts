@@ -46,6 +46,11 @@ export function usePlayerVodResume(p: UsePlayerVodResumeParams) {
     restartTranscodeAtSeek,
   } = p;
 
+  /** Reset resume lock when the episode changes (not on transcode URL swaps). */
+  useEffect(() => {
+    vodResumeLockedRef.current = false;
+  }, [open, current?.url, current?.id, vodResumeLockedRef]);
+
   /** One-shot resume when the player opens — never re-run on transcode URL swaps. */
   useEffect(() => {
     if (!open || !current || isLive || !creds) return;

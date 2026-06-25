@@ -14,6 +14,7 @@ import { SITE_NAME, SITE_TAGLINE } from "@/lib/site-brand";
 import { cn, normalizeServer } from "@/lib/utils";
 import { xtream } from "@/lib/xtream";
 import { writeAuthSessionBridge, useAuth } from "@/store/auth";
+import { useAuthBootstrapReady } from "@/components/AuthSessionBootstrap";
 import {
   AtSign,
   ChevronRight,
@@ -41,6 +42,7 @@ const TURNSTILE_SITE_KEY =
 export function StreamlyOnboardingConnect() {
   const { data: session } = useSession();
   const streamlySignedIn = Boolean(session?.user);
+  const authBootstrapReady = useAuthBootstrapReady();
   const tv = useTvBrowser();
   const needsClientTurnstile = Boolean(TURNSTILE_SITE_KEY) && !tv;
   const setCreds = useAuth((s) => s.setCreds);
@@ -81,6 +83,16 @@ export function StreamlyOnboardingConnect() {
 
   /** PIN tab is TV-only; once Streamly is signed in we never show it (avoid setState in an effect). */
   const activeTab: Tab = streamlySignedIn && tab === "pin" ? "xtream" : tab;
+
+  useEffect(() => {
+    if (!authBootstrapReady || !streamlySignedIn) return;
+    try {
+      const stored = sessionStorage.getItem("iptv-bootstrap-activate-error");
+      if (stored) queueMicrotask(() => setSavedError(stored));
+    } catch {
+      /* private mode */
+    }
+  }, [authBootstrapReady, streamlySignedIn]);
 
   useEffect(() => {
     let cancelled = false;
@@ -132,6 +144,11 @@ export function StreamlyOnboardingConnect() {
       const merged = account ?? useAuth.getState().account;
       if (merged) writeAuthSessionBridge(creds, merged);
       setActiveSavedId(id);
+      try {
+        sessionStorage.removeItem("iptv-bootstrap-activate-error");
+      } catch {
+        /* noop */
+      }
     } catch (e) {
       setSavedError(e instanceof Error ? e.message : "Could not activate playlist.");
     } finally {

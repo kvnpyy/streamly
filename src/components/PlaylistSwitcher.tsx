@@ -165,24 +165,27 @@ export function PlaylistSwitcher({
         <div
           role="listbox"
           aria-label="Saved playlists"
-          className="absolute right-0 z-50 mt-1.5 min-w-[15rem] max-w-[min(90vw,22rem)] rounded-xl border border-(--line) bg-(--bg-1) shadow-[0_20px_50px_rgba(0,0,0,0.45)] overflow-hidden"
+          className={cn(
+            "absolute z-50 mt-1.5 min-w-[15rem] max-w-[min(calc(100vw-1rem),22rem)] rounded-xl border border-(--line) bg-(--bg-1) shadow-[0_20px_50px_rgba(0,0,0,0.45)] flex flex-col max-h-[min(70dvh,24rem)]",
+            compact ? "left-0 right-auto" : "right-0 left-auto"
+          )}
         >
           {listErrorMsg && (
-            <div className="px-3 py-2 text-[11px] text-(--danger) border-b border-(--danger)/25">
+            <div className="px-3 py-2 text-[11px] text-(--danger) border-b border-(--danger)/25 shrink-0">
               {listErrorMsg}
             </div>
           )}
 
           {loadingList ? (
-            <div className="flex items-center gap-2 px-3 py-3 text-xs text-(--text-muted)">
+            <div className="flex items-center gap-2 px-3 py-3 text-xs text-(--text-muted) shrink-0">
               <Loader2 className="size-3.5 animate-spin" aria-hidden /> Loading…
             </div>
           ) : rows.length === 0 ? (
-            <div className="px-3 py-3 text-xs text-(--text-muted) text-center">
+            <div className="px-3 py-3 text-xs text-(--text-muted) text-center shrink-0">
               No saved playlists yet.
             </div>
           ) : (
-            <div className="py-1">
+            <div className="py-1 overflow-y-auto flex-1 min-h-0 overscroll-contain">
               {rows.map((row) => {
                 const sel = activeSavedId === row.id;
                 const isBusy = busyId === row.id;
@@ -224,7 +227,7 @@ export function PlaylistSwitcher({
             </div>
           )}
 
-          <div className="border-t border-(--line) flex items-center gap-0.5 px-1 py-1">
+          <div className="border-t border-(--line) flex items-center gap-0.5 px-1 py-1 shrink-0 bg-(--bg-1)">
             <Link
               href="/app/settings#playlists"
               onClick={() => setOpen(false)}

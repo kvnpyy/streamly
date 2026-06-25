@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { CastMediaDescriptor } from "@/lib/cast-media-url";
-import { waitForCastPlaylistReady } from "@/lib/cast-media-url";
+import { appendCastStreamQuery, waitForCastPlaylistReady } from "@/lib/cast-media-url";
 import { resolveCastLiveHlsUrl } from "@/lib/cast-live-hls";
 import {
   CAST_SENDER_SCRIPT_SRC,
@@ -257,6 +257,7 @@ export function usePlayerCast({
         if (castMedia.streamType === "live") {
           playUrl = await resolveCastLiveHlsUrl(castMedia.url);
         }
+        playUrl = appendCastStreamQuery(playUrl);
         await waitForCastPlaylistReady(playUrl, { timeoutMs: 45_000 });
       } catch (prepErr) {
         const msg =
@@ -273,7 +274,7 @@ export function usePlayerCast({
 
       const mediaInfo = new ChromeMedia.MediaInfo(
         playUrl,
-        castMedia.contentType
+        "application/x-mpegURL"
       ) as {
         streamType?: number;
         metadata?: { type: number; title?: string };

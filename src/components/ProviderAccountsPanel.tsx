@@ -233,7 +233,7 @@ export function ProviderAccountsPanel() {
   }
 
   return (
-    <section className="card p-5">
+    <section id="playlists" className="card p-5 scroll-mt-24">
       <div className="flex items-start justify-between gap-3 mb-1">
         <div className="flex items-center gap-2">
           <Radio className="size-4 text-(--brand)" />

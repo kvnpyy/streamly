@@ -12,6 +12,7 @@ import { xtream } from "@/lib/xtream";
 import type { XtreamCredentials } from "@/lib/xtream-types";
 import { restoreAuthSessionBridge, useAuth } from "@/store/auth";
 import { usePrefs } from "@/store/preferences";
+import { pollStreamSession } from "@/lib/poll-stream-session";
 import { useSession } from "next-auth/react";
 import { usePathname } from "next/navigation";
 import {
@@ -62,6 +63,8 @@ export function AuthSessionBootstrap({ children }: { children: ReactNode }) {
   }, [sessionStatus, session?.user?.id]);
 
   useEffect(() => {
+    if (sessionStatus === "loading") return;
+
     let cancelled = false;
     let safetyId: number | null = null;
 
@@ -134,9 +137,15 @@ export function AuthSessionBootstrap({ children }: { children: ReactNode }) {
          * Previously `getSession()` on first paint often returned null on a new
          * device, so restore never ran and users saw an empty library.
          */
-        if (sessionStatus === "loading") return;
+        if (sessionStatus !== "authenticated") {
+          finish();
+          return;
+        }
 
-        if (sessionStatus !== "authenticated" || !session?.user?.id) {
+        const stream = session?.user?.id
+          ? session
+          : await pollStreamSession(2000);
+        if (cancelled || !stream?.user?.id) {
           finish();
           return;
         }
@@ -155,9 +164,21 @@ export function AuthSessionBootstrap({ children }: { children: ReactNode }) {
           return;
         }
 
-        const activated = await activateSavedProviderOnServer(origin, chosenId);
+        let activated = await activateSavedProviderOnServer(origin, chosenId);
+        if (!activated) {
+          await new Promise((r) => window.setTimeout(r, 1200));
+          activated = await activateSavedProviderOnServer(origin, chosenId);
+        }
         if (cancelled) return;
         if (!activated) {
+          try {
+            sessionStorage.setItem(
+              "iptv-bootstrap-activate-error",
+              "Could not restore your saved playlist. Try again or reconnect below."
+            );
+          } catch {
+            /* private mode */
+          }
           finish();
           return;
         }

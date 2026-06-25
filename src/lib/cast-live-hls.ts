@@ -60,33 +60,44 @@ export function resolveVariantUrl(
  */
 export async function resolveCastLiveHlsUrl(
   castManifestUrl: string,
-  opts?: { signal?: AbortSignal }
+  opts?: { signal?: AbortSignal; maxDepth?: number }
 ): Promise<string> {
-  const res = await fetch(castManifestUrl, {
-    method: "GET",
-    cache: "no-store",
-    credentials: "omit",
-    signal: opts?.signal,
-  });
-  if (!res.ok) {
-    throw new Error(`Could not load live stream manifest (${res.status}).`);
-  }
-  const text = await res.text();
-  if (!isLiveHlsMasterPlaylist(text)) {
-    return castManifestUrl;
+  const maxDepth = opts?.maxDepth ?? 3;
+  let url = castManifestUrl;
+
+  for (let depth = 0; depth < maxDepth; depth++) {
+    const res = await fetch(url, {
+      method: "GET",
+      cache: "no-store",
+      credentials: "omit",
+      signal: opts?.signal,
+    });
+    if (!res.ok) {
+      throw new Error(`Could not load live stream manifest (${res.status}).`);
+    }
+    const text = await res.text();
+    if (!isLiveHlsMasterPlaylist(text)) {
+      return url;
+    }
+
+    const parts = parseMasterPlaylistLines(text.split(/\r?\n/));
+    const picked = pickChromecastLiveVariant(parts.variants);
+    if (!picked) {
+      throw new Error(
+        "This channel uses video or audio Chromecast cannot decode (often HEVC or Dolby). Try another channel or copy the stream URL for your provider app."
+      );
+    }
+    url = resolveVariantUrl(picked.uri, url);
   }
 
-  const parts = parseMasterPlaylistLines(text.split(/\r?\n/));
-  const picked = pickChromecastLiveVariant(parts.variants);
-  if (!picked) {
-    throw new Error(
-      "This channel uses video or audio Chromecast cannot decode (often HEVC or Dolby). Try another channel or copy the stream URL for your provider app."
-    );
-  }
-  return resolveVariantUrl(picked.uri, castManifestUrl);
+  return url;
 }
 
 export function liveCastPlaylistLooksReady(text: string): boolean {
   if (!/#EXTINF:/i.test(text)) return false;
-  return /\.ts(?:\s|$|[?&#"])/i.test(text) || /#EXT-X-STREAM-INF/i.test(text);
+  return (
+    /\.ts(?:\s|$|[?&#"])/i.test(text) ||
+    /\.m4s(?:\s|$|[?&#"])/i.test(text) ||
+    /#EXT-X-STREAM-INF/i.test(text)
+  );
 }
