@@ -98,6 +98,24 @@ export function buildLivePlayUrl(
   return buildStreamUrl(creds, "live", stream.stream_id);
 }
 
+/** VOD playback URL — honors `direct_source` when the panel provides one. */
+export function buildVodPlayUrl(
+  creds: XtreamCredentials,
+  stream: Pick<VodStream, "stream_id" | "direct_source" | "container_extension">
+): string {
+  let ds = stream.direct_source?.trim();
+  if (ds?.startsWith("//")) ds = `https:${ds}`;
+  if (ds && /^https?:\/\//i.test(ds)) {
+    const params = new URLSearchParams({
+      u: ds,
+      type: inferStreamProxyType(ds),
+    });
+    return `/api/stream?${params.toString()}`;
+  }
+  const ext = stream.container_extension || "mp4";
+  return buildStreamUrl(creds, "movie", stream.stream_id, ext);
+}
+
 /**
  * Series episode playback URL. Some panels expose a direct MP4/HLS link per
  * episode (same idea as live `direct_source`).

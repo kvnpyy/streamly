@@ -1,7 +1,7 @@
 import type { XtreamCredentials } from "@/lib/xtream-types";
 import { providerLabelFromCreds } from "@/lib/provider-account-label";
+import { pollStreamSession } from "@/lib/poll-stream-session";
 import { usePrefs } from "@/store/preferences";
-import { getSession } from "next-auth/react";
 
 /**
  * After Xtream auth succeeds in the browser: save to server (Streamly account)
@@ -11,7 +11,7 @@ export async function persistIptvAfterBrowserLogin(
   creds: XtreamCredentials
 ): Promise<void> {
   const origin = window.location.origin;
-  const streamUser = await getSession();
+  const streamUser = await pollStreamSession();
 
   if (streamUser?.user?.id) {
     const pa = await fetch(`${origin}/api/provider-accounts`, {

@@ -1,7 +1,7 @@
 "use client";
 
 import { parsePositiveRouteId } from "@/lib/utils";
-import { buildImageProxy, buildStreamUrl, xtream } from "@/lib/xtream";
+import { buildImageProxy, buildVodPlayUrl, xtream } from "@/lib/xtream";
 import { vodResumeStorageKey } from "@/lib/player-vod-resume";
 import { MY_LIST_LABEL } from "@/lib/my-list";
 import { CONTINUE_PROGRESS_MIN_SEC } from "@/lib/continue-watching";
@@ -257,7 +257,11 @@ export default function MovieDetail() {
           <div className="mt-7 flex flex-wrap items-center gap-2">
             <button
               onClick={() => {
-                const url = buildStreamUrl(creds, "movie", data.stream_id, ext);
+                const url = buildVodPlayUrl(creds, {
+                  stream_id: data.stream_id,
+                  direct_source: data.direct_source,
+                  container_extension: ext,
+                });
                 play({
                   kind: "movie",
                   id: data.stream_id,

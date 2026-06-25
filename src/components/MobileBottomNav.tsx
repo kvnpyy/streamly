@@ -8,7 +8,7 @@ import { MOBILE_BOTTOM_NAV_CLEARANCE } from "@/lib/shell-layout";
 import { cn } from "@/lib/utils";
 import { signOutFully } from "@/lib/sign-out-client";
 import { usePlayer } from "@/store/player";
-import { LogOut, Menu, MessageSquare, Settings, type LucideIcon } from "lucide-react";
+import { ListMusic, LogOut, Menu, MessageSquare, Settings, type LucideIcon } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore, useTransition } from "react";
@@ -251,6 +251,14 @@ export function MobileBottomNav() {
                   </Link>
                 );
               })}
+              <Link
+                href="/app/settings#playlists"
+                onClick={closeSheet}
+                className="flex items-center gap-3 rounded-xl px-3 py-3 text-sm text-(--text-dim) active:bg-(--bg-2)"
+              >
+                <ListMusic className="size-[18px] text-(--brand)" />
+                Playlists
+              </Link>
               <CommunityDiscordSidebarLink
                 className="rounded-xl px-3 py-3 text-sm text-(--text-dim) active:bg-(--bg-2)"
                 onNavigate={closeSheet}

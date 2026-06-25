@@ -36,7 +36,10 @@
     "tv:store:package": "bash scripts/build-tv-store-packages.sh",
     "tv:store:tizen-setup": "bash scripts/tizen-sdk-setup.sh",
     "tv:store:tizen-install": "bash scripts/install-tizen-sdk-cli.sh",
-    "tv:store:sign-tizen": "bash scripts/sign-tizen-wgt.sh"
+    "tv:store:sign-tizen": "bash scripts/sign-tizen-wgt.sh",
+    "tv:store:screenshots": "node scripts/capture-samsung-store-screenshots.mjs",
+    "tv:store:samsung-icons": "node scripts/generate-samsung-store-icons.mjs",
+    "tv:store:app-description": ".venv-pptx/bin/python scripts/fill-samsung-app-description.py"
   },
   "dependencies": {
     "@marsidev/react-turnstile": "^1.5.2",

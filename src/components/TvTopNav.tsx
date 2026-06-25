@@ -1,7 +1,6 @@
 "use client";
 
 import { BrandMark } from "@/components/BrandMark";
-import { CommunityDiscordLink } from "@/components/CommunityDiscordLink";
 import { PlaylistSwitcher } from "@/components/PlaylistSwitcher";
 import { APP_NAV } from "@/lib/nav-config";
 import { SITE_NAME } from "@/lib/site-brand";
@@ -31,7 +30,7 @@ export function TvTopNav() {
         WebkitBackdropFilter: "blur(8px)",
       }}
     >
-      <div className="flex items-center gap-1 px-4 sm:px-6 py-2.5 max-w-[1800px] mx-auto">
+      <div className="flex items-center gap-1 px-4 sm:px-6 py-2.5 max-w-[1800px] mx-auto overflow-x-auto scrollbar-none">
         {/* Logo */}
         <Link
           href="/app"
@@ -89,11 +88,7 @@ export function TvTopNav() {
               <span className="hidden sm:inline">Search</span>
             </Link>
           )}
-          <PlaylistSwitcher className="hidden md:flex" />
-          <CommunityDiscordLink
-            label="Discord"
-            className="hidden sm:inline-flex min-h-9 px-3 py-2 rounded-xl text-sm font-medium text-[#c7ceff] hover:text-[#e0e4ff] hover:bg-[#5865F2]/12 transition-colors"
-          />
+          <PlaylistSwitcher className="hidden sm:flex shrink-0" />
           <Link
             href="/app/settings"
             data-tv-card-root

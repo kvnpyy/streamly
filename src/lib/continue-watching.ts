@@ -3,7 +3,7 @@ import { parsePositiveRouteId } from "@/lib/utils";
 import {
   buildImageProxy,
   buildSeriesEpisodePlayUrl,
-  buildStreamUrl,
+  buildVodPlayUrl,
 } from "@/lib/xtream";
 import type { SeriesEpisode } from "@/lib/xtream-types";
 import type { XtreamCredentials } from "@/lib/xtream-types";
@@ -191,12 +191,20 @@ export function buildMoviePlayerSourceFromRecent(
     typeof recent.meta?.containerExt === "string"
       ? recent.meta.containerExt
       : containerExt;
+  const directSource =
+    typeof recent.meta?.direct_source === "string"
+      ? recent.meta.direct_source
+      : undefined;
   return {
     kind: "movie",
     id: recent.id,
     title: recent.name,
     poster: recent.icon ? buildImageProxy(recent.icon) : undefined,
-    url: buildStreamUrl(creds, "movie", recent.id, ext),
+    url: buildVodPlayUrl(creds, {
+      stream_id: recent.id,
+      direct_source: directSource,
+      container_extension: ext,
+    }),
     containerExt: ext,
   };
 }

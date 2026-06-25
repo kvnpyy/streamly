@@ -48,6 +48,10 @@ export function usePlayerVodResume(p: UsePlayerVodResumeParams) {
 
   /** One-shot resume when the player opens — never re-run on transcode URL swaps. */
   useEffect(() => {
+    vodResumeLockedRef.current = false;
+  }, [open, current?.url, current?.id, vodResumeLockedRef]);
+
+  useEffect(() => {
     if (!open || !current || isLive || !creds) return;
     if (vodResumeLockedRef.current) return;
 

@@ -1,7 +1,7 @@
 "use client";
 
 import type { MediaShelfItem } from "@/components/MediaShelf";
-import { buildImageProxy, buildStreamUrl } from "@/lib/xtream";
+import { buildImageProxy, buildStreamUrl, buildVodPlayUrl } from "@/lib/xtream";
 import { buildMoviePlayerSourceFromRecent } from "@/lib/continue-watching";
 import type { SeriesItem, VodStream } from "@/lib/xtream-types";
 import { parsePositiveRouteId } from "@/lib/utils";
@@ -29,7 +29,7 @@ export function useCatalogPlay() {
         title: m.name,
         subtitle: m.year,
         poster: m.stream_icon ? buildImageProxy(m.stream_icon) : undefined,
-        url: buildStreamUrl(creds, "movie", mid, ext),
+        url: buildVodPlayUrl(creds, m),
         containerExt: ext,
       });
       addRecent({

@@ -11,12 +11,19 @@ import { SITE_NAME, SITE_TAGLINE } from "@/lib/site-brand";
 import { cn, normalizeServer } from "@/lib/utils";
 import { xtream } from "@/lib/xtream";
 import { writeAuthSessionBridge, useAuth } from "@/store/auth";
+import { useAuthBootstrapReady } from "@/components/AuthSessionBootstrap";
+import { activateSavedProviderAccount, fetchSavedProviderAccounts } from "@/lib/provider-account-client";
+import { invalidateBrowseCatalogs } from "@/lib/catalog-queries";
+import { usePrefs } from "@/store/preferences";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   AtSign,
   ChevronRight,
   Hash,
   KeyRound,
   Link as LinkIcon,
+  Loader2,
+  RefreshCw,
   ShieldCheck,
   Sparkles,
   Tv,
@@ -37,10 +44,19 @@ const TURNSTILE_SITE_KEY =
 export function StreamlyOnboardingConnect() {
   const { data: session } = useSession();
   const streamlySignedIn = Boolean(session?.user);
+  const authBootstrapReady = useAuthBootstrapReady();
+  const qc = useQueryClient();
   const tv = useTvBrowser();
   const needsClientTurnstile = Boolean(TURNSTILE_SITE_KEY) && !tv;
   const setCreds = useAuth((s) => s.setCreds);
   const setAccount = useAuth((s) => s.setAccount);
+  const setActiveSavedId = usePrefs((s) => s.setActiveSavedProviderAccountId);
+  const creds = useAuth((s) => s.creds);
+
+  const [savedCount, setSavedCount] = useState(0);
+  const [restoreBusy, setRestoreBusy] = useState(false);
+  const [restoreError, setRestoreError] = useState<string | null>(null);
+  const restoreAttemptedRef = useRef(false);
 
   const [server, setServer] = useState("");
   const [username, setUsername] = useState("");
@@ -55,6 +71,59 @@ export function StreamlyOnboardingConnect() {
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
   const [turnstileMountKey, setTurnstileMountKey] = useState(0);
   const prevTabRef = useRef<Tab | undefined>(undefined);
+
+  const tryRestoreSavedPlaylist = async (manual = false) => {
+    if (!streamlySignedIn || creds) return;
+    setRestoreBusy(true);
+    setRestoreError(null);
+    try {
+      const accounts = await fetchSavedProviderAccounts();
+      setSavedCount(accounts.length);
+      if (accounts.length === 0) {
+        if (manual) {
+          setRestoreError("No saved playlists on your account yet.");
+        }
+        return;
+      }
+      const prefId = usePrefs.getState().activeSavedProviderAccountId;
+      const chosenId =
+        typeof prefId === "string" && accounts.some((a) => a.id === prefId)
+          ? prefId
+          : accounts[0]!.id;
+      const { creds: nextCreds, account } =
+        await activateSavedProviderAccount(chosenId);
+      setCreds(nextCreds);
+      if (account) setAccount(account);
+      const merged = account ?? useAuth.getState().account;
+      if (merged) writeAuthSessionBridge(nextCreds, merged);
+      setActiveSavedId(chosenId);
+      await invalidateBrowseCatalogs(qc, nextCreds);
+      try {
+        sessionStorage.removeItem("iptv-bootstrap-activate-error");
+      } catch {
+        /* noop */
+      }
+    } catch (e) {
+      setRestoreError(
+        e instanceof Error ? e.message : "Could not restore your saved playlist."
+      );
+    } finally {
+      setRestoreBusy(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!authBootstrapReady || !streamlySignedIn || creds) return;
+    try {
+      const stored = sessionStorage.getItem("iptv-bootstrap-activate-error");
+      if (stored) queueMicrotask(() => setRestoreError(stored));
+    } catch {
+      /* noop */
+    }
+    if (restoreAttemptedRef.current) return;
+    restoreAttemptedRef.current = true;
+    void tryRestoreSavedPlaylist();
+  }, [authBootstrapReady, streamlySignedIn, creds]);
 
   /** Remount Turnstile when switching tabs - not on first paint (avoids DOM races with the widget). */
   useEffect(() => {
@@ -219,6 +288,49 @@ export function StreamlyOnboardingConnect() {
               </p>
             </div>
           </div>
+
+          {streamlySignedIn && (restoreBusy || restoreError || savedCount > 0) && (
+            <div
+              className={cn(
+                "mb-5 rounded-xl border px-3.5 py-3 text-sm",
+                restoreError
+                  ? "border-(--danger)/35 bg-(--danger)/8 text-(--text-dim)"
+                  : "border-(--brand)/30 bg-(--brand)/10 text-(--text-dim)"
+              )}
+            >
+              {restoreBusy ? (
+                <div className="flex items-center gap-2">
+                  <Loader2 className="size-4 animate-spin text-(--brand)" />
+                  Restoring your saved playlist…
+                </div>
+              ) : restoreError ? (
+                <div className="space-y-2">
+                  <p>{restoreError}</p>
+                  <button
+                    type="button"
+                    onClick={() => void tryRestoreSavedPlaylist(true)}
+                    className="inline-flex items-center gap-1.5 text-xs font-medium text-(--brand) hover:underline"
+                  >
+                    <RefreshCw className="size-3.5" />
+                    Try again
+                  </button>
+                </div>
+              ) : savedCount > 0 ? (
+                <p>
+                  Found {savedCount} saved playlist{savedCount === 1 ? "" : "s"} on
+                  your account. If your library doesn&apos;t load,{" "}
+                  <button
+                    type="button"
+                    onClick={() => void tryRestoreSavedPlaylist(true)}
+                    className="text-(--brand) font-medium hover:underline"
+                  >
+                    restore now
+                  </button>
+                  .
+                </p>
+              ) : null}
+            </div>
+          )}
 
           <div className="flex flex-wrap gap-1 p-1 bg-(--bg-3) rounded-xl mb-6">
             {tabs.map(({ id, label }) => (

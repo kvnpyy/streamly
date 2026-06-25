@@ -505,23 +505,36 @@ export function PlayerOverlay() {
     vodPrepEligible && !videoHasFrame && !error && !vodSeekInFlight;
   const quickVodPlayerOpen = vodPrepEligible && !videoHasFrame;
 
+  const episodeIdentityRef = useRef<string | null>(null);
+
   useEffect(() => {
-    const hold = vodTimelineHoldRef.current;
-    if (hold) {
-      vodStartOffsetRef.current = hold.startOffsetSec;
+    if (open && current) {
+      const identity = `${current.kind}:${current.id}:${current.url}`;
+      if (episodeIdentityRef.current !== identity) {
+        episodeIdentityRef.current = identity;
+        vodTimelineHoldRef.current = null;
+        vodResumeLockedRef.current = false;
+      }
+    } else if (!open) {
+      episodeIdentityRef.current = null;
+    }
+
+    const activeHold = vodTimelineHoldRef.current;
+    if (activeHold) {
+      vodStartOffsetRef.current = activeHold.startOffsetSec;
       vodEncodedSecRef.current = 0;
     } else {
       vodStartOffsetRef.current = 0;
       vodEncodedSecRef.current = 0;
     }
     queueMicrotask(() => {
-      if (hold) {
-        setTime(hold.absoluteTimeSec);
-        if (hold.durationSec && hold.durationSec > 1) {
-          setVodTotalSec(hold.durationSec);
-          vodDurationHintRef.current = hold.durationSec;
+      if (activeHold) {
+        setTime(activeHold.absoluteTimeSec);
+        if (activeHold.durationSec && activeHold.durationSec > 1) {
+          setVodTotalSec(activeHold.durationSec);
+          vodDurationHintRef.current = activeHold.durationSec;
         }
-        setVodSeekTargetSec(hold.absoluteTimeSec);
+        setVodSeekTargetSec(activeHold.absoluteTimeSec);
         setVodSeekInFlight(true);
         setVideoHasFrame(false);
         setLoading(true);
@@ -535,7 +548,7 @@ export function PlayerOverlay() {
       }
       setVodPrepStartedAt((prev) => prev ?? Date.now());
     });
-  }, [current?.url, vodPlaybackUrl, vodPrepEligible]);
+  }, [open, current, current?.url, current?.id, vodPlaybackUrl, vodPrepEligible]);
 
   /** Slow server encode — nudge bar; hard fail only if decode never starts. */
   useEffect(() => {

@@ -2,6 +2,7 @@
 
 import {
   autoplayDisplayCountdownSec,
+  AUTOPLAY_COUNTDOWN_SEC,
   episodeAutoplayKey,
   getSeriesNextEpisode,
   shouldAutoplayOnEnded,
@@ -210,7 +211,9 @@ export function usePlayerAutoplayNext(
       !watchCreditsForEpisode &&
       ((shouldOffer && visibleCountdown != null) || showFinaleCard),
     nextEpisode,
-    countdownSec: showFinaleCard ? (visibleCountdown ?? 1) : visibleCountdown,
+    countdownSec: showFinaleCard
+      ? (visibleCountdown ?? AUTOPLAY_COUNTDOWN_SEC)
+      : visibleCountdown,
     cancelAutoplay,
     playNextNow,
     watchCredits,

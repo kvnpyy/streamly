@@ -5,7 +5,8 @@ import type { XtreamCredentials } from "@/lib/xtream-types";
 import { scheduleWhenIdle } from "@/lib/defer-idle";
 import { restoreAuthSessionBridge, useAuth } from "@/store/auth";
 import { usePrefs } from "@/store/preferences";
-import { getSession } from "next-auth/react";
+import { pollStreamSession } from "@/lib/poll-stream-session";
+import { useSession } from "next-auth/react";
 import { usePathname } from "next/navigation";
 import {
   createContext,
@@ -29,6 +30,7 @@ const SAFETY_UNBLOCK_MS = 12000;
 
 export function AuthSessionBootstrap({ children }: { children: ReactNode }) {
   const [ready, setReady] = useState(false);
+  const { status: sessionStatus } = useSession();
   const pathname = usePathname();
 
   /** Re-apply after login → /app SPA nav (Providers does not remount). */
@@ -37,6 +39,8 @@ export function AuthSessionBootstrap({ children }: { children: ReactNode }) {
   }, [pathname]);
 
   useEffect(() => {
+    if (sessionStatus === "loading") return;
+
     let cancelled = false;
     /** Use `number` — `@types/node` makes `ReturnType<typeof setTimeout>` a NodeJS.Timeout. */
     let safetyId: number | null = null;
@@ -131,7 +135,12 @@ export function AuthSessionBootstrap({ children }: { children: ReactNode }) {
          * or cookie rotation). Re-activate the most recently used saved provider
          * (GET list is ordered by `updatedAt` desc) so /app loads without retyping.
          */
-        const stream = await getSession();
+        if (sessionStatus !== "authenticated") {
+          finish();
+          return;
+        }
+
+        const stream = await pollStreamSession(2000);
         if (cancelled || !stream?.user?.id) {
           finish();
           return;
@@ -143,6 +152,7 @@ export function AuthSessionBootstrap({ children }: { children: ReactNode }) {
         });
         const listJson = (await listR.json().catch(() => ({}))) as {
           accounts?: { id: string }[];
+          error?: string;
         };
         const accounts = listJson.accounts ?? [];
         if (accounts.length === 0) {
@@ -163,11 +173,33 @@ export function AuthSessionBootstrap({ children }: { children: ReactNode }) {
           return;
         }
 
-        const actR = await fetch(
-          `${window.location.origin}/api/provider-accounts/${encodeURIComponent(chosenId)}/activate`,
-          { method: "POST", credentials: "include" }
-        );
-        if (!actR.ok) {
+        const activateOnce = async () => {
+          const actR = await fetch(
+            `${window.location.origin}/api/provider-accounts/${encodeURIComponent(chosenId)}/activate`,
+            { method: "POST", credentials: "include" }
+          );
+          if (actR.ok) return true;
+          const actJson = (await actR.json().catch(() => ({}))) as {
+            error?: string;
+          };
+          try {
+            sessionStorage.setItem(
+              "iptv-bootstrap-activate-error",
+              actJson.error ||
+                `Could not restore your saved playlist (${actR.status}).`
+            );
+          } catch {
+            /* private mode */
+          }
+          return false;
+        };
+
+        let activated = await activateOnce();
+        if (!activated) {
+          await new Promise((r) => window.setTimeout(r, 1200));
+          activated = await activateOnce();
+        }
+        if (!activated) {
           finish();
           return;
         }
@@ -199,7 +231,7 @@ export function AuthSessionBootstrap({ children }: { children: ReactNode }) {
       unsub();
       if (safetyId !== null) window.clearTimeout(safetyId);
     };
-  }, []);
+  }, [sessionStatus]);
 
   return (
     <AuthBootstrapReadyContext.Provider value={ready}>
