@@ -64,3 +64,6 @@ Stream.app/
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# generated store listing exports
+tv-apps/dist/

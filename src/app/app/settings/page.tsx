@@ -1,5 +1,6 @@
 "use client";
 
+import { TvSimpleSettings } from "@/components/tv/TvSimpleSettings";
 import { LiveCategorySortSection } from "@/components/LiveCategorySortSection";
 import { CommunityDiscordLink } from "@/components/CommunityDiscordLink";
 import { CommunityGitHubFeedbackLink } from "@/components/CommunityGitHubFeedbackLink";
@@ -8,6 +9,7 @@ import { ProviderAccountsPanel } from "@/components/ProviderAccountsPanel";
 import { SectionHeader } from "@/components/SectionHeader";
 import { TvPairingCard } from "@/components/TvPairingCard";
 import { useTvBrowser } from "@/components/TvBrowserProvider";
+import { useTvSimpleMode } from "@/lib/tv-simple-mode";
 import { UserContentDisclaimer } from "@/components/UserContentDisclaimer";
 import { formatDate } from "@/lib/utils";
 import { feedbackFormUrlWithContext } from "@/lib/feedback-url";
@@ -25,6 +27,7 @@ export default function SettingsPage() {
   const router = useRouter();
   const pathname = usePathname();
   const tv = useTvBrowser();
+  const tvSimple = useTvSimpleMode();
   const { data: streamSession, status: streamSessionStatus } = useSession();
   const streamSignedIn =
     streamSessionStatus === "authenticated" && !!streamSession?.user?.id;
@@ -44,6 +47,10 @@ export default function SettingsPage() {
     setComfortTvBrowsing,
     resetAllPrefs,
   } = usePrefs();
+
+  if (tvSimple) {
+    return <TvSimpleSettings />;
+  }
 
   return (
     <div className="space-y-6 max-w-3xl">
@@ -87,9 +94,9 @@ export default function SettingsPage() {
 
       <ProviderAccountsPanel />
 
-      {streamSignedIn && <MarketingEmailPreferences />}
+      {!tvSimple && streamSignedIn && <MarketingEmailPreferences />}
 
-      <LiveCategorySortSection />
+      {!tvSimple && <LiveCategorySortSection />}
 
       <section className="card p-5">
         <h3 className="text-base font-semibold mb-1 flex items-center gap-2">
@@ -160,6 +167,7 @@ export default function SettingsPage() {
         />
       )}
 
+      {!tvSimple && (
       <section className="card p-5">
         <h3 className="text-base font-semibold mb-2">Community</h3>
         <p className="text-sm text-(--text-dim) mb-4 leading-relaxed">
@@ -190,6 +198,7 @@ export default function SettingsPage() {
           </a>
         </div>
       </section>
+      )}
 
       <section className="card p-5">
         <h3 className="text-base font-semibold mb-2">Legal</h3>

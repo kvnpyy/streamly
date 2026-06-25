@@ -53,6 +53,15 @@ export function appendCastStreamQuery(url: string): string {
   }
 }
 
+/** Normalize an in-browser HLS level URL for Chromecast (cast=1, no compat=mse). */
+export function normalizeCastLiveManifestUrl(
+  origin: string,
+  manifestUrl: string
+): string {
+  const path = sanitizeProxyUrlForCast(manifestUrl, origin);
+  return appendCastStreamQuery(toAbsoluteAppUrl(origin, path));
+}
+
 /**
  * Poll the cast manifest the same way a Chromecast receiver would (no cookies).
  * Waits for transcode warm-up / 503 retry cycles before sender loadMedia().

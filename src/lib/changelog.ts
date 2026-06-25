@@ -11,6 +11,22 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.6.0",
+    date: "2026-06-25",
+    summary: "Chromecast live playback and TV-simple UI.",
+    highlights: [
+      "TV hub: four large tiles (Live, Series, Movies, Settings) — zero catalog load on home.",
+      "Fix TV application error on join — server/client TV hints prevent hydration crash.",
+      "Fix Live TV crash on TV — live search provider always mounted on /app/live.",
+      "TV settings: tile menu with playlist switch, add, rename, and remove.",
+      "Web settings: restore inline Edit for saved playlists (server, login, name).",
+      "Stronger D-pad focus ring and auto-focus on each TV screen.",
+      "TV browse: pick a category, then channels or titles — no EPG/discovery shelves.",
+      "TV UA skips marketing landing; no auto-rich home, prefetch, or perf HUD on living-room clients.",
+      "Chromecast: media playlists only, active HLS level reuse, VOD proxy for segments.",
+    ],
+  },
+  {
     version: "0.5.0",
     date: "2026-06-25",
     summary:

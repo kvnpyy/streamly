@@ -13,6 +13,15 @@
 
 ## Build & install (CLI)
 
+Unsigned package (repo script):
+
+```bash
+npm run tv:store:package
+# → tv-apps/dist/streamly-lg-webos-1.0.0-unsigned.ipk
+```
+
+Signed install for device testing:
+
 ```bash
 cd tv-apps/webos
 ares-package .

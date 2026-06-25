@@ -3,7 +3,7 @@
 import { BrandMark } from "@/components/BrandMark";
 import { UserContentDisclaimer } from "@/components/UserContentDisclaimer";
 import { useTvBrowser } from "@/components/TvBrowserProvider";
-import { detectTvBrowser } from "@/lib/tv-browser";
+import { defaultTvJoinTab, useTvServerHints } from "@/lib/tv-server-hints";
 import {
   activateSavedProviderAccount,
   fetchSavedProviderAccounts,
@@ -44,6 +44,7 @@ export function StreamlyOnboardingConnect() {
   const streamlySignedIn = Boolean(session?.user);
   const authBootstrapReady = useAuthBootstrapReady();
   const tv = useTvBrowser();
+  const tvHints = useTvServerHints();
   const needsClientTurnstile = Boolean(TURNSTILE_SITE_KEY) && !tv;
   const setCreds = useAuth((s) => s.setCreds);
   const setAccount = useAuth((s) => s.setAccount);
@@ -61,9 +62,7 @@ export function StreamlyOnboardingConnect() {
   const [password, setPassword] = useState("");
   const [m3u, setM3u] = useState("");
   const [pin, setPin] = useState("");
-  const [tab, setTab] = useState<Tab>(() =>
-    typeof window !== "undefined" && detectTvBrowser() ? "pin" : "xtream"
-  );
+  const [tab, setTab] = useState<Tab>(() => defaultTvJoinTab(tvHints));
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null);

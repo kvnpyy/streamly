@@ -17,6 +17,9 @@
 # owner as the app dir). After restart, curl hits STREAM_HEALTHCHECK_URL (default
 # http://127.0.0.1:3000/api/health). On failure, the snapshot is restored and the
 # service is started again. Set STREAM_DEPLOY_SKIP_HEALTHCHECK=1 to skip.
+#
+# Production policy: commit everything and merge local branches into HEAD before deploy.
+# pre-deploy-check.sh blocks dirty trees and branches with commits not in HEAD.
 
 set -euo pipefail
 

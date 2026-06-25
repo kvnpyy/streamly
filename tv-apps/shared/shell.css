@@ -1,0 +1,87 @@
+html,
+body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #06070b;
+  font-family: system-ui, -apple-system, sans-serif;
+  color: #eef0f6;
+}
+
+iframe {
+  border: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+#loader {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: #06070b;
+  z-index: 2;
+}
+
+#loader .spinner {
+  width: 48px;
+  height: 48px;
+  border: 3px solid rgba(255, 255, 255, 0.12);
+  border-top-color: #7c5cff;
+  border-radius: 50%;
+  animation: spin 0.9s linear infinite;
+}
+
+#loader p {
+  position: absolute;
+  bottom: 12%;
+  font-size: 14px;
+  color: rgba(238, 240, 246, 0.55);
+}
+
+#error {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: #06070b;
+  z-index: 3;
+  padding: 2rem;
+  text-align: center;
+}
+
+#error[hidden],
+#loader[hidden] {
+  display: none !important;
+}
+
+#error h1 {
+  font-size: 1.25rem;
+  margin: 0 0 0.75rem;
+}
+
+#error p {
+  margin: 0 0 1.25rem;
+  color: rgba(238, 240, 246, 0.65);
+  max-width: 28rem;
+  line-height: 1.5;
+}
+
+#error button {
+  background: linear-gradient(135deg, #8a6dff, #7c5cff);
+  color: #fff;
+  border: 0;
+  border-radius: 12px;
+  padding: 0.75rem 1.25rem;
+  font-size: 1rem;
+  cursor: pointer;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

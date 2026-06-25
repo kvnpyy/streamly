@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   isLiveHlsMasterPlaylist,
+  isLiveHlsMediaPlaylist,
+  liveCastPlaylistLooksReady,
   pickChromecastLiveVariant,
   resolveVariantUrl,
 } from "./cast-live-hls";
@@ -51,6 +53,36 @@ describe("isLiveHlsMasterPlaylist", () => {
     ).toBe(true);
     expect(
       isLiveHlsMasterPlaylist("#EXTM3U\n#EXTINF:6,\nseg.ts\n")
+    ).toBe(false);
+  });
+});
+
+describe("isLiveHlsMediaPlaylist", () => {
+  it("accepts media playlists with segment refs", () => {
+    expect(
+      isLiveHlsMediaPlaylist("#EXTM3U\n#EXTINF:6,\nseg.ts\n")
+    ).toBe(true);
+    expect(
+      isLiveHlsMediaPlaylist("#EXTM3U\n#EXTINF:6,\nseg.m4s\n")
+    ).toBe(true);
+  });
+
+  it("rejects master playlists and EXTINF-only stubs", () => {
+    expect(
+      isLiveHlsMediaPlaylist(
+        "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1\nchunk.m3u8\n"
+      )
+    ).toBe(false);
+    expect(isLiveHlsMediaPlaylist("#EXTM3U\n#EXTINF:6,\n")).toBe(false);
+  });
+});
+
+describe("liveCastPlaylistLooksReady", () => {
+  it("does not treat master playlists as ready", () => {
+    expect(
+      liveCastPlaylistLooksReady(
+        "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1\nchunk.m3u8\n"
+      )
     ).toBe(false);
   });
 });

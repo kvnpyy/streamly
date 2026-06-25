@@ -6,7 +6,7 @@ import { CommunityDiscordLink } from "@/components/CommunityDiscordLink";
 import { UserContentDisclaimer } from "@/components/UserContentDisclaimer";
 import { useAuthBootstrapReady } from "@/components/AuthSessionBootstrap";
 import { useTvBrowser } from "@/components/TvBrowserProvider";
-import { detectTvBrowser } from "@/lib/tv-browser";
+import { defaultTvJoinTab, useTvServerHints } from "@/lib/tv-server-hints";
 import { SITE_NAME, SITE_TAGLINE } from "@/lib/site-brand";
 import { persistIptvAfterBrowserLogin } from "@/lib/persist-iptv-session-client";
 import { tryParseM3uPortalUrl } from "@/lib/provider-account-label";
@@ -57,6 +57,7 @@ function LoginPageInner() {
   const streamlySignedIn =
     sessionStatus === "authenticated" && Boolean(session?.user);
   const tv = useTvBrowser();
+  const tvHints = useTvServerHints();
   /** Turnstile iframe breaks on several TV WebKits (`message.data` not a string). */
   const needsClientTurnstile = Boolean(TURNSTILE_SITE_KEY) && !tv;
 
@@ -65,9 +66,7 @@ function LoginPageInner() {
   const [password, setPassword] = useState(() => searchParams.get("password") ?? "");
   const [m3u, setM3u] = useState("");
   const [pin, setPin] = useState("");
-  const [tab, setTab] = useState<Tab>(() =>
-    typeof window !== "undefined" && detectTvBrowser() ? "pin" : "xtream"
-  );
+  const [tab, setTab] = useState<Tab>(() => defaultTvJoinTab(tvHints));
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null);

@@ -38,6 +38,8 @@ import {
 } from "@/components/CatalogSortToggle";
 import { shouldUseInstantCatalogGrid } from "@/lib/catalog-sort";
 import { useTvPresentation } from "@/lib/use-living-room-home-layout";
+import { useTvSimpleMode } from "@/lib/tv-simple-mode";
+import { TvSimpleVodBrowse } from "@/components/tv/TvSimpleVodBrowse";
 import { useVodLanguageBrowse } from "@/hooks/use-vod-language-browse";
 import { vodLanguageLabel } from "@/lib/vod-language";
 import { scheduleWhenIdle } from "@/lib/defer-idle";
@@ -55,6 +57,12 @@ import {
 export default function SeriesPage() {
   const creds = useAuth((s) => s.creds)!;
   const accountKey = useMemo(() => browseAccountKey(creds), [creds]);
+  const tvSimple = useTvSimpleMode();
+  if (tvSimple) {
+    return (
+      <TvSimpleVodBrowse kind="series" creds={creds} accountKey={accountKey} />
+    );
+  }
   return (
     <SeriesPageInner key={accountKey} creds={creds} accountKey={accountKey} />
   );

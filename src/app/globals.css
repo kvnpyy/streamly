@@ -314,10 +314,18 @@ html[data-tv="true"] video {
   transform: translateZ(0);
 }
 
-/* Living-room: 16:9 discovery cards, stronger focus for remotes */
-html[data-living-room="true"] [data-tv-card-root]:focus-visible {
+/* Living-room: D-pad / smart-cursor focus ring (Samsung, Fire TV, webOS) */
+html[data-living-room="true"] [data-tv-card-root]:focus,
+html[data-living-room="true"] [data-tv-card-root]:focus-visible,
+html[data-living-room="true"] [data-tv-card-root][data-tv-focused="true"] {
   outline: 3px solid var(--brand-2);
-  outline-offset: 4px;
+  outline-offset: 3px;
+  box-shadow:
+    0 0 0 5px color-mix(in srgb, var(--brand) 35%, transparent),
+    0 10px 36px -8px color-mix(in srgb, var(--brand) 55%, transparent);
+  transform: scale(1.03);
+  z-index: 3;
+  position: relative;
 }
 
 html[data-tv-comfort="true"] [data-tv-card-root] {
@@ -493,6 +501,502 @@ html[data-samsung-tv="true"] .tv-home-spotlight {
 
 .tv-home-continue .tv-shelf-scroll > * {
   flex: 0 0 clamp(9.5rem, 22vw, 12.5rem);
+}
+
+/* ── TV simple hub (four large tiles) ─────────────────────────────────── */
+.tv-main-hub {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: clamp(1.5rem, 4vh, 3rem);
+  min-height: min(78vh, 900px);
+  padding: clamp(0.5rem, 2vh, 1.5rem) 0;
+}
+
+.tv-main-hub__brand {
+  text-align: center;
+}
+
+.tv-main-hub__title {
+  font-size: clamp(2rem, 5vw, 3rem);
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  color: var(--text);
+}
+
+.tv-main-hub__subtitle {
+  margin-top: 0.35rem;
+  font-size: clamp(1rem, 2.2vw, 1.25rem);
+  color: var(--text-muted);
+}
+
+.tv-main-hub__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: clamp(0.85rem, 2vw, 1.35rem);
+  max-width: 1100px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+.tv-hub-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 0.35rem;
+  min-height: clamp(7.5rem, 22vh, 11rem);
+  padding: clamp(1rem, 2.5vw, 1.65rem);
+  border-radius: 1.25rem;
+  border: 2px solid var(--line);
+  background: var(--bg-2);
+  color: var(--text);
+  text-decoration: none;
+  transition:
+    border-color 0.15s,
+    background 0.15s,
+    transform 0.15s;
+}
+
+.tv-hub-tile:hover,
+.tv-hub-tile:focus-visible {
+  border-color: color-mix(in srgb, var(--brand) 50%, var(--line));
+  background: color-mix(in srgb, var(--brand) 10%, var(--bg-2));
+  transform: translateY(-2px);
+}
+
+.tv-hub-tile__icon {
+  width: clamp(2rem, 4vw, 2.75rem);
+  height: clamp(2rem, 4vw, 2.75rem);
+  color: var(--brand-2);
+}
+
+.tv-hub-tile__label {
+  font-size: clamp(1.25rem, 2.8vw, 1.75rem);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.tv-hub-tile__hint {
+  font-size: clamp(0.85rem, 1.6vw, 1rem);
+  color: var(--text-muted);
+}
+
+.tv-hub-tile--live .tv-hub-tile__icon {
+  color: var(--brand-2);
+}
+
+.tv-hub-tile--series .tv-hub-tile__icon {
+  color: #f59e0b;
+}
+
+.tv-hub-tile--movies .tv-hub-tile__icon {
+  color: var(--brand);
+}
+
+.tv-hub-tile--settings .tv-hub-tile__icon {
+  color: var(--text-dim);
+}
+
+/* TV sub-page nav */
+.tv-sub-nav {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.85rem 1.25rem;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg-0);
+}
+
+.tv-sub-nav__back,
+.tv-sub-nav__settings {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 3rem;
+  padding: 0 1rem;
+  border-radius: 0.85rem;
+  border: 1px solid var(--line);
+  background: var(--bg-2);
+  color: var(--text);
+  font-size: 1rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.tv-sub-nav__title {
+  text-align: center;
+  font-size: clamp(1.1rem, 2.5vw, 1.45rem);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* TV simple browse (categories → grid) */
+.tv-simple-browse {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.tv-simple-browse__lead {
+  font-size: clamp(1.1rem, 2.4vw, 1.35rem);
+  color: var(--text-muted);
+}
+
+.tv-simple-browse__back {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  align-self: flex-start;
+  min-height: 3rem;
+  padding: 0 1.1rem;
+  border-radius: 0.85rem;
+  border: 1px solid var(--line);
+  background: var(--bg-2);
+  color: var(--text);
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.tv-simple-browse__loading,
+.tv-simple-browse__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  min-height: 12rem;
+  color: var(--text-muted);
+  font-size: 1.05rem;
+}
+
+.tv-category-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.85rem;
+}
+
+@media (min-width: 900px) {
+  .tv-category-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+.tv-category-grid__item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 0.25rem;
+  min-height: clamp(4.5rem, 12vh, 6rem);
+  padding: 1rem 1.15rem;
+  border-radius: 1rem;
+  border: 2px solid var(--line);
+  background: var(--bg-2);
+  color: var(--text);
+  text-align: left;
+}
+
+.tv-category-grid__label {
+  font-size: clamp(1rem, 2vw, 1.2rem);
+  font-weight: 650;
+  line-height: 1.25;
+}
+
+.tv-category-grid__count {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.tv-simple-browse__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
+  gap: 1rem;
+}
+
+.tv-simple-browse__channel {
+  min-width: 0;
+}
+
+.tv-simple-browse__vod-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr));
+  gap: 1rem;
+}
+
+.tv-simple-browse__vod-card {
+  min-width: 0;
+}
+
+.tv-simple-browse__more {
+  align-self: center;
+  min-height: 3rem;
+  padding: 0 1.5rem;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--bg-2);
+  color: var(--text);
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.tv-simple-browse__channel [data-tv-card-root] {
+  width: clamp(11rem, 20vw, 15rem);
+}
+
+/* TV settings (simple mode) */
+.tv-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  max-width: 1100px;
+}
+
+.tv-settings__menu {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.85rem;
+}
+
+@media (min-width: 900px) {
+  .tv-settings__menu {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.tv-settings__tile {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 0.3rem;
+  min-height: clamp(5.5rem, 16vh, 8rem);
+  padding: 1.1rem 1.25rem;
+  border-radius: 1.1rem;
+  border: 2px solid var(--line);
+  background: var(--bg-2);
+  color: var(--text);
+  text-align: left;
+}
+
+.tv-settings__tile--danger {
+  border-color: color-mix(in srgb, var(--danger) 35%, var(--line));
+}
+
+.tv-settings__tile-icon {
+  width: 1.75rem;
+  height: 1.75rem;
+  color: var(--brand-2);
+}
+
+.tv-settings__tile-label {
+  font-size: clamp(1.1rem, 2.4vw, 1.4rem);
+  font-weight: 700;
+}
+
+.tv-settings__tile-hint {
+  font-size: 0.9rem;
+  color: var(--text-muted);
+}
+
+.tv-settings__panel {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1.1rem;
+  border-radius: 1.1rem;
+  border: 1px solid var(--line);
+  background: var(--bg-2);
+}
+
+.tv-settings__panel-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.tv-settings__panel-title {
+  font-size: clamp(1.2rem, 2.6vw, 1.55rem);
+  font-weight: 700;
+}
+
+.tv-settings__facts {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.tv-settings__facts dt {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
+.tv-settings__facts dd {
+  font-size: 1.05rem;
+  word-break: break-all;
+}
+
+.tv-settings__hint {
+  font-size: 0.95rem;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.tv-settings__error {
+  color: var(--danger);
+  font-size: 0.95rem;
+}
+
+.tv-settings__field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+}
+
+.tv-settings__input {
+  min-height: 3rem;
+  padding: 0 1rem;
+  border-radius: 0.75rem;
+  border: 2px solid var(--line);
+  background: var(--bg-3);
+  color: var(--text);
+  font-size: 1rem;
+}
+
+.tv-settings__action {
+  min-height: 3rem;
+  padding: 0 1.25rem;
+  border-radius: 0.85rem;
+  border: none;
+  background: var(--brand);
+  color: white;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.tv-settings__action--inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.tv-settings__action--danger {
+  background: color-mix(in srgb, var(--danger) 85%, black);
+}
+
+.tv-settings__ghost {
+  min-height: 2.75rem;
+  padding: 0 1rem;
+  border-radius: 0.75rem;
+  border: 1px solid var(--line);
+  background: var(--bg-3);
+  color: var(--text);
+  font-size: 0.95rem;
+}
+
+.tv-settings__ghost--danger {
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 30%, var(--line));
+}
+
+.tv-settings__toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  min-height: 3.5rem;
+  padding: 0 1rem;
+  border-radius: 0.85rem;
+  border: 2px solid var(--line);
+  background: var(--bg-3);
+  color: var(--text);
+  text-align: left;
+}
+
+.tv-settings__toggle-label {
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+.tv-settings__toggle-pill {
+  min-width: 3.5rem;
+  text-align: center;
+  padding: 0.35rem 0.75rem;
+  border-radius: 999px;
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  font-weight: 700;
+}
+
+.tv-settings__toggle-pill--on {
+  background: color-mix(in srgb, var(--brand) 25%, var(--bg-2));
+  border-color: var(--brand);
+  color: var(--brand-2);
+}
+
+.tv-settings__playlist-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.tv-settings__playlist-card {
+  padding: 1rem;
+  border-radius: 0.9rem;
+  border: 1px solid var(--line);
+  background: var(--bg-3);
+}
+
+.tv-settings__playlist-name {
+  font-size: 1.1rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.tv-settings__active-badge {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--brand) 20%, transparent);
+  color: var(--brand-2);
+}
+
+.tv-settings__playlist-sub {
+  display: block;
+  margin-top: 0.25rem;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.tv-settings__playlist-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.tv-settings__rename,
+.tv-settings__confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
 }
 
 /* Fullscreen-style playback on TV / Silk — hide OS pointer when chrome is dismissed */

@@ -5,6 +5,11 @@ import {
   isLivingRoomClient,
   isNativeTvUa,
 } from "@/lib/living-room-detect";
+import {
+  isLivingRoomClientSnapshot,
+  isLivingRoomServerSnapshot,
+  useTvServerHints,
+} from "@/lib/tv-server-hints";
 import { isSamsungTvUserAgent } from "@/lib/tv-user-agent";
 import { usePrefs } from "@/store/preferences";
 import {
@@ -45,6 +50,7 @@ function subscribeCoarsePointer(callback: () => void) {
 }
 
 export function TvBrowserProvider({ children }: { children: ReactNode }) {
+  const hints = useTvServerHints();
   const comfortTvBrowsing = usePrefs((s) => s.comfortTvBrowsing);
 
   const coarsePointerTv = useSyncExternalStore(
@@ -55,8 +61,8 @@ export function TvBrowserProvider({ children }: { children: ReactNode }) {
 
   const livingRoomShell = useSyncExternalStore(
     subscribeCoarsePointer,
-    () => isLivingRoomClient(comfortTvBrowsing),
-    () => false
+    () => isLivingRoomClientSnapshot(hints, comfortTvBrowsing),
+    () => isLivingRoomServerSnapshot(hints)
   );
 
   const nativeTvUa = useSyncExternalStore(

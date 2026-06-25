@@ -146,7 +146,9 @@ export default async function RootLayout({
         <Suspense fallback={null}>
           <GoogleAnalytics />
         </Suspense>
-        <Providers>{children}</Providers>
+        <Providers tvServerHint={tvServerHint} silkHint={silkHint}>
+          {children}
+        </Providers>
       </body>
     </html>
   );

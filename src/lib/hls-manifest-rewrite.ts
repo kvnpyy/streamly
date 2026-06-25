@@ -16,8 +16,18 @@ export function rewriteHlsManifest(
   const castQs = opts.forCast ? "&cast=1" : "";
   const prefix = opts.proxyOrigin?.replace(/\/+$/, "") ?? "";
 
+  const upstreamStreamType = (upstreamAbs: string): "hls" | "vod" => {
+    try {
+      if (/\.m3u8(\?|$)/i.test(new URL(upstreamAbs).pathname)) return "hls";
+    } catch {
+      if (/\.m3u8(\?|$)/i.test(upstreamAbs)) return "hls";
+    }
+    return "vod";
+  };
+
   const proxyLine = (upstreamAbs: string) => {
-    const rel = `/api/stream?u=${encodeURIComponent(upstreamAbs)}&type=hls${compatQs}${castQs}`;
+    const typeParam = opts.forCast ? upstreamStreamType(upstreamAbs) : "hls";
+    const rel = `/api/stream?u=${encodeURIComponent(upstreamAbs)}&type=${typeParam}${compatQs}${castQs}`;
     return prefix ? `${prefix}${rel}` : rel;
   };
 

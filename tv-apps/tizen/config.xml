@@ -2,14 +2,20 @@
 <widget xmlns="http://www.w3.org/ns/widgets"
         xmlns:tizen="http://tizen.org/ns/widgets"
         id="https://iptvwebplayer.org/tizen"
-        version="1.0.0"
+        version="1.0.2"
         viewmodes="maximized">
   <tizen:application id="org.streamly.iptv" package="org.streamly.iptv" required_version="6.0"/>
   <content src="index.html"/>
+  <feature name="http://tizen.org/feature/screen.size.all"/>
   <name>Streamly</name>
   <description>IPTV web player for your Xtream or M3U subscription. Bring your own provider.</description>
   <author href="https://iptvwebplayer.org" email="support@iptvwebplayer.org">Streamly</author>
   <icon src="icon.png"/>
+  <tizen:metadata key="http://samsung.com/tv/metadata/use.preview" value="endpoint_URL=https://iptvwebplayer.org/tv/preview.json"/>
+  <tizen:app-control>
+    <tizen:src name="index.html" reload="disable"/>
+    <tizen:operation name="http://samsung.com/appcontrol/operation/eden_resume"/>
+  </tizen:app-control>
   <tizen:privilege name="http://tizen.org/privilege/internet"/>
   <tizen:profile name="tv-samsung"/>
   <tizen:setting screen-orientation="landscape" context-menu="enable" background-support="disable" encryption="disable" install-location="auto" hwkey-event="enable"/>

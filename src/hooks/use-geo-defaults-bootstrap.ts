@@ -38,7 +38,8 @@ function fetchGeoDetect(): Promise<GeoDetectResponse> {
  * On first visit, set Live TV region from IP (CDN headers) with timezone fallback,
  * and default Movies/Series language when the user has not chosen one yet.
  */
-export function useGeoDefaultsBootstrap() {
+export function useGeoDefaultsBootstrap(opts?: { disabled?: boolean }) {
+  const disabled = opts?.disabled ?? false;
   const creds = useAuth((s) => s.creds);
   const tvRegion = usePrefs((s) => s.tvRegionFilter);
   const setTvRegion = usePrefs((s) => s.setTvRegionFilter);
@@ -48,7 +49,7 @@ export function useGeoDefaultsBootstrap() {
   const languageBootstrappedFor = useRef<string | null>(null);
 
   useEffect(() => {
-    if (tvRegion !== null || regionBootstrapped.current) return;
+    if (disabled || tvRegion !== null || regionBootstrapped.current) return;
     regionBootstrapped.current = true;
 
     let cancelled = false;
@@ -65,10 +66,10 @@ export function useGeoDefaultsBootstrap() {
     return () => {
       cancelled = true;
     };
-  }, [tvRegion, setTvRegion]);
+  }, [disabled, tvRegion, setTvRegion]);
 
   useEffect(() => {
-    if (!creds) return;
+    if (disabled || !creds) return;
     const accountKey = browseAccountKey(creds);
     if (languageBootstrappedFor.current === accountKey) return;
 
@@ -110,5 +111,5 @@ export function useGeoDefaultsBootstrap() {
     return () => {
       cancelled = true;
     };
-  }, [creds, browseByAccount, setBrowsePref, tvRegion]);
+  }, [disabled, creds, browseByAccount, setBrowsePref, tvRegion]);
 }

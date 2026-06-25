@@ -1,0 +1,66 @@
+{
+  "generatedAt": "2026-06-24T04:28:00.011Z",
+  "baseUrl": "http://127.0.0.1:3000",
+  "viewport": {
+    "width": 1920,
+    "height": 1080
+  },
+  "format": "jpeg",
+  "maxBytes": 512000,
+  "files": [
+    {
+      "file": "01-login.jpg",
+      "bytes": 132435,
+      "quality": 92,
+      "route": "/store-demo/login"
+    },
+    {
+      "file": "02-live-tv.jpg",
+      "bytes": 123284,
+      "quality": 92,
+      "route": "/store-demo/live"
+    },
+    {
+      "file": "03-movie-detail.jpg",
+      "bytes": 153837,
+      "quality": 92,
+      "route": "/store-demo/movie"
+    },
+    {
+      "file": "04-tv-home.jpg",
+      "bytes": 136529,
+      "quality": 92,
+      "route": "/store-demo/home"
+    },
+    {
+      "file": "05-movies-grid.jpg",
+      "bytes": 190915,
+      "quality": 92,
+      "route": "/store-demo/movies"
+    },
+    {
+      "file": "06-series-grid.jpg",
+      "bytes": 189833,
+      "quality": 92,
+      "route": "/store-demo/series"
+    },
+    {
+      "file": "07-search.jpg",
+      "bytes": 91350,
+      "quality": 92,
+      "route": "/store-demo/search"
+    },
+    {
+      "file": "08-settings.jpg",
+      "bytes": 70790,
+      "quality": 92,
+      "route": "/store-demo/settings"
+    },
+    {
+      "file": "09-player.jpg",
+      "bytes": 66437,
+      "quality": 92,
+      "route": "/store-demo/player"
+    }
+  ]
+}

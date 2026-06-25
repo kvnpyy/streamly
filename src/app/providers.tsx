@@ -14,8 +14,35 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MotionConfig } from "framer-motion";
 import { SessionProvider } from "next-auth/react";
 import { useState } from "react";
+import { TvServerHintsProvider } from "@/lib/tv-server-hints";
+import { useTvSimpleMode } from "@/lib/tv-simple-mode";
 
-export function Providers({ children }: { children: React.ReactNode }) {
+function TvLeanBootstraps() {
+  const tvSimple = useTvSimpleMode();
+  if (tvSimple) return null;
+  return (
+    <>
+      <CatalogPrefetch />
+      <PerformanceHud />
+    </>
+  );
+}
+
+function TvLeanChrome() {
+  const tvSimple = useTvSimpleMode();
+  if (tvSimple) return null;
+  return <CookieConsentBar />;
+}
+
+export function Providers({
+  children,
+  tvServerHint = false,
+  silkHint = false,
+}: {
+  children: React.ReactNode;
+  tvServerHint?: boolean;
+  silkHint?: boolean;
+}) {
   const [client] = useState(
     () =>
       new QueryClient({
@@ -44,23 +71,24 @@ export function Providers({ children }: { children: React.ReactNode }) {
   return (
     <SessionProvider>
       <MotionConfig reducedMotion="user">
-        <AuthSessionBootstrap>
+        <TvServerHintsProvider tvServerHint={tvServerHint} silkHint={silkHint}>
+          <AuthSessionBootstrap>
           <PrefsRehydrateBootstrap>
             <FavoritesSyncBootstrap>
               <TvBrowserProvider>
                 <LivingRoomBootstrap />
                 <QueryClientProvider client={client}>
                   <ChunkLoadRecovery />
-                  <CatalogPrefetch />
+                  <TvLeanBootstraps />
                   {children}
-                  <CookieConsentBar />
+                  <TvLeanChrome />
                   <ToastHost />
-                  <PerformanceHud />
                 </QueryClientProvider>
               </TvBrowserProvider>
             </FavoritesSyncBootstrap>
           </PrefsRehydrateBootstrap>
         </AuthSessionBootstrap>
+        </TvServerHintsProvider>
       </MotionConfig>
     </SessionProvider>
   );

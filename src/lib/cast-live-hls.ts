@@ -44,6 +44,14 @@ export function isLiveHlsMasterPlaylist(text: string): boolean {
   return text.includes("#EXT-X-STREAM-INF");
 }
 
+/** True when the text is a single media playlist Chromecast can play (not a master). */
+export function isLiveHlsMediaPlaylist(text: string): boolean {
+  if (!/#EXTM3U/i.test(text)) return false;
+  if (/#EXT-X-STREAM-INF/i.test(text)) return false;
+  if (!/#EXTINF:/i.test(text)) return false;
+  return /\.(ts|m4s|aac|mp4)(\?|$|\s|")/im.test(text);
+}
+
 export function resolveVariantUrl(
   variantUri: string,
   manifestUrl: string
@@ -62,7 +70,7 @@ export async function resolveCastLiveHlsUrl(
   castManifestUrl: string,
   opts?: { signal?: AbortSignal; maxDepth?: number }
 ): Promise<string> {
-  const maxDepth = opts?.maxDepth ?? 3;
+  const maxDepth = opts?.maxDepth ?? 4;
   let url = castManifestUrl;
 
   for (let depth = 0; depth < maxDepth; depth++) {
@@ -76,8 +84,16 @@ export async function resolveCastLiveHlsUrl(
       throw new Error(`Could not load live stream manifest (${res.status}).`);
     }
     const text = await res.text();
-    if (!isLiveHlsMasterPlaylist(text)) {
+    if (isLiveHlsMediaPlaylist(text)) {
       return url;
+    }
+    if (!isLiveHlsMasterPlaylist(text)) {
+      if (/#EXTINF:/i.test(text)) {
+        return url;
+      }
+      throw new Error(
+        "This channel’s stream format is not ready for Chromecast yet. Try again in a moment."
+      );
     }
 
     const parts = parseMasterPlaylistLines(text.split(/\r?\n/));
@@ -90,14 +106,29 @@ export async function resolveCastLiveHlsUrl(
     url = resolveVariantUrl(picked.uri, url);
   }
 
+  const finalRes = await fetch(url, {
+    method: "GET",
+    cache: "no-store",
+    credentials: "omit",
+    signal: opts?.signal,
+  });
+  if (!finalRes.ok) {
+    throw new Error(`Could not load live stream manifest (${finalRes.status}).`);
+  }
+  const finalText = await finalRes.text();
+  if (isLiveHlsMasterPlaylist(finalText)) {
+    throw new Error(
+      "Could not resolve a playable stream for your TV (master playlist only). Try another channel."
+    );
+  }
+  if (!isLiveHlsMediaPlaylist(finalText) && !/#EXTINF:/i.test(finalText)) {
+    throw new Error(
+      "Stream playlist is not ready for your TV yet. Wait a moment and try again."
+    );
+  }
   return url;
 }
 
 export function liveCastPlaylistLooksReady(text: string): boolean {
-  if (!/#EXTINF:/i.test(text)) return false;
-  return (
-    /\.ts(?:\s|$|[?&#"])/i.test(text) ||
-    /\.m4s(?:\s|$|[?&#"])/i.test(text) ||
-    /#EXT-X-STREAM-INF/i.test(text)
-  );
+  return isLiveHlsMediaPlaylist(text);
 }

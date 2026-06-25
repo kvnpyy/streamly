@@ -11,6 +11,15 @@ import { NextResponse } from "next/server";
 
 export function middleware(request: NextRequest) {
   const ua = request.headers.get("user-agent") ?? "";
+  const pathname = request.nextUrl.pathname;
+
+  /** TV browsers skip the marketing landing — it can freeze weak TV engines. */
+  if (pathname === "/" && isTvClassUserAgent(ua)) {
+    const url = request.nextUrl.clone();
+    url.pathname = "/app";
+    return NextResponse.redirect(url);
+  }
+
   const requestHeaders = new Headers(request.headers);
   if (isTvClassUserAgent(ua)) {
     requestHeaders.set(STREAM_TV_HEADER, "1");

@@ -2,7 +2,11 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { CastMediaDescriptor } from "@/lib/cast-media-url";
-import { appendCastStreamQuery, waitForCastPlaylistReady } from "@/lib/cast-media-url";
+import {
+  appendCastStreamQuery,
+  normalizeCastLiveManifestUrl,
+  waitForCastPlaylistReady,
+} from "@/lib/cast-media-url";
 import { resolveCastLiveHlsUrl } from "@/lib/cast-live-hls";
 import {
   CAST_SENDER_SCRIPT_SRC,
@@ -29,6 +33,12 @@ declare global {
             getCastState?: () => number;
             getCurrentSession?: () => {
               loadMedia: (r: unknown) => Promise<void>;
+              getMediaSession?: () => {
+                playerState?: number;
+                idleReason?: number;
+                addUpdateListener: (listener: (isAlive: boolean) => void) => number;
+                removeUpdateListener: (listenerId: number) => void;
+              } | null;
             } | null;
           };
         };
@@ -47,6 +57,8 @@ declare global {
           StreamType?: { LIVE: number; BUFFERED: number };
           MediaInfo: new (url: string, contentType: string) => unknown;
           LoadRequest: new (mediaInfo: unknown) => unknown;
+          PlayerState?: { IDLE: number };
+          IdleReason?: { ERROR: number };
         };
       };
     };
@@ -59,6 +71,8 @@ export type UsePlayerCastParams = {
   silkLikeClient: boolean;
   castMedia: CastMediaDescriptor | null;
   current: PlayerSource | null;
+  /** Active hls.js media playlist URL while live is playing in the browser. */
+  getLiveHlsManifestUrl?: () => string | null;
   onCastStarted: () => void;
 };
 
@@ -69,6 +83,7 @@ export function usePlayerCast({
   silkLikeClient,
   castMedia,
   current,
+  getLiveHlsManifestUrl,
   onCastStarted,
 }: UsePlayerCastParams) {
   const [castSenderState, setCastSenderState] =
@@ -255,7 +270,14 @@ export function usePlayerCast({
       let playUrl = castMedia.url;
       try {
         if (castMedia.streamType === "live") {
-          playUrl = await resolveCastLiveHlsUrl(castMedia.url);
+          const levelUrl = getLiveHlsManifestUrl?.() ?? null;
+          if (levelUrl) {
+            playUrl = normalizeCastLiveManifestUrl(
+              window.location.origin,
+              levelUrl
+            );
+          }
+          playUrl = await resolveCastLiveHlsUrl(playUrl);
         }
         playUrl = appendCastStreamQuery(playUrl);
         await waitForCastPlaylistReady(playUrl, { timeoutMs: 45_000 });
@@ -274,7 +296,7 @@ export function usePlayerCast({
 
       const mediaInfo = new ChromeMedia.MediaInfo(
         playUrl,
-        "application/x-mpegURL"
+        castMedia.contentType || "application/x-mpegURL"
       ) as {
         streamType?: number;
         metadata?: { type: number; title?: string };
@@ -301,7 +323,10 @@ export function usePlayerCast({
         /* metadata optional */
       }
 
-      const request = new ChromeMedia.LoadRequest(mediaInfo);
+      const request = new ChromeMedia.LoadRequest(mediaInfo) as {
+        autoplay?: boolean;
+      };
+      request.autoplay = true;
       const session = ctx.getCurrentSession?.();
       if (!session) {
         setCastActionMessage(
@@ -311,6 +336,26 @@ export function usePlayerCast({
         return;
       }
       await session.loadMedia(request);
+
+      const mediaSession = session.getMediaSession?.();
+      if (mediaSession && ChromeMedia.PlayerState && ChromeMedia.IdleReason) {
+        const playerState = ChromeMedia.PlayerState;
+        const idleReason = ChromeMedia.IdleReason;
+        const listenerId = mediaSession.addUpdateListener((isAlive) => {
+          if (!isAlive) return;
+          if (
+            mediaSession.playerState === playerState.IDLE &&
+            mediaSession.idleReason === idleReason.ERROR
+          ) {
+            setCastActionMessage(
+              "Your TV could not play this stream (codec or provider block). Try another channel or copy the stream URL for your TV app."
+            );
+            window.setTimeout(() => setCastActionMessage(null), 12_000);
+            mediaSession.removeUpdateListener(listenerId);
+          }
+        });
+      }
+
       onCastStarted();
     } catch (err) {
       const code =
@@ -335,7 +380,7 @@ export function usePlayerCast({
         console.warn("Cast failed", err);
       }
     }
-  }, [castMedia, current, onCastStarted]);
+  }, [castMedia, current, getLiveHlsManifestUrl, onCastStarted]);
 
   return {
     castSenderState,

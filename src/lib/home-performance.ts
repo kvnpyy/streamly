@@ -1,4 +1,4 @@
-/** Home page performance — heavy catalog/discovery is opt-in or deferred. */
+import { isLivingRoomClient } from "@/lib/living-room-detect";
 
 /** When false, home never auto-loads movie/series recommendation shelves. */
 export function isHomeAutoRichDisabled(): boolean {
@@ -6,6 +6,14 @@ export function isHomeAutoRichDisabled(): boolean {
   if (v === "0" || v === "false") return true;
   if (v === "1" || v === "true") return false;
   if (typeof window === "undefined") return false;
+  if (
+    typeof document !== "undefined" &&
+    document.documentElement.classList.contains("tv-server-hint")
+  ) {
+    return true;
+  }
+  /** TV / living-room: never auto-load heavy shelves on home. */
+  if (isLivingRoomClient()) return true;
   /** Desktop mouse/trackpad: never auto-fetch shelves — user opts in via button. */
   const finePointer = window.matchMedia("(pointer: fine)").matches;
   const desktopWidth = window.innerWidth >= 1024;

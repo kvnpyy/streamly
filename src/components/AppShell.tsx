@@ -8,9 +8,11 @@ import { Sidebar } from "@/components/Sidebar";
 import { StreamlyOnboardingConnect } from "@/components/StreamlyOnboardingConnect";
 import { TopBar } from "@/components/TopBar";
 import { TvTopNav } from "@/components/TvTopNav";
+import { TvSubNav } from "@/components/tv/TvSubNav";
 import { useAuthBootstrapReady } from "@/components/AuthSessionBootstrap";
 import dynamic from "next/dynamic";
 import { useTvBrowser } from "@/components/TvBrowserProvider";
+import { useTvSimpleMode } from "@/lib/tv-simple-mode";
 import { cn } from "@/lib/utils";
 import { MOBILE_BOTTOM_NAV_CLEARANCE } from "@/lib/shell-layout";
 import { peekAuthSessionBridge, useAuth, useAuthStoreHydrated } from "@/store/auth";
@@ -40,6 +42,8 @@ export function AppShell({ children }: { children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const tv = useTvBrowser();
+  const tvSimple = useTvSimpleMode();
+  const isTvHub = pathname === "/app";
   /** Unmount browse UI during playback so EPG scans, virtual lists, and images don't compete with video. */
   const playerOpen = usePlayer((s) => s.open);
   usePlayerDocumentOpen();
@@ -55,7 +59,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const isSearchPage = pathname === "/app/search";
   const isLivePage = pathname === LIVE_PAGE_PATH;
 
-  useGeoDefaultsBootstrap();
+  useGeoDefaultsBootstrap({ disabled: tvSimple });
 
   useEffect(() => {
     if (!authGateReady || creds) return;
@@ -96,36 +100,19 @@ export function AppShell({ children }: { children: ReactNode }) {
     }
     if (streamlySignedIn) {
       return (
-        <div className="flex min-h-screen">
-          {!tv && <Sidebar />}
-          <main
-            className={cn(
-              "relative flex-1 min-w-0 min-h-screen flex flex-col",
-              tv
-                ? "pb-0"
-                : "pb-[var(--mobile-bottom-nav-clearance)] lg:pb-0"
-            )}
-            style={
-              tv
-                ? undefined
-                : ({
-                    ["--mobile-bottom-nav-clearance" as string]:
-                      MOBILE_BOTTOM_NAV_CLEARANCE,
-                  } as CSSProperties)
-            }
-          >
-            {tv ? <TvTopNav /> : <TopBar />}
-            <div className="relative flex-1 min-h-0 flex flex-col">
+        <div className="flex min-h-screen flex-col bg-(--bg-0)">
+          {tv && !tvSimple ? <TvTopNav /> : null}
+          <main className="relative flex-1 min-w-0 flex flex-col">
+            {!tvSimple && (
               <div
                 className="absolute inset-0 z-0 bg-(--bg-0)/70 backdrop-blur-[2px]"
                 aria-hidden
               />
-              <div className="relative z-10 flex-1 flex flex-col items-center justify-start sm:justify-center overflow-y-auto py-6 sm:py-10 px-3 sm:px-6">
-                <StreamlyOnboardingConnect />
-              </div>
+            )}
+            <div className="relative z-10 flex-1 flex flex-col items-center justify-start sm:justify-center overflow-y-auto py-6 sm:py-10 px-3 sm:px-6">
+              <StreamlyOnboardingConnect />
             </div>
           </main>
-          {!tv && <MobileBottomNav />}
           <PlayerOverlay />
           <AppVersionBadge />
         </div>
@@ -153,29 +140,42 @@ export function AppShell({ children }: { children: ReactNode }) {
     );
   }
 
-  /* ── TV layout: full-width, no sidebar, sticky top nav ── */
+  /* ── TV layout: full-width, minimal nav on hub ── */
   if (tv) {
+    const mainInner = (
+      <main
+        className={cn(
+          "flex-1 min-h-0 min-w-0 overflow-y-auto",
+          isTvHub && "flex flex-col"
+        )}
+      >
+        <div
+          className={cn(
+            "w-full mx-auto flex-1 flex flex-col",
+            isTvHub
+              ? "px-5 py-5 sm:px-8"
+              : "max-w-[1920px] px-4 sm:px-6 lg:px-8 py-4 sm:py-6"
+          )}
+        >
+          <BrowseMountGate frozen={playerOpen}>{children}</BrowseMountGate>
+        </div>
+      </main>
+    );
+
     return (
       <div className="min-h-screen flex flex-col bg-(--bg-0)">
-        <TvTopNav />
-        {isLivePage ? (
-          <LiveSearchProvider>
-            <main className="flex-1 min-h-0 min-w-0 overflow-y-auto">
-              <div className="w-full max-w-[1920px] mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6">
-                {!tv && <CommunityDiscordStrip className="mb-4" />}
-                <BrowseMountGate frozen={playerOpen}>{children}</BrowseMountGate>
-              </div>
-            </main>
-          </LiveSearchProvider>
+        {tvSimple ? (
+          !isTvHub ? <TvSubNav /> : null
         ) : (
-          <main className="flex-1 min-h-0 min-w-0 overflow-y-auto">
-            <div className="w-full max-w-[1920px] mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6">
-              <BrowseMountGate frozen={playerOpen}>{children}</BrowseMountGate>
-            </div>
-          </main>
+          <TvTopNav />
+        )}
+        {isLivePage ? (
+          <LiveSearchProvider>{mainInner}</LiveSearchProvider>
+        ) : (
+          mainInner
         )}
         <PlayerOverlay />
-        {isLivePage ? <LiveCategoryOverlayHost /> : null}
+        {isLivePage && !tvSimple ? <LiveCategoryOverlayHost /> : null}
         <AppVersionBadge />
       </div>
     );
