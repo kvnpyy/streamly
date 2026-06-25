@@ -11,6 +11,18 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.5.0",
+    date: "2026-06-25",
+    summary:
+      "Mobile playlist menu, episode flip, Chromecast live, and TV chrome fixes.",
+    highlights: [
+      "Poll NextAuth before restoring saved playlists; retry activation and show errors on onboarding.",
+      "Clear stale transcode timeline when flipping episodes — fixes next-episode freeze and rewind loops.",
+      "Mobile playlist dropdown scrolls and stays on-screen; Playlists link in More menu and settings anchor.",
+      "Hide Discord strip on TV; recursive Chromecast live HLS variant resolution with cast=1 URLs.",
+    ],
+  },
+  {
     version: "0.4.2",
     date: "2026-06-22",
     summary: "Saved playlists restore reliably when signing in on a new device.",

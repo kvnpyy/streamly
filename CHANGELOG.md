@@ -13,6 +13,19 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.5.0] — 2026-06-25
+
+Mobile playlist menu, episode flip, Chromecast live, and TV chrome fixes.
+
+### Fixed
+- **Playlist restore race** — poll NextAuth before activating saved providers; retry once on failure and surface errors on onboarding.
+- **Next-episode freeze/loop** — clear stale transcode timeline state when the episode identity changes.
+- **Mobile playlist menu cut off** — scrollable dropdown, left-aligned on phones, pinned Manage footer.
+- **Chromecast live black screen** — resolve nested HLS masters to a cast-safe variant and always tag URLs with `cast=1`.
+
+### Changed
+- **TV layout** — Discord community strip and nav link removed from TV chrome; playlist switcher visible from small breakpoints.
+
 ## [0.4.2] — 2026-06-22
 
 Saved playlists restore reliably when signing in on a new device.
