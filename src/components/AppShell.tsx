@@ -156,28 +156,20 @@ export function AppShell({ children }: { children: ReactNode }) {
   /* ── TV layout: full-width, no sidebar, sticky top nav ── */
   if (tv) {
     return (
-      <div className="min-h-screen flex flex-col bg-(--bg-0)">
-        <TvTopNav />
-        {isLivePage ? (
-          <LiveSearchProvider>
-            <main className="flex-1 min-h-0 min-w-0 overflow-y-auto">
-              <div className="w-full max-w-[1920px] mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6">
-                {!tv && <CommunityDiscordStrip className="mb-4" />}
-                <BrowseMountGate frozen={playerOpen}>{children}</BrowseMountGate>
-              </div>
-            </main>
-          </LiveSearchProvider>
-        ) : (
+      <LiveSearchProvider>
+        <div className="min-h-screen flex flex-col bg-(--bg-0)">
+          <TvTopNav />
           <main className="flex-1 min-h-0 min-w-0 overflow-y-auto">
             <div className="w-full max-w-[1920px] mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6">
+              {!tv && <CommunityDiscordStrip className="mb-4" />}
               <BrowseMountGate frozen={playerOpen}>{children}</BrowseMountGate>
             </div>
           </main>
-        )}
-        <PlayerOverlay />
-        {isLivePage ? <LiveCategoryOverlayHost /> : null}
-        <AppVersionBadge />
-      </div>
+          <PlayerOverlay />
+          {isLivePage ? <LiveCategoryOverlayHost /> : null}
+          <AppVersionBadge />
+        </div>
+      </LiveSearchProvider>
     );
   }
 
@@ -209,17 +201,15 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   /* ── Desktop / mobile layout ── */
   return (
-    <div className="flex min-h-screen">
-      <Sidebar />
-      {isLivePage ? (
-        <LiveSearchProvider>{mainColumn}</LiveSearchProvider>
-      ) : (
-        mainColumn
-      )}
-      <MobileBottomNav />
-      <PlayerOverlay />
-      {isLivePage ? <LiveCategoryOverlayHost /> : null}
-      <AppVersionBadge />
-    </div>
+    <LiveSearchProvider>
+      <div className="flex min-h-screen">
+        <Sidebar />
+        {mainColumn}
+        <MobileBottomNav />
+        <PlayerOverlay />
+        {isLivePage ? <LiveCategoryOverlayHost /> : null}
+        <AppVersionBadge />
+      </div>
+    </LiveSearchProvider>
   );
 }
