@@ -8,6 +8,7 @@ import {
   pickSavedProviderAccountId,
 } from "@/lib/restore-saved-providers";
 import { scheduleWhenIdle } from "@/lib/defer-idle";
+import { isMobileShellWidth } from "@/lib/shell-layout";
 import { xtream } from "@/lib/xtream";
 import type { XtreamCredentials } from "@/lib/xtream-types";
 import { restoreAuthSessionBridge, useAuth } from "@/store/auth";
@@ -118,7 +119,8 @@ export function AuthSessionBootstrap({ children }: { children: ReactNode }) {
         usePrefs.getState().setActiveSavedProviderAccountId(savedId);
       }
       finish();
-      scheduleWhenIdle(() => void validateAccount(creds), 2_500);
+      const validateDelay = isMobileShellWidth() ? 6_000 : 2_500;
+      scheduleWhenIdle(() => void validateAccount(creds), validateDelay);
     };
 
     const run = async () => {

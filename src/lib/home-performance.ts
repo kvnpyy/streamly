@@ -1,23 +1,38 @@
 import { isLivingRoomClient } from "@/lib/living-room-detect";
+import { isMobileShellWidth } from "@/lib/shell-layout";
+
+export type HomeAutoRichHints = {
+  env?: string | null;
+  tvServerHint?: boolean;
+  livingRoom?: boolean;
+  mobileShell?: boolean;
+  finePointer?: boolean;
+  desktopWidth?: boolean;
+};
+
+/** Testable client hints for when home must not auto-load VOD/series shelves. */
+export function isHomeAutoRichDisabledForHints(hints: HomeAutoRichHints): boolean {
+  const v = hints.env?.trim();
+  if (v === "0" || v === "false") return true;
+  if (v === "1" || v === "true") return false;
+  if (hints.tvServerHint) return true;
+  if (hints.livingRoom) return true;
+  if (hints.mobileShell) return true;
+  if (hints.finePointer && hints.desktopWidth) return true;
+  return false;
+}
 
 /** When false, home never auto-loads movie/series recommendation shelves. */
 export function isHomeAutoRichDisabled(): boolean {
-  const v = process.env.NEXT_PUBLIC_HOME_AUTO_RICH?.trim();
-  if (v === "0" || v === "false") return true;
-  if (v === "1" || v === "true") return false;
   if (typeof window === "undefined") return false;
-  if (
-    typeof document !== "undefined" &&
-    document.documentElement.classList.contains("tv-server-hint")
-  ) {
-    return true;
-  }
-  /** TV / living-room: never auto-load heavy shelves on home. */
-  if (isLivingRoomClient()) return true;
-  /** Desktop mouse/trackpad: never auto-fetch shelves — user opts in via button. */
-  const finePointer = window.matchMedia("(pointer: fine)").matches;
-  const desktopWidth = window.innerWidth >= 1024;
-  return finePointer && desktopWidth;
+  return isHomeAutoRichDisabledForHints({
+    env: process.env.NEXT_PUBLIC_HOME_AUTO_RICH,
+    tvServerHint: document.documentElement.classList.contains("tv-server-hint"),
+    livingRoom: isLivingRoomClient(),
+    mobileShell: isMobileShellWidth(),
+    finePointer: window.matchMedia("(pointer: fine)").matches,
+    desktopWidth: window.innerWidth >= 1024,
+  });
 }
 
 /** Idle delay before auto-loading home recommendations (default on). */

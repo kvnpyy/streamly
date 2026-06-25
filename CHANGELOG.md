@@ -27,6 +27,7 @@ Chromecast live playback and TV-simple UI.
 ### Fixed
 - **TV “Application error” on join** — align server and client TV detection via middleware hints so login PIN tab and living-room shell hydrate without mismatch.
 - **TV Live TV crash** — always mount live search context on `/app/live` (required by the live page shell).
+- **Mobile freezes** — stop auto-loading heavy home recommendation shelves on phone/tablet; defer live catalog prefetch, cloud sync, geo detect, HLS preload, and shelf EPG scans.
 - **Chromecast live stuck on cast icon** — only send media playlists (not master manifests) to the TV; reuse the browser’s active HLS level URL when casting.
 - **Cast segment fetching** — segment URLs in cast manifests now use the VOD proxy path for `.ts`/`.m4s` so Chromecast gets proper range responses.
 - **Cast prep false positives** — readiness checks require actual segment references, not master-only playlists.

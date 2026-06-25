@@ -17,6 +17,7 @@ import {
 import { useSession } from "next-auth/react";
 import { scheduleWhenIdle } from "@/lib/defer-idle";
 import { isLibraryHomePath } from "@/lib/home-route";
+import { isMobileShellWidth } from "@/lib/shell-layout";
 import { usePathname } from "next/navigation";
 import {
   useCallback,
@@ -178,7 +179,13 @@ export function FavoritesSyncBootstrap({ children }: { children: ReactNode }) {
 
     const key = accountKey;
 
-    const idleMs = onLibraryHome ? 8_000 : 3_500;
+    const idleMs = onLibraryHome
+      ? isMobileShellWidth()
+        ? 14_000
+        : 8_000
+      : isMobileShellWidth()
+        ? 10_000
+        : 3_500;
     const cancelIdle = scheduleWhenIdle(() => {
       if (cancelled) return;
       void pullCloud();

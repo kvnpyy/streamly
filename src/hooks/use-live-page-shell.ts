@@ -6,6 +6,8 @@ import { orderedLiveCategories } from "@/lib/live-category-sort";
 import { useLiveSearchContext } from "@/lib/live-search-context";
 import { useSlashFocusSearch } from "@/lib/use-slash-focus-search";
 import { preloadHlsModule } from "@/lib/lazy-hls";
+import { scheduleWhenIdle } from "@/lib/defer-idle";
+import { isMobileShellWidth } from "@/lib/shell-layout";
 import { browseAccountKey, usePrefs } from "@/store/preferences";
 import { looksAdult } from "@/lib/utils";
 import type { Category, XtreamCredentials } from "@/lib/xtream-types";
@@ -81,6 +83,9 @@ export function useLivePageShell(
   } = useLiveSearchContext();
 
   useEffect(() => {
+    if (isMobileShellWidth()) {
+      return scheduleWhenIdle(() => preloadHlsModule(), 5_000);
+    }
     preloadHlsModule();
   }, []);
 

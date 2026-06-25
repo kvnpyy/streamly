@@ -20,6 +20,7 @@ export const CHANGELOG: readonly ChangelogEntry[] = [
       "Fix Live TV crash on TV — live search provider always mounted on /app/live.",
       "TV settings: tile menu with playlist switch, add, rename, and remove.",
       "Web settings: restore inline Edit for saved playlists (server, login, name).",
+      "Mobile: stop auto-loading heavy home shelves; defer catalog prefetch, cloud sync, and HLS preload.",
       "Stronger D-pad focus ring and auto-focus on each TV screen.",
       "TV browse: pick a category, then channels or titles — no EPG/discovery shelves.",
       "TV UA skips marketing landing; no auto-rich home, prefetch, or perf HUD on living-room clients.",

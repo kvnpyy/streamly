@@ -3,6 +3,7 @@
 import { channelLooksLikeSports } from "@/lib/discovery/sports-keywords";
 import { fetchClientChannelNowTitle } from "@/lib/client-channel-now-title";
 import { isLiveShelfEpgEnabled } from "@/lib/live-epg-policy";
+import { isMobileShellWidth } from "@/lib/shell-layout";
 import {
   getBulkCachedEpgTitles,
   setCachedEpgTitlesBatch,
@@ -14,6 +15,7 @@ import type { LiveStream, XtreamCredentials } from "@/lib/xtream-types";
 import { useEffect, useMemo, useState } from "react";
 
 const DEFAULT_SCAN_MAX = 48;
+const MOBILE_SHELF_EPG_SCAN_MAX = 12;
 
 export type ShelfEpgChannel = Pick<
   LiveStream,
@@ -37,7 +39,7 @@ export function useShelfNowPlayingMap(
   channels: ShelfEpgChannel[],
   categoryNameById: Record<string, string>,
   enabled = true,
-  maxScan = DEFAULT_SCAN_MAX
+  maxScan = isMobileShellWidth() ? MOBILE_SHELF_EPG_SCAN_MAX : DEFAULT_SCAN_MAX
 ): Map<number, string> {
   const [map, setMap] = useState<Map<number, string>>(() => new Map());
   const active =

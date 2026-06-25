@@ -4,6 +4,7 @@ import { catalogKeys } from "@/lib/catalog-queries";
 import { SHELL_DESKTOP_MIN_WIDTH_PX } from "@/lib/shell-layout";
 import { isLibraryHomePath } from "@/lib/home-route";
 import { scheduleWhenIdle } from "@/lib/defer-idle";
+import { isMobileShellWidth } from "@/lib/shell-layout";
 import { slimLiveCatalogQueryOptions } from "@/lib/live-catalog-query";
 import { useAuth } from "@/store/auth";
 import { useQueryClient } from "@tanstack/react-query";
@@ -12,8 +13,15 @@ import { useEffect, useRef } from "react";
 
 const HOME_PREFETCH_DELAY_MS = 45_000;
 const LIVE_ROUTE_PREFETCH_DELAY_MS = 400;
-const LIVE_ROUTE_MOBILE_PREFETCH_DELAY_MS = 3_500;
-const ROUTE_PREFETCH_MOBILE_DELAY_MS = 2_400;
+const LIVE_ROUTE_MOBILE_PREFETCH_DELAY_MS = 6_000;
+const ROUTE_PREFETCH_MOBILE_DELAY_MS = 8_000;
+const MOBILE_LEAVE_LIBRARY_PREFETCH_MS = 4_000;
+
+function shouldPrefetchForPath(pathname: string): boolean {
+  if (!isMobileShellWidth()) return true;
+  /** On phones, only warm live catalog when the user is already on Live TV. */
+  return pathname === "/app/live" || pathname.startsWith("/app/live/");
+}
 
 function prefetchDelayMs(pathname: string): number {
   if (typeof window === "undefined") return 1_200;
@@ -47,6 +55,7 @@ export function CatalogPrefetch() {
 
   useEffect(() => {
     if (!creds || onLibraryHome) return;
+    if (!shouldPrefetchForPath(pathname)) return;
 
     const delay = prefetchDelayMs(pathname);
 
@@ -59,12 +68,15 @@ export function CatalogPrefetch() {
     const wasLibrary = wasOnLibraryRef.current;
     wasOnLibraryRef.current = onLibraryHome;
     if (!wasLibrary || onLibraryHome) return;
-    return scheduleWhenIdle(prefetch, 600);
-  }, [creds, onLibraryHome, qc]);
+    if (!shouldPrefetchForPath(pathname)) return;
+    const delay = isMobileShellWidth() ? MOBILE_LEAVE_LIBRARY_PREFETCH_MS : 600;
+    return scheduleWhenIdle(prefetch, delay);
+  }, [creds, onLibraryHome, pathname, qc]);
 
-  /** Optional background warm while staying on Library (long idle only). */
+  /** Optional background warm while staying on Library (long idle only; never on mobile). */
   useEffect(() => {
     if (!creds || !onLibraryHome) return;
+    if (isMobileShellWidth()) return;
     return scheduleWhenIdle(prefetch, HOME_PREFETCH_DELAY_MS);
   }, [creds, onLibraryHome, qc]);
 

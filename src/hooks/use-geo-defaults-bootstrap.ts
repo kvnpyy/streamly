@@ -8,6 +8,8 @@ import {
 } from "@/lib/geo-continent";
 import { browseAccountKey, usePrefs } from "@/store/preferences";
 import { useAuth } from "@/store/auth";
+import { scheduleWhenIdle } from "@/lib/defer-idle";
+import { isMobileShellWidth } from "@/lib/shell-layout";
 import { useEffect, useRef } from "react";
 
 type GeoDetectResponse = {
@@ -54,15 +56,26 @@ export function useGeoDefaultsBootstrap(opts?: { disabled?: boolean }) {
 
     let cancelled = false;
 
-    void (async () => {
-      const data = await fetchGeoDetect();
-      if (cancelled) return;
+    const start = () => {
+      void (async () => {
+        const data = await fetchGeoDetect();
+        if (cancelled) return;
 
-      const resolved =
-        coerceTvRegion(data.region) ?? detectRegionFromTimezone();
-      setTvRegion(resolved);
-    })();
+        const resolved =
+          coerceTvRegion(data.region) ?? detectRegionFromTimezone();
+        setTvRegion(resolved);
+      })();
+    };
 
+    if (isMobileShellWidth()) {
+      const cancelIdle = scheduleWhenIdle(start, 4_000);
+      return () => {
+        cancelled = true;
+        cancelIdle();
+      };
+    }
+
+    start();
     return () => {
       cancelled = true;
     };
@@ -83,31 +96,42 @@ export function useGeoDefaultsBootstrap(opts?: { disabled?: boolean }) {
 
     let cancelled = false;
 
-    void (async () => {
-      const data = await fetchGeoDetect();
-      if (cancelled) return;
+    const start = () => {
+      void (async () => {
+        const data = await fetchGeoDetect();
+        if (cancelled) return;
 
-      const region =
-        coerceTvRegion(tvRegion) ??
-        coerceTvRegion(data.region) ??
-        detectRegionFromTimezone();
-      const defaultLang =
-        data.language ?? defaultVodLanguageForRegion(region);
-      if (!defaultLang) {
+        const region =
+          coerceTvRegion(tvRegion) ??
+          coerceTvRegion(data.region) ??
+          detectRegionFromTimezone();
+        const defaultLang =
+          data.language ?? defaultVodLanguageForRegion(region);
+        if (!defaultLang) {
+          languageBootstrappedFor.current = accountKey;
+          return;
+        }
+
+        const patch: {
+          moviesLanguage?: string;
+          seriesLanguage?: string;
+        } = {};
+        if (needsMovies) patch.moviesLanguage = defaultLang;
+        if (needsSeries) patch.seriesLanguage = defaultLang;
+        setBrowsePref(accountKey, patch);
         languageBootstrappedFor.current = accountKey;
-        return;
-      }
+      })();
+    };
 
-      const patch: {
-        moviesLanguage?: string;
-        seriesLanguage?: string;
-      } = {};
-      if (needsMovies) patch.moviesLanguage = defaultLang;
-      if (needsSeries) patch.seriesLanguage = defaultLang;
-      setBrowsePref(accountKey, patch);
-      languageBootstrappedFor.current = accountKey;
-    })();
+    if (isMobileShellWidth()) {
+      const cancelIdle = scheduleWhenIdle(start, 5_000);
+      return () => {
+        cancelled = true;
+        cancelIdle();
+      };
+    }
 
+    start();
     return () => {
       cancelled = true;
     };
