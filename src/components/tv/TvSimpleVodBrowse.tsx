@@ -114,11 +114,6 @@ export function TvSimpleVodBrowse({
     [accountKey, prefKey, setBrowsePref]
   );
 
-  const displayedItems = useMemo(
-    () => visible.slice(0, visibleItemCount),
-    [visible, visibleItemCount]
-  );
-
   const catalogMetaReady = catalogReady && slimQuery.isSuccess;
   const gridParams = useMemo(
     () => ({
@@ -175,6 +170,11 @@ export function TvSimpleVodBrowse({
         allowed.has(String(s.category_id)) && !looksAdult({ name: s.name })
     );
   }, [moviePage.data, seriesPage.data, kind, hideAdult, parentalUnlocked, filteredCats]);
+
+  const displayedItems = useMemo(
+    () => visible.slice(0, visibleItemCount),
+    [visible, visibleItemCount]
+  );
 
   const totalInView = catalogGridTotal(itemsPage.data) || visible.length;
   const loadMore = useCallback(() => {
