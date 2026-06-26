@@ -36,10 +36,10 @@ import {
 } from "@/lib/vod-catalog-infinite";
 import type { SeriesItem, VodStream, XtreamCredentials } from "@/lib/xtream-types";
 import { looksAdult, parsePositiveRouteId } from "@/lib/utils";
-import { browseAccountKey, usePrefs } from "@/store/preferences";
+import { usePrefs } from "@/store/preferences";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { ArrowLeft, Loader2 } from "lucide-react";
-import { useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 type VodKind = "movie" | "series";
@@ -59,6 +59,8 @@ export function TvSimpleVodBrowse({
   accountKey,
 }: TvSimpleVodBrowseProps) {
   const searchParams = useSearchParams();
+  const pathname = usePathname();
+  const router = useRouter();
   const {
     isFavorite,
     toggleFavorite,
@@ -99,7 +101,19 @@ export function TvSimpleVodBrowse({
     return list.filter((c) => !looksAdult({ category_name: c.category_name }));
   }, [slimQuery.data?.categories, hideAdult, parentalUnlocked]);
 
-  const countById = slimQuery.data?.countByCategoryId ?? {};
+  const countById = useMemo(
+    () => slimQuery.data?.countByCategoryId ?? {},
+    [slimQuery.data?.countByCategoryId]
+  );
+
+  const urlCategory = useMemo(() => {
+    const fromUrl = searchParams.get("category");
+    if (!fromUrl || fromUrl === "all") return null;
+    if (!filteredCats.some((c) => String(c.category_id) === fromUrl)) return null;
+    return fromUrl;
+  }, [searchParams, filteredCats]);
+
+  const activeCategoryId = urlCategory ?? categoryId;
 
   const categoryItems = useMemo(
     () =>
@@ -112,12 +126,12 @@ export function TvSimpleVodBrowse({
   );
 
   const selectedName = useMemo(() => {
-    if (!categoryId) return "";
+    if (!activeCategoryId) return "";
     return (
-      filteredCats.find((c) => String(c.category_id) === categoryId)
+      filteredCats.find((c) => String(c.category_id) === activeCategoryId)
         ?.category_name ?? (kind === "movie" ? "Movies" : "Series")
     );
-  }, [categoryId, filteredCats, kind]);
+  }, [activeCategoryId, filteredCats, kind]);
 
   const pickCategory = useCallback(
     (id: string) => {
@@ -126,25 +140,29 @@ export function TvSimpleVodBrowse({
       setBrowsePref(accountKey, {
         [prefKey]: id,
       } as { moviesCategory?: string; seriesCategory?: string });
+      const params = new URLSearchParams(searchParams.toString());
+      params.set("category", id);
+      router.replace(`${pathname}?${params.toString()}`, { scroll: false });
     },
-    [accountKey, prefKey, setBrowsePref]
+    [accountKey, prefKey, setBrowsePref, searchParams, pathname, router]
   );
 
-  useEffect(() => {
-    const fromUrl = searchParams.get("category");
-    if (!fromUrl || fromUrl === "all") return;
-    if (!filteredCats.some((c) => String(c.category_id) === fromUrl)) return;
-    if (categoryId === fromUrl) return;
-    pickCategory(fromUrl);
-  }, [searchParams, filteredCats, categoryId, pickCategory]);
+  const clearCategory = useCallback(() => {
+    setCategoryId(null);
+    setVisibleItemCount(TV_SIMPLE_VOD_BATCH);
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete("category");
+    const qs = params.toString();
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+  }, [searchParams, pathname, router]);
 
   const catalogMetaReady = catalogReady && slimQuery.isSuccess;
   const gridParams = useMemo(
     () => ({
-      categoryId: categoryId ?? "all",
+      categoryId: activeCategoryId ?? "all",
       sort: "added" as const,
     }),
-    [categoryId]
+    [activeCategoryId]
   );
 
   const moviePage = useInfiniteQuery({
@@ -153,7 +171,7 @@ export function TvSimpleVodBrowse({
       fetchVodCatalogGridPage(creds, gridParams, pageParam, signal),
     initialPageParam: 0,
     getNextPageParam: catalogItemsNextPageParam,
-    enabled: kind === "movie" && catalogMetaReady && categoryId != null,
+    enabled: kind === "movie" && catalogMetaReady && activeCategoryId != null,
     staleTime: 60_000,
     structuralSharing: false,
   });
@@ -164,7 +182,7 @@ export function TvSimpleVodBrowse({
       fetchSeriesCatalogGridPage(creds, gridParams, pageParam, signal),
     initialPageParam: 0,
     getNextPageParam: catalogItemsNextPageParam,
-    enabled: kind === "series" && catalogMetaReady && categoryId != null,
+    enabled: kind === "series" && catalogMetaReady && activeCategoryId != null,
     staleTime: 60_000,
     structuralSharing: false,
   });
@@ -212,12 +230,12 @@ export function TvSimpleVodBrowse({
   const [discoveryReady, setDiscoveryReady] = useState(false);
 
   useEffect(() => {
-    if (categoryId != null || slimQuery.isLoading || !discoveryOn) {
+    if (activeCategoryId != null || slimQuery.isLoading || !discoveryOn) {
       queueMicrotask(() => setDiscoveryReady(false));
       return;
     }
     return scheduleWhenIdle(() => setDiscoveryReady(true), 1_500);
-  }, [categoryId, slimQuery.isLoading, discoveryOn]);
+  }, [activeCategoryId, slimQuery.isLoading, discoveryOn]);
 
   const recentIds = useMemo(
     () =>
@@ -397,7 +415,7 @@ export function TvSimpleVodBrowse({
   }, [discoveryShelves.data?.genreShelves, attachShelves]);
 
   const showDiscovery =
-    discoveryReady && discoveryOn && categoryId == null && !slimQuery.isLoading;
+    discoveryReady && discoveryOn && activeCategoryId == null && !slimQuery.isLoading;
 
   const shelfMeta =
     kind === "movie"
@@ -425,7 +443,7 @@ export function TvSimpleVodBrowse({
     );
   }
 
-  if (categoryId == null) {
+  if (activeCategoryId == null) {
     return (
       <TvFocusRoot className="tv-simple-browse">
         {showDiscovery && (
@@ -493,10 +511,7 @@ export function TvSimpleVodBrowse({
         type="button"
         data-tv-card-root
         className="tv-simple-browse__back focus-ring"
-        onClick={() => {
-          setCategoryId(null);
-          setVisibleItemCount(TV_SIMPLE_VOD_BATCH);
-        }}
+        onClick={clearCategory}
       >
         <ArrowLeft className="size-5 shrink-0" aria-hidden />
         <span>{selectedName}</span>
