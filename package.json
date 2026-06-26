@@ -25,6 +25,8 @@
     "test:p0-vod-catalog": "node scripts/p0-vod-catalog-clickthrough.mjs",
     "test:qa-checklist": "node scripts/qa-device-checklist.mjs",
     "test:qa": "node scripts/qa-device-checklist.mjs --run-p0",
+    "tv:store:package": "bash scripts/package-samsung-tizen.sh",
+    "tv:store:sign-tizen": "TIZEN_CERT_PROFILE=${TIZEN_CERT_PROFILE:-streamly-tv} bash scripts/package-samsung-tizen.sh",
     "app:start": "bash scripts/run.sh start",
     "app:start:local": "STREAM_BIND_LAN=0 bash scripts/run.sh start",
     "app:stop": "bash scripts/run.sh stop",

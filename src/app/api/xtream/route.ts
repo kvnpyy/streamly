@@ -9,6 +9,7 @@ import {
   EMPTY_XTREAM_EPG,
   isXtreamEpgAction,
 } from "@/lib/xtream-epg-actions";
+import { tryHandleReviewPanelRequest } from "@/lib/review-panel/handler";
 import { extractXtreamEpgPayload } from "@/lib/xtream";
 import {
   getXtreamUpstreamCached,
@@ -56,13 +57,7 @@ export async function GET(req: NextRequest) {
     url.searchParams.get("action")
   );
   if (captchaBlock) return captchaBlock;
-  const upstream = new URL(`${creds.server}/player_api.php`);
-  upstream.searchParams.set("username", creds.username);
-  upstream.searchParams.set("password", creds.password);
-  for (const [k, v] of url.searchParams.entries()) {
-    if (k === "u") continue;
-    upstream.searchParams.set(k, v);
-  }
+
   const action = url.searchParams.get("action");
   const epgAction = isXtreamEpgAction(action);
 
@@ -70,6 +65,30 @@ export async function GET(req: NextRequest) {
   for (const [k, v] of url.searchParams.entries()) {
     if (k === "u") continue;
     cacheParams[k] = v;
+  }
+
+  const review = tryHandleReviewPanelRequest(creds, cacheParams);
+  if (review !== null) {
+    if (epgAction) {
+      const streamId = Number(cacheParams.stream_id);
+      if (Number.isFinite(streamId) && streamId > 0) {
+        warmServerEpgFromPayload(creds, streamId, review);
+      }
+    }
+    const headers = new Headers();
+    if (isXtreamCatalogCacheAction(action)) {
+      headers.set("Cache-Control", xtreamCatalogCacheControlHeader());
+    }
+    headers.set("X-Xtream-Cache", "review-panel");
+    return NextResponse.json(review, { headers });
+  }
+
+  const upstream = new URL(`${creds.server}/player_api.php`);
+  upstream.searchParams.set("username", creds.username);
+  upstream.searchParams.set("password", creds.password);
+  for (const [k, v] of url.searchParams.entries()) {
+    if (k === "u") continue;
+    upstream.searchParams.set(k, v);
   }
   const upstreamCacheKey = xtreamUpstreamCacheKey(creds, cacheParams);
   const cacheableUpstream =

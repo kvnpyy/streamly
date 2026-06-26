@@ -1,5 +1,6 @@
 import "server-only";
 
+import { tryHandleReviewPanelRequest } from "@/lib/review-panel/handler";
 import type { AuthResponse, XtreamCredentials } from "@/lib/xtream-types";
 
 const XTREAM_UA =
@@ -13,6 +14,11 @@ export async function authenticateXtreamPanel(
   creds: XtreamCredentials,
   signal?: AbortSignal
 ): Promise<AuthResponse> {
+  const review = tryHandleReviewPanelRequest(creds, {});
+  if (review) {
+    return review as AuthResponse;
+  }
+
   const server = creds.server.replace(/\/+$/, "");
   const upstream = new URL(`${server}/player_api.php`);
   upstream.searchParams.set("username", creds.username);

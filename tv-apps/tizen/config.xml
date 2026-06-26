@@ -2,7 +2,7 @@
 <widget xmlns="http://www.w3.org/ns/widgets"
         xmlns:tizen="http://tizen.org/ns/widgets"
         id="https://iptvwebplayer.org/tizen"
-        version="1.0.2"
+        version="1.0.3"
         viewmodes="maximized">
   <tizen:application id="org.streamly.iptv" package="org.streamly.iptv" required_version="6.0"/>
   <content src="index.html"/>

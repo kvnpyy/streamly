@@ -5,6 +5,7 @@ import {
 } from "@/lib/xtream-upstream-cache";
 import { isXtreamCatalogCacheAction } from "@/lib/xtream-catalog-cache";
 import { EMPTY_XTREAM_EPG, isXtreamEpgAction } from "@/lib/xtream-epg-actions";
+import { tryHandleReviewPanelRequest } from "@/lib/review-panel/handler";
 
 const UPSTREAM_TIMEOUT_MS = 12_000;
 
@@ -20,6 +21,11 @@ export async function fetchXtreamUpstreamJson(
   opts?: { signal?: AbortSignal }
 ): Promise<unknown> {
   const action = params.action ?? null;
+  const review = tryHandleReviewPanelRequest(creds, params);
+  if (review !== null) {
+    return review;
+  }
+
   const cacheKey = xtreamUpstreamCacheKey(creds, params);
   const cacheable = isXtreamCatalogCacheAction(action) || isXtreamEpgAction(action);
 
