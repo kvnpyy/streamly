@@ -1,17 +1,29 @@
 "use client";
 
+import { DiscoveryShelf } from "@/components/DiscoveryShelf";
 import { MediaCard } from "@/components/MediaCard";
+import { MediaShelf } from "@/components/MediaShelf";
 import { TvCategoryGrid } from "@/components/tv/TvCategoryGrid";
 import { TvFocusRoot } from "@/components/tv/TvFocusRoot";
 import { TvSpatialGrid } from "@/components/TvSpatialGrid";
 import { useCatalogPlay } from "@/hooks/use-catalog-play";
 import { useCatalogPageReady } from "@/hooks/use-catalog-page-ready";
+import {
+  attachMovieDiscoveryShelfItems,
+  attachSeriesDiscoveryShelfItems,
+} from "@/lib/attach-discovery-shelf-items";
+import { DISCOVERY_SHELF_META, isDiscoveryShelvesEnabled } from "@/lib/discovery";
+import { scheduleWhenIdle } from "@/lib/defer-idle";
 import { slimSeriesCatalogQueryOptions } from "@/lib/slim-series-catalog-query";
 import { slimVodCatalogQueryOptions } from "@/lib/slim-vod-catalog-query";
+import { seriesItemsQueryOptions } from "@/lib/series-catalog-items";
+import { seriesDiscoveryShelvesQueryOptions } from "@/lib/series-discovery-shelves-query";
 import {
   TV_SIMPLE_CATEGORY_BATCH,
   TV_SIMPLE_VOD_BATCH,
 } from "@/lib/tv-simple-browse";
+import { vodItemsQueryOptions } from "@/lib/vod-catalog-items";
+import { vodDiscoveryShelvesQueryOptions } from "@/lib/vod-discovery-shelves-query";
 import {
   catalogGridTotal,
   catalogItemsNextPageParam,
@@ -27,7 +39,8 @@ import { looksAdult, parsePositiveRouteId } from "@/lib/utils";
 import { browseAccountKey, usePrefs } from "@/store/preferences";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { ArrowLeft, Loader2 } from "lucide-react";
-import { useCallback, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 type VodKind = "movie" | "series";
 
@@ -38,21 +51,24 @@ type TvSimpleVodBrowseProps = {
 };
 
 /**
- * Category-first movies/series browse for TV — no discovery shelves or search UI.
+ * TV movies/series browse — discovery rows on the landing view, then category drill-down.
  */
 export function TvSimpleVodBrowse({
   kind,
   creds,
   accountKey,
 }: TvSimpleVodBrowseProps) {
+  const searchParams = useSearchParams();
   const {
     isFavorite,
     toggleFavorite,
     hideAdult,
     parentalUnlocked,
     setBrowsePref,
+    recents,
+    favorites,
   } = usePrefs();
-  const { playMovie, movieDetailHref } = useCatalogPlay();
+  const { playMovie, movieDetailHref, enrichMovieShelfItems } = useCatalogPlay();
   const catalogReady = useCatalogPageReady();
 
   const prefKey = kind === "movie" ? "moviesCategory" : "seriesCategory";
@@ -113,6 +129,14 @@ export function TvSimpleVodBrowse({
     },
     [accountKey, prefKey, setBrowsePref]
   );
+
+  useEffect(() => {
+    const fromUrl = searchParams.get("category");
+    if (!fromUrl || fromUrl === "all") return;
+    if (!filteredCats.some((c) => String(c.category_id) === fromUrl)) return;
+    if (categoryId === fromUrl) return;
+    pickCategory(fromUrl);
+  }, [searchParams, filteredCats, categoryId, pickCategory]);
 
   const catalogMetaReady = catalogReady && slimQuery.isSuccess;
   const gridParams = useMemo(
@@ -182,6 +206,216 @@ export function TvSimpleVodBrowse({
     void itemsPage.fetchNextPage();
   }, [itemsPage]);
 
+  // ── Discovery shelves (landing view only) ───────────────────────────────
+
+  const discoveryOn = isDiscoveryShelvesEnabled();
+  const [discoveryReady, setDiscoveryReady] = useState(false);
+
+  useEffect(() => {
+    if (categoryId != null || slimQuery.isLoading || !discoveryOn) {
+      queueMicrotask(() => setDiscoveryReady(false));
+      return;
+    }
+    return scheduleWhenIdle(() => setDiscoveryReady(true), 1_500);
+  }, [categoryId, slimQuery.isLoading, discoveryOn]);
+
+  const recentIds = useMemo(
+    () =>
+      recents
+        .filter((r) => r.kind === kind)
+        .slice(0, 20)
+        .map((r) => r.id),
+    [recents, kind]
+  );
+
+  const favoriteIds = useMemo(
+    () => favorites.filter((f) => f.kind === kind).map((f) => f.id),
+    [favorites, kind]
+  );
+
+  const recentMoviePage = useQuery(
+    vodItemsQueryOptions(
+      creds,
+      { categoryId: "all", streamIds: recentIds, limit: 20 },
+      kind === "movie" && catalogMetaReady && recentIds.length > 0
+    )
+  );
+
+  const recentSeriesPage = useQuery(
+    seriesItemsQueryOptions(
+      creds,
+      { categoryId: "all", streamIds: recentIds, limit: 20 },
+      kind === "series" && catalogMetaReady && recentIds.length > 0
+    )
+  );
+
+  const discoveryShelves = useQuery(
+    kind === "movie"
+      ? vodDiscoveryShelvesQueryOptions(
+          creds,
+          {
+            hideAdult,
+            parentalUnlocked,
+            recentIds,
+            favoriteIds,
+          },
+          discoveryReady
+        )
+      : seriesDiscoveryShelvesQueryOptions(
+          creds,
+          {
+            hideAdult,
+            parentalUnlocked,
+            recentIds,
+            favoriteIds,
+          },
+          discoveryReady
+        )
+  );
+
+  const toggleFavoriteMovie = useCallback(
+    (m: VodStream, mid: number) => {
+      toggleFavorite({ kind: "movie", id: mid, name: m.name, icon: m.stream_icon });
+    },
+    [toggleFavorite]
+  );
+
+  const toggleFavoriteSeriesItem = useCallback(
+    (s: SeriesItem, sid: number) => {
+      toggleFavorite({ kind: "series", id: sid, name: s.name, icon: s.cover });
+    },
+    [toggleFavorite]
+  );
+
+  const attachShelves = useCallback(
+    (items: Parameters<typeof attachMovieDiscoveryShelfItems>[0]) =>
+      kind === "movie"
+        ? attachMovieDiscoveryShelfItems(items, {
+            isFavorite: (id) => isFavorite("movie", id),
+            toggleFavoriteMovie,
+            playMovie,
+          })
+        : attachSeriesDiscoveryShelfItems(items, {
+            isFavorite: (id) => isFavorite("series", id),
+            toggleFavoriteSeries: toggleFavoriteSeriesItem,
+          }),
+    [kind, isFavorite, toggleFavoriteMovie, toggleFavoriteSeriesItem, playMovie]
+  );
+
+  const recentItems = useMemo(() => {
+    if (kind === "movie") {
+      const movieById = new Map(
+        (recentMoviePage.data?.items ?? []).map((m) => [m.stream_id, m])
+      );
+      return recents
+        .filter((r) => r.kind === "movie")
+        .slice(0, 20)
+        .map((r) => {
+          const mid = parsePositiveRouteId(r.id);
+          if (mid == null) return null;
+          const movie = movieById.get(mid);
+          return {
+            id: mid,
+            href: `/app/movies/${mid}`,
+            poster: movie?.stream_icon ?? r.icon,
+            title: r.name,
+            subtitle: movie?.year,
+            rating: movie?.rating,
+            isFavorite: isFavorite("movie", mid),
+            onToggleFavorite: () =>
+              toggleFavorite({ kind: "movie", id: mid, name: r.name, icon: r.icon }),
+          };
+        })
+        .filter((x): x is NonNullable<typeof x> => x !== null);
+    }
+
+    const seriesById = new Map(
+      (recentSeriesPage.data?.items ?? []).map((s) => [
+        parsePositiveRouteId(s.series_id),
+        s,
+      ])
+    );
+    return recents
+      .filter((r) => r.kind === "series")
+      .slice(0, 20)
+      .map((r) => {
+        const sid = parsePositiveRouteId(r.id);
+        if (sid == null) return null;
+        const s = seriesById.get(sid);
+        return {
+          id: sid,
+          href: `/app/series/${sid}`,
+          poster: s?.cover ?? r.icon,
+          title: r.name,
+          subtitle: s?.year,
+          rating: s?.rating,
+          isFavorite: isFavorite("series", sid),
+          onToggleFavorite: () =>
+            toggleFavorite({ kind: "series", id: sid, name: r.name, icon: r.icon }),
+        };
+      })
+      .filter((x): x is NonNullable<typeof x> => x !== null);
+  }, [
+    kind,
+    recents,
+    recentMoviePage.data?.items,
+    recentSeriesPage.data?.items,
+    isFavorite,
+    toggleFavorite,
+  ]);
+
+  const playableRecentItems = useMemo(
+    () =>
+      kind === "movie"
+        ? enrichMovieShelfItems(recentItems, recentMoviePage.data?.items ?? [])
+        : recentItems,
+    [kind, recentItems, recentMoviePage.data?.items, enrichMovieShelfItems]
+  );
+
+  const forYouItems = useMemo(
+    () => attachShelves(discoveryShelves.data?.forYou ?? []),
+    [discoveryShelves.data?.forYou, attachShelves]
+  );
+  const trendingItems = useMemo(
+    () => attachShelves(discoveryShelves.data?.trending ?? []),
+    [discoveryShelves.data?.trending, attachShelves]
+  );
+  const topRatedItems = useMemo(
+    () => attachShelves(discoveryShelves.data?.topRated ?? []),
+    [discoveryShelves.data?.topRated, attachShelves]
+  );
+  const newlyAddedItems = useMemo(
+    () => attachShelves(discoveryShelves.data?.newlyAdded ?? []),
+    [discoveryShelves.data?.newlyAdded, attachShelves]
+  );
+  const genreShelves = useMemo(() => {
+    const shelves = discoveryShelves.data?.genreShelves ?? [];
+    return shelves.map((shelf) => ({
+      ...shelf,
+      items: attachShelves(shelf.items),
+    }));
+  }, [discoveryShelves.data?.genreShelves, attachShelves]);
+
+  const showDiscovery =
+    discoveryReady && discoveryOn && categoryId == null && !slimQuery.isLoading;
+
+  const shelfMeta =
+    kind === "movie"
+      ? {
+          forYou: DISCOVERY_SHELF_META.vod_for_you_movies,
+          trending: DISCOVERY_SHELF_META.vod_trending_movies,
+          topRated: DISCOVERY_SHELF_META.vod_top_rated_movies,
+          newlyAdded: DISCOVERY_SHELF_META.vod_new_movies,
+        }
+      : {
+          forYou: DISCOVERY_SHELF_META.vod_for_you_series,
+          trending: DISCOVERY_SHELF_META.vod_trending_series,
+          topRated: DISCOVERY_SHELF_META.vod_top_rated_series,
+          newlyAdded: DISCOVERY_SHELF_META.vod_new_series,
+        };
+
+  const browseBase = kind === "movie" ? "/app/movies" : "/app/series";
+
   if (slimQuery.isLoading && !slimQuery.isFetched) {
     return (
       <div className="tv-simple-browse__loading">
@@ -194,22 +428,61 @@ export function TvSimpleVodBrowse({
   if (categoryId == null) {
     return (
       <TvFocusRoot className="tv-simple-browse">
-        <p className="tv-simple-browse__lead">
-          Choose a {kind === "movie" ? "movie" : "series"} category
-        </p>
-        <TvCategoryGrid items={categoryItems} onSelect={pickCategory} />
-        {filteredCats.length > visibleCategoryCount ? (
-          <button
-            type="button"
-            data-tv-card-root
-            className="tv-simple-browse__more focus-ring"
-            onClick={() =>
-              setVisibleCategoryCount((n) => n + TV_SIMPLE_CATEGORY_BATCH)
-            }
-          >
-            Show more categories ({visibleCategoryCount} of {filteredCats.length})
-          </button>
-        ) : null}
+        {showDiscovery && (
+          <div className="tv-simple-browse__discovery">
+            {playableRecentItems.length > 0 && (
+              <MediaShelf
+                eyebrow="Pick up where you left off"
+                title="Continue Watching"
+                items={playableRecentItems}
+              />
+            )}
+            {discoveryOn && forYouItems.length > 0 && (
+              <DiscoveryShelf meta={shelfMeta.forYou} items={forYouItems} />
+            )}
+            {discoveryOn && trendingItems.length > 0 && (
+              <DiscoveryShelf
+                meta={shelfMeta.trending}
+                items={trendingItems}
+                loading={discoveryShelves.isLoading && trendingItems.length === 0}
+              />
+            )}
+            {topRatedItems.length > 0 && (
+              <DiscoveryShelf meta={shelfMeta.topRated} items={topRatedItems} />
+            )}
+            {newlyAddedItems.length > 0 && (
+              <DiscoveryShelf
+                meta={shelfMeta.newlyAdded}
+                items={newlyAddedItems}
+              />
+            )}
+            {genreShelves.map((shelf) => (
+              <MediaShelf
+                key={shelf.categoryId}
+                title={shelf.title}
+                items={shelf.items}
+                seeAllHref={`${browseBase}?category=${encodeURIComponent(shelf.categoryId)}`}
+              />
+            ))}
+          </div>
+        )}
+
+        <section className="tv-simple-browse__categories">
+          <h2 className="tv-simple-browse__section-title">Browse by category</h2>
+          <TvCategoryGrid items={categoryItems} onSelect={pickCategory} />
+          {filteredCats.length > visibleCategoryCount ? (
+            <button
+              type="button"
+              data-tv-card-root
+              className="tv-simple-browse__more focus-ring"
+              onClick={() =>
+                setVisibleCategoryCount((n) => n + TV_SIMPLE_CATEGORY_BATCH)
+              }
+            >
+              Show more categories ({visibleCategoryCount} of {filteredCats.length})
+            </button>
+          ) : null}
+        </section>
       </TvFocusRoot>
     );
   }

@@ -48,6 +48,17 @@ describe("categoryMatchesRegion", () => {
     expect(categoryMatchesRegion("|EU| SW MAX PPV", "Europe")).toBe(true);
     expect(categoryMatchesRegion("|ALB| DOCUMENTARY", "Europe")).toBe(true);
   });
+
+  it("excludes Balkan provider blocks from North America", () => {
+    expect(categoryMatchesRegion("|BLN| BOSNIA", "North America")).toBe(false);
+    expect(categoryMatchesRegion("|BLN| CROATIA", "North America")).toBe(false);
+    expect(categoryMatchesRegion("|HRV| CROATIA", "North America")).toBe(false);
+    expect(categoryMatchesRegion("|MKD| MACEDONIA", "North America")).toBe(
+      false
+    );
+    expect(categoryMatchesRegion("|BLN| BOSNIA", "Europe")).toBe(true);
+    expect(categoryMatchesRegion("|BLN| CROATIA", "Europe")).toBe(true);
+  });
 });
 
 describe("streamMatchesRegion", () => {
@@ -77,6 +88,18 @@ describe("streamMatchesRegion", () => {
     const cat = "24/7 ENGLISH MOVIES";
     expect(categoryMatchesRegion(cat, "North America")).toBe(true);
     expect(streamMatchesRegion("[EN] ARROW", cat, "North America")).toBe(true);
+  });
+
+  it("filters Balkan channel labels out of North America generic shelves", () => {
+    expect(
+      streamMatchesRegion("##### BOSNIA #####", "Sports", "North America")
+    ).toBe(false);
+    expect(
+      streamMatchesRegion("##### CROATIA #####", "Sports", "North America")
+    ).toBe(false);
+    expect(
+      streamMatchesRegion("##### BOSNIA #####", "Sports", "Europe")
+    ).toBe(true);
   });
 });
 

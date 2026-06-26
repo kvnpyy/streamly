@@ -164,6 +164,12 @@ const CODE_TO_REGION: Record<string, TvRegion> = {
   SER: "Europe",  // Serbia alt
   EXYU: "Europe", // Ex-Yugoslavia block
   YU: "Europe",   // Yugoslavia legacy
+  BLN: "Europe",  // Balkan provider block (|BLN| BOSNIA, …)
+  BALKAN: "Europe",
+  HRV: "Europe",  // Croatia (ISO 3166-1 alpha-3)
+  MKD: "Europe",  // North Macedonia
+  SVN: "Europe",  // Slovenia
+  MNE: "Europe",  // Montenegro
 
   // Middle East
   SA: "Middle East", KSA: "Middle East", SAU: "Middle East",
@@ -263,6 +269,13 @@ const PREFIX_ALIAS_TO_ISO: Record<string, string> = {
   UK: "GB",
   ENG: "GB",
   ALB: "AL",
+  BIH: "BA",
+  HRV: "HR",
+  MKD: "MK",
+  SRB: "RS",
+  MNE: "ME",
+  SVN: "SI",
+  BGR: "BG",
 };
 
 /**
@@ -424,6 +437,27 @@ export function extractCountryCode(categoryName: string): string | null {
   return null;
 }
 
+/** Provider tokens that label a region block, not a single country (EU, BLN, …). */
+const REGIONAL_BLOCK_TOKENS = new Set([
+  "EU",
+  "BLN",
+  "BALKAN",
+  "EXYU",
+  "YU",
+  "AFR",
+  "AFRICA",
+  "ASIA",
+  "NA",
+  "LAT",
+  "LATAM",
+  "ARAB",
+  "ARABIC",
+]);
+
+function isRegionalBlockToken(token: string): boolean {
+  return REGIONAL_BLOCK_TOKENS.has(token.trim().toUpperCase());
+}
+
 /** Normalize a panel prefix or ISO code to alpha-2 (US, CA, GB, …). */
 export function normalizeCountryIso(token: string | null | undefined): string | null {
   if (!token?.trim()) return null;
@@ -443,7 +477,13 @@ export function getCategoryCountryIso(categoryName: string): string | null {
     /* fall through — e.g. [EN] 24/7 Movies should not read as UK */
   } else {
     const fromPrefix = normalizeCountryIso(rawPrefix);
-    if (fromPrefix) return fromPrefix;
+    if (fromPrefix) {
+      const inferred = inferCountryFromCategory(categoryName);
+      if (inferred && isRegionalBlockToken(fromPrefix)) {
+        return inferred;
+      }
+      return fromPrefix;
+    }
   }
   return inferCountryFromCategory(categoryName) ?? null;
 }

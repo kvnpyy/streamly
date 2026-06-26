@@ -535,8 +535,8 @@ html[data-samsung-tv="true"] .tv-home-spotlight {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: clamp(0.85rem, 2vw, 1.35rem);
-  max-width: 1100px;
   width: 100%;
+  max-width: min(1400px, 96vw);
   margin: 0 auto;
 }
 
@@ -637,11 +637,35 @@ html[data-samsung-tv="true"] .tv-home-spotlight {
   white-space: nowrap;
 }
 
-/* TV simple browse (categories → grid) */
+/* TV simple browse (discovery rows → categories → grid) */
 .tv-simple-browse {
   display: flex;
   flex-direction: column;
   gap: 1.25rem;
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+}
+
+.tv-simple-browse__discovery {
+  display: flex;
+  flex-direction: column;
+  gap: clamp(1rem, 2.5vh, 1.75rem);
+  width: 100%;
+}
+
+.tv-simple-browse__categories {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  width: 100%;
+}
+
+.tv-simple-browse__section-title {
+  margin: 0;
+  font-size: clamp(1.05rem, 2.2vw, 1.3rem);
+  font-weight: 700;
+  color: var(--text);
 }
 
 .tv-simple-browse__lead {
@@ -685,6 +709,18 @@ html[data-samsung-tv="true"] .tv-home-spotlight {
 @media (min-width: 900px) {
   .tv-category-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1400px) {
+  .tv-category-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1920px) {
+  .tv-category-grid {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
   }
 }
 
@@ -810,8 +846,26 @@ html[data-samsung-tv="true"] .tv-home-spotlight {
 }
 
 .tv-simple-browse__vod-grid--simple {
-  grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
-  max-width: 72rem;
+  width: 100%;
+  grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr));
+}
+
+@media (min-width: 1200px) {
+  .tv-simple-browse__vod-grid--simple {
+    grid-template-columns: repeat(auto-fill, minmax(8.75rem, 1fr));
+  }
+}
+
+@media (min-width: 1600px) {
+  .tv-simple-browse__vod-grid--simple {
+    grid-template-columns: repeat(auto-fill, minmax(8.25rem, 1fr));
+  }
+}
+
+@media (min-width: 1920px) {
+  .tv-simple-browse__vod-grid--simple {
+    grid-template-columns: repeat(auto-fill, minmax(7.75rem, 1fr));
+  }
 }
 
 .tv-simple-browse__grid {
@@ -828,6 +882,7 @@ html[data-samsung-tv="true"] .tv-home-spotlight {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr));
   gap: 1rem;
+  width: 100%;
 }
 
 .tv-simple-browse__vod-card {
@@ -855,18 +910,22 @@ html[data-samsung-tv="true"] .tv-home-spotlight {
   display: flex;
   flex-direction: column;
   gap: 1.25rem;
-  max-width: 1100px;
+  flex: 1;
+  width: 100%;
+  max-width: min(1400px, 96vw);
+  margin: 0 auto;
 }
 
 .tv-settings__menu {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.85rem;
+  width: 100%;
 }
 
-@media (min-width: 900px) {
+@media (min-width: 1200px) {
   .tv-settings__menu {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 }
 

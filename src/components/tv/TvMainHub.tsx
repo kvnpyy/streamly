@@ -31,14 +31,14 @@ const HUB_TILES: HubTile[] = [
   {
     href: "/app/series",
     label: "TV Series",
-    subtitle: "Browse by category",
+    subtitle: "Discover & browse",
     icon: PlaySquare,
     accent: "tv-hub-tile--series",
   },
   {
     href: "/app/movies",
     label: "Movies",
-    subtitle: "Browse by category",
+    subtitle: "Discover & browse",
     icon: Clapperboard,
     accent: "tv-hub-tile--movies",
   },
