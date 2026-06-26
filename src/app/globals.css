@@ -281,11 +281,15 @@ video::-webkit-media-controls {
  * `data-tv`: modest scale so UI isn’t “half sidebar”. `data-tv-comfort`: optional larger UI from Settings.
  */
 html[data-tv="true"] {
-  font-size: 106%;
+  font-size: 118%;
+}
+
+html[data-living-room="true"] {
+  font-size: 132%;
 }
 
 html[data-tv-comfort="true"] {
-  font-size: 118%;
+  font-size: 142%;
 }
 
 html[data-tv="true"] .focus-ring:focus-visible {
@@ -335,14 +339,24 @@ html[data-tv-comfort="true"] [data-tv-card-root] {
 /*
  * Samsung Smart TV browsers default to ~125% page zoom. Use root font-size (not
  * `zoom`) — zoom on html breaks keyboard input in search fields on Tizen.
+ * When the user runs at 100% browser zoom (common on HDMI PCs), living-room
+ * still needs readable 10-foot UI — do not shrink below desktop.
  */
 html.samsung-tv-hint,
 html[data-samsung-tv="true"] {
   font-size: 80%;
 }
 
+html[data-samsung-tv="true"][data-living-room="true"] {
+  font-size: 128%;
+}
+
 html[data-samsung-tv="true"][data-tv-comfort="true"] {
   font-size: 88%;
+}
+
+html[data-samsung-tv="true"][data-living-room="true"][data-tv-comfort="true"] {
+  font-size: 142%;
 }
 
 html[data-samsung-tv="true"] .live-channel-search__input {
@@ -945,11 +959,185 @@ html[data-samsung-tv="true"] .tv-home-spotlight {
 }
 
 .tv-live-browse__header {
-  margin-bottom: 0.5rem;
+  margin-bottom: 0.35rem;
 }
 
 .tv-live-browse__header p {
   display: none;
+}
+
+.tv-live-browse--living-room .tv-live-browse__header h1 {
+  font-size: clamp(1.5rem, 2.8vw, 2rem);
+}
+
+.tv-live-browse__toolbar-btn {
+  min-height: 3.35rem;
+  padding: 0 1.35rem;
+  font-size: 1.05rem;
+}
+
+.tv-live-view-toggle [data-tv-card-root] {
+  min-width: 5.5rem;
+}
+
+.tv-live-browse__eyebrow {
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--brand-2);
+  margin-bottom: 0.25rem;
+}
+
+.tv-live-browse__section-title {
+  font-size: clamp(1.15rem, 2vw, 1.45rem);
+  font-weight: 700;
+  color: var(--text);
+}
+
+.tv-live-continue-card {
+  flex: 0 0 clamp(9rem, 14vw, 12rem);
+  width: clamp(9rem, 14vw, 12rem);
+}
+
+.tv-live-browse__continue {
+  margin-bottom: 0.25rem;
+}
+
+.tv-live-category-picker {
+  position: fixed;
+  inset: 0;
+  z-index: 95;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-0);
+  overflow: hidden;
+}
+
+.tv-live-category-picker__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.85rem 1rem;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg-1);
+  flex-shrink: 0;
+}
+
+.tv-live-category-picker__back {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  min-height: 3rem;
+  padding: 0 1rem;
+  border-radius: 0.9rem;
+  border: 2px solid var(--line);
+  background: var(--bg-2);
+  color: var(--text);
+  font-size: 1.05rem;
+  font-weight: 650;
+}
+
+.tv-live-category-picker__title {
+  font-size: clamp(1.35rem, 2.5vw, 1.75rem);
+  font-weight: 700;
+  color: var(--text);
+  margin: 0;
+  flex: 1;
+  min-width: 8rem;
+}
+
+.tv-live-category-picker__search-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  flex: 1 1 16rem;
+  min-width: min(100%, 20rem);
+  min-height: 3.1rem;
+  padding: 0 1rem;
+  border-radius: 0.9rem;
+  border: 2px solid var(--line);
+  background: var(--bg-2);
+}
+
+.tv-live-category-picker__search {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font-size: 1.05rem;
+  outline: none;
+}
+
+.tv-live-category-picker__clear {
+  display: grid;
+  place-items: center;
+  color: var(--text-muted);
+}
+
+.tv-live-category-picker__body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 1rem 1.25rem 1.5rem;
+  -webkit-overflow-scrolling: touch;
+}
+
+.tv-live-category-picker__meta {
+  font-size: 0.95rem;
+  color: var(--text-muted);
+  margin-bottom: 0.85rem;
+}
+
+.tv-live-category-picker__empty {
+  font-size: 1.1rem;
+  color: var(--text-muted);
+  padding: 2rem 0;
+  text-align: center;
+}
+
+.tv-live-category-picker__more {
+  display: block;
+  width: 100%;
+  margin-top: 1rem;
+  min-height: 3.25rem;
+  border-radius: 1rem;
+  border: 2px solid var(--line);
+  background: var(--bg-2);
+  color: var(--text);
+  font-size: 1.05rem;
+  font-weight: 650;
+}
+
+.tv-live-category-picker .tv-category-grid__item {
+  min-height: clamp(5rem, 13vh, 7rem);
+}
+
+.tv-live-category-picker .tv-category-grid__label {
+  font-size: clamp(1.05rem, 1.8vw, 1.35rem);
+}
+
+.tv-live-category-picker .tv-category-grid__count {
+  font-size: 0.95rem;
+}
+
+.tv-live-guide {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.tv-live-guide__toolbar {
+  padding-top: 0.65rem;
+  padding-bottom: 0.65rem;
+}
+
+.tv-live-browse--living-room .live-channel-search__input {
+  min-height: 3.1rem;
+  font-size: 1.05rem;
 }
 
 .tv-live-view-toggle [data-tv-card-root]:focus-visible {

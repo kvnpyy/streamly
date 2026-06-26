@@ -7,6 +7,7 @@ import { WebLiveBrowsePaged } from "@/components/WebLiveBrowsePaged";
 import { SkeletonGrid } from "@/components/SectionHeader";
 import { LiveShelfNameSearch } from "@/components/LiveShelfNameSearch";
 import { LiveCategoryBrowseModal } from "@/components/LiveCategoryBrowseModal";
+import { TvLiveCategoryPicker } from "@/components/tv/TvLiveCategoryPicker";
 import { LiveChannelSearchField } from "@/components/LiveChannelSearchField";
 import { LiveMediaCard } from "@/components/LiveMediaCard";
 import { SectionHeader } from "@/components/SectionHeader";
@@ -30,6 +31,7 @@ import {
 import { buildLivePlayUrl } from "@/lib/xtream";
 import { buildLiveRecentStreams } from "@/lib/live-recent-streams";
 import { useContinueRecentPlay } from "@/hooks/use-continue-recent-play";
+import { useLiveOpenCategory } from "@/hooks/use-live-open-category";
 import type { Category, LiveStream, XtreamCredentials } from "@/lib/xtream-types";
 import { usePlayer } from "@/store/player";
 import { usePrefs } from "@/store/preferences";
@@ -92,6 +94,7 @@ export function LiveShelfBrowsePage({
   const storedRegion = usePrefs((s) => s.tvRegionFilter);
   const [categoryBrowseOpen, setCategoryBrowseOpen] = useState(false);
   const [guideReady, setGuideReady] = useState(false);
+  const { openCategory } = useLiveOpenCategory();
 
 
   const tvRegion: TvRegion =
@@ -196,13 +199,15 @@ export function LiveShelfBrowsePage({
         <button
           type="button"
           onClick={() => setCategoryBrowseOpen(true)}
-          className={`inline-flex items-center justify-center gap-1.5 min-h-11 px-3 rounded-xl border border-(--line) bg-(--bg-2) text-xs font-medium text-(--text-dim) hover:text-(--text) hover:border-(--brand)/40 shrink-0 ${
-            tvLivingRoom ? "" : "lg:hidden"
+          className={`inline-flex items-center justify-center gap-2 rounded-xl border border-(--line) bg-(--bg-2) font-semibold text-(--text-dim) hover:text-(--text) hover:border-(--brand)/40 shrink-0 ${
+            tvLivingRoom
+              ? "tv-live-browse__toolbar-btn"
+              : "min-h-11 px-3 text-xs font-medium lg:hidden"
           }`}
           data-tv-card-root={tvLivingRoom ? true : undefined}
           aria-label="Open category browser"
         >
-          <Layers className="size-3.5" aria-hidden />
+          <Layers className={tvLivingRoom ? "size-5" : "size-3.5"} aria-hidden />
           Categories
         </button>
         <ViewToggle
@@ -223,11 +228,10 @@ export function LiveShelfBrowsePage({
   );
 
   return (
-    <TvFocusRoot className={tvLivingRoom ? "tv-live-browse" : undefined}>
-    <div className={tvLivingRoom ? "space-y-4 flex-1 flex flex-col min-h-0" : "space-y-5"}>
+    <TvFocusRoot className={tvLivingRoom ? "tv-live-browse tv-live-browse--living-room" : undefined}>
+    <div className={tvLivingRoom ? "space-y-3 flex-1 flex flex-col min-h-0" : "space-y-5"}>
       <SectionHeader
         hideDescriptionOnMobile
-        compact={tvLivingRoom}
         className={tvLivingRoom ? "tv-live-browse__header shrink-0" : undefined}
         eyebrow="Watch live"
         title="Live TV"
@@ -238,28 +242,63 @@ export function LiveShelfBrowsePage({
         }
         right={liveSearchToolbar}
       />
-      <LiveCategoryBrowseModal
-        open={categoryBrowseOpen}
-        onClose={() => setCategoryBrowseOpen(false)}
-        categories={sortedFilteredCats}
-        value={selected}
-        countById={countById}
-        onChange={setCategory}
-      />
-      {liveRecentStreams.length > 0 && (
-        <section>
+      {tvLivingRoom ? (
+        <TvLiveCategoryPicker
+          open={categoryBrowseOpen}
+          onClose={() => setCategoryBrowseOpen(false)}
+          categories={sortedFilteredCats}
+          countById={countById}
+          onSelect={(id, title) => openCategory(id, title)}
+        />
+      ) : (
+        <LiveCategoryBrowseModal
+          open={categoryBrowseOpen}
+          onClose={() => setCategoryBrowseOpen(false)}
+          categories={sortedFilteredCats}
+          value={selected}
+          countById={countById}
+          onChange={setCategory}
+        />
+      )}
+      {liveRecentStreams.length > 0 && view !== "guide" && (
+        <section className={tvLivingRoom ? "tv-live-browse__continue shrink-0" : undefined}>
           <div className="mb-3">
-            <p className="text-[11px] font-semibold uppercase tracking-widest text-(--brand-2) mb-0.5">
+            <p
+              className={
+                tvLivingRoom
+                  ? "tv-live-browse__eyebrow"
+                  : "text-[11px] font-semibold uppercase tracking-widest text-(--brand-2) mb-0.5"
+              }
+            >
               Pick up where you left off
             </p>
-            <h2 className="text-base font-bold text-(--text)">Continue Watching</h2>
+            <h2
+              className={
+                tvLivingRoom
+                  ? "tv-live-browse__section-title"
+                  : "text-base font-bold text-(--text)"
+              }
+            >
+              Continue Watching
+            </h2>
           </div>
           <div
-            className="flex gap-3 overflow-x-auto pb-2 -mx-4 px-4 scrollbar-hide"
+            className={
+              tvLivingRoom
+                ? "flex gap-4 overflow-x-auto pb-2 scrollbar-hide tv-shelf-scroll"
+                : "flex gap-3 overflow-x-auto pb-2 -mx-4 px-4 scrollbar-hide"
+            }
             style={{ WebkitOverflowScrolling: "touch" }}
           >
             {liveRecentStreams.map(({ recent, stream }) => (
-              <div key={recent.id} className="shrink-0 w-28 sm:w-32">
+              <div
+                key={recent.id}
+                className={
+                  tvLivingRoom
+                    ? "tv-live-continue-card shrink-0"
+                    : "shrink-0 w-28 sm:w-32"
+                }
+              >
                 <LiveMediaCard
                   streamId={recent.id}
                   creds={creds}
@@ -333,6 +372,7 @@ export function LiveShelfBrowsePage({
         guideChannelsQuery.isLoading && guideChannels.length === 0 ? (
           <SkeletonGrid variant="tile" count={6} />
         ) : guideReady ? (
+          <div className={tvLivingRoom ? "flex-1 min-h-0 flex flex-col" : undefined}>
           <LiveGuidePanel
             channels={guideChannels}
             allCategoriesMode
@@ -349,6 +389,7 @@ export function LiveShelfBrowsePage({
             onPlay={guidePlayChannel}
             livingRoomGuide={tvLivingRoom}
           />
+          </div>
         ) : (
           <SkeletonGrid variant="tile" count={6} />
         )
@@ -381,12 +422,12 @@ function ViewToggle({
     {
       value: "list" as const,
       label: tvLivingRoom ? "Browse" : "List",
-      icon: <LayoutList className="size-3.5" aria-hidden />,
+      icon: <LayoutList className={tvLivingRoom ? "size-5" : "size-3.5"} aria-hidden />,
     },
     {
       value: "guide" as const,
       label: tvLivingRoom ? "TV Guide" : "Guide",
-      icon: <CalendarDays className="size-3.5" aria-hidden />,
+      icon: <CalendarDays className={tvLivingRoom ? "size-5" : "size-3.5"} aria-hidden />,
     },
   ];
 
@@ -411,7 +452,7 @@ function ViewToggle({
           onFocus={item.value === "guide" ? prefetchLiveGuideChunk : undefined}
           onClick={() => setView(item.value)}
           className={`flex items-center gap-1.5 rounded-lg font-medium transition-colors ${
-            tvLivingRoom ? "min-h-11 px-4 text-sm" : "px-3 py-1.5 text-xs"
+            tvLivingRoom ? "tv-live-view-toggle__btn min-h-[3.25rem] px-5 text-base" : "min-h-11 px-4 text-sm"
           } ${
             view === item.value
               ? "bg-(--brand) text-white"
@@ -419,7 +460,11 @@ function ViewToggle({
           }`}
           aria-pressed={view === item.value}
         >
-          {item.icon}
+          {tvLivingRoom ? (
+            <span className="size-5 flex items-center justify-center">{item.icon}</span>
+          ) : (
+            item.icon
+          )}
           {item.label}
         </button>
       ))}

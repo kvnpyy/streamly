@@ -16,6 +16,7 @@ import {
   parseChannelMeta,
 } from "@/lib/channel-meta";
 import { isLiveGuideEpgEnabled } from "@/lib/live-epg-policy";
+import { buildLiveGuideLayout } from "@/lib/live-guide-layout";
 import { LIVE_GUIDE_MAX_CHANNELS } from "@/lib/live-guide-limits";
 import { cn } from "@/lib/utils";
 import { buildImageProxy } from "@/lib/xtream";
@@ -28,24 +29,7 @@ import { ChevronDown, ChevronRight, ChevronUp, Heart, Play, Radio } from "lucide
 import type { CSSProperties, KeyboardEvent } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 
-const PX_PER_MIN = 4; // 30 min slot = 120px wide
 const SLOT_MIN = 30;
-const SLOT_PX = SLOT_MIN * PX_PER_MIN; // 120
-/** CSS repeating gradient for half-hour slot lines (replaces 24 DOM nodes per row). */
-/** One gradient replaces 24 absolutely positioned divs per row (major scroll win). */
-const SLOT_GRID_STYLE: CSSProperties = {
-  backgroundImage: `repeating-linear-gradient(
-    90deg,
-    transparent 0,
-    transparent ${SLOT_PX - 1}px,
-    color-mix(in oklab, var(--line) 50%, transparent) ${SLOT_PX - 1}px,
-    color-mix(in oklab, var(--line) 50%, transparent) ${SLOT_PX}px
-  )`,
-};
-/** Taller rows so channel titles can wrap (providers often put events in the name). */
-const ROW_PX = 108;
-const HEADER_PX = 38;
-const CHANNEL_COL_PX = 336;
 const TOTAL_HOURS = 12;
 
 function subscribePhoneLandscape(callback: () => void) {
@@ -95,9 +79,13 @@ export function LiveGuide({
     () => false
   );
   const compactPhone = phoneLandscape && !livingRoomShell;
-  const channelColPx = compactPhone ? 248 : CHANNEL_COL_PX;
+  const layout = useMemo(
+    () => buildLiveGuideLayout(livingRoomShell, compactPhone),
+    [livingRoomShell, compactPhone]
+  );
+  const { pxPerMin, slotPx, rowPx, headerPx, channelColPx, slotGridStyle } =
+    layout;
   const totalHours = compactPhone ? 6 : TOTAL_HOURS;
-  const rowPx = compactPhone ? 88 : ROW_PX;
   // Anchor: round "now" down to the previous half-hour, then start the
   // viewport 30 min before that so users can see what just aired.
   const anchor = useMemo(() => {
@@ -131,7 +119,7 @@ export function LiveGuide({
   });
 
   const totalMinutes = totalHours * 60;
-  const totalWidth = totalMinutes * PX_PER_MIN;
+  const totalWidth = totalMinutes * pxPerMin;
 
   const slots = useMemo(() => {
     const out: number[] = [];
@@ -142,7 +130,7 @@ export function LiveGuide({
     const el = scrollerRef.current;
     if (!el) return;
     const nowOffsetMin = (now - anchor) / 60;
-    const target = Math.max(0, nowOffsetMin * PX_PER_MIN - 220);
+    const target = Math.max(0, nowOffsetMin * pxPerMin - 220);
     el.scrollTo({ left: target, behavior: "auto" });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [channels.length]);
@@ -152,17 +140,17 @@ export function LiveGuide({
     if (!el) return;
     const nowOffsetMin = (now - anchor) / 60;
     el.scrollTo({
-      left: Math.max(0, nowOffsetMin * PX_PER_MIN - 220),
+      left: Math.max(0, nowOffsetMin * pxPerMin - 220),
       behavior: "smooth",
     });
-  }, [now, anchor]);
+  }, [now, anchor, pxPerMin]);
 
   const onGuideScrollerKeyDown = useCallback(
     (e: KeyboardEvent<HTMLDivElement>) => {
       const el = scrollerRef.current;
       if (!el) return;
-      const stepX = SLOT_PX * 2;
-      const stepY = ROW_PX * 2;
+      const stepX = slotPx * 2;
+      const stepY = rowPx * 2;
       const beh: ScrollBehavior = "smooth";
       if (e.key === "ArrowLeft") {
         e.preventDefault();
@@ -190,7 +178,7 @@ export function LiveGuide({
         el.scrollBy({ top: el.clientHeight * 0.9, behavior: beh });
       }
     },
-    []
+    [rowPx, slotPx]
   );
 
   /**
@@ -204,8 +192,8 @@ export function LiveGuide({
     const el = scrollerRef.current;
     if (!el || !livingRoomShell) return;
 
-    const stepX = SLOT_PX * 2;
-    const stepY = ROW_PX * 2;
+    const stepX = slotPx * 2;
+    const stepY = rowPx * 2;
 
     const handleCapture = (e: globalThis.KeyboardEvent) => {
       if (!el.contains(document.activeElement) && document.activeElement !== el)
@@ -247,14 +235,29 @@ export function LiveGuide({
 
     el.addEventListener("keydown", handleCapture, true);
     return () => el.removeEventListener("keydown", handleCapture, true);
-  }, [livingRoomShell]);
+  }, [livingRoomShell, rowPx, slotPx]);
 
-  const nowLineLeft = ((now - anchor) / 60) * PX_PER_MIN;
+  const nowLineLeft = ((now - anchor) / 60) * pxPerMin;
 
   return (
-    <div className="card overflow-hidden">
-      <div className="flex items-center justify-between gap-3 px-3 py-2 border-b border-(--line) bg-(--bg-2)">
-        <div className="text-xs text-(--text-dim)">
+    <div
+      className={cn(
+        "card overflow-hidden",
+        livingRoomShell && "tv-live-guide"
+      )}
+    >
+      <div
+        className={cn(
+          "flex items-center justify-between gap-3 px-3 py-2 border-b border-(--line) bg-(--bg-2)",
+          livingRoomShell && "tv-live-guide__toolbar"
+        )}
+      >
+        <div
+          className={cn(
+            "text-(--text-dim)",
+            livingRoomShell ? "text-sm" : "text-xs"
+          )}
+        >
           {channels.length > effectiveLimit ? (
             <>
               Showing {visibleChannels.length} of {channels.length} channels ·{" "}
@@ -274,29 +277,38 @@ export function LiveGuide({
                 aria-label="Scroll guide up"
                 onClick={() => {
                   const el = scrollerRef.current;
-                  if (el) el.scrollBy({ top: -(ROW_PX * 4), behavior: "auto" });
+                  if (el) el.scrollBy({ top: -(rowPx * 4), behavior: "auto" });
                 }}
-                className="h-8 w-8 rounded-xl text-[11px] font-semibold bg-(--bg-3) hover:bg-(--bg-3)/90 text-(--text-dim) hover:text-(--text) border border-(--line) hover:border-(--brand)/35 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--brand)/45 focus-visible:ring-offset-2 focus-visible:ring-offset-(--bg-2) active:scale-[0.98] grid place-items-center"
+                className={cn(
+                  "rounded-xl font-semibold bg-(--bg-3) hover:bg-(--bg-3)/90 text-(--text-dim) hover:text-(--text) border border-(--line) hover:border-(--brand)/35 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--brand)/45 focus-visible:ring-offset-2 focus-visible:ring-offset-(--bg-2) active:scale-[0.98] grid place-items-center",
+                  livingRoomShell ? "h-11 w-11" : "h-8 w-8 text-[11px]"
+                )}
               >
-                <ChevronUp className="size-4" />
+                <ChevronUp className={livingRoomShell ? "size-5" : "size-4"} />
               </button>
               <button
                 type="button"
                 aria-label="Scroll guide down"
                 onClick={() => {
                   const el = scrollerRef.current;
-                  if (el) el.scrollBy({ top: ROW_PX * 4, behavior: "auto" });
+                  if (el) el.scrollBy({ top: rowPx * 4, behavior: "auto" });
                 }}
-                className="h-8 w-8 rounded-xl text-[11px] font-semibold bg-(--bg-3) hover:bg-(--bg-3)/90 text-(--text-dim) hover:text-(--text) border border-(--line) hover:border-(--brand)/35 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--brand)/45 focus-visible:ring-offset-2 focus-visible:ring-offset-(--bg-2) active:scale-[0.98] grid place-items-center"
+                className={cn(
+                  "rounded-xl font-semibold bg-(--bg-3) hover:bg-(--bg-3)/90 text-(--text-dim) hover:text-(--text) border border-(--line) hover:border-(--brand)/35 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--brand)/45 focus-visible:ring-offset-2 focus-visible:ring-offset-(--bg-2) active:scale-[0.98] grid place-items-center",
+                  livingRoomShell ? "h-11 w-11" : "h-8 w-8 text-[11px]"
+                )}
               >
-                <ChevronDown className="size-4" />
+                <ChevronDown className={livingRoomShell ? "size-5" : "size-4"} />
               </button>
             </>
           )}
           <button
             type="button"
             onClick={jumpToNow}
-            className="h-8 px-3 rounded-xl text-[11px] font-semibold bg-(--bg-3) hover:bg-(--bg-3)/90 text-(--text-dim) hover:text-(--text) border border-(--line) hover:border-(--brand)/35 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--brand)/45 focus-visible:ring-offset-2 focus-visible:ring-offset-(--bg-2) active:scale-[0.98]"
+            className={cn(
+              "rounded-xl font-semibold bg-(--bg-3) hover:bg-(--bg-3)/90 text-(--text-dim) hover:text-(--text) border border-(--line) hover:border-(--brand)/35 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--brand)/45 focus-visible:ring-offset-2 focus-visible:ring-offset-(--bg-2) active:scale-[0.98]",
+              livingRoomShell ? "h-11 px-4 text-sm" : "h-8 px-3 text-[11px]"
+            )}
           >
             Jump to Now
           </button>
@@ -317,7 +329,7 @@ export function LiveGuide({
         )}
         style={{
           maxHeight: livingRoomShell
-            ? "min(84dvh, calc(100dvh - 6.5rem))"
+            ? "min(88dvh, calc(100dvh - 5.5rem))"
             : compactPhone
               ? "min(70dvh, calc(100dvh - 8rem))"
               : "calc(100vh - 280px)",
@@ -328,16 +340,19 @@ export function LiveGuide({
           className="relative"
           style={{
             width: channelColPx + totalWidth,
-            height: HEADER_PX + rowVirtualizer.getTotalSize(),
+            height: headerPx + rowVirtualizer.getTotalSize(),
           }}
         >
           {/* Sticky time header */}
           <div
             className="sticky top-0 z-30 flex bg-(--bg-2) border-b border-(--line)"
-            style={{ height: HEADER_PX }}
+            style={{ height: headerPx }}
           >
             <div
-              className="sticky left-0 z-40 bg-(--bg-2) border-r border-(--line) flex items-center px-3 text-[11px] uppercase tracking-wider text-(--text-muted) font-semibold"
+              className={cn(
+                "sticky left-0 z-40 bg-(--bg-2) border-r border-(--line) flex items-center px-3 uppercase tracking-wider text-(--text-muted) font-semibold",
+                livingRoomShell ? "text-sm" : "text-[11px]"
+              )}
               style={{ width: channelColPx, minWidth: channelColPx }}
             >
               Channel
@@ -354,11 +369,12 @@ export function LiveGuide({
                         ? "border-(--line)"
                         : "border-(--line)/30"
                     )}
-                    style={{ left: i * SLOT_PX, width: SLOT_PX }}
+                    style={{ left: i * slotPx, width: slotPx }}
                   >
                     <span
                       className={cn(
-                        "ml-2 mr-2 text-[11px] tabular-nums truncate min-w-0",
+                        "ml-2 mr-2 tabular-nums truncate min-w-0",
+                        livingRoomShell ? "text-sm" : "text-[11px]",
                         isHourMark
                           ? "text-(--text-dim) font-semibold"
                           : "text-(--text-muted)/70 font-normal"
@@ -377,7 +393,7 @@ export function LiveGuide({
             className="absolute top-0 z-20 pointer-events-none"
             style={{
               left: channelColPx + nowLineLeft,
-              height: HEADER_PX + rowVirtualizer.getTotalSize(),
+              height: headerPx + rowVirtualizer.getTotalSize(),
             }}
           >
             <div className="w-px h-full bg-(--brand) opacity-80" />
@@ -405,6 +421,9 @@ export function LiveGuide({
                   totalWidth={totalWidth}
                   channelColPx={channelColPx}
                   rowPx={rowPx}
+                  pxPerMin={pxPerMin}
+                  slotGridStyle={slotGridStyle}
+                  livingRoom={livingRoomShell}
                   totalHours={totalHours}
                   categoryLabel={categoryNameById?.[c.category_id]}
                   isFavorite={isFavorite(c.stream_id)}
@@ -437,6 +456,9 @@ function GuideRow({
   totalWidth,
   channelColPx,
   rowPx,
+  pxPerMin,
+  slotGridStyle,
+  livingRoom,
   totalHours,
   categoryLabel,
   isFavorite,
@@ -452,20 +474,22 @@ function GuideRow({
   totalWidth: number;
   channelColPx: number;
   rowPx: number;
+  pxPerMin: number;
+  slotGridStyle: CSSProperties;
+  livingRoom: boolean;
   totalHours: number;
   categoryLabel?: string;
   isFavorite: boolean;
   onToggleFavorite: (c: LiveStream) => void;
   onPlay: (c: LiveStream) => void;
 }) {
-  const livingRoomShell = useLivingRoomShell();
   const [imgErr, setImgErr] = useState(false);
   const iconSrc = buildImageProxy(channel.stream_icon);
   const [ioRef, rowInScrollport] = useInViewWithin<HTMLDivElement>(
     scrollRoot,
     "64px 0px 200px 0px"
   );
-  const guideEpgOn = isLiveGuideEpgEnabled({ livingRoom: livingRoomShell });
+  const guideEpgOn = isLiveGuideEpgEnabled({ livingRoom });
 
   const country = useMemo(() => {
     const fromCat = categoryLabel
@@ -537,7 +561,8 @@ function GuideRow({
           type="button"
           onClick={() => onPlay(channel)}
           className={cn(
-            "size-10 shrink-0 rounded-xl bg-(--bg-3) border overflow-hidden grid place-items-center transition-all mt-0.5",
+            "shrink-0 rounded-xl bg-(--bg-3) border overflow-hidden grid place-items-center transition-all mt-0.5",
+            livingRoom ? "size-14" : "size-10",
             "border-(--line) hover:border-(--brand)/45 hover:shadow-[0_0_0_1px_rgba(124,92,255,0.2),0_8px_20px_rgba(124,92,255,0.08)]",
             "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--brand)/50 focus-visible:ring-offset-2 focus-visible:ring-offset-(--bg-1) active:scale-[0.97]",
             noEpg &&
@@ -560,7 +585,12 @@ function GuideRow({
         </button>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5">
-            <div className="text-[10px] font-mono text-(--text-muted) tabular-nums leading-none">
+            <div
+              className={cn(
+                "font-mono text-(--text-muted) tabular-nums leading-none",
+                livingRoom ? "text-sm" : "text-[10px]"
+              )}
+            >
               CH {channel.num}
             </div>
             {sourceIsExternal && (
@@ -578,7 +608,13 @@ function GuideRow({
             onClick={() => onPlay(channel)}
             className={cn(
               "w-full text-left font-medium text-(--text) leading-snug mt-0.5 break-words rounded-lg -mx-1 px-1 py-0.5 -my-0.5 transition-colors hover:bg-(--bg-3)/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--brand)/50",
-              noEpg ? "text-[11px] line-clamp-3" : "text-[12px] line-clamp-2"
+              noEpg
+                ? livingRoom
+                  ? "text-base line-clamp-3"
+                  : "text-[11px] line-clamp-3"
+                : livingRoom
+                  ? "text-lg line-clamp-2"
+                  : "text-[12px] line-clamp-2"
             )}
           >
             {channel.name}
@@ -592,13 +628,14 @@ function GuideRow({
             onToggleFavorite(channel);
           }}
           className={cn(
-            "size-7 rounded-lg grid place-items-center transition-colors shrink-0 mt-0.5",
+            "rounded-lg grid place-items-center transition-colors shrink-0 mt-0.5",
+            livingRoom ? "size-9" : "size-7",
             isFavorite
               ? "text-(--danger)"
               : "text-(--text-muted) hover:text-(--text)"
           )}
         >
-          <Heart className={cn("size-4", isFavorite && "fill-current")} />
+          <Heart className={cn(livingRoom ? "size-5" : "size-4", isFavorite && "fill-current")} />
         </button>
       </div>
 
@@ -606,7 +643,7 @@ function GuideRow({
       <div className="relative" style={{ width: totalWidth }}>
         <div
           className="absolute inset-0 pointer-events-none opacity-90"
-          style={SLOT_GRID_STYLE}
+          style={slotGridStyle}
           aria-hidden
         />
 
@@ -632,18 +669,37 @@ function GuideRow({
             )}
           >
             <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-(--brand)/22 text-(--brand) shadow-[inset_0_1px_0_rgba(255,255,255,0.12)] ring-1 ring-white/10 group-hover/play-strip:bg-(--brand)/30 transition-colors">
-              <Play className="size-4 fill-current opacity-95" aria-hidden />
+              <Play
+                className={cn(
+                  livingRoom ? "size-5" : "size-4",
+                  "fill-current opacity-95"
+                )}
+                aria-hidden
+              />
             </span>
             <span className="min-w-0 flex-1 flex flex-col gap-0.5">
-              <span className="text-[12px] font-semibold text-(--text) leading-snug tracking-tight">
+              <span
+                className={cn(
+                  "font-semibold text-(--text) leading-snug tracking-tight",
+                  livingRoom ? "text-base" : "text-[12px]"
+                )}
+              >
                 Play live stream
               </span>
-              <span className="text-[10px] text-(--text-muted) leading-snug">
+              <span
+                className={cn(
+                  "text-(--text-muted) leading-snug",
+                  livingRoom ? "text-sm" : "text-[10px]"
+                )}
+              >
                 No TV guide for this channel · uses playlist title on the left
               </span>
             </span>
             <ChevronRight
-              className="size-5 shrink-0 text-(--text-muted) opacity-70 group-hover/play-strip:text-(--brand-2) group-hover/play-strip:opacity-100 transition-colors translate-x-0 group-hover/play-strip:translate-x-0.5"
+              className={cn(
+                "shrink-0 text-(--text-muted) opacity-70 group-hover/play-strip:text-(--brand-2) group-hover/play-strip:opacity-100 transition-colors translate-x-0 group-hover/play-strip:translate-x-0.5",
+                livingRoom ? "size-6" : "size-5"
+              )}
               aria-hidden
             />
           </button>
@@ -654,8 +710,8 @@ function GuideRow({
             const range = epgProgramRangeUnixSec(p);
             if (!range) return null;
             const { start, end } = range;
-            const rawLeft = ((start - anchor) / 60) * PX_PER_MIN;
-            const rawRight = ((end - anchor) / 60) * PX_PER_MIN;
+            const rawLeft = ((start - anchor) / 60) * pxPerMin;
+            const rawRight = ((end - anchor) / 60) * pxPerMin;
             // Inset every block by 2px on each side so adjacent blocks don't
             // visually merge into each other.
             const GAP = 2;
@@ -675,7 +731,8 @@ function GuideRow({
                 onClick={() => onPlay(channel)}
                 title={`${title}\n${fmtClock(start)} – ${fmtClock(end)}`}
                 className={cn(
-                  "absolute top-1.5 bottom-1.5 rounded-lg text-left overflow-hidden text-[12px] transition-colors border",
+                  "absolute top-1.5 bottom-1.5 rounded-lg text-left overflow-hidden transition-colors border",
+                  livingRoom ? "text-sm" : "text-[12px]",
                   showText ? "px-2" : "px-0",
                   isCurrent
                     ? "bg-(--brand)/20 border-(--brand)/60 text-(--text) hover:bg-(--brand)/30 shadow-[0_0_0_1px_rgba(124,92,255,0.15)]"
@@ -695,7 +752,12 @@ function GuideRow({
                         {title}
                       </div>
                       {showStartTime && (
-                        <div className="text-[10px] tabular-nums opacity-70 truncate leading-tight mt-px">
+                        <div
+                          className={cn(
+                            "tabular-nums opacity-70 truncate leading-tight mt-px",
+                            livingRoom ? "text-xs" : "text-[10px]"
+                          )}
+                        >
                           {fmtClock(start)} – {fmtClock(end)}
                         </div>
                       )}

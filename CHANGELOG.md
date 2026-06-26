@@ -17,6 +17,21 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.8.2] — 2026-06-26
+
+TV Live UI overhaul — readable 10-foot text, fixed category picker freeze.
+
+### Fixed
+- **Categories freeze on TV** — full-screen paginated category grid replaces the heavy modal/virtualizer that locked the page.
+- **Tiny text on Samsung / TV browsers** — living-room font scale no longer shrinks to 80% at 100% browser zoom.
+- **TV Guide readability** — taller rows, wider channel column, larger programme text and controls.
+
+### Changed
+- **TV Live toolbar** — larger Categories, Browse, and TV Guide buttons; Continue Watching hidden on guide view.
+- **Category pick** on TV opens channel list overlay (same as shelf “See all”) instead of filtering into the desktop grid.
+
+---
+
 ## [0.8.1] — 2026-06-26
 
 Live TV layout fills wide screens — no more empty shelf gaps on TV.

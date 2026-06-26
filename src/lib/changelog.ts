@@ -11,6 +11,17 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.8.2",
+    date: "2026-06-26",
+    summary: "TV Live UI overhaul — readable 10-foot text, fixed category picker freeze.",
+    highlights: [
+      "Categories on TV: full-screen grid picker — no more page freeze from the old modal.",
+      "Samsung / TV browsers: fix root font scale so text is readable at 100% zoom.",
+      "TV Guide: taller rows, larger channel names and programme blocks.",
+      "TV Live: bigger toolbar controls; hide Continue Watching when viewing the guide.",
+    ],
+  },
+  {
     version: "0.8.1",
     date: "2026-06-26",
     summary: "Live TV layout fills wide screens — no more empty shelf gaps on TV.",

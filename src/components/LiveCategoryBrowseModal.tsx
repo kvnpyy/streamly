@@ -50,7 +50,7 @@ export function LiveCategoryBrowseModal({
     >
       <button
         type="button"
-        className="absolute inset-0 bg-black/72 backdrop-blur-[2px]"
+        className="absolute inset-0 bg-black/88"
         aria-label="Close category browser"
         onClick={onClose}
       />
