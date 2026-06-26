@@ -80,8 +80,8 @@ export function TvSimpleSettings() {
 
   useEffect(() => {
     if (!streamSignedIn) {
-      setRows([]);
-      return;
+      const id = window.setTimeout(() => setRows([]), 0);
+      return () => window.clearTimeout(id);
     }
     const id = window.setTimeout(() => {
       void loadPlaylists();
