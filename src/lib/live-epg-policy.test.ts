@@ -14,6 +14,7 @@ describe("live-epg-policy", () => {
     expect(isLiveDiscoveryEpgNetworkEnabled()).toBe(false);
     expect(isLiveProgrammeSearchEnabled()).toBe(false);
     expect(isLiveGuideEpgEnabled()).toBe(false);
+    expect(isLiveGuideEpgEnabled({ livingRoom: true })).toBe(true);
   });
 
   it("enables tile and shelf EPG by default", () => {

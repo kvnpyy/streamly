@@ -31,7 +31,7 @@ export const LiveShelfRow = memo(function LiveShelfRow({
     <TvShelf
       title={shelf.title}
       onSeeAll={onSeeAll}
-      morePlacement={variant === "web" ? "inline" : "outside"}
+      morePlacement="inline"
       moreCount={
         shelf.total > maxPerShelf ? shelf.total - maxPerShelf : undefined
       }

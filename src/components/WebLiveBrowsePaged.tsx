@@ -33,9 +33,12 @@ import {
   useSyncExternalStore,
 } from "react";
 
-const MAX_PER_SHELF = 6;
-const INITIAL_SHELF_COUNT = 8;
-const SHELF_LOAD_INCREMENT = 8;
+const MAX_PER_SHELF_WEB = 6;
+const MAX_PER_SHELF_TV = 10;
+const INITIAL_SHELF_COUNT_WEB = 8;
+const INITIAL_SHELF_COUNT_TV = 14;
+const SHELF_LOAD_INCREMENT_WEB = 8;
+const SHELF_LOAD_INCREMENT_TV = 10;
 
 export type WebLiveBrowsePagedProps = {
   creds: XtreamCredentials;
@@ -43,9 +46,15 @@ export type WebLiveBrowsePagedProps = {
     c: import("@/lib/xtream-types").LiveStream,
     shelf?: LiveShelfMeta
   ) => void;
+  /** Living-room TV — larger cards, faster shelf EPG, TV D-pad targets. */
+  tvLivingRoom?: boolean;
 };
 
-function WebLiveBrowsePagedInner({ creds, openChannel }: WebLiveBrowsePagedProps) {
+function WebLiveBrowsePagedInner({
+  creds,
+  openChannel,
+  tvLivingRoom = false,
+}: WebLiveBrowsePagedProps) {
   const activeStreamId = usePlayer((s) => s.current?.id);
   const storedRegion = usePrefs((s) => s.tvRegionFilter);
   const setStoredRegion = usePrefs((s) => s.setTvRegionFilter);
@@ -53,6 +62,14 @@ function WebLiveBrowsePagedInner({ creds, openChannel }: WebLiveBrowsePagedProps
   const setShelfEpgHints = useLiveBrowseUi((s) => s.setShelfEpgHints);
 
   const region: TvRegion = coerceTvRegion(storedRegion) ?? detectRegionFromTimezone();
+
+  const maxPerShelf = tvLivingRoom ? MAX_PER_SHELF_TV : MAX_PER_SHELF_WEB;
+  const initialVisible = tvLivingRoom
+    ? INITIAL_SHELF_COUNT_TV
+    : INITIAL_SHELF_COUNT_WEB;
+  const loadIncrement = tvLivingRoom
+    ? SHELF_LOAD_INCREMENT_TV
+    : SHELF_LOAD_INCREMENT_WEB;
 
   const {
     allShelves,
@@ -69,9 +86,9 @@ function WebLiveBrowsePagedInner({ creds, openChannel }: WebLiveBrowsePagedProps
   } = useLiveShelfBrowse({
     creds,
     region,
-    maxPerShelf: MAX_PER_SHELF,
-    initialVisible: INITIAL_SHELF_COUNT,
-    loadIncrement: SHELF_LOAD_INCREMENT,
+    maxPerShelf,
+    initialVisible,
+    loadIncrement,
     enabled: true,
   });
 
@@ -119,9 +136,10 @@ function WebLiveBrowsePagedInner({ creds, openChannel }: WebLiveBrowsePagedProps
     () => isMobileShellWidth(),
     () => false
   );
+  const shelfVariant = tvLivingRoom ? "tv" : "web";
   const shelfEpgReady = useDeferredMount(
-    mobileShell ? 2_500 : 120,
-    mobileShell ? 8_000 : 2_400
+    tvLivingRoom ? 600 : mobileShell ? 2_500 : 120,
+    tvLivingRoom ? 4_000 : mobileShell ? 8_000 : 2_400
   );
 
   const shelfNowPlayingMap = useShelfNowPlayingMap(
@@ -129,7 +147,7 @@ function WebLiveBrowsePagedInner({ creds, openChannel }: WebLiveBrowsePagedProps
     shelfEpgChannels,
     categoryNameById,
     shelfEpgReady && shelfEpgChannels.length > 0,
-    mobileShell ? 16 : 48
+    tvLivingRoom ? 24 : mobileShell ? 16 : 48
   );
 
   useEffect(() => {
@@ -152,16 +170,23 @@ function WebLiveBrowsePagedInner({ creds, openChannel }: WebLiveBrowsePagedProps
     (shelf: LiveShelfMeta) => (
       <LiveShelfRow
         shelf={shelf}
-        maxPerShelf={MAX_PER_SHELF}
+        maxPerShelf={maxPerShelf}
         creds={creds}
-        variant="web"
+        variant={shelfVariant}
         activeStreamId={activeStreamId}
         nowPlayingMap={shelfNowPlayingMap}
         onSeeAll={() => handleOpenCategory(shelf)}
         onPlay={openChannel}
       />
     ),
-    [creds, activeStreamId, openChannel, handleOpenCategory, shelfNowPlayingMap]
+    [
+      creds,
+      activeStreamId,
+      openChannel,
+      handleOpenCategory,
+      shelfNowPlayingMap,
+      shelfVariant,
+    ]
   );
 
   const onLoadMore = useCallback(
@@ -206,7 +231,7 @@ function WebLiveBrowsePagedInner({ creds, openChannel }: WebLiveBrowsePagedProps
   }, [hasMore, shelvesBuilding, loadMoreShelves, mobileShell]);
 
   return (
-    <div className="space-y-6 py-2">
+    <div className={tvLivingRoom ? "space-y-5 py-1 tv-live-shelves" : "space-y-6 py-2"}>
         <div className="flex items-center justify-between">
           <p className="text-sm text-(--text-dim)">
             <span className="font-medium text-(--text)">{visibleShelfCount}</span>{" "}

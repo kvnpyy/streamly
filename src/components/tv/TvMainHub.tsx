@@ -24,7 +24,7 @@ const HUB_TILES: HubTile[] = [
   {
     href: "/app/live",
     label: "Live TV",
-    subtitle: "Channels & categories",
+    subtitle: "Guide & channels",
     icon: Tv,
     accent: "tv-hub-tile--live",
   },

@@ -154,7 +154,9 @@ export function AppShell({ children }: { children: ReactNode }) {
             "w-full mx-auto flex-1 flex flex-col",
             isTvHub
               ? "px-5 py-5 sm:px-8"
-              : "max-w-[1920px] px-4 sm:px-6 lg:px-8 py-4 sm:py-6"
+              : isLivePage
+                ? "w-full flex-1 flex flex-col px-4 py-3 sm:px-6 sm:py-4"
+                : "max-w-[1920px] px-4 sm:px-6 lg:px-8 py-4 sm:py-6"
           )}
         >
           <BrowseMountGate frozen={playerOpen}>{children}</BrowseMountGate>
@@ -175,7 +177,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           mainInner
         )}
         <PlayerOverlay />
-        {isLivePage && !tvSimple ? <LiveCategoryOverlayHost /> : null}
+        {isLivePage ? <LiveCategoryOverlayHost /> : null}
         <AppVersionBadge />
       </div>
     );

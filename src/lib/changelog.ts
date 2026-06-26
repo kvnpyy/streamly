@@ -11,11 +11,23 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.8.1",
+    date: "2026-06-26",
+    summary: "Live TV layout fills wide screens — no more empty shelf gaps on TV.",
+    highlights: [
+      "Live TV: inline “+N more” after channel cards — fixes huge blank bands on 4K TVs.",
+      "Live TV browse: up to 10 channels per shelf row with responsive card widths.",
+      "TV Guide: taller programme grid on living-room browsers.",
+      "TV Live page: tighter padding and compact header for more content area.",
+    ],
+  },
+  {
     version: "0.8.0",
     date: "2026-06-26",
-    summary: "TV discovery browse, full-width layouts, and Balkan region filtering.",
+    summary: "TV discovery browse, cable-style live guide, and Balkan region filtering.",
     highlights: [
       "TV Movies/Series: restore discovery rows (Continue Watching, For You, Trending) on the landing view.",
+      "TV Live TV: category shelf rows with now-playing EPG subtitles and a full TV Guide grid.",
       "TV browse: full-width poster grids and denser category tiles — less blank space on large TVs.",
       "Live TV: recognize |BLN|, |HRV|, |MKD| and Balkan country names so North America no longer shows European shelves.",
       "TV settings menu expands to four columns on wide screens.",

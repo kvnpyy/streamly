@@ -17,12 +17,27 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.8.1] — 2026-06-26
+
+Live TV layout fills wide screens — no more empty shelf gaps on TV.
+
+### Fixed
+- **Live TV blank space** — "+N more" sits inline after channel cards instead of on the far edge; shelves show up to 10 channels per row on TV.
+- **TV channel card sizing** — responsive widths scale with viewport so rows use the full screen.
+- **TV Guide height** — programme grid uses more vertical space on living-room TVs.
+
+### Changed
+- **TV Live page** — tighter padding and compact header so browse/guide content gets more room.
+
+---
+
 ## [0.8.0] — 2026-06-26
 
-TV discovery browse, full-width layouts, and Balkan region filtering.
+TV discovery browse, cable-style live guide, and Balkan region filtering.
 
 ### Added
 - **TV Movies/Series discovery** — horizontal shelves (Continue Watching, For You, Trending, Top Rated, Newly Added) on the landing view before category pick.
+- **TV Live TV guide** — Browse / TV Guide toggle with horizontal category shelves (now-playing subtitles) and a cable-style programme grid with EPG on living-room TVs.
 - **Browse by category** section below discovery rows on TV VOD pages.
 
 ### Fixed

@@ -2,9 +2,7 @@
 
 import { LiveShelfBrowsePage } from "@/components/LiveShelfBrowsePage";
 import { LiveGridPageInner } from "@/components/LiveGridPageInner";
-import { TvSimpleLiveBrowse } from "@/components/tv/TvSimpleLiveBrowse";
 import { useLivePageShell } from "@/hooks/use-live-page-shell";
-import { useTvSimpleMode } from "@/lib/tv-simple-mode";
 import { useAuth } from "@/store/auth";
 import type { XtreamCredentials } from "@/lib/xtream-types";
 import { browseAccountKey } from "@/store/preferences";
@@ -32,13 +30,8 @@ function LivePageInner({
   accountKey: string;
 }) {
   const shell = useLivePageShell(creds, accountKey);
-  const tvSimple = useTvSimpleMode();
 
-  if (tvSimple) {
-    return <TvSimpleLiveBrowse shell={shell} />;
-  }
-
-  if (!shell.tvBrowser && shell.shelfBrowseActive) {
+  if (shell.shelfBrowseActive) {
     return (
       <LiveShelfBrowsePage
         creds={shell.creds}

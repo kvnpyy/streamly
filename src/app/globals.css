@@ -905,6 +905,57 @@ html[data-samsung-tv="true"] .tv-home-spotlight {
   width: clamp(11rem, 20vw, 15rem);
 }
 
+/* TV live browse — shelf rows + guide */
+.tv-live-browse {
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.tv-live-browse > .space-y-5 {
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+}
+
+.tv-live-shelves {
+  width: 100%;
+}
+
+.tv-live-shelves .tv-shelf-scroll {
+  width: 100%;
+  gap: clamp(0.65rem, 1.1vw, 1rem);
+}
+
+.tv-live-channel-card {
+  flex: 0 0 clamp(10rem, 9.5vw, 15rem);
+  width: clamp(10rem, 9.5vw, 15rem);
+}
+
+.tv-live-channel-card [data-tv-card-root] {
+  width: 100%;
+  max-width: none;
+}
+
+.tv-live-browse .card {
+  width: 100%;
+  max-width: none;
+}
+
+.tv-live-browse__header {
+  margin-bottom: 0.5rem;
+}
+
+.tv-live-browse__header p {
+  display: none;
+}
+
+.tv-live-view-toggle [data-tv-card-root]:focus-visible {
+  outline: none;
+}
+
 /* TV settings (simple mode) */
 .tv-settings {
   display: flex;

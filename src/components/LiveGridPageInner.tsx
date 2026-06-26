@@ -834,7 +834,8 @@ export function LiveGridPageInner({ shell }: { shell: LivePageShell }) {
             openChannel={shelfOpenChannel}
             isFavorite={(id) => isFavorite("live", id)}
             favorites={favorites}
-            reportNowPlaying={undefined}
+            nowPlayingMap={nowPlayingMap}
+            reportNowPlaying={reportNowPlaying}
           />
         ) : (
           <SkeletonGrid variant="tile" count={4} />

@@ -2,6 +2,7 @@
 
 import { LiveGuidePanel } from "@/components/live/LiveGuidePanel";
 import { LiveTrendingOnTvBlock } from "@/components/live/LiveTrendingOnTvBlock";
+import { TvFocusRoot } from "@/components/tv/TvFocusRoot";
 import { WebLiveBrowsePaged } from "@/components/WebLiveBrowsePaged";
 import { SkeletonGrid } from "@/components/SectionHeader";
 import { LiveShelfNameSearch } from "@/components/LiveShelfNameSearch";
@@ -33,7 +34,7 @@ import type { Category, LiveStream, XtreamCredentials } from "@/lib/xtream-types
 import { usePlayer } from "@/store/player";
 import { usePrefs } from "@/store/preferences";
 import { useQuery, type UseQueryResult } from "@tanstack/react-query";
-import { Layers } from "lucide-react";
+import { Layers, CalendarDays, LayoutList } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 type ViewMode = "list" | "guide";
@@ -195,7 +196,10 @@ export function LiveShelfBrowsePage({
         <button
           type="button"
           onClick={() => setCategoryBrowseOpen(true)}
-          className="lg:hidden inline-flex items-center justify-center gap-1.5 min-h-11 px-3 rounded-xl border border-(--line) bg-(--bg-2) text-xs font-medium text-(--text-dim) hover:text-(--text) hover:border-(--brand)/40 shrink-0"
+          className={`inline-flex items-center justify-center gap-1.5 min-h-11 px-3 rounded-xl border border-(--line) bg-(--bg-2) text-xs font-medium text-(--text-dim) hover:text-(--text) hover:border-(--brand)/40 shrink-0 ${
+            tvLivingRoom ? "" : "lg:hidden"
+          }`}
+          data-tv-card-root={tvLivingRoom ? true : undefined}
           aria-label="Open category browser"
         >
           <Layers className="size-3.5" aria-hidden />
@@ -205,6 +209,7 @@ export function LiveShelfBrowsePage({
           view={view}
           setView={setViewMode}
           pending={viewSwitchPending}
+          tvLivingRoom={tvLivingRoom}
         />
       </div>
       <LiveChannelSearchField
@@ -218,12 +223,19 @@ export function LiveShelfBrowsePage({
   );
 
   return (
-    <div className="space-y-5">
+    <TvFocusRoot className={tvLivingRoom ? "tv-live-browse" : undefined}>
+    <div className={tvLivingRoom ? "space-y-4 flex-1 flex flex-col min-h-0" : "space-y-5"}>
       <SectionHeader
         hideDescriptionOnMobile
+        compact={tvLivingRoom}
+        className={tvLivingRoom ? "tv-live-browse__header shrink-0" : undefined}
         eyebrow="Watch live"
         title="Live TV"
-        description="Browse channels by category. Click any channel to start streaming instantly."
+        description={
+          view === "guide"
+            ? "TV guide with what’s on now and coming up."
+            : "Browse channels by category — pick a row or open the full guide."
+        }
         right={liveSearchToolbar}
       />
       <LiveCategoryBrowseModal
@@ -335,16 +347,22 @@ export function LiveShelfBrowsePage({
               })
             }
             onPlay={guidePlayChannel}
+            livingRoomGuide={tvLivingRoom}
           />
         ) : (
           <SkeletonGrid variant="tile" count={6} />
         )
       ) : catalog.isFetched && !catalog.isError ? (
-        <WebLiveBrowsePaged creds={creds} openChannel={shelfOpenChannel} />
+        <WebLiveBrowsePaged
+          creds={creds}
+          openChannel={shelfOpenChannel}
+          tvLivingRoom={tvLivingRoom}
+        />
       ) : !catalog.isError ? (
         <SkeletonGrid variant="tile" count={4} />
       ) : null}
     </div>
+    </TvFocusRoot>
   );
 }
 
@@ -352,40 +370,59 @@ function ViewToggle({
   view,
   setView,
   pending,
+  tvLivingRoom = false,
 }: {
   view: ViewMode;
   setView: (v: ViewMode) => void;
   pending: boolean;
+  tvLivingRoom?: boolean;
 }) {
+  const items = [
+    {
+      value: "list" as const,
+      label: tvLivingRoom ? "Browse" : "List",
+      icon: <LayoutList className="size-3.5" aria-hidden />,
+    },
+    {
+      value: "guide" as const,
+      label: tvLivingRoom ? "TV Guide" : "Guide",
+      icon: <CalendarDays className="size-3.5" aria-hidden />,
+    },
+  ];
+
   return (
     <div
-      className="flex rounded-xl border border-(--line) bg-(--bg-2) p-0.5 shrink-0"
+      className={`flex rounded-xl border border-(--line) bg-(--bg-2) p-0.5 shrink-0 ${
+        tvLivingRoom ? "tv-live-view-toggle" : ""
+      }`}
+      role="group"
+      aria-label="Live layout"
       aria-busy={pending || undefined}
     >
-      <button
-        type="button"
-        onClick={() => setView("list")}
-        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-          view === "list"
-            ? "bg-(--brand) text-white"
-            : "text-(--text-dim) hover:text-(--text)"
-        }`}
-      >
-        List
-      </button>
-      <button
-        type="button"
-        onPointerEnter={prefetchLiveGuideChunk}
-        onFocus={prefetchLiveGuideChunk}
-        onClick={() => setView("guide")}
-        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-          view === "guide"
-            ? "bg-(--brand) text-white"
-            : "text-(--text-dim) hover:text-(--text)"
-        }`}
-      >
-        Guide
-      </button>
+      {items.map((item) => (
+        <button
+          key={item.value}
+          type="button"
+          data-tv-card-root={tvLivingRoom ? true : undefined}
+          disabled={pending}
+          onPointerEnter={
+            item.value === "guide" ? prefetchLiveGuideChunk : undefined
+          }
+          onFocus={item.value === "guide" ? prefetchLiveGuideChunk : undefined}
+          onClick={() => setView(item.value)}
+          className={`flex items-center gap-1.5 rounded-lg font-medium transition-colors ${
+            tvLivingRoom ? "min-h-11 px-4 text-sm" : "px-3 py-1.5 text-xs"
+          } ${
+            view === item.value
+              ? "bg-(--brand) text-white"
+              : "text-(--text-dim) hover:text-(--text)"
+          }`}
+          aria-pressed={view === item.value}
+        >
+          {item.icon}
+          {item.label}
+        </button>
+      ))}
     </div>
   );
 }

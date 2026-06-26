@@ -70,7 +70,9 @@ export function isLiveTrendingShelfEnabled(): boolean {
   return discoveryShelvesOn();
 }
 
-/** Per-row EPG in the programme guide (very heavy — off by default). */
-export function isLiveGuideEpgEnabled(): boolean {
-  return envEnabled("NEXT_PUBLIC_LIVE_GUIDE_EPG");
+/** Per-row EPG in the programme guide — off on web by default; on for living-room TVs. */
+export function isLiveGuideEpgEnabled(opts?: { livingRoom?: boolean }): boolean {
+  if (envDisabled("NEXT_PUBLIC_LIVE_GUIDE_EPG")) return false;
+  if (envEnabled("NEXT_PUBLIC_LIVE_GUIDE_EPG")) return true;
+  return opts?.livingRoom === true;
 }

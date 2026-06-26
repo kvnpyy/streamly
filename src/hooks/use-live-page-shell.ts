@@ -110,7 +110,11 @@ export function useLivePageShell(
         : String(savedLiveCategory);
 
   const prefsView: LiveViewMode =
-    savedLiveView === "list" || savedLiveView === "guide" ? savedLiveView : "list";
+    savedLiveView === "list" || savedLiveView === "guide"
+      ? savedLiveView
+      : tvBrowser
+        ? "guide"
+        : "list";
 
   const selectedBase = categoryOverride ?? prefsCategory;
   const view = viewOverride ?? prefsView;

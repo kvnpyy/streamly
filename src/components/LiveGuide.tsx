@@ -317,7 +317,7 @@ export function LiveGuide({
         )}
         style={{
           maxHeight: livingRoomShell
-            ? "min(72dvh, calc(100dvh - 9rem))"
+            ? "min(84dvh, calc(100dvh - 6.5rem))"
             : compactPhone
               ? "min(70dvh, calc(100dvh - 8rem))"
               : "calc(100vh - 280px)",
@@ -458,13 +458,14 @@ function GuideRow({
   onToggleFavorite: (c: LiveStream) => void;
   onPlay: (c: LiveStream) => void;
 }) {
+  const livingRoomShell = useLivingRoomShell();
   const [imgErr, setImgErr] = useState(false);
   const iconSrc = buildImageProxy(channel.stream_icon);
   const [ioRef, rowInScrollport] = useInViewWithin<HTMLDivElement>(
     scrollRoot,
     "64px 0px 200px 0px"
   );
-  const guideEpgOn = isLiveGuideEpgEnabled();
+  const guideEpgOn = isLiveGuideEpgEnabled({ livingRoom: livingRoomShell });
 
   const country = useMemo(() => {
     const fromCat = categoryLabel

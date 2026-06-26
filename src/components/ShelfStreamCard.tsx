@@ -23,14 +23,16 @@ export const ShelfStreamCard = memo(function ShelfStreamCard({
   const onClick = useCallback(() => onPlay(stream), [onPlay, stream]);
 
   return (
-    <TvChannelCard
-      variant={variant}
-      name={stream.name}
-      icon={stream.stream_icon}
-      panelServer={credsServer}
-      nowPlaying={nowPlaying}
-      active={active}
-      onClick={onClick}
-    />
+    <div className={variant === "tv" ? "tv-live-channel-card shrink-0" : undefined}>
+      <TvChannelCard
+        variant={variant}
+        name={stream.name}
+        icon={stream.stream_icon}
+        panelServer={credsServer}
+        nowPlaying={nowPlaying}
+        active={active}
+        onClick={onClick}
+      />
+    </div>
   );
 });

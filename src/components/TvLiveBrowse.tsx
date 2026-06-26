@@ -57,14 +57,10 @@ import {
   useState,
 } from "react";
 
-/** Channels shown per shelf. */
-// 5 cards per shelf: with wider cards (~220px) at 1280px viewport width, ~5 are
-// fully visible and the OverflowCard is always partially visible at the right edge,
-// giving users a clear affordance that more channels exist in that category.
-const MAX_PER_SHELF = 5;
-/** Shelves rendered on first paint — keep very low for TV browser speed. */
-const INITIAL_SHELF_COUNT = 4;
-const SHELF_LOAD_INCREMENT = 1;
+const MAX_PER_SHELF = 10;
+/** Shelves rendered on first paint — enough rows to fill a 1080p TV without blank bands. */
+const INITIAL_SHELF_COUNT = 12;
+const SHELF_LOAD_INCREMENT = 4;
 const SHELF_EPG_SCAN_MAX = 8;
 
 export type TvLiveBrowseProps = {
