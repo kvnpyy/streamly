@@ -1,6 +1,7 @@
 "use client";
 
 import { PlaylistSwitcher } from "@/components/PlaylistSwitcher";
+import { BrandMark } from "@/components/BrandMark";
 import { useTvBrowser } from "@/components/TvBrowserProvider";
 import { isAmazonSilkUserAgent } from "@/lib/tv-user-agent";
 import { cn } from "@/lib/utils";
@@ -9,6 +10,7 @@ import { useDebouncedValue } from "@/lib/use-debounce";
 import { useLiveSearchContextOptional } from "@/lib/live-search-context";
 import { LIVE_PAGE_PATH } from "@/lib/use-live-page-search";
 import { Search, Sparkles } from "lucide-react";
+import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   Suspense,
@@ -107,6 +109,7 @@ function TopBarInner({ title, subtitle }: { title?: string; subtitle?: string })
       : offRouteQuery;
 
   const pageTitle = title ?? routeTitle(pathname);
+  const onHome = pathname === "/app";
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -127,8 +130,27 @@ function TopBarInner({ title, subtitle }: { title?: string; subtitle?: string })
           tv ? "px-4 py-2" : "px-3 sm:px-6 py-2.5 sm:py-3"
         )}
       >
+        <Link
+          href="/app"
+          className={cn(
+            "lg:hidden shrink-0 inline-flex items-center gap-2 rounded-xl p-1 -ml-1 touch-manipulation transition-colors",
+            onHome
+              ? "ring-2 ring-(--brand)/35 bg-(--brand)/10"
+              : "hover:bg-(--bg-2) active:bg-(--bg-3)"
+          )}
+          aria-label={`${SITE_NAME} home`}
+          aria-current={onHome ? "page" : undefined}
+        >
+          <BrandMark size={8} />
+        </Link>
+
         {(pageTitle || subtitle) && (
-          <div className="min-w-0 shrink-0 max-w-[7rem] sm:max-w-none">
+          <div
+            className={cn(
+              "min-w-0 shrink-0 max-w-[7rem] sm:max-w-none",
+              onHome && "lg:block hidden"
+            )}
+          >
             {pageTitle && (
               <div
                 className={cn(

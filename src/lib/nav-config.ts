@@ -22,17 +22,16 @@ export const APP_NAV: NavItem[] = [
   { href: "/app/tv", label: "TV Mode", icon: PanelsTopLeft },
 ];
 
-/** Pinned on mobile bottom navigation — Search promoted for quick discovery. */
+/** Pinned on mobile bottom navigation — core browse: live, movies, series, search. */
 export const MOBILE_NAV_PRIMARY: NavItem[] = [
-  APP_NAV[0]!,
   APP_NAV[1]!,
   APP_NAV[2]!,
+  APP_NAV[3]!,
   APP_NAV[5]!,
 ];
 
-/** Rest — “More” sheet on mobile */
+/** Rest — “More” sheet on mobile (home is the top-left logo). */
 export const MOBILE_NAV_MORE: NavItem[] = [
-  APP_NAV[3]!,
   APP_NAV[4]!,
   APP_NAV[6]!,
 ];
