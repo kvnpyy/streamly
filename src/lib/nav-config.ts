@@ -3,7 +3,6 @@ import {
   Clapperboard,
   Compass,
   Heart,
-  PanelsTopLeft,
   PlaySquare,
   Search,
   Tv,
@@ -19,7 +18,6 @@ export const APP_NAV: NavItem[] = [
   { href: "/app/series", label: "Series", icon: PlaySquare },
   { href: "/app/favorites", label: "My List", icon: Heart },
   { href: "/app/search", label: "Search", icon: Search },
-  { href: "/app/tv", label: "TV Mode", icon: PanelsTopLeft },
 ];
 
 /** Pinned on mobile bottom navigation — core browse: live, movies, series, search. */
@@ -31,7 +29,4 @@ export const MOBILE_NAV_PRIMARY: NavItem[] = [
 ];
 
 /** Rest — “More” sheet on mobile (home is the top-left logo). */
-export const MOBILE_NAV_MORE: NavItem[] = [
-  APP_NAV[4]!,
-  APP_NAV[6]!,
-];
+export const MOBILE_NAV_MORE: NavItem[] = [APP_NAV[4]!];

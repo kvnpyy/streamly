@@ -9,8 +9,7 @@ import { Search, Settings } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-/** TV nav excludes the "TV Mode" redirect shortcut — it's only for desktop. */
-const TV_NAV_ITEMS = APP_NAV.filter((n) => n.href !== "/app/tv");
+const TV_NAV_ITEMS = APP_NAV;
 
 /**
  * Full-width sticky top navigation for TV-class browsers.

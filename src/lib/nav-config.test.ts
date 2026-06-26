@@ -16,9 +16,6 @@ describe("nav-config", () => {
       "/app/series",
       "/app/search",
     ]);
-    expect(MOBILE_NAV_MORE.map((n) => n.href)).toEqual([
-      "/app/favorites",
-      "/app/tv",
-    ]);
+    expect(MOBILE_NAV_MORE.map((n) => n.href)).toEqual(["/app/favorites"]);
   });
 });
