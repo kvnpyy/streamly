@@ -11,6 +11,17 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.8.0",
+    date: "2026-06-26",
+    summary: "TV discovery browse, full-width layouts, and Balkan region filtering.",
+    highlights: [
+      "TV Movies/Series: restore discovery rows (Continue Watching, For You, Trending) on the landing view.",
+      "TV browse: full-width poster grids and denser category tiles — less blank space on large TVs.",
+      "Live TV: recognize |BLN|, |HRV|, |MKD| and Balkan country names so North America no longer shows European shelves.",
+      "TV settings menu expands to four columns on wide screens.",
+    ],
+  },
+  {
     version: "0.6.0",
     date: "2026-06-25",
     summary: "Chromecast live playback and TV-simple UI.",

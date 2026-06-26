@@ -15,6 +15,26 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+---
+
+## [0.8.0] — 2026-06-26
+
+TV discovery browse, full-width layouts, and Balkan region filtering.
+
+### Added
+- **TV Movies/Series discovery** — horizontal shelves (Continue Watching, For You, Trending, Top Rated, Newly Added) on the landing view before category pick.
+- **Browse by category** section below discovery rows on TV VOD pages.
+
+### Fixed
+- **TV blank space** — movie/series grids and settings tiles use full screen width on large TVs.
+- **Wrong region channels** — Balkan IPTV prefixes (`|BLN|`, `|HRV|`, `|MKD|`) and country names (Bosnia, Croatia, etc.) map to Europe and hide from North America.
+
+### Changed
+- **TV hub** — Movies and Series subtitles now say “Discover & browse”.
+- **TV settings** — four-column tile layout on wide screens.
+
+---
+
 ## [0.6.0] — 2026-06-25
 
 Chromecast live playback and TV-simple UI.
