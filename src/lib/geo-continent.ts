@@ -168,8 +168,6 @@ const CODE_TO_REGION: Record<string, TvRegion> = {
   BALKAN: "Europe",
   HRV: "Europe",  // Croatia (ISO 3166-1 alpha-3)
   MKD: "Europe",  // North Macedonia
-  SVN: "Europe",  // Slovenia
-  MNE: "Europe",  // Montenegro
 
   // Middle East
   SA: "Middle East", KSA: "Middle East", SAU: "Middle East",
