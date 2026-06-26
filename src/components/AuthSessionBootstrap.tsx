@@ -82,7 +82,7 @@ export function AuthSessionBootstrap({ children }: { children: ReactNode }) {
       if (state.creds) finish();
     });
 
-    if (useAuth.getState().creds) {
+    if (useAuth.getState().creds && sessionStatus !== "authenticated") {
       finish();
       return () => {
         cancelled = true;
@@ -140,7 +140,9 @@ export function AuthSessionBootstrap({ children }: { children: ReactNode }) {
          * device, so restore never ran and users saw an empty library.
          */
         if (sessionStatus !== "authenticated") {
-          finish();
+          const local = useAuth.getState().creds;
+          if (local) applyCreds(local);
+          else finish();
           return;
         }
 

@@ -59,7 +59,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const isSearchPage = pathname === "/app/search";
   const isLivePage = pathname === LIVE_PAGE_PATH;
 
-  useGeoDefaultsBootstrap({ disabled: tvSimple });
+  useGeoDefaultsBootstrap();
 
   useEffect(() => {
     if (!authGateReady || creds) return;

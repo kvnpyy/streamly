@@ -714,6 +714,106 @@ html[data-samsung-tv="true"] .tv-home-spotlight {
   color: var(--text-muted);
 }
 
+.tv-simple-browse__count {
+  font-size: 0.95rem;
+  color: var(--text-muted);
+}
+
+.tv-region-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.tv-region-bar__label {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.tv-region-bar__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.tv-region-bar__chip {
+  min-height: 2.75rem;
+  padding: 0 1rem;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--bg-2);
+  color: var(--text-dim);
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.tv-region-bar__chip--active {
+  border-color: color-mix(in srgb, var(--brand) 55%, var(--line));
+  background: color-mix(in srgb, var(--brand) 14%, var(--bg-2));
+  color: var(--text);
+}
+
+.tv-simple-channel-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-width: 52rem;
+}
+
+.tv-simple-channel-list__row {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  width: 100%;
+  min-height: 4.25rem;
+  padding: 0.65rem 1rem;
+  border-radius: 0.85rem;
+  border: 1px solid var(--line);
+  background: var(--bg-2);
+  text-align: left;
+}
+
+.tv-simple-channel-list__logo {
+  flex-shrink: 0;
+  width: 3rem;
+  height: 3rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.tv-simple-channel-list__logo-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 3rem;
+  height: 3rem;
+  border-radius: 0.65rem;
+  background: var(--bg-3);
+  color: var(--brand-2);
+  font-weight: 800;
+  font-size: 1.1rem;
+}
+
+.tv-simple-channel-list__name {
+  flex: 1;
+  min-width: 0;
+  font-size: clamp(1rem, 2vw, 1.15rem);
+  font-weight: 600;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tv-simple-browse__vod-grid--simple {
+  grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
+  max-width: 72rem;
+}
+
 .tv-simple-browse__grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));

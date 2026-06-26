@@ -79,6 +79,17 @@ export function TvSimpleSettings() {
   }, [streamSignedIn]);
 
   useEffect(() => {
+    if (!streamSignedIn) {
+      setRows([]);
+      return;
+    }
+    const id = window.setTimeout(() => {
+      void loadPlaylists();
+    }, 0);
+    return () => window.clearTimeout(id);
+  }, [streamSignedIn, loadPlaylists]);
+
+  useEffect(() => {
     if (view !== "playlists") return;
     const id = window.setTimeout(() => {
       void loadPlaylists();

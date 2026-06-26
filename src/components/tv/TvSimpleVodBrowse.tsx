@@ -9,6 +9,10 @@ import { useCatalogPageReady } from "@/hooks/use-catalog-page-ready";
 import { slimSeriesCatalogQueryOptions } from "@/lib/slim-series-catalog-query";
 import { slimVodCatalogQueryOptions } from "@/lib/slim-vod-catalog-query";
 import {
+  TV_SIMPLE_CATEGORY_BATCH,
+  TV_SIMPLE_VOD_BATCH,
+} from "@/lib/tv-simple-browse";
+import {
   catalogGridTotal,
   catalogItemsNextPageParam,
   fetchSeriesCatalogGridPage,
@@ -62,6 +66,10 @@ export function TvSimpleVodBrowse({
     }
     return null;
   });
+  const [visibleCategoryCount, setVisibleCategoryCount] = useState(
+    TV_SIMPLE_CATEGORY_BATCH
+  );
+  const [visibleItemCount, setVisibleItemCount] = useState(TV_SIMPLE_VOD_BATCH);
 
   const slimQuery = useQuery(
     kind === "movie"
@@ -79,12 +87,12 @@ export function TvSimpleVodBrowse({
 
   const categoryItems = useMemo(
     () =>
-      filteredCats.map((c) => ({
+      filteredCats.slice(0, visibleCategoryCount).map((c) => ({
         id: String(c.category_id),
         label: c.category_name,
         count: countById[String(c.category_id)],
       })),
-    [filteredCats, countById]
+    [filteredCats, countById, visibleCategoryCount]
   );
 
   const selectedName = useMemo(() => {
@@ -98,11 +106,17 @@ export function TvSimpleVodBrowse({
   const pickCategory = useCallback(
     (id: string) => {
       setCategoryId(id);
+      setVisibleItemCount(TV_SIMPLE_VOD_BATCH);
       setBrowsePref(accountKey, {
         [prefKey]: id,
       } as { moviesCategory?: string; seriesCategory?: string });
     },
     [accountKey, prefKey, setBrowsePref]
+  );
+
+  const displayedItems = useMemo(
+    () => visible.slice(0, visibleItemCount),
+    [visible, visibleItemCount]
   );
 
   const catalogMetaReady = catalogReady && slimQuery.isSuccess;
@@ -180,8 +194,22 @@ export function TvSimpleVodBrowse({
   if (categoryId == null) {
     return (
       <TvFocusRoot className="tv-simple-browse">
-        <p className="tv-simple-browse__lead">Choose a category</p>
+        <p className="tv-simple-browse__lead">
+          Choose a {kind === "movie" ? "movie" : "series"} category
+        </p>
         <TvCategoryGrid items={categoryItems} onSelect={pickCategory} />
+        {filteredCats.length > visibleCategoryCount ? (
+          <button
+            type="button"
+            data-tv-card-root
+            className="tv-simple-browse__more focus-ring"
+            onClick={() =>
+              setVisibleCategoryCount((n) => n + TV_SIMPLE_CATEGORY_BATCH)
+            }
+          >
+            Show more categories ({visibleCategoryCount} of {filteredCats.length})
+          </button>
+        ) : null}
       </TvFocusRoot>
     );
   }
@@ -192,7 +220,10 @@ export function TvSimpleVodBrowse({
         type="button"
         data-tv-card-root
         className="tv-simple-browse__back focus-ring"
-        onClick={() => setCategoryId(null)}
+        onClick={() => {
+          setCategoryId(null);
+          setVisibleItemCount(TV_SIMPLE_VOD_BATCH);
+        }}
       >
         <ArrowLeft className="size-5 shrink-0" aria-hidden />
         <span>{selectedName}</span>
@@ -203,13 +234,20 @@ export function TvSimpleVodBrowse({
           <Loader2 className="size-8 animate-spin text-(--brand)" aria-hidden />
           <p>Loading titles…</p>
         </div>
-      ) : visible.length === 0 ? (
+      ) : displayedItems.length === 0 ? (
         <p className="tv-simple-browse__empty">Nothing in this category.</p>
       ) : (
         <>
-          <TvSpatialGrid className="tv-simple-browse__vod-grid">
+          <p className="tv-simple-browse__count">
+            Showing {displayedItems.length}
+            {totalInView > displayedItems.length
+              ? ` of ${totalInView}`
+              : ""}{" "}
+            titles
+          </p>
+          <TvSpatialGrid className="tv-simple-browse__vod-grid tv-simple-browse__vod-grid--simple">
             {kind === "movie"
-              ? (visible as VodStream[]).map((m) => (
+              ? (displayedItems as VodStream[]).map((m) => (
                   <div key={m.stream_id} className="tv-simple-browse__vod-card">
                     <MediaCard
                       onClick={() => playMovie(m)}
@@ -230,7 +268,7 @@ export function TvSimpleVodBrowse({
                     />
                   </div>
                 ))
-              : (visible as SeriesItem[]).map((s) => {
+              : (displayedItems as SeriesItem[]).map((s) => {
                   const sid = parsePositiveRouteId(s.series_id)!;
                   return (
                     <div key={sid} className="tv-simple-browse__vod-card">
@@ -254,17 +292,25 @@ export function TvSimpleVodBrowse({
                   );
                 })}
           </TvSpatialGrid>
-          {itemsPage.hasNextPage ? (
+          {visibleItemCount < visible.length || itemsPage.hasNextPage ? (
             <button
               type="button"
               data-tv-card-root
               className="tv-simple-browse__more focus-ring"
               disabled={itemsPage.isFetchingNextPage}
-              onClick={loadMore}
+              onClick={() => {
+                if (visibleItemCount < visible.length) {
+                  setVisibleItemCount((n) => n + TV_SIMPLE_VOD_BATCH);
+                  return;
+                }
+                loadMore();
+              }}
             >
               {itemsPage.isFetchingNextPage
                 ? "Loading…"
-                : `Load more (${visible.length} of ${totalInView})`}
+                : visibleItemCount < visible.length
+                  ? `Show more titles (${displayedItems.length} of ${visible.length})`
+                  : `Load more (${displayedItems.length} of ${totalInView})`}
             </button>
           ) : null}
         </>
