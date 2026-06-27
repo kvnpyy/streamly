@@ -17,6 +17,18 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.9.0] — 2026-06-26
+
+VPS capacity monitoring — know when to upgrade your server.
+
+### Added
+- **Host metrics collector** — cron-friendly script samples RAM, CPU, disk, and egress every 5 minutes.
+- **`GET /api/metrics`** — protected endpoint for Node memory, concurrent proxy streams, and upgrade signals.
+- **`npm run monitor:report`** — capacity report with `ok` → `watch` → `upgrade_soon` → `upgrade_now` findings.
+- **`scripts/vps-monitoring-setup.sh`** — one-time VPS installer (secret, `vps-spec.json`, cron, logrotate).
+
+---
+
 ## [0.8.2] — 2026-06-26
 
 TV Live UI overhaul — readable 10-foot text, fixed category picker freeze.

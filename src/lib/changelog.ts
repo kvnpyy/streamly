@@ -11,6 +11,17 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.9.0",
+    date: "2026-06-26",
+    summary: "VPS capacity monitoring — know when to upgrade your server.",
+    highlights: [
+      "Host metrics collector (RAM, CPU, disk, egress) runs every 5 minutes on the VPS.",
+      "Protected GET /api/metrics — stream-proxy concurrency, Node memory, upgrade signals.",
+      "npm run monitor:report — human-readable capacity summary to paste into support chats.",
+      "One-time scripts/vps-monitoring-setup.sh installs cron, secret, and vps-spec.json.",
+    ],
+  },
+  {
     version: "0.8.2",
     date: "2026-06-26",
     summary: "TV Live UI overhaul — readable 10-foot text, fixed category picker freeze.",

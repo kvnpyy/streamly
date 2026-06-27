@@ -259,11 +259,7 @@ export function assessCapacity(input: CapacityAssessInput): {
   }
 
   if (vps.trafficTbMonth && samples.length >= 2) {
-    const first = samples[0]!;
-    const last = samples[samples.length - 1]!;
-    const tx0 = first.egressMbps; // we don't have cumulative bytes in sample - skip monthly projection from samples alone
-    void tx0;
-    // Monthly projection handled in report script from host tx counters.
+    // Monthly projection handled in vps-capacity-report.ts from netTxBytes deltas.
   }
 
   if (!findings.length) {
