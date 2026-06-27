@@ -512,23 +512,65 @@ export function countryIsoToTvRegion(iso: string): TvRegion | null {
   return CODE_TO_REGION[code] ?? null;
 }
 
+/** Pan-regional IPTV labels without ISO codes (Arabic rows, Latino blocks, …). */
+const PAN_REGION_SIGNALS: ReadonlyArray<{ pattern: RegExp; region: TvRegion }> =
+  [
+    {
+      pattern:
+        /\b(ARABIC|ARABIC\s*TV|AR-MID|ARAB\s*TV|BEIN\s+SPORTS?|BEIN\s+CONNECT|OSN\s|ROTANA|MBC\s|AL\s*JAZEERA|ABU\s*DHABI|DUBAI\s*ONE|SHAHID)\b/i,
+      region: "Middle East",
+    },
+    {
+      pattern:
+        /\b(ARGENTINA|ARGENTINO|URUGUAY|PARAGUAY|CHILEAN?|COLOMBIA|VENEZUELA|ECUADOR|BOLIVIA|BRASIL|BRAZIL|MEXICO|LATINO|LATAM|TELEFE|TYC\s*SPORTS|DIRECTV\s*LAT|CARACOL|GLOBO|CLARO\s*SPORTS)\b/i,
+      region: "Latin America",
+    },
+    {
+      pattern:
+        /\b(UK\s*TV|BRITISH|ENGLAND\s*TV|SCOTLAND\s*TV|WALES\s*TV|IRELAND\s*TV|SWEDEN|NORWAY|DENMARK|FINLAND|GERMANY|FRANCE|SPAIN|ITALY|PORTUGAL|POLAND|ROMANIA|GREECE|HUNGARY|CROATIA|SERBIA|BOSNIA|BALKAN)\b/i,
+      region: "Europe",
+    },
+    {
+      pattern:
+        /\b(INDIA|PAKISTAN|BANGLADESH|PHILIPPINES|VIETNAM|THAILAND|INDONESIA|KOREA|JAPAN|CHINA|HONG\s*KONG|TAIWAN)\b/i,
+      region: "Asia",
+    },
+  ];
+
+/**
+ * Detect Middle East / Latin America / … blocks from free-text IPTV labels
+ * when no ISO prefix is present (e.g. "Arabic Entertainment", "ARGENTINA HD").
+ */
+export function detectPanRegionalSignal(text: string): TvRegion | null {
+  const t = text.trim();
+  if (!t) return null;
+  for (const { pattern, region } of PAN_REGION_SIGNALS) {
+    if (pattern.test(t)) return region;
+  }
+  return null;
+}
+
 /**
  * Get the continent region for a category.
  * Returns null when no country is detected (generic — Sports, Movies, …).
  */
 export function getCategoryRegion(categoryName: string): TvRegion | null {
+  const pan = detectPanRegionalSignal(categoryName);
+  if (pan) return pan;
   const iso = getCategoryCountryIso(categoryName);
-  if (!iso) return null;
-  return countryIsoToTvRegion(iso);
+  if (iso) return countryIsoToTvRegion(iso);
+  return null;
 }
 
 /**
  * Get the continent region for a channel name.
  */
 export function getStreamRegion(channelName: string): TvRegion | null {
+  const pan = detectPanRegionalSignal(channelName);
+  if (pan) return pan;
   const iso = getStreamCountryIso(channelName);
-  if (!iso) return null;
-  return countryIsoToTvRegion(iso);
+  if (iso) return countryIsoToTvRegion(iso);
+  return null;
 }
 
 /**

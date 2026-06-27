@@ -23,9 +23,15 @@ Samsung’s message means: **the `.wgt` they install must be signed with the sam
 
 ---
 
-## Fix path A — same App ID (try this first)
+## Fix path A — same App ID (FAILED — v1.0.2 and v1.0.3 rejected)
 
-You **keep** App ID `3202606046491`. Do **not** create a new author certificate.
+**Do not resubmit on App ID `3202606046491`.** Use **Path B** below.
+
+Path A was attempted with clean signed packages; Samsung rejected again with the same
+certificate error. Likely cause: first App Package on this ID was unsigned (before
+author cert existed Jun 23). Samsung cannot change the registered cert on an existing ID.
+
+---
 
 ### Step 1 — Back up your certificate (do this now)
 
@@ -92,7 +98,9 @@ If business → **Service Info** → registration number
 
 ---
 
-## Fix path B — new App ID (only if Path A fails again)
+## Fix path B — new App ID (**do this now**)
+
+See **`SAMSUNG_PATH_B_NEW_APP.md`** for the full checklist.
 
 Use this if Samsung rejects again with the **same certificate error** after a clean 1.0.3 upload.
 

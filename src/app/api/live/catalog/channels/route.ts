@@ -87,9 +87,7 @@ export async function GET(req: NextRequest) {
         streamById,
         limit
       );
-      if (regional.length > 0) {
-        return NextResponse.json({ streams: regional });
-      }
+      return NextResponse.json({ streams: regional });
     }
 
     const ids =

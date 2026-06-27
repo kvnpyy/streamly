@@ -79,11 +79,10 @@ export async function GET(req: NextRequest) {
         region,
         limit
       );
+      if (preview.length === 0) continue;
 
       const total =
-        preview.length > 0
-          ? (counts[catId] ?? counts[String(Number(catId))] ?? ids.length)
-          : 0;
+        counts[catId] ?? counts[String(Number(catId))] ?? ids.length;
       shelves.push({
         id: catId,
         title: category.category_name,

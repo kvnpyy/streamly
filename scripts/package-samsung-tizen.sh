@@ -29,20 +29,19 @@ echo "→ Packaging Streamly v${VERSION} with profile: ${PROFILE}"
 cd "$STAGE"
 tizen package -t wgt -s "$PROFILE" -o "$DIST" -- .
 
-BUILT=""
-for f in "$DIST"/*.wgt; do
-  [ -f "$f" ] || continue
-  BUILT="$f"
-  break
-done
+OUT="$DIST/streamly-samsung-tizen-${VERSION}-signed.wgt"
+BUILT="$DIST/Streamly.wgt"
+if [ ! -f "$BUILT" ]; then
+  # Fallback: newest .wgt in dist (ignore our own output name if re-run)
+  BUILT="$(ls -t "$DIST"/*.wgt 2>/dev/null | head -1 || true)"
+fi
 
-if [ -z "$BUILT" ]; then
+if [ -z "$BUILT" ] || [ ! -f "$BUILT" ]; then
   echo "No .wgt produced in $DIST" >&2
   exit 1
 fi
 
-OUT="$DIST/streamly-samsung-tizen-${VERSION}-signed.wgt"
-rm -f "$OUT" "$DIST/Streamly.wgt"
+rm -f "$OUT"
 mv -f "$BUILT" "$OUT"
 
 echo ""

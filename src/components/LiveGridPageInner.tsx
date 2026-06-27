@@ -710,12 +710,14 @@ export function LiveGridPageInner({ shell }: { shell: LivePageShell }) {
           <Layers className="size-3.5" aria-hidden />
           Categories
         </button>
-        <GridViewToggle
-          view={view}
-          setView={setViewMode}
-          pending={viewSwitchPending}
-          onGuideIntent={prefetchLiveGuideChunk}
-        />
+        {!tvLivingRoom ? (
+          <GridViewToggle
+            view={view}
+            setView={setViewMode}
+            pending={viewSwitchPending}
+            onGuideIntent={prefetchLiveGuideChunk}
+          />
+        ) : null}
       </div>
       <LiveChannelSearchField
         ref={liveSearchRef}
@@ -736,19 +738,22 @@ export function LiveGridPageInner({ shell }: { shell: LivePageShell }) {
       <div className="space-y-6">
         <SectionHeader
           hideDescriptionOnMobile
+          titleHidden
           eyebrow="Watch live"
           title="Live TV"
           description={
-            view === "guide"
+            tvLivingRoom
+              ? "Browse channels by category — pick a row or search above."
+              : view === "guide"
               ? "TV guide with what’s on now and coming up. Pick a category to focus the grid."
               : "Browse channels by category. Use search to find a channel or on-air programme."
           }
           right={liveSearchToolbar}
         />
 
-        {view === "list" ? liveDiscoveryBlocks : null}
+        {view === "list" || tvLivingRoom ? liveDiscoveryBlocks : null}
 
-        {!cats.isLoading && view === "guide" && (
+        {!cats.isLoading && view === "guide" && !tvLivingRoom && (
           <MobileCategoryRail
             categories={sortedFilteredCats}
             value={selected}
@@ -793,7 +798,7 @@ export function LiveGridPageInner({ shell }: { shell: LivePageShell }) {
           </div>
         )}
 
-        {view === "guide" ? (
+        {view === "guide" && !tvLivingRoom ? (
           channelsLoading || deferredSelected !== selected ? (
             <SkeletonGrid variant="tile" count={6} />
           ) : displayVisible.length === 0 ? (

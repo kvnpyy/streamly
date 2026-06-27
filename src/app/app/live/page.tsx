@@ -48,8 +48,7 @@ function LivePageInner({
         q={shell.q}
         setQ={shell.setQ}
         clearLiveSearch={shell.clearLiveSearch}
-        qTrim={shell.qTrim}
-        qLower={shell.qLower}
+        deferredQLower={shell.deferredQLower}
         tvLivingRoom={shell.tvLivingRoom}
         liveSearchRef={shell.liveSearchRef}
       />

@@ -341,7 +341,7 @@ export function CategoryPicker({
   );
 
   const entryKeys = entries.map((e) => e.id).join("\u001f");
-  const listKey = `${filter}\u0000${value}\u0000${entryKeys}`;
+  const listKey = `${value}\u0000${entryKeys}`;
   const useVirtual = entries.length >= CATEGORY_VIRTUAL_MIN;
   const ListBody = useVirtual ? VirtualCategoryListBody : CategoryListBody;
 
@@ -374,7 +374,9 @@ export function CategoryPicker({
       <input
         value={filter}
         onChange={(e) => setFilter(e.target.value)}
+        onPointerDown={(e) => e.stopPropagation()}
         onKeyDown={(e) => {
+          e.stopPropagation();
           if (e.key === "Escape") {
             e.preventDefault();
             setFilter("");
@@ -389,6 +391,7 @@ export function CategoryPicker({
         }}
         placeholder="Filter…"
         aria-label="Filter categories"
+        autoFocus={layout === "dialog"}
         className="w-full bg-(--bg-3) border border-(--line) rounded-lg px-3 h-9 text-sm outline-none focus:border-(--brand)/50"
       />
       <ListBody

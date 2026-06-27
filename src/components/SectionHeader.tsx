@@ -12,6 +12,8 @@ export function SectionHeader({
   hideDescriptionOnMobile,
   /** Tighter hero for routes where the sticky bar already carries the primary control (e.g. Search). */
   compact,
+  /** When a parent chrome bar already shows the page title (e.g. TvSubNav). */
+  titleHidden,
 }: {
   eyebrow?: string;
   title: string;
@@ -20,6 +22,7 @@ export function SectionHeader({
   className?: string;
   hideDescriptionOnMobile?: boolean;
   compact?: boolean;
+  titleHidden?: boolean;
 }) {
   return (
     <div
@@ -45,7 +48,8 @@ export function SectionHeader({
             "font-semibold tracking-tight text-(--text) text-balance",
             compact
               ? "text-lg sm:text-2xl"
-              : "text-2xl sm:text-3xl"
+              : "text-2xl sm:text-3xl",
+            titleHidden && "sr-only"
           )}
         >
           {title}

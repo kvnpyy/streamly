@@ -1,6 +1,7 @@
 "use client";
 
 import { useTvBrowser } from "@/components/TvBrowserProvider";
+import { isTextInputTarget } from "@/lib/is-text-input-target";
 import { cn } from "@/lib/utils";
 import { type ReactNode, useEffect, useRef } from "react";
 
@@ -21,23 +22,26 @@ export function TvFocusRoot({
   autoFocus = true,
 }: TvFocusRootProps) {
   const ref = useRef<HTMLDivElement>(null);
+  const didAutoFocusRef = useRef(false);
   const tv = useTvBrowser();
 
   useEffect(() => {
-    if (!tv || !autoFocus) return;
+    if (!tv || !autoFocus || didAutoFocusRef.current) return;
     const root = ref.current;
     if (!root) return;
 
     const id = window.requestAnimationFrame(() => {
+      if (isTextInputTarget(document.activeElement)) return;
       const first = root.querySelector<HTMLElement>(
         '[data-tv-card-root]:not([disabled])'
       );
       if (first && document.activeElement !== first) {
         first.focus({ preventScroll: true });
+        didAutoFocusRef.current = true;
       }
     });
     return () => window.cancelAnimationFrame(id);
-  }, [tv, autoFocus, children]);
+  }, [tv, autoFocus]);
 
   useEffect(() => {
     if (!tv) return;

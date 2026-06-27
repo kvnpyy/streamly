@@ -112,12 +112,12 @@ export function useLivePageShell(
   const prefsView: LiveViewMode =
     savedLiveView === "list" || savedLiveView === "guide"
       ? savedLiveView
-      : tvBrowser
-        ? "guide"
-        : "list";
+      : "list";
 
   const selectedBase = categoryOverride ?? prefsCategory;
-  const view = viewOverride ?? prefsView;
+  const viewBase = viewOverride ?? prefsView;
+  /** Living-room TV: shelf browse only — no EPG guide toggle. */
+  const view: LiveViewMode = tvLivingRoom ? "list" : viewBase;
 
   const setCategory = useCallback(
     (v: string | "all") => {

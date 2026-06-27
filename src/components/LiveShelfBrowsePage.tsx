@@ -56,8 +56,7 @@ export type LiveShelfBrowsePageProps = {
   q: string;
   setQ: (v: string) => void;
   clearLiveSearch: () => void;
-  qTrim: string;
-  qLower: string;
+  deferredQLower: string;
   tvLivingRoom: boolean;
   liveSearchRef: React.RefObject<HTMLInputElement | null>;
 };
@@ -80,8 +79,7 @@ export function LiveShelfBrowsePage({
   q,
   setQ,
   clearLiveSearch,
-  qTrim,
-  qLower,
+  deferredQLower,
   tvLivingRoom,
   liveSearchRef,
 }: LiveShelfBrowsePageProps) {
@@ -210,12 +208,14 @@ export function LiveShelfBrowsePage({
           <Layers className={tvLivingRoom ? "size-5" : "size-3.5"} aria-hidden />
           Categories
         </button>
-        <ViewToggle
-          view={view}
-          setView={setViewMode}
-          pending={viewSwitchPending}
-          tvLivingRoom={tvLivingRoom}
-        />
+        {!tvLivingRoom ? (
+          <ViewToggle
+            view={view}
+            setView={setViewMode}
+            pending={viewSwitchPending}
+            tvLivingRoom={tvLivingRoom}
+          />
+        ) : null}
       </div>
       <LiveChannelSearchField
         ref={liveSearchRef}
@@ -232,11 +232,14 @@ export function LiveShelfBrowsePage({
     <div className={tvLivingRoom ? "space-y-3 flex-1 flex flex-col min-h-0" : "space-y-5"}>
       <SectionHeader
         hideDescriptionOnMobile
+        titleHidden={tvLivingRoom}
         className={tvLivingRoom ? "tv-live-browse__header shrink-0" : undefined}
         eyebrow="Watch live"
         title="Live TV"
         description={
-          view === "guide"
+          tvLivingRoom
+            ? "Browse channels by category — pick a row or search above."
+            : view === "guide"
             ? "TV guide with what’s on now and coming up."
             : "Browse channels by category — pick a row or open the full guide."
         }
@@ -324,7 +327,7 @@ export function LiveShelfBrowsePage({
           </div>
         </section>
       )}
-      {!qTrim && catalog.isFetched && !catalog.isError && (
+      {!deferredQLower && catalog.isFetched && !catalog.isError && (
         <LiveTrendingOnTvBlock
           creds={creds}
           tvRegion={tvRegion}
@@ -352,10 +355,10 @@ export function LiveShelfBrowsePage({
           }
         />
       )}
-      {qTrim ? (
+      {deferredQLower ? (
         <LiveShelfNameSearch
           creds={creds}
-          qLower={qLower}
+          qLower={deferredQLower}
           categoryNameById={categoryNameById}
           openChannel={shelfOpenChannel}
           isFavorite={(id) => isFavorite("live", id)}
@@ -368,11 +371,11 @@ export function LiveShelfBrowsePage({
             })
           }
         />
-      ) : view === "guide" ? (
+      ) : view === "guide" && !tvLivingRoom ? (
         guideChannelsQuery.isLoading && guideChannels.length === 0 ? (
           <SkeletonGrid variant="tile" count={6} />
         ) : guideReady ? (
-          <div className={tvLivingRoom ? "flex-1 min-h-0 flex flex-col" : undefined}>
+          <div className="flex-1 min-h-0 flex flex-col">
           <LiveGuidePanel
             channels={guideChannels}
             allCategoriesMode
@@ -387,18 +390,23 @@ export function LiveShelfBrowsePage({
               })
             }
             onPlay={guidePlayChannel}
-            livingRoomGuide={tvLivingRoom}
+            livingRoomGuide={false}
           />
           </div>
         ) : (
           <SkeletonGrid variant="tile" count={6} />
         )
       ) : catalog.isFetched && !catalog.isError ? (
+        <div
+          className={tvLivingRoom ? "flex-1 min-h-0 overflow-y-auto tv-category-scroll" : undefined}
+          style={tvLivingRoom ? { WebkitOverflowScrolling: "touch" } : undefined}
+        >
         <WebLiveBrowsePaged
           creds={creds}
           openChannel={shelfOpenChannel}
           tvLivingRoom={tvLivingRoom}
         />
+        </div>
       ) : !catalog.isError ? (
         <SkeletonGrid variant="tile" count={4} />
       ) : null}

@@ -59,6 +59,23 @@ describe("categoryMatchesRegion", () => {
     expect(categoryMatchesRegion("|BLN| BOSNIA", "Europe")).toBe(true);
     expect(categoryMatchesRegion("|BLN| CROATIA", "Europe")).toBe(true);
   });
+
+  it("excludes Arabic and Argentina category labels from North America", () => {
+    expect(categoryMatchesRegion("Arabic Entertainment", "North America")).toBe(
+      false
+    );
+    expect(categoryMatchesRegion("|ARABIC| LIVE", "North America")).toBe(false);
+    expect(categoryMatchesRegion("ARGENTINA SPORTS", "North America")).toBe(
+      false
+    );
+    expect(categoryMatchesRegion("LATINO USA", "North America")).toBe(false);
+    expect(categoryMatchesRegion("Arabic Entertainment", "Middle East")).toBe(
+      true
+    );
+    expect(categoryMatchesRegion("ARGENTINA SPORTS", "Latin America")).toBe(
+      true
+    );
+  });
 });
 
 describe("streamMatchesRegion", () => {
@@ -99,6 +116,21 @@ describe("streamMatchesRegion", () => {
     ).toBe(false);
     expect(
       streamMatchesRegion("##### BOSNIA #####", "Sports", "Europe")
+    ).toBe(true);
+  });
+
+  it("filters Arabic and Argentina channels out of North America generic shelves", () => {
+    expect(
+      streamMatchesRegion("beIN Sports HD 1", "Sports", "North America")
+    ).toBe(false);
+    expect(
+      streamMatchesRegion("ARGENTINA: TyC Sports", "Sports", "North America")
+    ).toBe(false);
+    expect(
+      streamMatchesRegion("MBC Action HD", "Entertainment", "North America")
+    ).toBe(false);
+    expect(
+      streamMatchesRegion("ESPN HD", "Sports", "North America")
     ).toBe(true);
   });
 });

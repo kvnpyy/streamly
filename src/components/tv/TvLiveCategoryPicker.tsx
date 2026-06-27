@@ -9,7 +9,7 @@ import {
 import { TV_SIMPLE_CATEGORY_BATCH } from "@/lib/tv-simple-browse";
 import type { Category } from "@/lib/xtream-types";
 import { ArrowLeft, Search, X } from "lucide-react";
-import { useDeferredValue, useMemo, useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 
 type TvLiveCategoryPickerProps = {
   open: boolean;
@@ -32,6 +32,39 @@ export function TvLiveCategoryPicker({
   const [filter, setFilter] = useState("");
   const deferredFilter = useDeferredValue(filter.trim().toLowerCase());
   const [visibleCount, setVisibleCount] = useState(TV_SIMPLE_CATEGORY_BATCH);
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const id = window.requestAnimationFrame(() => {
+      searchRef.current?.focus({ preventScroll: true });
+    });
+    return () => window.cancelAnimationFrame(id);
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const body = bodyRef.current;
+    if (!body) return;
+    const onFocusIn = (e: FocusEvent) => {
+      const card = (e.target as HTMLElement | null)?.closest<HTMLElement>(
+        "[data-tv-card-root]"
+      );
+      card?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    };
+    body.addEventListener("focusin", onFocusIn);
+    return () => body.removeEventListener("focusin", onFocusIn);
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) {
+      queueMicrotask(() => {
+        setFilter("");
+        setVisibleCount(TV_SIMPLE_CATEGORY_BATCH);
+      });
+    }
+  }, [open]);
 
   const categoryNameIndex = useMemo(
     () => buildNameSearchIndex(categories, (c) => c.category_name),
@@ -64,7 +97,7 @@ export function TvLiveCategoryPicker({
   const isFiltering = deferredFilter.length > 0;
 
   return (
-    <TvFocusRoot className="tv-live-category-picker">
+    <TvFocusRoot autoFocus={false} className="tv-live-category-picker">
       <header className="tv-live-category-picker__header">
         <button
           type="button"
@@ -80,12 +113,15 @@ export function TvLiveCategoryPicker({
         <div className="tv-live-category-picker__search-wrap">
           <Search className="size-5 shrink-0 text-(--text-muted)" aria-hidden />
           <input
+            ref={searchRef}
             type="search"
             value={filter}
             onChange={(e) => {
               setFilter(e.target.value);
               setVisibleCount(TV_SIMPLE_CATEGORY_BATCH);
             }}
+            onPointerDown={(e) => e.stopPropagation()}
+            onKeyDown={(e) => e.stopPropagation()}
             placeholder="Search categories…"
             className="tv-live-category-picker__search live-channel-search__input"
             aria-label="Search categories"
@@ -103,7 +139,7 @@ export function TvLiveCategoryPicker({
         </div>
       </header>
 
-      <div className="tv-live-category-picker__body">
+      <div ref={bodyRef} className="tv-live-category-picker__body">
         {categories.length === 0 ? (
           <p className="tv-live-category-picker__empty">No categories loaded yet.</p>
         ) : filtered.length === 0 ? (

@@ -113,7 +113,19 @@ async function wireMocks(page) {
       await route.fulfill({
         status: 200,
         contentType: "application/json",
-        body: JSON.stringify({ shelves: [], streams: MOCK_STREAMS }),
+        body: JSON.stringify({
+          shelves: [
+            {
+              id: "1",
+              title: "News",
+              preview: MOCK_STREAMS,
+              total: MOCK_STREAMS.length,
+            },
+          ],
+          nextOffset: 2,
+          hasMore: false,
+          totalCategories: 2,
+        }),
       });
       return;
     }
@@ -169,7 +181,8 @@ async function gotoLiveApp(page, { retries = 2 } = {}) {
         throw new Error(`Expected /app/live but landed on ${page.url()}`);
       }
       await page
-        .getByRole("heading", { name: "Live TV", level: 1 })
+        .locator('h1:not(.sr-only)', { hasText: "Live TV" })
+        .first()
         .waitFor({ state: "visible", timeout: 30000 });
       await page.waitForTimeout(500);
       return;
@@ -190,29 +203,40 @@ async function isVisible(locator) {
 }
 
 async function openGuideView(page) {
-  await page.getByText("Mock News HD").waitFor({ state: "visible", timeout: 25000 });
-  const guideBtn = page.getByRole("button", { name: "Guide view" });
+  const guideSchedule = page.getByRole("grid", { name: "Live TV schedule" });
+  if (await isVisible(guideSchedule.first())) return;
+
+  await page
+    .getByText("Mock News HD")
+    .waitFor({ state: "visible", timeout: 25000 })
+    .catch(() => {});
+
+  const guideBtn = page
+    .getByRole("group", { name: "Live layout" })
+    .getByRole("button", { name: /guide/i });
   await guideBtn.waitFor({ state: "visible", timeout: 20000 });
-  await guideBtn.evaluate((el) => el.click());
+  await guideBtn.click();
   await page.waitForFunction(
-    () =>
-      document
-        .querySelector('[aria-label="Guide view"]')
-        ?.getAttribute("aria-pressed") === "true",
+    () => {
+      const group = document.querySelector('[role="group"][aria-label="Live layout"]');
+      if (!group) return false;
+      const pressed = group.querySelector('button[aria-pressed="true"]');
+      return /guide/i.test(pressed?.textContent ?? "");
+    },
     { timeout: 10000 }
   );
-  await page
-    .getByRole("grid", { name: "Live TV schedule" })
-    .waitFor({ state: "visible", timeout: 25000 });
+  await guideSchedule.waitFor({ state: "visible", timeout: 25000 });
 }
 
 async function playMockNewsChannel(page) {
   const playBtn = () => page.getByRole("button", { name: /Play.*Mock News HD/i }).first();
-  if (!(await isVisible(playBtn()))) {
-    await openGuideView(page);
+  if (await isVisible(playBtn())) {
+    await playBtn().evaluate((el) => el.click());
+  } else {
+    const channel = page.getByText("Mock News HD").first();
+    await channel.waitFor({ state: "visible", timeout: 25000 });
+    await channel.click();
   }
-  await playBtn().waitFor({ state: "visible", timeout: 25000 });
-  await playBtn().evaluate((el) => el.click());
   await page
     .locator("[data-player-controls]")
     .waitFor({ state: "visible", timeout: 15000 })
@@ -293,7 +317,7 @@ async function runTests() {
     );
 
     results.push(
-      await runTest("P0-1-tv-guide-toggle", async () => {
+      await runTest("P0-1-tv-browse-default", async () => {
         const ctx = await browser.newContext({
           viewport: { width: 1920, height: 1080 },
           userAgent: SAMSUNG_UA,
@@ -303,13 +327,26 @@ async function runTests() {
           await wireMocks(page);
           await seedAuth(page);
           await gotoLiveApp(page);
-          await openGuideView(page);
-          const guideSchedule = page.getByRole("grid", { name: "Live TV schedule" });
-          const hasGuide = await isVisible(guideSchedule.first());
+          const categoriesBtn = page.getByRole("button", {
+            name: "Open category browser",
+          });
+          const search = page.getByLabel("Search channels or programs");
+          const guideToggle = page.getByRole("group", { name: "Live layout" });
+          const hasCategories = await isVisible(categoriesBtn);
+          const hasSearch = await isVisible(search.first());
+          const guideToggleVisible =
+            (await guideToggle.count()) > 0 &&
+            (await isVisible(guideToggle.first()));
+          const mockChannel = page.getByText("Mock News HD");
+          const hasBrowseShelf = await isVisible(mockChannel.first());
           return {
-            id: "P0-1-tv-guide-toggle",
-            pass: hasGuide,
-            detail: `epgGrid=${hasGuide}`,
+            id: "P0-1-tv-browse-default",
+            pass:
+              hasCategories &&
+              hasSearch &&
+              !guideToggleVisible &&
+              hasBrowseShelf,
+            detail: `categories=${hasCategories} search=${hasSearch} guideToggle=${guideToggleVisible} shelf=${hasBrowseShelf}`,
           };
         } finally {
           await ctx.close();

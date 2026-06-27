@@ -1083,6 +1083,17 @@ html[data-samsung-tv="true"] .tv-home-spotlight {
   overflow-y: auto;
   padding: 1rem 1.25rem 1.5rem;
   -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+}
+
+.tv-category-scroll {
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+}
+
+[data-category-roving] {
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
 }
 
 .tv-live-category-picker__meta {
