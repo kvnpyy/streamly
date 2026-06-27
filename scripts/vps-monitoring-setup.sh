@@ -49,12 +49,14 @@ COLLECT="$APP_DIR/scripts/vps-monitor-collect.sh"
 chmod +x "$COLLECT"
 chown "$APP_USER:$APP_USER" "$COLLECT"
 
-CRON_LINE="*/5 * * * * cd $APP_DIR && /usr/bin/env bash -lc 'bash scripts/vps-monitor-collect.sh >> data/monitor/collect-cron.log 2>&1'"
+CRON_LINE="*/5 * * * * cd $APP_DIR && /usr/bin/env bash $APP_DIR/scripts/vps-monitor-collect.sh >> $APP_DIR/data/monitor/collect-cron.log 2>&1"
 
-sudo -u "$APP_USER" bash -lc "
-  (crontab -l 2>/dev/null | grep -v 'vps-monitor-collect.sh' || true
-   echo '$CRON_LINE') | crontab -
-"
+sudo -u "$APP_USER" bash -s <<CRONSH
+set -euo pipefail
+( crontab -l 2>/dev/null | grep -v 'vps-monitor-collect.sh' || true
+  echo '$CRON_LINE'
+) | crontab -
+CRONSH
 echo "Installed cron (every 5 min) for user $APP_USER."
 
 LOGROTATE="/etc/logrotate.d/streamly-monitor"

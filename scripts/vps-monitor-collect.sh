@@ -48,10 +48,14 @@ read_cpu_pct() {
 }
 
 pick_iface() {
-  awk -F'[: ]+' '
-    $1 ~ /^(lo|docker|veth|br-|tailscale)/ { next }
-    $3 > 0 { print $1; exit }
-  ' /proc/net/dev
+  awk 'NR > 2 {
+    split($0, parts, ":");
+    iface = parts[1];
+    gsub(/^[[:space:]]+|[[:space:]]+$/, "", iface);
+    if (iface == "" || iface ~ /^(lo|docker|veth|br-|tailscale)/) next;
+    print iface;
+    exit;
+  }' /proc/net/dev
 }
 
 read_net() {
@@ -61,9 +65,12 @@ read_net() {
     echo "0 0 0"
     return
   fi
-  read -r rx tx < <(awk -v iface="$iface" -F'[: ]+' '
-    $1 == iface { print $2, $10 }
-  ' /proc/net/dev)
+  read -r rx tx < <(awk -v iface="$iface" 'NR > 2 && index($0, iface ":") > 0 {
+    split($0, parts, ":");
+    gsub(/^[[:space:]]+|[[:space:]]+$/, "", parts[2]);
+    n = split(parts[2], f, /[[:space:]]+/);
+    if (n >= 9) print f[1], f[9];
+  }' /proc/net/dev)
   echo "$iface $rx $tx"
 }
 
