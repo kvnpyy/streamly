@@ -49,19 +49,22 @@ COLLECT="$APP_DIR/scripts/vps-monitor-collect.sh"
 chmod +x "$COLLECT"
 chown "$APP_USER:$APP_USER" "$COLLECT"
 
-CRON_LINE="*/5 * * * * cd $APP_DIR && /usr/bin/env bash $APP_DIR/scripts/vps-monitor-collect.sh >> $APP_DIR/data/monitor/collect-cron.log 2>&1"
+CRON_COLLECT="*/5 * * * * cd $APP_DIR && /usr/bin/env bash $APP_DIR/scripts/vps-monitor-collect.sh >> $APP_DIR/data/monitor/collect-cron.log 2>&1"
+CRON_NOTIFY="15 * * * * cd $APP_DIR && /usr/bin/npm run monitor:notify >> $APP_DIR/data/monitor/notify-cron.log 2>&1"
 
 sudo -u "$APP_USER" bash -s <<CRONSH
 set -euo pipefail
-( crontab -l 2>/dev/null | grep -v 'vps-monitor-collect.sh' || true
-  echo '$CRON_LINE'
+( crontab -l 2>/dev/null | grep -v 'vps-monitor-collect.sh' | grep -v 'monitor:notify' || true
+  echo '$CRON_COLLECT'
+  echo '$CRON_NOTIFY'
 ) | crontab -
 CRONSH
-echo "Installed cron (every 5 min) for user $APP_USER."
+echo "Installed cron: metrics every 5 min, alert email hourly for user $APP_USER."
 
 LOGROTATE="/etc/logrotate.d/streamly-monitor"
 cat >"$LOGROTATE" <<EOF
 $MONITOR_DIR/collect-cron.log
+$MONITOR_DIR/notify-cron.log
 $MONITOR_DIR/samples.jsonl {
   weekly
   rotate 4

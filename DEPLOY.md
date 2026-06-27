@@ -136,6 +136,17 @@ curl -fsS -H "Authorization: Bearer $CAPACITY_METRICS_SECRET" \
 
 Signals: `ok` → `watch` → `upgrade_soon` → `upgrade_now`. The report needs ~**48 samples** (~4 hours at 5 min intervals) before upgrade recommendations activate; until then it shows “collecting baseline.”
 
+**Email alerts** (optional, uses existing Resend config):
+
+```bash
+# In /opt/stream/iptv-player/.env
+CAPACITY_ALERT_EMAIL=you@example.com
+```
+
+Hourly cron (`npm run monitor:notify`) emails when the signal is **`upgrade_soon`** or **`upgrade_now`** (max once per 24h per level; escalations send immediately). Set `CAPACITY_ALERT_MIN_SIGNAL=watch` for earlier warnings, or `CAPACITY_ALERT_DISABLED=1` to turn off.
+
+Test without sending: `npm run monitor:notify -- --dry-run`
+
 Sentry (errors) and this stack (capacity) are complementary — Sentry won’t tell you when egress or RAM is trending high.
 
 ## Production process

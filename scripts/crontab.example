@@ -15,6 +15,9 @@
 # Install once: sudo bash scripts/vps-monitoring-setup.sh /opt/stream/iptv-player
 */5 * * * * cd /opt/stream/iptv-player && /usr/bin/env bash /opt/stream/iptv-player/scripts/vps-monitor-collect.sh >> /opt/stream/iptv-player/data/monitor/collect-cron.log 2>&1
 
+# Hourly upgrade alert email (Resend). Set CAPACITY_ALERT_EMAIL in .env.
+15 * * * * cd /opt/stream/iptv-player && /usr/bin/npm run monitor:notify >> /opt/stream/iptv-player/data/monitor/notify-cron.log 2>&1
+
 # Optional: prune old *.bak.* files weekly (keep last N days on your own schedule;
 # below only logs — replace with find -mtime +14 -delete when you are confident).
 # 0 4 * * 0 find /opt/stream/iptv-player/data -name '*.bak.*' -mtime +14 -print >> /opt/stream/iptv-player/data/prune-cron.log 2>&1
