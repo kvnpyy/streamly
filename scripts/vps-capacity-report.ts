@@ -23,32 +23,32 @@ function readJson<T>(path: string): T | null {
   }
 }
 
-function loadSamples(): CapacitySample[] {
+function loadSamples(): (CapacitySample & { netTxBytes?: number })[] {
   const path = join(MONITOR_DIR, "samples.jsonl");
   if (!existsSync(path)) return [];
-  return readFileSync(path, "utf8")
-    .trim()
-    .split("\n")
-    .filter(Boolean)
-    .map((line) => {
-      try {
-        const row = JSON.parse(line) as Record<string, unknown>;
-        return {
-          ts: String(row.ts ?? ""),
-          ramUsedPct: num(row.ramUsedPct),
-          cpuPct: num(row.cpuPct),
-          diskUsedPct: num(row.diskUsedPct),
-          swapUsedMb: num(row.swapUsedMb),
-          egressMbps: num(row.egressMbps),
-          streamActive: num(row.streamActive),
-          streamRpm: num(row.streamRpm),
-          netTxBytes: num(row.netTxBytes),
-        };
-      } catch {
-        return null;
-      }
-    })
-    .filter((s): s is CapacitySample => s != null && Boolean(s.ts));
+  const out: (CapacitySample & { netTxBytes?: number })[] = [];
+  for (const line of readFileSync(path, "utf8").trim().split("\n")) {
+    if (!line) continue;
+    try {
+      const row = JSON.parse(line) as Record<string, unknown>;
+      const ts = String(row.ts ?? "");
+      if (!ts) continue;
+      out.push({
+        ts,
+        ramUsedPct: num(row.ramUsedPct),
+        cpuPct: num(row.cpuPct),
+        diskUsedPct: num(row.diskUsedPct),
+        swapUsedMb: num(row.swapUsedMb),
+        egressMbps: num(row.egressMbps),
+        streamActive: num(row.streamActive),
+        streamRpm: num(row.streamRpm),
+        netTxBytes: num(row.netTxBytes),
+      });
+    } catch {
+      /* skip bad line */
+    }
+  }
+  return out;
 }
 
 function num(v: unknown): number | undefined {
