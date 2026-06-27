@@ -11,6 +11,17 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.10.0",
+    date: "2026-06-27",
+    summary: "TV Live browse defaults and tighter North America region filtering.",
+    highlights: [
+      "TV Live: open straight into category shelves — Guide/List toggle removed on living-room TVs.",
+      "Live TV search: fix keyboard dropping after one letter; category lists scroll while filtering.",
+      "North America: hide Arabic, Latin American, and other foreign shelves unless that region is selected.",
+      "Live API: stop falling back to unfiltered channels when regional sampling returns empty.",
+    ],
+  },
+  {
     version: "0.9.0",
     date: "2026-06-26",
     summary: "VPS capacity monitoring — know when to upgrade your server.",

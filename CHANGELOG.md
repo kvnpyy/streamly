@@ -17,6 +17,18 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.10.0] — 2026-06-27
+
+TV Live browse defaults and tighter North America region filtering.
+
+### Changed
+- **TV Live** opens into category shelves by default; Guide/List toggle removed on living-room TVs.
+- **Live TV search** — keyboard no longer dismisses after one letter; category lists scroll while filtering.
+- **North America filter** — Arabic, Latin American, and other foreign shelves hidden unless that region is selected.
+- **Live catalog API** — no unfiltered channel fallback when regional sampling returns empty.
+
+---
+
 ## [0.9.0] — 2026-06-26
 
 VPS capacity monitoring — know when to upgrade your server.

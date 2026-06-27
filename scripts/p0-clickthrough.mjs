@@ -202,32 +202,6 @@ async function isVisible(locator) {
   }
 }
 
-async function openGuideView(page) {
-  const guideSchedule = page.getByRole("grid", { name: "Live TV schedule" });
-  if (await isVisible(guideSchedule.first())) return;
-
-  await page
-    .getByText("Mock News HD")
-    .waitFor({ state: "visible", timeout: 25000 })
-    .catch(() => {});
-
-  const guideBtn = page
-    .getByRole("group", { name: "Live layout" })
-    .getByRole("button", { name: /guide/i });
-  await guideBtn.waitFor({ state: "visible", timeout: 20000 });
-  await guideBtn.click();
-  await page.waitForFunction(
-    () => {
-      const group = document.querySelector('[role="group"][aria-label="Live layout"]');
-      if (!group) return false;
-      const pressed = group.querySelector('button[aria-pressed="true"]');
-      return /guide/i.test(pressed?.textContent ?? "");
-    },
-    { timeout: 10000 }
-  );
-  await guideSchedule.waitFor({ state: "visible", timeout: 25000 });
-}
-
 async function playMockNewsChannel(page) {
   const playBtn = () => page.getByRole("button", { name: /Play.*Mock News HD/i }).first();
   if (await isVisible(playBtn())) {
