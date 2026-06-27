@@ -90,6 +90,7 @@ function WebLiveBrowsePagedInner({
     initialVisible,
     loadIncrement,
     enabled: true,
+    bootstrapIdleMs: tvLivingRoom ? 0 : undefined,
   });
 
   const handleRegionChange = useCallback(
@@ -138,8 +139,8 @@ function WebLiveBrowsePagedInner({
   );
   const shelfVariant = tvLivingRoom ? "tv" : "web";
   const shelfEpgReady = useDeferredMount(
-    tvLivingRoom ? 600 : mobileShell ? 2_500 : 120,
-    tvLivingRoom ? 4_000 : mobileShell ? 8_000 : 2_400
+    tvLivingRoom ? 180 : mobileShell ? 2_500 : 120,
+    tvLivingRoom ? 1_600 : mobileShell ? 8_000 : 2_400
   );
 
   const shelfNowPlayingMap = useShelfNowPlayingMap(

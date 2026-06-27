@@ -1,6 +1,7 @@
 /** Live TV page — defer heavy shelf UI until catalog is loaded and main thread is idle. */
 
 export const LIVE_BROWSE_UI_DEFER_MS = 600;
+export const LIVE_BROWSE_UI_DEFER_TV_MS = 100;
 
 export function scheduleLiveBrowseUiReady(
   onReady: () => void,

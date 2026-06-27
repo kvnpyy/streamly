@@ -27,6 +27,8 @@ export type UseLiveShelfBrowseOptions = {
   initialVisible: number;
   loadIncrement: number;
   enabled?: boolean;
+  /** Idle wait before first shelf-batch request (TV: 0 for snappy navigation). */
+  bootstrapIdleMs?: number;
 };
 
 /**
@@ -40,6 +42,7 @@ export function useLiveShelfBrowse({
   initialVisible,
   loadIncrement,
   enabled = true,
+  bootstrapIdleMs = 120,
 }: UseLiveShelfBrowseOptions) {
   const previewLimit = maxPerShelf + 1;
 
@@ -183,7 +186,7 @@ export function useLiveShelfBrowse({
           }
         }
       })();
-    }, 120);
+    }, bootstrapIdleMs);
 
     return () => {
       cancelled = true;
@@ -198,6 +201,7 @@ export function useLiveShelfBrowse({
     initialVisible,
     fetchBatch,
     prefetchNext,
+    bootstrapIdleMs,
   ]);
 
   /** Reveal every category already fetched (avoids dozens of "Show more" clicks). */

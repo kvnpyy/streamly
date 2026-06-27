@@ -11,6 +11,16 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.10.1",
+    date: "2026-06-27",
+    summary: "Faster TV navigation between hub and Live/VOD/Series pages.",
+    highlights: [
+      "TV hub prefetch: warm route chunks and slim catalogs on the home menu; tiles prefetch on D-pad focus.",
+      "Shorter TV deferrals: catalogs, discovery shelves, live browse UI, and shelf loading start sooner.",
+      "Back to Home: TV sub-nav prefetches the hub route on focus.",
+    ],
+  },
+  {
     version: "0.10.0",
     date: "2026-06-27",
     summary: "TV Live browse defaults and tighter North America region filtering.",

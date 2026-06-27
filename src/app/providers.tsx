@@ -16,10 +16,13 @@ import { SessionProvider } from "next-auth/react";
 import { useState } from "react";
 import { TvServerHintsProvider } from "@/lib/tv-server-hints";
 import { useTvSimpleMode } from "@/lib/tv-simple-mode";
+import { TvHubPrefetch } from "@/components/tv/TvHubPrefetch";
 
 function TvLeanBootstraps() {
   const tvSimple = useTvSimpleMode();
-  if (tvSimple) return null;
+  if (tvSimple) {
+    return <TvHubPrefetch />;
+  }
   return (
     <>
       <CatalogPrefetch />

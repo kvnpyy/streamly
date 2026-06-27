@@ -7,7 +7,8 @@ import { TvCategoryGrid } from "@/components/tv/TvCategoryGrid";
 import { TvFocusRoot } from "@/components/tv/TvFocusRoot";
 import { TvSpatialGrid } from "@/components/TvSpatialGrid";
 import { useCatalogPlay } from "@/hooks/use-catalog-play";
-import { useCatalogPageReady } from "@/hooks/use-catalog-page-ready";
+import { useTvCatalogPageReady } from "@/hooks/use-catalog-page-ready";
+import { useTvSimpleMode } from "@/lib/tv-simple-mode";
 import {
   attachMovieDiscoveryShelfItems,
   attachSeriesDiscoveryShelfItems,
@@ -71,7 +72,8 @@ export function TvSimpleVodBrowse({
     favorites,
   } = usePrefs();
   const { playMovie, movieDetailHref, enrichMovieShelfItems } = useCatalogPlay();
-  const catalogReady = useCatalogPageReady();
+  const catalogReady = useTvCatalogPageReady();
+  const tvSimple = useTvSimpleMode();
 
   const prefKey = kind === "movie" ? "moviesCategory" : "seriesCategory";
   const savedCategory = usePrefs(
@@ -234,8 +236,8 @@ export function TvSimpleVodBrowse({
       queueMicrotask(() => setDiscoveryReady(false));
       return;
     }
-    return scheduleWhenIdle(() => setDiscoveryReady(true), 1_500);
-  }, [activeCategoryId, slimQuery.isLoading, discoveryOn]);
+    return scheduleWhenIdle(() => setDiscoveryReady(true), tvSimple ? 400 : 1_500);
+  }, [activeCategoryId, slimQuery.isLoading, discoveryOn, tvSimple]);
 
   const recentIds = useMemo(
     () =>

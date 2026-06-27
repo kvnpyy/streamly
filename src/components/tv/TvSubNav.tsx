@@ -4,7 +4,8 @@ import { tvRouteLabel } from "@/lib/tv-route-label";
 import { cn } from "@/lib/utils";
 import { ArrowLeft, Settings } from "lucide-react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+import { useCallback } from "react";
 
 type TvSubNavProps = {
   title?: string;
@@ -19,13 +20,21 @@ export function TvSubNav({
   className,
 }: TvSubNavProps) {
   const pathname = usePathname();
+  const router = useRouter();
   const label = title ?? tvRouteLabel(pathname);
+
+  const warmHome = useCallback(() => {
+    router.prefetch(backHref);
+  }, [router, backHref]);
 
   return (
     <nav className={cn("tv-sub-nav", className)} aria-label="Page navigation">
       <Link
         href={backHref}
+        prefetch
         data-tv-card-root
+        onFocus={warmHome}
+        onPointerEnter={warmHome}
         className="tv-sub-nav__back focus-ring"
       >
         <ArrowLeft className="size-6 shrink-0" aria-hidden />

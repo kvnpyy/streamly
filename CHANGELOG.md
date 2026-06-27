@@ -17,6 +17,17 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.10.1] — 2026-06-27
+
+Faster TV navigation between hub and Live/VOD/Series pages.
+
+### Changed
+- **TV hub prefetch** — warm route chunks and slim catalogs while on the home menu; tiles prefetch on D-pad focus.
+- **Shorter TV deferrals** — catalog fetch, discovery shelves, live browse UI, and shelf loading start sooner on living-room TVs.
+- **Back to Home** — TV sub-nav prefetches the hub route on focus.
+
+---
+
 ## [0.10.0] — 2026-06-27
 
 TV Live browse defaults and tighter North America region filtering.

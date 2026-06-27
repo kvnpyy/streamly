@@ -11,6 +11,11 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { TvFocusRoot } from "@/components/tv/TvFocusRoot";
+import { prefetchTvHubTile } from "@/lib/tv-hub-prefetch";
+import { useAuth } from "@/store/auth";
+import { useQueryClient } from "@tanstack/react-query";
+import { useRouter } from "next/navigation";
+import { useCallback } from "react";
 
 type HubTile = {
   href: string;
@@ -53,6 +58,18 @@ const HUB_TILES: HubTile[] = [
 
 /** Minimal TV home — four large targets, zero catalog work on mount. */
 export function TvMainHub() {
+  const creds = useAuth((s) => s.creds);
+  const qc = useQueryClient();
+  const router = useRouter();
+
+  const warmTile = useCallback(
+    (href: string) => {
+      if (!creds) return;
+      prefetchTvHubTile(href, creds, qc, router);
+    },
+    [creds, qc, router]
+  );
+
   return (
     <TvFocusRoot className="tv-main-hub">
       <header className="tv-main-hub__brand">
@@ -64,7 +81,10 @@ export function TvMainHub() {
           <Link
             key={tile.href}
             href={tile.href}
+            prefetch
             data-tv-card-root
+            onFocus={() => warmTile(tile.href)}
+            onPointerEnter={() => warmTile(tile.href)}
             className={cn("tv-hub-tile focus-ring", tile.accent)}
           >
             <tile.icon className="tv-hub-tile__icon" aria-hidden />

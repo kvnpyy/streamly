@@ -21,7 +21,7 @@ import {
 import { catalogKeys } from "@/lib/catalog-queries";
 import { EMPTY_LIVE_STREAMS } from "@/lib/live-browse-streams";
 import { prefetchLiveGuideChunk } from "@/lib/guide-chunk-prefetch";
-import { scheduleLiveBrowseUiReady } from "@/lib/live-page-performance";
+import { scheduleLiveBrowseUiReady, LIVE_BROWSE_UI_DEFER_TV_MS } from "@/lib/live-page-performance";
 import { useLiveDiscoveryEpg } from "@/hooks/use-live-discovery-epg";
 import { useShelfNowPlayingMap } from "@/hooks/use-shelf-now-playing";
 import { useTrendingOnTv } from "@/hooks/use-trending-on-tv";
@@ -243,7 +243,10 @@ export function LiveGridPageInner({ shell }: { shell: LivePageShell }) {
       queueMicrotask(() => setBrowseUiReady(false));
       return;
     }
-    return scheduleLiveBrowseUiReady(() => setBrowseUiReady(true));
+    return scheduleLiveBrowseUiReady(
+      () => setBrowseUiReady(true),
+      tvLivingRoom ? LIVE_BROWSE_UI_DEFER_TV_MS : undefined
+    );
   }, [streams.isLoading, catalog.data?.categories?.length]);
 
   const liveSearchLimits = useMemo(() => {
