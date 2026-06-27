@@ -255,7 +255,7 @@ async function handle(req: NextRequest, head: boolean) {
         new Response(tc.errorText, { status: tc.status, headers: tcHeaders })
       );
     }
-    if (tc.body && typeof tc.body !== "string") {
+    if (tc.body instanceof ReadableStream) {
       const tracked = trackStreamBodyBytes(
         passthroughStreamWithGracefulClose(tc.body, req.signal),
         finishStreamSlot
