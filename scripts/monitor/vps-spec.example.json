@@ -1,0 +1,8 @@
+{
+  "vcpu": 4,
+  "ramGb": 8,
+  "diskGb": 75,
+  "bandwidthMbps": 400,
+  "trafficTbMonth": null,
+  "notes": "OVH VPS-2 defaults. Set trafficTbMonth (e.g. 2) if your plan has a monthly cap."
+}

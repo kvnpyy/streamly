@@ -9,6 +9,10 @@ import {
 import { clientIp } from "@/lib/client-ip";
 import { newRequestId, STREAM_PROXY_REQUEST_ID_HEADER } from "@/lib/request-id";
 import { passthroughStreamWithGracefulClose } from "@/lib/stream-proxy-passthrough";
+import {
+  acquireStreamProxySlot,
+  recordStreamProxyBytes,
+} from "@/lib/runtime-metrics";
 import { maybeLogStreamUpstreamSlow } from "@/lib/stream-proxy-slow-log";
 import {
   isAllowedStreamProxyUserAgent,
@@ -176,32 +180,49 @@ async function handle(req: NextRequest, head: boolean) {
     });
   }
 
+  const releaseStreamSlot = acquireStreamProxySlot();
+  const finishStreamSlot = () => releaseStreamSlot();
+  req.signal.addEventListener("abort", finishStreamSlot, { once: true });
+
+  const respondShort = (res: Response) => {
+    queueMicrotask(finishStreamSlot);
+    return res;
+  };
+
   const transcodeMode = url.searchParams.get("transcode");
   if (transcodeMode === "release") {
     if (!isVodTranscodeEnabledServer()) {
-      return new Response("VOD transcode is not enabled.", {
-        status: 503,
-        headers: corsHeaders({ "content-type": "text/plain" }, requestId),
-      });
+      return respondShort(
+        new Response("VOD transcode is not enabled.", {
+          status: 503,
+          headers: corsHeaders({ "content-type": "text/plain" }, requestId),
+        })
+      );
     }
     if (!upstreamEligibleForVodTranscode(target)) {
-      return new Response("URL is not eligible for VOD transcode.", {
-        status: 400,
-        headers: corsHeaders({ "content-type": "text/plain" }, requestId),
-      });
+      return respondShort(
+        new Response("URL is not eligible for VOD transcode.", {
+          status: 400,
+          headers: corsHeaders({ "content-type": "text/plain" }, requestId),
+        })
+      );
     }
     releaseVodTranscodeJobs(target);
-    return new Response(null, {
-      status: 204,
-      headers: corsHeaders(undefined, requestId),
-    });
+    return respondShort(
+      new Response(null, {
+        status: 204,
+        headers: corsHeaders(undefined, requestId),
+      })
+    );
   }
   if (transcodeMode === "hls") {
     if (!isVodTranscodeEnabledServer()) {
-      return new Response("VOD transcode is not enabled.", {
-        status: 503,
-        headers: corsHeaders({ "content-type": "text/plain" }, requestId),
-      });
+      return respondShort(
+        new Response("VOD transcode is not enabled.", {
+          status: 503,
+          headers: corsHeaders({ "content-type": "text/plain" }, requestId),
+        })
+      );
     }
     const media = url.searchParams.get("media");
     const tcReset = url.searchParams.has("tc_reset");
@@ -230,19 +251,32 @@ async function handle(req: NextRequest, head: boolean) {
       requestId
     );
     if (tc.errorText) {
-      return new Response(tc.errorText, { status: tc.status, headers: tcHeaders });
+      return respondShort(
+        new Response(tc.errorText, { status: tc.status, headers: tcHeaders })
+      );
     }
-    return new Response(tc.body ?? null, { status: tc.status, headers: tcHeaders });
+    if (tc.body && typeof tc.body !== "string") {
+      const tracked = trackStreamBodyBytes(
+        passthroughStreamWithGracefulClose(tc.body, req.signal),
+        finishStreamSlot
+      );
+      return new Response(tracked, { status: tc.status, headers: tcHeaders });
+    }
+    return respondShort(
+      new Response(tc.body ?? null, { status: tc.status, headers: tcHeaders })
+    );
   }
 
   let upstreamUrl: URL;
   try {
     upstreamUrl = new URL(target);
   } catch {
-    return new Response("Invalid upstream URL", {
-      status: 400,
-      headers: corsHeaders({ "content-type": "text/plain" }, requestId),
-    });
+    return respondShort(
+      new Response("Invalid upstream URL", {
+        status: 400,
+        headers: corsHeaders({ "content-type": "text/plain" }, requestId),
+      })
+    );
   }
 
   const fwdHeaders = new Headers();
@@ -286,10 +320,12 @@ async function handle(req: NextRequest, head: boolean) {
         : null;
     const body =
       detail != null ? `Upstream fetch failed: ${detail}` : "Upstream fetch failed.";
-    return new Response(body, {
-      status: 502,
-      headers: corsHeaders({ "content-type": "text/plain" }, requestId),
-    });
+    return respondShort(
+      new Response(body, {
+        status: 502,
+        headers: corsHeaders({ "content-type": "text/plain" }, requestId),
+      })
+    );
   }
 
   maybeLogStreamUpstreamSlow({
@@ -306,6 +342,10 @@ async function handle(req: NextRequest, head: boolean) {
     const v = upstream.headers.get(name);
     if (v) responseHeaders.set(name, v);
   }
+  const contentLength = upstream.headers.get("content-length");
+  if (contentLength) {
+    recordStreamProxyBytes(parseInt(contentLength, 10));
+  }
 
   // For HLS we may need to rewrite the manifest. CRITICAL: use the FINAL
   // URL after any redirects (`upstream.url`) as the base for resolving
@@ -317,10 +357,12 @@ async function handle(req: NextRequest, head: boolean) {
       isManifest(contentType, new URL(upstream.url).pathname))
   ) {
     if (head) {
-      return new Response(null, {
-        status: upstream.status,
-        headers: responseHeaders,
-      });
+      return respondShort(
+        new Response(null, {
+          status: upstream.status,
+          headers: responseHeaders,
+        })
+      );
     }
 
     const forCastManifest = url.searchParams.get("cast") === "1";
@@ -334,10 +376,13 @@ async function handle(req: NextRequest, head: boolean) {
       responseHeaders.set("content-type", "application/vnd.apple.mpegurl");
       responseHeaders.set("x-stream-manifest-cache", "hit");
       responseHeaders.delete("content-length");
-      return new Response(cached, {
-        status: upstream.status,
-        headers: responseHeaders,
-      });
+      recordStreamProxyBytes(cached.length);
+      return respondShort(
+        new Response(cached, {
+          status: upstream.status,
+          headers: responseHeaders,
+        })
+      );
     }
 
     let text = await upstream.text();
@@ -363,19 +408,61 @@ async function handle(req: NextRequest, head: boolean) {
     responseHeaders.set("content-type", "application/vnd.apple.mpegurl");
     responseHeaders.set("x-stream-manifest-cache", "miss");
     responseHeaders.delete("content-length");
-    return new Response(rewritten, {
-      status: upstream.status,
-      headers: responseHeaders,
-    });
+    recordStreamProxyBytes(rewritten.length);
+    return respondShort(
+      new Response(rewritten, {
+        status: upstream.status,
+        headers: responseHeaders,
+      })
+    );
   }
 
   if (head || !upstream.body) {
-    return new Response(null, { status: upstream.status, headers: responseHeaders });
+    return respondShort(
+      new Response(null, { status: upstream.status, headers: responseHeaders })
+    );
   }
 
   const body = passthroughStreamWithGracefulClose(upstream.body, req.signal);
-  return new Response(body, {
+  const tracked = trackStreamBodyBytes(body, finishStreamSlot);
+  return new Response(tracked, {
     status: upstream.status,
     headers: responseHeaders,
+  });
+}
+
+function trackStreamBodyBytes(
+  source: ReadableStream<Uint8Array>,
+  onDone: () => void
+): ReadableStream<Uint8Array> {
+  const reader = source.getReader();
+  let released = false;
+  const release = () => {
+    if (released) return;
+    released = true;
+    onDone();
+  };
+  return new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      try {
+        const { done, value } = await reader.read();
+        if (done) {
+          release();
+          controller.close();
+          return;
+        }
+        if (value?.byteLength) {
+          recordStreamProxyBytes(value.byteLength);
+          controller.enqueue(value);
+        }
+      } catch {
+        release();
+        controller.close();
+      }
+    },
+    cancel() {
+      release();
+      reader.cancel().catch(() => {});
+    },
   });
 }

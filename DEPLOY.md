@@ -105,6 +105,39 @@ If the log is empty and no `*.bak.*` appeared after the cron time, common issues
 
 `GET /api/health` returns `{ ok, database, time }` — use it for load balancer / uptime monitors (expect **503** if SQLite is unavailable).
 
+## Capacity monitoring (upgrade signals)
+
+Track whether your VPS is still appropriately sized (RAM, CPU, disk, bandwidth, concurrent streams).
+
+**One-time on the VPS (as root):**
+
+```bash
+cd /opt/stream/iptv-player
+sudo bash scripts/vps-monitoring-setup.sh /opt/stream/iptv-player
+```
+
+This adds `CAPACITY_METRICS_SECRET` to `.env`, creates `data/monitor/vps-spec.json` (edit to match your plan), installs a **5-minute cron** collector, and logrotate.
+
+**Manual collect + report:**
+
+```bash
+cd /opt/stream/iptv-player
+bash scripts/vps-monitor-collect.sh    # one sample now
+npm run monitor:report                 # human-readable upgrade summary
+npm run monitor:report -- --json       # paste into Cursor for a second opinion
+```
+
+**Protected API** (localhost only in normal setups):
+
+```bash
+curl -fsS -H "Authorization: Bearer $CAPACITY_METRICS_SECRET" \
+  http://127.0.0.1:3000/api/metrics
+```
+
+Signals: `ok` → `watch` → `upgrade_soon` → `upgrade_now`. The report needs ~**48 samples** (~4 hours at 5 min intervals) before upgrade recommendations activate; until then it shows “collecting baseline.”
+
+Sentry (errors) and this stack (capacity) are complementary — Sentry won’t tell you when egress or RAM is trending high.
+
 ## Production process
 
 Run Next in production mode (`next start` or your process manager). Put **Cloudflare** or another reverse proxy in front for TLS, caching static assets, and basic L3/L4 filtering if you want it — application logic stays in this Node process.
