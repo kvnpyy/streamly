@@ -34,6 +34,7 @@ import {
 } from "@/lib/player-volume-pref";
 import { withLiveHlsCompatMse } from "@/lib/stream-url";
 import { isAmazonSilkUserAgent, isTvClassUserAgent } from "@/lib/tv-user-agent";
+import { humanizePlaybackErrorResponse } from "@/lib/playback-error-message";
 import {
   pauseVideoElement,
   scheduleDeferredPlayerTeardown,
@@ -536,16 +537,18 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
               xhr.status >= 400
             ) {
               const raw = xhr.responseText?.trim();
-              const body =
-                raw && !raw.startsWith("<") ? raw.slice(0, 240) : null;
+              const body = humanizePlaybackErrorResponse(
+                raw,
+                "Could not prepare this file for browser playback. If your IPTV plan allows only one stream, close other players and try again.",
+                xhr.status
+              );
               if (xhr.status === 503) {
                 // Server is still encoding the first segment — keep prep UI, let hls.js retry.
                 setVodPrepProgress((p) => Math.min(92, Math.max(p, 20) + 3));
                 return;
               }
               surfacePlaybackError(
-                body ||
-                  "Could not prepare this file for browser playback. If your IPTV plan allows only one stream, close other players and try again."
+                body
               );
               return;
             }
@@ -873,10 +876,13 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
               if (transcodeManifestSoftRetries >= 8) {
                 void fetch(url, { credentials: "same-origin", cache: "no-store" })
                   .then(async (res) => {
-                    const body = (await res.text()).trim().slice(0, 240);
+                    const raw = (await res.text()).trim();
                     surfacePlaybackError(
-                      body ||
-                        "Could not prepare transcoded playback. If your IPTV plan allows only one stream, close other players and try again."
+                      humanizePlaybackErrorResponse(
+                        raw,
+                        "Could not prepare transcoded playback. If your IPTV plan allows only one stream, close other players and try again.",
+                        res.status
+                      )
                     );
                   })
                   .catch(() => {

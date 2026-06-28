@@ -22,6 +22,7 @@ import {
   vodNeedsServerTranscodePrep,
   warmVodTranscodePlay,
 } from "@/lib/vod-transcode-url";
+import { humanizePlaybackErrorResponse } from "@/lib/playback-error-message";
 import { TvPlayerRemoteHints } from "@/components/TvPlayerRemoteHints";
 import { VodPrepareOverlay } from "@/components/VodPrepareOverlay";
 import { useTvBrowser } from "@/components/TvBrowserProvider";
@@ -565,18 +566,24 @@ export function PlayerOverlay() {
         if (playbackUrlUsesVodTranscode(manifestUrl)) {
           try {
             const res = await fetch(manifestUrl, { credentials: "same-origin" });
-            const body = (await res.text()).trim().slice(0, 220);
+            const raw = (await res.text()).trim();
             if (res.status === 503) {
               setError(
-                body ||
-                  "Server is busy preparing other videos. Wait a minute, then try again."
+                humanizePlaybackErrorResponse(
+                  raw,
+                  "Server is busy preparing other videos. Wait a minute, then try again.",
+                  503
+                )
               );
               return;
             }
             if (res.status === 502 || res.status === 404) {
               setError(
-                body ||
-                  "Could not prepare this file for browser playback. Try again or use a native IPTV app."
+                humanizePlaybackErrorResponse(
+                  raw,
+                  "Could not prepare this file for browser playback. Try again or use a native IPTV app.",
+                  res.status
+                )
               );
               return;
             }
@@ -2330,7 +2337,9 @@ export function PlayerOverlay() {
                   <div className="text-red-400 text-sm mb-2">
                     Unable to play
                   </div>
-                  <div className="text-white/85 text-base">{error}</div>
+                  <div className="text-white/85 text-base line-clamp-6 break-words">
+                    {humanizePlaybackErrorResponse(error, error)}
+                  </div>
                   {chromiumPlaybackHint ? (
                     <p className="text-white/55 text-xs mt-3 leading-snug">
                       {chromiumPlaybackHint}

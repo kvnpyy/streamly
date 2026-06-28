@@ -17,6 +17,15 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.10.4] — 2026-06-27
+
+Sanitize player error messages when providers return HTML.
+
+### Fixed
+- **Player errors** — no more raw HTML/Cloudflare pages in the "Unable to play" overlay; show plain-language fallbacks instead.
+
+---
+
 ## [0.10.3] — 2026-06-27
 
 Player close freeze fix for mobile and desktop browsers.

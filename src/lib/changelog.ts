@@ -11,6 +11,14 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.10.4",
+    date: "2026-06-27",
+    summary: "Sanitize player error messages when providers return HTML.",
+    highlights: [
+      "Player errors: stop showing raw HTML or Cloudflare pages in the Unable to play overlay.",
+    ],
+  },
+  {
     version: "0.10.3",
     date: "2026-06-27",
     summary: "Player close freeze fix for mobile and desktop browsers.",
