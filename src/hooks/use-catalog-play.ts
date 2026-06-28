@@ -1,8 +1,9 @@
 "use client";
 
 import type { MediaShelfItem } from "@/components/MediaShelf";
-import { buildImageProxy, buildStreamUrl } from "@/lib/xtream";
-import { buildMoviePlayerSourceFromRecent } from "@/lib/continue-watching";
+import { buildImageProxy } from "@/lib/xtream";
+import { resolveMoviePlayerSourceFromRecent } from "@/lib/continue-watching";
+import { resolveMoviePlayUrl } from "@/lib/vod-format-probe";
 import type { SeriesItem, VodStream } from "@/lib/xtream-types";
 import { parsePositiveRouteId } from "@/lib/utils";
 import { useAuth } from "@/store/auth";
@@ -16,27 +17,37 @@ export function useCatalogPlay() {
   const addRecent = usePrefs((s) => s.addRecent);
 
   const playMovie = useCallback(
-    (
+    async (
       m: Pick<VodStream, "stream_id" | "name"> &
-        Partial<Pick<VodStream, "stream_icon" | "year" | "rating" | "container_extension">>
+        Partial<
+          Pick<
+            VodStream,
+            "stream_icon" | "year" | "rating" | "container_extension" | "direct_source"
+          >
+        >
     ) => {
       const mid = parsePositiveRouteId(m.stream_id);
       if (mid == null) return;
-      const ext = m.container_extension || "mp4";
+      const { proxyUrl, containerExt } = await resolveMoviePlayUrl(creds, {
+        stream_id: mid,
+        container_extension: m.container_extension,
+        direct_source: m.direct_source,
+      });
       play({
         kind: "movie",
         id: mid,
         title: m.name,
         subtitle: m.year,
         poster: m.stream_icon ? buildImageProxy(m.stream_icon) : undefined,
-        url: buildStreamUrl(creds, "movie", mid, ext),
-        containerExt: ext,
+        url: proxyUrl,
+        containerExt,
       });
       addRecent({
         kind: "movie",
         id: mid,
         name: m.name,
         icon: m.stream_icon,
+        meta: { containerExt },
       });
     },
     [creds, play, addRecent]
@@ -66,29 +77,31 @@ export function useCatalogPlay() {
         if (movie) {
           return {
             ...item,
-            onClick: () => playMovie(movie),
+            onClick: () => void playMovie(movie),
             detailHref: item.href,
           };
         }
         return {
           ...item,
           onClick: () => {
-            play(
-              buildMoviePlayerSourceFromRecent(creds, {
+            void (async () => {
+              play(
+                await resolveMoviePlayerSourceFromRecent(creds, {
+                  kind: "movie",
+                  id: item.id,
+                  name: item.title,
+                  icon: item.poster,
+                  addedAt: 0,
+                  lastAt: 0,
+                })
+              );
+              addRecent({
                 kind: "movie",
                 id: item.id,
                 name: item.title,
                 icon: item.poster,
-                addedAt: 0,
-                lastAt: 0,
-              })
-            );
-            addRecent({
-              kind: "movie",
-              id: item.id,
-              name: item.title,
-              icon: item.poster,
-            });
+              });
+            })();
           },
           detailHref: item.href,
         };

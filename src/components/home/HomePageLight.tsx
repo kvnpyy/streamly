@@ -107,7 +107,7 @@ export function HomePageLight({
           creds={creds}
           recent={spotlightRecent}
           onPlay={() =>
-            playFeaturedSpotlight(
+            void playFeaturedSpotlight(
               spotlight,
               creds,
               spotlightRecent,

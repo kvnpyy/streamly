@@ -5,6 +5,10 @@ import {
   buildSeriesEpisodePlayUrl,
   buildStreamUrl,
 } from "@/lib/xtream";
+import {
+  resolveMoviePlayUrl,
+  resolveSeriesEpisodePlayUrl,
+} from "@/lib/vod-format-probe";
 import type { SeriesEpisode } from "@/lib/xtream-types";
 import type { XtreamCredentials } from "@/lib/xtream-types";
 import type { PlayerSource } from "@/store/player";
@@ -182,6 +186,34 @@ export function continueDetailHref(recent: RecentItem): string | undefined {
   return undefined;
 }
 
+export async function resolveMoviePlayerSourceFromRecent(
+  creds: XtreamCredentials,
+  recent: RecentItem,
+  containerExt = "mp4"
+): Promise<PlayerSource> {
+  const declared =
+    typeof recent.meta?.containerExt === "string"
+      ? recent.meta.containerExt
+      : containerExt;
+  const direct =
+    typeof recent.meta?.direct_source === "string"
+      ? recent.meta.direct_source
+      : undefined;
+  const { proxyUrl, containerExt: resolved } = await resolveMoviePlayUrl(creds, {
+    stream_id: recent.id,
+    container_extension: declared,
+    direct_source: direct,
+  });
+  return {
+    kind: "movie",
+    id: recent.id,
+    title: recent.name,
+    poster: recent.icon ? buildImageProxy(recent.icon) : undefined,
+    url: proxyUrl,
+    containerExt: resolved,
+  };
+}
+
 export function buildMoviePlayerSourceFromRecent(
   creds: XtreamCredentials,
   recent: RecentItem,
@@ -198,6 +230,42 @@ export function buildMoviePlayerSourceFromRecent(
     poster: recent.icon ? buildImageProxy(recent.icon) : undefined,
     url: buildStreamUrl(creds, "movie", recent.id, ext),
     containerExt: ext,
+  };
+}
+
+export async function resolveSeriesPlayerSourceFromRecent(
+  creds: XtreamCredentials,
+  recent: RecentItem
+): Promise<PlayerSource | null> {
+  const epMeta = parseRecentEpisodeMeta(recent.meta);
+  if (!epMeta) return null;
+  const episode: Pick<
+    SeriesEpisode,
+    "id" | "direct_source" | "container_extension"
+  > = {
+    id: String(epMeta.episodeStreamId),
+    container_extension: epMeta.containerExt || "mkv",
+  };
+  const direct =
+    typeof recent.meta?.direct_source === "string"
+      ? recent.meta.direct_source
+      : undefined;
+  if (direct) episode.direct_source = direct;
+  const { proxyUrl, containerExt } = await resolveSeriesEpisodePlayUrl(
+    creds,
+    episode
+  );
+  const season = epMeta.season;
+  const epNum = epMeta.episodeNum;
+  return {
+    kind: "series",
+    id: recent.id,
+    streamId: epMeta.episodeStreamId,
+    title: recent.name,
+    subtitle: `S${season} · E${epNum}`,
+    poster: recent.icon ? buildImageProxy(recent.icon) : undefined,
+    url: proxyUrl,
+    containerExt,
   };
 }
 
@@ -232,6 +300,19 @@ export function buildSeriesPlayerSourceFromRecent(
     url: playUrl,
     containerExt: epMeta.containerExt || "mkv",
   };
+}
+
+export async function resolvePlayerSourceFromRecent(
+  creds: XtreamCredentials,
+  recent: RecentItem
+): Promise<PlayerSource | null> {
+  if (recent.kind === "movie") {
+    return resolveMoviePlayerSourceFromRecent(creds, recent);
+  }
+  if (recent.kind === "series") {
+    return resolveSeriesPlayerSourceFromRecent(creds, recent);
+  }
+  return null;
 }
 
 export function buildPlayerSourceFromRecent(

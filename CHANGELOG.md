@@ -17,6 +17,15 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.10.5] — 2026-06-27
+
+Probe for MP4 and other browser-friendly VOD formats before defaulting to MKV.
+
+### Added
+- **VOD format probe** — when panel metadata says MKV (or another risky container), try MP4/M4V/MOV/TS via a lightweight `/api/stream` check before playback; use `direct_source` when the panel provides one.
+
+---
+
 ## [0.10.4] — 2026-06-27
 
 Sanitize player error messages when providers return HTML.

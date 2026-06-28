@@ -78,6 +78,17 @@ export function inferStreamProxyType(upstreamUrl: string): "hls" | "vod" {
   return "hls";
 }
 
+/** Proxy a provider `direct_source` URL through `/api/stream`. */
+export function buildDirectSourceProxyUrl(directSource: string): string {
+  let ds = directSource.trim();
+  if (ds.startsWith("//")) ds = `https:${ds}`;
+  const params = new URLSearchParams({
+    u: ds,
+    type: inferStreamProxyType(ds),
+  });
+  return `/api/stream?${params.toString()}`;
+}
+
 /**
  * Live playback URL. Many event / PPV channels only work via `direct_source`
  * from the provider; the default …/live/…/id.m3u8 path is empty or invalid.
@@ -89,13 +100,26 @@ export function buildLivePlayUrl(
   let ds = stream.direct_source?.trim();
   if (ds?.startsWith("//")) ds = `https:${ds}`;
   if (ds && /^https?:\/\//i.test(ds)) {
-    const params = new URLSearchParams({
-      u: ds,
-      type: inferStreamProxyType(ds),
-    });
-    return `/api/stream?${params.toString()}`;
+    return buildDirectSourceProxyUrl(ds);
   }
   return buildStreamUrl(creds, "live", stream.stream_id);
+}
+
+/**
+ * Movie playback URL (sync). Uses `direct_source` when the panel provides one.
+ * For MKV metadata, prefer `resolveMoviePlayUrl` to probe MP4 first.
+ */
+export function buildMoviePlayUrl(
+  creds: XtreamCredentials,
+  movie: Pick<VodStream, "stream_id" | "container_extension" | "direct_source">
+): string {
+  let ds = movie.direct_source?.trim();
+  if (ds?.startsWith("//")) ds = `https:${ds}`;
+  if (ds && /^https?:\/\//i.test(ds)) {
+    return buildDirectSourceProxyUrl(ds);
+  }
+  const ext = movie.container_extension || "mp4";
+  return buildStreamUrl(creds, "movie", movie.stream_id, ext);
 }
 
 /**
@@ -109,11 +133,7 @@ export function buildSeriesEpisodePlayUrl(
   let ds = episode.direct_source?.trim();
   if (ds?.startsWith("//")) ds = `https:${ds}`;
   if (ds && /^https?:\/\//i.test(ds)) {
-    const params = new URLSearchParams({
-      u: ds,
-      type: inferStreamProxyType(ds),
-    });
-    return `/api/stream?${params.toString()}`;
+    return buildDirectSourceProxyUrl(ds);
   }
   const ext = episode.container_extension || "mkv";
   return buildStreamUrl(creds, "series", parseInt(episode.id, 10), ext);

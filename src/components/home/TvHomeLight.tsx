@@ -105,7 +105,7 @@ export function TvHomeLight({
           creds={creds}
           recent={spotlightRecent}
           onPlay={() =>
-            playFeaturedSpotlight(
+            void playFeaturedSpotlight(
               spotlight,
               creds,
               spotlightRecent,

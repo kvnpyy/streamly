@@ -16,8 +16,8 @@ import {
 } from "@/lib/continue-watching";
 import { MY_LIST_LABEL } from "@/lib/my-list";
 import { buildImageProxy, buildSeriesEpisodePlayUrl, xtream } from "@/lib/xtream";
-import { inferVodContainerExtFromProxyUrl } from "@/lib/vod-transcode-url";
-import { warmVodTranscodePlay } from "@/lib/vod-transcode-url";
+import { resolveSeriesEpisodePlayUrl } from "@/lib/vod-format-probe";
+import { inferVodContainerExtFromProxyUrl, warmVodTranscodePlay } from "@/lib/vod-transcode-url";
 import type { SeriesEpisode } from "@/lib/xtream-types";
 import { useAuth } from "@/store/auth";
 import { usePlayer, type PlayerPlaylist } from "@/store/player";
@@ -214,32 +214,33 @@ export default function SeriesDetail() {
     (season: string, ep: SeriesEpisode) => {
       const show = info.data?.info;
       if (!creds || seriesId == null || !show?.name) return;
-      const playUrl = buildSeriesEpisodePlayUrl(creds, ep);
-      warmVodTranscodePlay(playUrl, { compatMse: tvBrowser });
-      const ext = inferVodContainerExtFromProxyUrl(
-        playUrl,
-        ep.container_extension || "mkv"
-      );
-      play(
-        {
+      void (async () => {
+        const { proxyUrl, containerExt } = await resolveSeriesEpisodePlayUrl(
+          creds,
+          ep
+        );
+        warmVodTranscodePlay(proxyUrl, { compatMse: tvBrowser });
+        play(
+          {
+            kind: "series",
+            id: seriesId,
+            streamId: parseInt(ep.id, 10),
+            title: show.name,
+            subtitle: `S${season} · E${ep.episode_num} — ${ep.title}`,
+            poster: buildImageProxy(ep.info?.movie_image || show.cover),
+            url: proxyUrl,
+            containerExt,
+          },
+          episodePlaylist ? { playlist: episodePlaylist } : undefined
+        );
+        addRecent({
           kind: "series",
           id: seriesId,
-          streamId: parseInt(ep.id, 10),
-          title: show.name,
-          subtitle: `S${season} · E${ep.episode_num} — ${ep.title}`,
-          poster: buildImageProxy(ep.info?.movie_image || show.cover),
-          url: playUrl,
-          containerExt: ext,
-        },
-        episodePlaylist ? { playlist: episodePlaylist } : undefined
-      );
-      addRecent({
-        kind: "series",
-        id: seriesId,
-        name: show.name,
-        icon: show.cover,
-        meta: seriesEpisodeRecentMeta(season, ep),
-      });
+          name: show.name,
+          icon: show.cover,
+          meta: seriesEpisodeRecentMeta(season, ep),
+        });
+      })();
     },
     [creds, seriesId, info.data, play, episodePlaylist, addRecent, tvBrowser]
   );

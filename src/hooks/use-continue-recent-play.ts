@@ -1,8 +1,8 @@
 "use client";
 
 import {
-  buildPlayerSourceFromRecent,
-  buildMoviePlayerSourceFromRecent,
+  resolveMoviePlayerSourceFromRecent,
+  resolvePlayerSourceFromRecent,
   computeContinueProgressPct,
   continueDetailHref,
   recentResumeStorageKey,
@@ -65,21 +65,23 @@ export function useContinueRecentPlay(
         return;
       }
 
-      const source = buildPlayerSourceFromRecent(creds, recent);
-      if (source) {
-        play(source);
-        addRecent(recent);
-        return;
-      }
+      void (async () => {
+        const source = await resolvePlayerSourceFromRecent(creds, recent);
+        if (source) {
+          play(source);
+          addRecent(recent);
+          return;
+        }
 
-      if (recent.kind === "movie") {
-        play(buildMoviePlayerSourceFromRecent(creds, recent));
-        addRecent(recent);
-        return;
-      }
+        if (recent.kind === "movie") {
+          play(await resolveMoviePlayerSourceFromRecent(creds, recent));
+          addRecent(recent);
+          return;
+        }
 
-      const href = continueDetailHref(recent);
-      if (href) router.push(href);
+        const href = continueDetailHref(recent);
+        if (href) router.push(href);
+      })();
     },
     [creds, recents, liveFlipStreams, liveFlipCatalog, play, addRecent, router]
   );

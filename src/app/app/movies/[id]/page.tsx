@@ -1,7 +1,8 @@
 "use client";
 
 import { parsePositiveRouteId } from "@/lib/utils";
-import { buildImageProxy, buildStreamUrl, xtream } from "@/lib/xtream";
+import { buildImageProxy, xtream } from "@/lib/xtream";
+import { resolveMoviePlayUrl } from "@/lib/vod-format-probe";
 import { vodResumeStorageKey } from "@/lib/player-vod-resume";
 import { MY_LIST_LABEL } from "@/lib/my-list";
 import { CONTINUE_PROGRESS_MIN_SEC } from "@/lib/continue-watching";
@@ -257,22 +258,32 @@ export default function MovieDetail() {
           <div className="mt-7 flex flex-wrap items-center gap-2">
             <button
               onClick={() => {
-                const url = buildStreamUrl(creds, "movie", data.stream_id, ext);
-                play({
-                  kind: "movie",
-                  id: data.stream_id,
-                  title: meta.name || data.name,
-                  subtitle: data.year,
-                  poster: buildImageProxy(poster),
-                  url,
-                  containerExt: ext,
-                });
-                addRecent({
-                  kind: "movie",
-                  id: data.stream_id,
-                  name: meta.name || data.name,
-                  icon: poster,
-                });
+                void (async () => {
+                  const { proxyUrl, containerExt } = await resolveMoviePlayUrl(
+                    creds,
+                    {
+                      stream_id: data.stream_id,
+                      container_extension: ext,
+                      direct_source: data.direct_source,
+                    }
+                  );
+                  play({
+                    kind: "movie",
+                    id: data.stream_id,
+                    title: meta.name || data.name,
+                    subtitle: data.year,
+                    poster: buildImageProxy(poster),
+                    url: proxyUrl,
+                    containerExt,
+                  });
+                  addRecent({
+                    kind: "movie",
+                    id: data.stream_id,
+                    name: meta.name || data.name,
+                    icon: poster,
+                    meta: { containerExt },
+                  });
+                })();
               }}
               className="inline-flex items-center gap-2 h-11 px-5 rounded-xl btn-brand font-medium"
             >

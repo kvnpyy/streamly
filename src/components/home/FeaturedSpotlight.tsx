@@ -8,7 +8,7 @@ import {
   liveStreamToPlayerSource,
   stubLiveStreamFromRecent,
 } from "@/lib/live-flip-playlist";
-import { buildPlayerSourceFromRecent } from "@/lib/continue-watching";
+import { resolvePlayerSourceFromRecent } from "@/lib/continue-watching";
 import type { RecentItem } from "@/store/preferences";
 import { Info, Play } from "lucide-react";
 import Link from "next/link";
@@ -106,7 +106,7 @@ export function FeaturedSpotlightHero({
 }
 
 /** Resolve play action for a spotlight pick. */
-export function playFeaturedSpotlight(
+export async function playFeaturedSpotlight(
   spotlight: FeaturedSpotlight,
   creds: XtreamCredentials,
   recent: RecentItem,
@@ -124,7 +124,7 @@ export function playFeaturedSpotlight(
     addRecent(recent);
     return;
   }
-  const source = buildPlayerSourceFromRecent(creds, recent);
+  const source = await resolvePlayerSourceFromRecent(creds, recent);
   if (source) {
     play(source);
     addRecent(recent);
