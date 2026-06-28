@@ -336,7 +336,7 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
         pauseVideoElement(video);
         cancelled = true;
         if (stallTimer.current) clearTimeout(stallTimer.current);
-        return scheduleDeferredPlayerTeardown(() => {
+        scheduleDeferredPlayerTeardown(() => {
           cleanupHls();
           detachVideoElement(video);
         });
@@ -1206,7 +1206,7 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
       }
       if (stallTimer.current) clearTimeout(stallTimer.current);
 
-      const cancelDeferred = scheduleDeferredPlayerTeardown(() => {
+      scheduleDeferredPlayerTeardown(() => {
         if (video && creds && current && current.kind !== "live") {
           const key = vodResumeStorageKey(browseAccountKey(creds), current);
           const activeUrl = vodPlaybackUrl ?? current.url;
@@ -1234,10 +1234,6 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
         }
         detachVideoElement(video);
       });
-
-      return () => {
-        cancelDeferred();
-      };
     };
   }, [
     open,
