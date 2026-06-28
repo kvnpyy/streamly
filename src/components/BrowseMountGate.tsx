@@ -1,10 +1,12 @@
 "use client";
 
-import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { scheduleBrowseRemountAfterClose } from "@/lib/player-teardown";
+import { useLayoutEffect, useEffect, useRef, useState, type ReactNode } from "react";
 
 /**
  * Unmount browse UI while the player is open (saves TV RAM).
- * Remount synchronously on close so continue-watching taps are never dropped.
+ * Remount is deferred by two frames on close so player teardown can paint first —
+ * synchronous remount + hls.destroy on the same tick freezes TV browsers.
  */
 export function BrowseMountGate({
   frozen,
@@ -20,9 +22,15 @@ export function BrowseMountGate({
     const cycle = ++cycleRef.current;
     if (frozen) {
       if (cycleRef.current === cycle) setMounted(false);
-      return;
     }
-    if (cycleRef.current === cycle) setMounted(true);
+  }, [frozen]);
+
+  useEffect(() => {
+    if (frozen) return;
+    const cycle = ++cycleRef.current;
+    return scheduleBrowseRemountAfterClose(() => {
+      if (cycleRef.current === cycle) setMounted(true);
+    });
   }, [frozen]);
 
   if (!mounted) return null;

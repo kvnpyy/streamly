@@ -11,6 +11,16 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.10.2",
+    date: "2026-06-27",
+    summary: "Fix TV player close freezing the app.",
+    highlights: [
+      "Player close on TV: defer browse remount and HLS teardown so the overlay dismisses before heavy work.",
+      "Guard double-close taps and history cleanup races when exiting playback.",
+      "Floating X close control stays pointer-reachable; Backspace closes like other TV remotes.",
+    ],
+  },
+  {
     version: "0.10.1",
     date: "2026-06-27",
     summary: "Faster TV navigation between hub and Live/VOD/Series pages.",

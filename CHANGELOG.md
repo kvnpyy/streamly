@@ -17,6 +17,16 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.10.2] — 2026-06-27
+
+Fix TV player close freezing the app.
+
+### Fixed
+- **Player close on TV** — defer browse remount and HLS teardown so the overlay dismisses before heavy work; guard double-close and history cleanup races.
+- **TV close control** — floating X stays pointer-reachable; Backspace closes like other remotes.
+
+---
+
 ## [0.10.1] — 2026-06-27
 
 Faster TV navigation between hub and Live/VOD/Series pages.

@@ -34,6 +34,10 @@ import {
 } from "@/lib/player-volume-pref";
 import { withLiveHlsCompatMse } from "@/lib/stream-url";
 import { isAmazonSilkUserAgent, isTvClassUserAgent } from "@/lib/tv-user-agent";
+import {
+  pauseVideoElement,
+  scheduleDeferredPlayerTeardown,
+} from "@/lib/player-teardown";
 import { detachVideoElement, safeVideoPlay } from "@/lib/video-play";
 import {
   playbackUrlUsesVodTranscode,
@@ -1188,27 +1192,7 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
 
     return () => {
       if (vodEdgeWatch != null) window.clearInterval(vodEdgeWatch);
-      if (video && creds && current && current.kind !== "live") {
-        const key = vodResumeStorageKey(browseAccountKey(creds), current);
-        const activeUrl = vodPlaybackUrl ?? current.url;
-        const usesTranscode = playbackUrlUsesVodTranscode(activeUrl);
-        const absolute = vodAbsoluteSec(video.currentTime, {
-          usesTranscode,
-          startOffsetSec: vodStartOffsetRef.current,
-        });
-        const d =
-          vodDurationHintRef.current > 1
-            ? vodDurationHintRef.current
-            : video.duration;
-        if (
-          key &&
-          d &&
-          Number.isFinite(d) &&
-          shouldPersistVodResume(absolute, d)
-        ) {
-          usePrefs.getState().saveVodResume(key, absolute);
-        }
-      }
+      pauseVideoElement(video);
       cancelled = true;
       probeFetchRef.current?.abort();
       vodPrepKickRef.current?.abort();
@@ -1218,11 +1202,40 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
         vodSeekRestartTimerRef.current = null;
       }
       if (stallTimer.current) clearTimeout(stallTimer.current);
-      cleanupHls();
-      if (vodTranscodeHls) {
-        releaseVodTranscodePlayback(url);
-      }
-      detachVideoElement(video);
+
+      const deferHeavyTeardown = tvBrowser || silkLikeClient;
+      const cancelDeferred = scheduleDeferredPlayerTeardown(() => {
+        if (video && creds && current && current.kind !== "live") {
+          const key = vodResumeStorageKey(browseAccountKey(creds), current);
+          const activeUrl = vodPlaybackUrl ?? current.url;
+          const usesTranscode = playbackUrlUsesVodTranscode(activeUrl);
+          const absolute = vodAbsoluteSec(video.currentTime, {
+            usesTranscode,
+            startOffsetSec: vodStartOffsetRef.current,
+          });
+          const d =
+            vodDurationHintRef.current > 1
+              ? vodDurationHintRef.current
+              : video.duration;
+          if (
+            key &&
+            d &&
+            Number.isFinite(d) &&
+            shouldPersistVodResume(absolute, d)
+          ) {
+            usePrefs.getState().saveVodResume(key, absolute);
+          }
+        }
+        cleanupHls();
+        if (vodTranscodeHls) {
+          releaseVodTranscodePlayback(url);
+        }
+        detachVideoElement(video);
+      }, { defer: deferHeavyTeardown });
+
+      return () => {
+        cancelDeferred();
+      };
     };
   }, [
     open,

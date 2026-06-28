@@ -329,6 +329,52 @@ async function runTests() {
     );
 
     results.push(
+      await runTest("P0-4-tv-player-close", async () => {
+        const ctx = await browser.newContext({
+          viewport: { width: 1920, height: 1080 },
+          userAgent: SAMSUNG_UA,
+        });
+        try {
+          const page = await ctx.newPage();
+          await wireMocks(page);
+          await seedAuth(page);
+          await page.route("**/api/stream**", async (route) => {
+            await route.fulfill({
+              status: 200,
+              contentType: "application/vnd.apple.mpegurl",
+              body: "#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:10\n#EXTINF:10.0,\nhttps://example.com/seg.ts\n#EXT-X-ENDLIST\n",
+            });
+          });
+          await gotoLiveApp(page);
+          await playMockNewsChannel(page);
+          const closeBtn = page
+            .getByRole("button", { name: /^Close( player)?$/i })
+            .first();
+          await closeBtn.waitFor({ state: "visible", timeout: 15000 });
+          await closeBtn.click();
+          await page
+            .getByText("Mock News HD")
+            .first()
+            .waitFor({ state: "visible", timeout: 15000 });
+          const channelBtn = page.getByRole("button", {
+            name: /Play.*Mock News HD/i,
+          });
+          const canInteract =
+            (await channelBtn.count()) > 0
+              ? await channelBtn.first().isEnabled()
+              : await page.getByText("Mock News HD").first().isVisible();
+          return {
+            id: "P0-4-tv-player-close",
+            pass: canInteract,
+            detail: `browseInteractiveAfterClose=${canInteract}`,
+          };
+        } finally {
+          await ctx.close();
+        }
+      })
+    );
+
+    results.push(
       await runTest("P0-3-silk-remote-hints", async () => {
         await delay(1500);
         const ctx = await browser.newContext({

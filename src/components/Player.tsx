@@ -365,6 +365,7 @@ export function PlayerOverlay() {
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   /** True while our sentinel `history.pushState` entry is active (hardware Back vs X close). */
   const playerHistoryActiveRef = useRef(false);
+  const playerClosingRef = useRef(false);
   /** Hide timer must read latest playback/panel state — stale `isPlaying` in closures kept TV controls visible during series. */
   const isPlayingRef = useRef(isPlaying);
   const playerPanelsOpenRef = useRef(false);
@@ -1490,15 +1491,37 @@ export function PlayerOverlay() {
     v.playbackRate = playbackSpeed;
   }, [open, current?.url, playbackSpeed]);
 
+  const cleanupPlayerHistorySentinel = useCallback(() => {
+    window.setTimeout(() => {
+      if (usePlayer.getState().open) return;
+      try {
+        if (window.history.state?.playerOpen) {
+          window.history.back();
+        }
+      } catch {
+        /* noop */
+      }
+    }, 0);
+  }, []);
+
   const requestClose = useCallback(() => {
+    if (playerClosingRef.current) return;
+    playerClosingRef.current = true;
+    playerHistoryActiveRef.current = false;
     if (hideTimer.current) clearTimeout(hideTimer.current);
+    document.documentElement.classList.remove("player-immersive");
     setShowSettings(false);
     setShowSubs(false);
     setShowShare(false);
     setShowEpg(false);
     setShowControls(true);
     close();
-  }, [close]);
+    cleanupPlayerHistorySentinel();
+  }, [close, cleanupPlayerHistorySentinel]);
+
+  useEffect(() => {
+    if (open) playerClosingRef.current = false;
+  }, [open]);
 
   const controlsHideDelayMs =
     tvBrowser || silkLikeClient ? 22_000 : 3000;
@@ -1696,7 +1719,7 @@ export function PlayerOverlay() {
             return;
           }
         }
-        if (e.key === "Escape") {
+        if (e.key === "Escape" || e.key === "Backspace") {
           e.preventDefault();
           requestClose();
           return;
@@ -1830,19 +1853,9 @@ export function PlayerOverlay() {
       window.removeEventListener("popstate", onPopState);
       if (!playerHistoryActiveRef.current) return;
       playerHistoryActiveRef.current = false;
-      window.setTimeout(() => {
-        // User may have reopened playback before this sentinel pop runs.
-        if (usePlayer.getState().open) return;
-        try {
-          if (window.history.state?.playerOpen) {
-            window.history.back();
-          }
-        } catch {
-          /* noop */
-        }
-      }, 0);
+      cleanupPlayerHistorySentinel();
     };
-  }, [open, requestClose]);
+  }, [open, requestClose, cleanupPlayerHistorySentinel]);
 
   const effectiveVodDuration = isLive
     ? 0
@@ -2164,18 +2177,16 @@ export function PlayerOverlay() {
             {(livingRoomPlayback || mobileLikeViewport) && !showControls && (
               <button
                 type="button"
+                data-tv-card-root
                 onPointerUp={(e) => {
                   if (e.button !== 0) return;
                   e.stopPropagation();
-                  requestClose();
-                }}
-                onClick={(e) => {
-                  e.stopPropagation();
+                  e.preventDefault();
                   requestClose();
                 }}
                 aria-label="Close player"
                 title="Close"
-                className="absolute top-4 right-4 z-[25] size-11 grid place-items-center rounded-xl bg-black/55 border border-white/15 text-white hover:bg-black/70 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/80"
+                className="absolute top-4 right-4 z-[25] size-11 grid place-items-center rounded-xl bg-black/55 border border-white/15 text-white hover:bg-black/70 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/80 pointer-events-auto touch-manipulation"
               >
                 <X className="size-5" />
               </button>
