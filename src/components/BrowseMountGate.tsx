@@ -6,7 +6,7 @@ import { useLayoutEffect, useEffect, useRef, useState, type ReactNode } from "re
 /**
  * Unmount browse UI while the player is open (saves TV RAM).
  * Remount is deferred by two frames on close so player teardown can paint first —
- * synchronous remount + hls.destroy on the same tick freezes TV browsers.
+ * synchronous remount + hls.destroy on the same tick freezes TV, mobile, and desktop browsers.
  */
 export function BrowseMountGate({
   frozen,

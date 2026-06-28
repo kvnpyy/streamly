@@ -1,4 +1,4 @@
-/** Pause immediately; defer hls.destroy / detach on TV so close paints before heavy work. */
+/** Pause immediately; defer hls.destroy / detach so close paints before heavy work (all clients). */
 
 export function pauseVideoElement(video: HTMLVideoElement): void {
   try {
@@ -13,6 +13,11 @@ export type ScheduleDeferredPlayerTeardownOptions = {
   maxWaitMs?: number;
 };
 
+/** Every client defers heavy teardown on close — TV, mobile WebViews, and desktop Chrome. */
+export function shouldDeferPlayerCloseTeardown(): boolean {
+  return true;
+}
+
 /**
  * Run player teardown after the overlay can paint closed.
  * Returns cancel — call from effect cleanup if the player reopens before idle.
@@ -21,7 +26,7 @@ export function scheduleDeferredPlayerTeardown(
   run: () => void,
   opts: ScheduleDeferredPlayerTeardownOptions = {}
 ): () => void {
-  const { defer = false, maxWaitMs = 180 } = opts;
+  const { defer = shouldDeferPlayerCloseTeardown(), maxWaitMs = 180 } = opts;
   if (!defer) {
     run();
     return () => {};
@@ -47,7 +52,7 @@ export function scheduleDeferredPlayerTeardown(
   };
 }
 
-/** Two animation frames — browse remount after player close paint (TV main-thread relief). */
+/** Two animation frames — browse remount after player close paint (all clients). */
 export function scheduleBrowseRemountAfterClose(onMount: () => void): () => void {
   if (typeof requestAnimationFrame === "undefined") {
     const t = setTimeout(onMount, 0);

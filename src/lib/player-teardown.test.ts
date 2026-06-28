@@ -2,7 +2,14 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   pauseVideoElement,
   scheduleDeferredPlayerTeardown,
+  shouldDeferPlayerCloseTeardown,
 } from "@/lib/player-teardown";
+
+describe("shouldDeferPlayerCloseTeardown", () => {
+  it("is always true so mobile and desktop get the same close path as TV", () => {
+    expect(shouldDeferPlayerCloseTeardown()).toBe(true);
+  });
+});
 
 describe("pauseVideoElement", () => {
   it("calls pause on the element", () => {
@@ -17,9 +24,18 @@ describe("scheduleDeferredPlayerTeardown", () => {
     vi.useRealTimers();
   });
 
-  it("runs synchronously when defer is false", () => {
+  it("runs synchronously when defer is explicitly false", () => {
     const run = vi.fn();
     scheduleDeferredPlayerTeardown(run, { defer: false });
+    expect(run).toHaveBeenCalledOnce();
+  });
+
+  it("defers by default", () => {
+    vi.useFakeTimers();
+    const run = vi.fn();
+    scheduleDeferredPlayerTeardown(run);
+    expect(run).not.toHaveBeenCalled();
+    vi.runAllTimers();
     expect(run).toHaveBeenCalledOnce();
   });
 

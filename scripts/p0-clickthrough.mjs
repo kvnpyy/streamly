@@ -13,6 +13,8 @@ const SAMSUNG_UA =
   "Mozilla/5.0 (SMART-TV; LINUX; Tizen 6.0) AppleWebKit/537.36 (KHTML, like Gecko) SamsungBrowser/4.0 Chrome/120.0.0.0 TV Safari/537.36";
 const SILK_UA =
   "Mozilla/5.0 (Linux; Android 9; AFTMM Build/PS7233; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/120.0.0.0 Mobile Safari/537.36 Silk/120.0.0.0";
+const IPHONE_UA =
+  "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1";
 
 const MOCK_CREDS = {
   server: "http://mock-panel.local",
@@ -217,6 +219,36 @@ async function playMockNewsChannel(page) {
     .catch(() => {});
 }
 
+async function mockStreamRoute(page) {
+  await page.route("**/api/stream**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/vnd.apple.mpegurl",
+      body: "#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:10\n#EXTINF:10.0,\nhttps://example.com/seg.ts\n#EXT-X-ENDLIST\n",
+    });
+  });
+}
+
+/** Play live mock channel, close player, assert browse is interactive again. */
+async function assertLivePlayerCloseReturnsToBrowse(page) {
+  await gotoLiveApp(page);
+  await playMockNewsChannel(page);
+  const closeBtn = page
+    .getByRole("button", { name: /^Close( player)?$/i })
+    .first();
+  await closeBtn.waitFor({ state: "visible", timeout: 15000 });
+  await closeBtn.click();
+  await page
+    .getByText("Mock News HD")
+    .first()
+    .waitFor({ state: "visible", timeout: 15000 });
+  const channelBtn = page.getByRole("button", { name: /Play.*Mock News HD/i });
+  if ((await channelBtn.count()) > 0) {
+    return channelBtn.first().isEnabled();
+  }
+  return page.getByText("Mock News HD").first().isVisible();
+}
+
 async function runTest(id, fn) {
   try {
     return await fn();
@@ -338,33 +370,55 @@ async function runTests() {
           const page = await ctx.newPage();
           await wireMocks(page);
           await seedAuth(page);
-          await page.route("**/api/stream**", async (route) => {
-            await route.fulfill({
-              status: 200,
-              contentType: "application/vnd.apple.mpegurl",
-              body: "#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:10\n#EXTINF:10.0,\nhttps://example.com/seg.ts\n#EXT-X-ENDLIST\n",
-            });
-          });
-          await gotoLiveApp(page);
-          await playMockNewsChannel(page);
-          const closeBtn = page
-            .getByRole("button", { name: /^Close( player)?$/i })
-            .first();
-          await closeBtn.waitFor({ state: "visible", timeout: 15000 });
-          await closeBtn.click();
-          await page
-            .getByText("Mock News HD")
-            .first()
-            .waitFor({ state: "visible", timeout: 15000 });
-          const channelBtn = page.getByRole("button", {
-            name: /Play.*Mock News HD/i,
-          });
-          const canInteract =
-            (await channelBtn.count()) > 0
-              ? await channelBtn.first().isEnabled()
-              : await page.getByText("Mock News HD").first().isVisible();
+          await mockStreamRoute(page);
+          const canInteract = await assertLivePlayerCloseReturnsToBrowse(page);
           return {
             id: "P0-4-tv-player-close",
+            pass: canInteract,
+            detail: `browseInteractiveAfterClose=${canInteract}`,
+          };
+        } finally {
+          await ctx.close();
+        }
+      })
+    );
+
+    results.push(
+      await runTest("P0-5-mobile-player-close", async () => {
+        const ctx = await browser.newContext({
+          viewport: { width: 390, height: 844 },
+          userAgent: IPHONE_UA,
+        });
+        try {
+          const page = await ctx.newPage();
+          await wireMocks(page);
+          await seedAuth(page);
+          await mockStreamRoute(page);
+          const canInteract = await assertLivePlayerCloseReturnsToBrowse(page);
+          return {
+            id: "P0-5-mobile-player-close",
+            pass: canInteract,
+            detail: `browseInteractiveAfterClose=${canInteract}`,
+          };
+        } finally {
+          await ctx.close();
+        }
+      })
+    );
+
+    results.push(
+      await runTest("P0-6-desktop-player-close", async () => {
+        const ctx = await browser.newContext({
+          viewport: { width: 1280, height: 800 },
+        });
+        try {
+          const page = await ctx.newPage();
+          await wireMocks(page);
+          await seedAuth(page);
+          await mockStreamRoute(page);
+          const canInteract = await assertLivePlayerCloseReturnsToBrowse(page);
+          return {
+            id: "P0-6-desktop-player-close",
             pass: canInteract,
             detail: `browseInteractiveAfterClose=${canInteract}`,
           };
@@ -385,13 +439,7 @@ async function runTests() {
           const page = await ctx.newPage();
           await wireMocks(page);
           await seedAuth(page);
-          await page.route("**/api/stream**", async (route) => {
-            await route.fulfill({
-              status: 200,
-              contentType: "application/vnd.apple.mpegurl",
-              body: "#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:10\n#EXTINF:10.0,\nhttps://example.com/seg.ts\n#EXT-X-ENDLIST\n",
-            });
-          });
+          await mockStreamRoute(page);
           await gotoLiveApp(page);
           await playMockNewsChannel(page);
           const hints = page.getByText(/OK on video/i);

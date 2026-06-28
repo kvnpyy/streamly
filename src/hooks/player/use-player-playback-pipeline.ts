@@ -333,10 +333,13 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
     if (wantsHlsJs && !hlsRuntime) {
       setLoading(true);
       return () => {
+        pauseVideoElement(video);
         cancelled = true;
         if (stallTimer.current) clearTimeout(stallTimer.current);
-        cleanupHls();
-        detachVideoElement(video);
+        return scheduleDeferredPlayerTeardown(() => {
+          cleanupHls();
+          detachVideoElement(video);
+        });
       };
     }
 
@@ -1203,7 +1206,6 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
       }
       if (stallTimer.current) clearTimeout(stallTimer.current);
 
-      const deferHeavyTeardown = tvBrowser || silkLikeClient;
       const cancelDeferred = scheduleDeferredPlayerTeardown(() => {
         if (video && creds && current && current.kind !== "live") {
           const key = vodResumeStorageKey(browseAccountKey(creds), current);
@@ -1231,7 +1233,7 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
           releaseVodTranscodePlayback(url);
         }
         detachVideoElement(video);
-      }, { defer: deferHeavyTeardown });
+      });
 
       return () => {
         cancelDeferred();

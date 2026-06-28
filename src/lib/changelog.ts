@@ -11,6 +11,14 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.10.3",
+    date: "2026-06-27",
+    summary: "Player close freeze fix for mobile and desktop browsers.",
+    highlights: [
+      "Player close: defer HLS teardown on every client — mobile and desktop match the TV non-blocking close path.",
+    ],
+  },
+  {
     version: "0.10.2",
     date: "2026-06-27",
     summary: "Fix TV player close freezing the app.",

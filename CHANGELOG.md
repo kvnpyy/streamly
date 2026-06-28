@@ -17,6 +17,15 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.10.3] — 2026-06-27
+
+Player close freeze fix for mobile and desktop browsers.
+
+### Fixed
+- **Player close** — defer HLS teardown on every client (not only TV/Silk); mobile phones and desktop Chrome get the same non-blocking close path as living-room TVs.
+
+---
+
 ## [0.10.2] — 2026-06-27
 
 Fix TV player close freezing the app.
