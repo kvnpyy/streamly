@@ -141,8 +141,37 @@ if [ -n "${CAPACITY_METRICS_SECRET:-}" ]; then
         catch { console.log(0); }
       });
     ')
+    api_err_missing=$(printf '%s' "$metrics_json" | node -e '
+      let d=""; process.stdin.on("data",c=>d+=c); process.stdin.on("end",()=>{
+        try { const j=JSON.parse(d); console.log(j.apiErrors?.last15Min?.missing_credentials ?? 0); }
+        catch { console.log(0); }
+      });
+    ')
+    api_err_turnstile=$(printf '%s' "$metrics_json" | node -e '
+      let d=""; process.stdin.on("data",c=>d+=c); process.stdin.on("end",()=>{
+        try { const j=JSON.parse(d); console.log(j.apiErrors?.last15Min?.turnstile_required ?? 0); }
+        catch { console.log(0); }
+      });
+    ')
+    api_err_stream4xx=$(printf '%s' "$metrics_json" | node -e '
+      let d=""; process.stdin.on("data",c=>d+=c); process.stdin.on("end",()=>{
+        try { const j=JSON.parse(d); console.log(j.apiErrors?.last15Min?.stream_upstream_4xx ?? 0); }
+        catch { console.log(0); }
+      });
+    ')
+    api_health=$(printf '%s' "$metrics_json" | node -e '
+      let d=""; process.stdin.on("data",c=>d+=c); process.stdin.on("end",()=>{
+        try { const j=JSON.parse(d); console.log(j.apiHealth?.overall ?? "unknown"); }
+        catch { console.log("unknown"); }
+      });
+    ')
   fi
 fi
+
+api_err_missing=${api_err_missing:-0}
+api_err_turnstile=${api_err_turnstile:-0}
+api_err_stream4xx=${api_err_stream4xx:-0}
+api_health=${api_health:-unknown}
 
 read -r mem_total_mb mem_used_mb ram_used_pct < <(read_mem)
 swap_used_mb=$(read_swap_mb)
@@ -177,12 +206,17 @@ const o = {
   streamRpm: Number(process.argv[14]),
   nodeRssMb: Number(process.argv[15]),
   load1: Number(process.argv[16]),
+  apiErrMissingCreds15m: Number(process.argv[17]),
+  apiErrTurnstile15m: Number(process.argv[18]),
+  apiErrStream4xx15m: Number(process.argv[19]),
+  apiHealth: process.argv[20],
 };
 console.log(JSON.stringify(o));
 ' "$ts" "$ram_used_pct" "$mem_used_mb" "$mem_total_mb" "$swap_used_mb" \
   "$cpu_pct" "$disk_used_pct" "$disk_used_gb" "$disk_total_gb" \
   "$egress_mbps" "$net_tx" "$net_rx" "$stream_active" "$stream_rpm" \
-  "$node_rss" "$load1")
+  "$node_rss" "$load1" "$api_err_missing" "$api_err_turnstile" \
+  "$api_err_stream4xx" "$api_health")
 
 printf '%s\n' "$sample" >>"$SAMPLES_FILE"
 

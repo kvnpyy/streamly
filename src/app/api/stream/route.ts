@@ -7,6 +7,7 @@ import {
   setCachedManifest,
 } from "@/lib/stream-manifest-cache";
 import { clientIp } from "@/lib/client-ip";
+import { recordIptvApiError } from "@/lib/iptv-api-error-metrics";
 import { newRequestId, STREAM_PROXY_REQUEST_ID_HEADER } from "@/lib/request-id";
 import { passthroughStreamWithGracefulClose } from "@/lib/stream-proxy-passthrough";
 import {
@@ -139,6 +140,7 @@ async function handle(req: NextRequest, head: boolean) {
 
   const rl = limitStreamProxy(clientIp(req));
   if (!rl.ok) {
+    recordIptvApiError("stream_rate_limited");
     return new Response("Too many requests", {
       status: 429,
       headers: corsHeaders(
@@ -335,6 +337,12 @@ async function handle(req: NextRequest, head: boolean) {
     upstreamHost: upstreamUrl.hostname,
     upstreamStatus: upstream.status,
   });
+
+  if (upstream.status >= 400 && upstream.status < 500) {
+    recordIptvApiError("stream_upstream_4xx");
+  } else if (upstream.status >= 500) {
+    recordIptvApiError("stream_upstream_5xx");
+  }
 
   const contentType = upstream.headers.get("content-type");
   const responseHeaders = corsHeaders({}, requestId);

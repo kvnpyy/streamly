@@ -1,4 +1,6 @@
 import { assessCapacity, type VpsSpec } from "@/lib/capacity-assess";
+import { assessApiHealth } from "@/lib/assess-api-health";
+import { getIptvApiErrorMetrics } from "@/lib/iptv-api-error-metrics";
 import { getRuntimeMetrics } from "@/lib/runtime-metrics";
 import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
@@ -134,6 +136,8 @@ export async function GET(req: NextRequest) {
     : join(process.cwd(), "data");
 
   const app = getRuntimeMetrics();
+  const apiErrors = getIptvApiErrorMetrics();
+  const apiHealth = assessApiHealth(apiErrors);
   const host = readHostSnapshot();
   const samples = readRecentSamples(dataDir);
   const vps = readVpsSpec(dataDir);
@@ -155,6 +159,8 @@ export async function GET(req: NextRequest) {
     time: new Date().toISOString(),
     vps,
     app,
+    apiErrors,
+    apiHealth,
     host,
     assessment,
   });

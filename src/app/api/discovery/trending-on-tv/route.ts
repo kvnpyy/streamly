@@ -6,17 +6,10 @@ import {
 import { isLiveTrendingShelfEnabled } from "@/lib/live-epg-policy";
 import { parseTvRegion, type TvRegion } from "@/lib/geo-continent";
 import { NextRequest, NextResponse } from "next/server";
+import { requireIptvCredsFromRequest } from "@/lib/iptv-request-creds";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-function readCreds(req: NextRequest) {
-  const server = req.headers.get("x-iptv-server");
-  const username = req.headers.get("x-iptv-username");
-  const password = req.headers.get("x-iptv-password");
-  if (!server || !username || !password) return null;
-  return { server: server.replace(/\/+$/, ""), username, password };
-}
 
 function parsePriorityIds(raw: string | null): number[] {
   if (!raw?.trim()) return [];
@@ -56,10 +49,9 @@ async function handleTrendingOnTv(
     return NextResponse.json({ enabled: false, items: [] });
   }
 
-  const creds = readCreds(req);
-  if (!creds) {
-    return NextResponse.json({ error: "Missing credentials" }, { status: 400 });
-  }
+  const credsOrRes = requireIptvCredsFromRequest(req);
+  if (credsOrRes instanceof NextResponse) return credsOrRes;
+  const creds = credsOrRes;
 
   try {
     const result = await buildTrendingOnTvForAccount(creds, tvRegion, {

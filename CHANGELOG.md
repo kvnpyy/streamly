@@ -17,6 +17,18 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+---
+
+## [Unreleased]
+
+### Added
+- **Proactive IPTV API health monitoring** — server tracks user-impacting error rates (missing credentials, Turnstile blocks, provider verify failures, stream 4xx). `/api/metrics` exposes `apiHealth`; hourly cron emails when thresholds spike. Run `npm run monitor:health-report` on the VPS to triage.
+
+### Fixed
+- **HTTP 400 connection failures** — allow empty IPTV passwords; normalize server URLs that include `/player_api.php`; URL-encode credentials in stream paths; exempt signed-in Streamly users from Turnstile on reconnect; softer VOD pre-play probe when providers return 4xx.
+
+---
+
 ## [0.10.5] — 2026-06-27
 
 Probe for MP4 and other browser-friendly VOD formats before defaulting to MKV.

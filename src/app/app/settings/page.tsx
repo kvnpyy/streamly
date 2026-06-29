@@ -8,8 +8,9 @@ import { MarketingEmailPreferences } from "@/components/MarketingEmailPreference
 import { ProviderAccountsPanel } from "@/components/ProviderAccountsPanel";
 import { SectionHeader } from "@/components/SectionHeader";
 import { TvPairingCard } from "@/components/TvPairingCard";
-import { useTvBrowser } from "@/components/TvBrowserProvider";
+import { useTvBrowser, useNativeTvUa } from "@/components/TvBrowserProvider";
 import { useTvSimpleMode } from "@/lib/tv-simple-mode";
+import { isAmazonSilkUserAgent } from "@/lib/tv-user-agent";
 import { UserContentDisclaimer } from "@/components/UserContentDisclaimer";
 import { formatDate } from "@/lib/utils";
 import { feedbackFormUrlWithContext } from "@/lib/feedback-url";
@@ -21,13 +22,21 @@ import { Lock, MonitorPlay, ShieldCheck, ShieldOff, Unlock } from "lucide-react"
 import { useSession } from "next-auth/react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
 export default function SettingsPage() {
   const router = useRouter();
   const pathname = usePathname();
   const tv = useTvBrowser();
+  const nativeTv = useNativeTvUa();
   const tvSimple = useTvSimpleMode();
+  const useTvSettingsShell = useMemo(() => {
+    if (typeof navigator === "undefined") return tvSimple;
+    const ua = navigator.userAgent ?? "";
+    // Comfort layout / coarse-pointer heuristics still use full web settings —
+    // only real TV browsers and Silk get the tile menu (v0.6.0 hid the web editor).
+    return tvSimple && (nativeTv || isAmazonSilkUserAgent(ua));
+  }, [tvSimple, nativeTv]);
   const { data: streamSession, status: streamSessionStatus } = useSession();
   const streamSignedIn =
     streamSessionStatus === "authenticated" && !!streamSession?.user?.id;
@@ -48,7 +57,7 @@ export default function SettingsPage() {
     resetAllPrefs,
   } = usePrefs();
 
-  if (tvSimple) {
+  if (useTvSettingsShell) {
     return <TvSimpleSettings />;
   }
 

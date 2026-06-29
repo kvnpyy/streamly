@@ -170,8 +170,8 @@ export function StreamlyOnboardingConnect() {
         }
         creds = parsed;
       } else {
-        if (!server || !username || !password) {
-          throw new Error("Server, username and password are required.");
+        if (!server || !username) {
+          throw new Error("Server and username are required.");
         }
         creds = {
           server: normalizeServer(server),

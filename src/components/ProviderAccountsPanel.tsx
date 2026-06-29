@@ -12,6 +12,7 @@ import {
   signOutFully,
 } from "@/lib/sign-out-client";
 import { providerLabelFromCreds } from "@/lib/provider-account-label";
+import { SITE_NAME } from "@/lib/site-brand";
 import { normalizeServer } from "@/lib/utils";
 import { useAuth, writeAuthSessionBridge } from "@/store/auth";
 import { usePrefs } from "@/store/preferences";
@@ -147,7 +148,30 @@ export function ProviderAccountsPanel() {
     [closeAddForm]
   );
 
-  if (status !== "authenticated") return null;
+  if (status !== "authenticated") {
+    return (
+      <section id="playlists" className="card p-5 scroll-mt-24">
+        <div className="flex items-center gap-2 mb-1">
+          <Radio className="size-4 text-(--brand)" />
+          <h3 className="text-base font-semibold">Saved playlists</h3>
+        </div>
+        <p className="text-sm text-(--text-dim) mb-4 leading-relaxed">
+          Save multiple IPTV providers and switch between them without re-entering
+          credentials. Requires a free{" "}
+          <a href="/login" className="text-(--brand-2) hover:underline">
+            {SITE_NAME} account
+          </a>
+          .
+        </p>
+        <a
+          href="/login"
+          className="inline-flex min-h-10 items-center px-4 rounded-lg btn-brand text-sm font-medium"
+        >
+          Sign in to manage playlists
+        </a>
+      </section>
+    );
+  }
 
   async function activate(id: string) {
     setBusyId(id);

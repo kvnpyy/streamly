@@ -7,6 +7,7 @@ import { xtreamCatalogCacheControlHeader } from "@/lib/xtream-catalog-cache";
 import { fetchLiveCatalogOnServer } from "@/lib/xtream-server-live-catalog";
 import type { LiveCatalogBundle } from "@/lib/xtream";
 import { NextRequest, NextResponse } from "next/server";
+import { requireIptvCredsFromRequest } from "@/lib/iptv-request-creds";
 
 function slimCatalogBody(bundle: LiveCatalogBundle) {
   const counts =
@@ -29,23 +30,14 @@ function slimCatalogBody(bundle: LiveCatalogBundle) {
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-function readCreds(req: NextRequest) {
-  const server = req.headers.get("x-iptv-server");
-  const username = req.headers.get("x-iptv-username");
-  const password = req.headers.get("x-iptv-password");
-  if (!server || !username || !password) return null;
-  return { server: server.replace(/\/+$/, ""), username, password };
-}
-
 /**
  * One-shot live catalogue: categories + merged streams, normalized on the VPS.
  * Disk + in-memory upstream caches make repeat Live TV visits much faster.
  */
 export async function GET(req: NextRequest) {
-  const creds = readCreds(req);
-  if (!creds) {
-    return NextResponse.json({ error: "Missing credentials" }, { status: 400 });
-  }
+  const credsOrRes = requireIptvCredsFromRequest(req);
+  if (credsOrRes instanceof NextResponse) return credsOrRes;
+  const creds = credsOrRes;
 
   const diskKey = liveCatalogDiskKey(creds);
   const slim = req.headers.get("x-live-catalog-slim") === "1";

@@ -369,15 +369,14 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
             setLoading(false);
             return false;
           }
-          if (probe.status >= 400) {
+          if (probe.status === 403) {
             setError(
-              probe.status === 403
-                ? "Your provider blocked this request. Try another episode or try again later."
-                : `Provider returned ${probe.status}. The file may be offline or temporarily unavailable.`
+              "Your provider blocked this request. Try another episode or try again later."
             );
             setLoading(false);
             return false;
           }
+          /* Other 4xx (e.g. provider 400 on wrong extension) — let the player try. */
         } catch (e) {
           if (cancelled || (e instanceof DOMException && e.name === "AbortError"))
             return false;

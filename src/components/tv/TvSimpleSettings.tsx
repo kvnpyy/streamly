@@ -97,6 +97,13 @@ export function TvSimpleSettings() {
     return () => window.clearTimeout(id);
   }, [view, loadPlaylists]);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (window.location.hash === "#playlists") {
+      setView("playlists");
+    }
+  }, []);
+
   async function activatePlaylist(id: string) {
     setBusyId(id);
     setError(null);

@@ -19,6 +19,8 @@
     "monitor:collect": "bash scripts/vps-monitor-collect.sh",
     "monitor:report": "npx tsx scripts/vps-capacity-report.ts",
     "monitor:notify": "npx tsx scripts/vps-capacity-notify.ts",
+    "monitor:health-report": "npx tsx scripts/vps-api-health-report.ts",
+    "monitor:api-health-notify": "npx tsx scripts/vps-api-health-notify.ts",
     "monitor:setup": "bash scripts/vps-monitoring-setup.sh",
     "discovery:sync-tmdb": "npx tsx scripts/sync-tmdb-trending.ts",
     "discovery:diagnose-trending": "npx tsx scripts/diagnose-trending-on-tv.ts",

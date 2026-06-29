@@ -16,6 +16,7 @@ import {
 import { sendCapacityAlertEmail } from "../src/lib/capacity-alert-mail";
 import { buildCapacityReport } from "../src/lib/capacity-report";
 import type { CapacitySignal } from "../src/lib/capacity-assess";
+import { runApiHealthNotify } from "./vps-api-health-notify";
 
 const APP_DIR = process.cwd();
 const MONITOR_DIR = join(APP_DIR, "data", "monitor");
@@ -116,6 +117,7 @@ async function main() {
     if (report.assessment.overall === "ok") {
       writeState({ lastNotifiedAt: null, lastNotifiedSignal: null });
     }
+    await runApiHealthNotify();
     return;
   }
 
@@ -124,6 +126,7 @@ async function main() {
       `[capacity:notify] dry-run would email: ${report.assessment.overall}`
     );
     console.log(JSON.stringify(report.assessment.findings, null, 2));
+    await runApiHealthNotify({ dryRun: true });
     return;
   }
 
@@ -140,6 +143,8 @@ async function main() {
   console.log(
     `[capacity:notify] sent ${report.assessment.overall} alert`
   );
+
+  await runApiHealthNotify();
 }
 
 main().catch((err) => {

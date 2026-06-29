@@ -742,10 +742,12 @@ export function buildStreamUrl(
   streamId: number,
   ext?: string
 ): string {
+  const user = encodeURIComponent(creds.username);
+  const pass = encodeURIComponent(creds.password);
   const path =
     kind === "live"
-      ? `live/${creds.username}/${creds.password}/${streamId}.m3u8`
-      : `${kind}/${creds.username}/${creds.password}/${streamId}.${ext || "mp4"}`;
+      ? `live/${user}/${pass}/${streamId}.m3u8`
+      : `${kind}/${user}/${pass}/${streamId}.${ext || "mp4"}`;
   const upstream = `${creds.server.replace(/\/+$/, "")}/${path}`;
   const params = new URLSearchParams({
     u: upstream,

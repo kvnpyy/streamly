@@ -134,5 +134,9 @@ export function normalizeServer(url: string): string {
   let u = url.trim();
   if (!u) return u;
   if (!/^https?:\/\//i.test(u)) u = "http://" + u;
+  u = u.replace(/\/+$/, "");
+  // Users often paste full portal API URLs — strip so we don't double-append paths.
+  u = u.replace(/\/player_api\.php$/i, "");
+  u = u.replace(/\/get\.php$/i, "");
   return u.replace(/\/+$/, "");
 }

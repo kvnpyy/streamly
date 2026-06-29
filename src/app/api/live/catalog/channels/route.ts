@@ -7,19 +7,12 @@ import { lookupStreamIdsForCategory } from "@/lib/live-stream-index";
 import { LIVE_GUIDE_MAX_CHANNELS, LIVE_LIST_MAX_CHANNELS } from "@/lib/live-guide-limits";
 import type { LiveStream } from "@/lib/xtream-types";
 import { NextRequest, NextResponse } from "next/server";
+import { requireIptvCredsFromRequest } from "@/lib/iptv-request-creds";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const MAX_LIMIT = LIVE_LIST_MAX_CHANNELS;
-
-function readCreds(req: NextRequest) {
-  const server = req.headers.get("x-iptv-server");
-  const username = req.headers.get("x-iptv-username");
-  const password = req.headers.get("x-iptv-password");
-  if (!server || !username || !password) return null;
-  return { server: server.replace(/\/+$/, ""), username, password };
-}
 
 function idsForAll(
   index: Record<string, number[]>,
@@ -41,10 +34,9 @@ function idsForAll(
  * Full catalog stays on the server — the browser never walks 50k+ streams.
  */
 export async function GET(req: NextRequest) {
-  const creds = readCreds(req);
-  if (!creds) {
-    return NextResponse.json({ error: "Missing credentials" }, { status: 400 });
-  }
+  const credsOrRes = requireIptvCredsFromRequest(req);
+  if (credsOrRes instanceof NextResponse) return credsOrRes;
+  const creds = credsOrRes;
 
   const limitRaw = Number(req.nextUrl.searchParams.get("limit"));
   const limit = Math.min(

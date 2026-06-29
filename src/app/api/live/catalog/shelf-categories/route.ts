@@ -4,29 +4,21 @@ import { getCachedLiveCatalogEntry } from "@/lib/live-catalog-server-cache";
 import { liveCatalogDiskKey } from "@/lib/xtream-catalog-disk-cache";
 import type { Category } from "@/lib/xtream-types";
 import { NextRequest, NextResponse } from "next/server";
+import { requireIptvCredsFromRequest } from "@/lib/iptv-request-creds";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const MAX_LIMIT = 64;
 
-function readCreds(req: NextRequest) {
-  const server = req.headers.get("x-iptv-server");
-  const username = req.headers.get("x-iptv-username");
-  const password = req.headers.get("x-iptv-password");
-  if (!server || !username || !password) return null;
-  return { server: server.replace(/\/+$/, ""), username, password };
-}
-
 /**
  * Paginated IPTV categories for Live TV shelf browse (region + non-empty only).
  * Avoids scanning the full category list in the browser.
  */
 export async function GET(req: NextRequest) {
-  const creds = readCreds(req);
-  if (!creds) {
-    return NextResponse.json({ error: "Missing credentials" }, { status: 400 });
-  }
+  const credsOrRes = requireIptvCredsFromRequest(req);
+  if (credsOrRes instanceof NextResponse) return credsOrRes;
+  const creds = credsOrRes;
 
   const region = (req.nextUrl.searchParams.get("region")?.trim() ||
     "All") as TvRegion;

@@ -8,20 +8,13 @@ import { lookupStreamIdsForCategory } from "@/lib/live-stream-index";
 import type { ShelfPreviewPayload } from "@/lib/live-catalog-shelves";
 import type { Category } from "@/lib/xtream-types";
 import { NextRequest, NextResponse } from "next/server";
+import { requireIptvCredsFromRequest } from "@/lib/iptv-request-creds";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const MAX_CATEGORIES = 8;
 const MAX_PER_SHELF = 12;
-
-function readCreds(req: NextRequest) {
-  const server = req.headers.get("x-iptv-server");
-  const username = req.headers.get("x-iptv-username");
-  const password = req.headers.get("x-iptv-password");
-  if (!server || !username || !password) return null;
-  return { server: server.replace(/\/+$/, ""), username, password };
-}
 
 function categoryById(
   categories: Category[],
@@ -34,10 +27,9 @@ function categoryById(
  * Batch shelf previews for Live TV browse — one disk read + one stream map per request.
  */
 export async function GET(req: NextRequest) {
-  const creds = readCreds(req);
-  if (!creds) {
-    return NextResponse.json({ error: "Missing credentials" }, { status: 400 });
-  }
+  const credsOrRes = requireIptvCredsFromRequest(req);
+  if (credsOrRes instanceof NextResponse) return credsOrRes;
+  const creds = credsOrRes;
 
   const rawIds = req.nextUrl.searchParams.get("categoryIds")?.trim() ?? "";
   const categoryIds = rawIds

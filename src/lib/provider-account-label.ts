@@ -21,7 +21,7 @@ export function tryParseM3uPortalUrl(input: string): {
     const u = new URL(input.trim());
     const username = u.searchParams.get("username");
     const password = u.searchParams.get("password");
-    if (username && password) {
+    if (username !== null && password !== null) {
       return {
         server: `${u.protocol}//${u.host}`,
         username,

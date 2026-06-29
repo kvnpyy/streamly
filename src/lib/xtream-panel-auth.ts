@@ -2,6 +2,7 @@ import "server-only";
 
 import { tryHandleReviewPanelRequest } from "@/lib/review-panel/handler";
 import type { AuthResponse, XtreamCredentials } from "@/lib/xtream-types";
+import { normalizeServer } from "@/lib/utils";
 
 const XTREAM_UA =
   "Mozilla/5.0 (Linux; Android 9; SM-G960F) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36 IPTVSmartersPlayer/3.1.5";
@@ -19,7 +20,7 @@ export async function authenticateXtreamPanel(
     return review as AuthResponse;
   }
 
-  const server = creds.server.replace(/\/+$/, "");
+  const server = normalizeServer(creds.server);
   const upstream = new URL(`${server}/player_api.php`);
   upstream.searchParams.set("username", creds.username);
   upstream.searchParams.set("password", creds.password);

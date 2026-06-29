@@ -3,6 +3,7 @@ import {
   xtreamCatalogCacheControlHeader,
 } from "@/lib/xtream-catalog-cache";
 import { enforceXtreamAuthProbeCaptcha } from "@/lib/xtream-captcha";
+import { recordIptvApiError } from "@/lib/iptv-api-error-metrics";
 import { snapshotFromListings } from "@/lib/discovery/live-epg";
 import { setServerEpgTitle } from "@/lib/epg-server-title-cache";
 import {
@@ -17,20 +18,13 @@ import {
   setXtreamUpstreamCached,
   xtreamUpstreamCacheKey,
 } from "@/lib/xtream-upstream-cache";
+import { requireIptvCredsFromRequest } from "@/lib/iptv-request-creds";
 import { NextRequest, NextResponse } from "next/server";
 
 const UPSTREAM_TIMEOUT_MS = 12_000;
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-function readCreds(req: NextRequest) {
-  const server = req.headers.get("x-iptv-server");
-  const username = req.headers.get("x-iptv-username");
-  const password = req.headers.get("x-iptv-password");
-  if (!server || !username || !password) return null;
-  return { server: server.replace(/\/+$/, ""), username, password };
-}
 
 function warmServerEpgFromPayload(
   creds: { server: string; username: string; password: string },
@@ -46,10 +40,9 @@ function warmServerEpgFromPayload(
 }
 
 export async function GET(req: NextRequest) {
-  const creds = readCreds(req);
-  if (!creds) {
-    return NextResponse.json({ error: "Missing credentials" }, { status: 400 });
-  }
+  const credsOrRes = requireIptvCredsFromRequest(req);
+  if (credsOrRes instanceof NextResponse) return credsOrRes;
+  const creds = credsOrRes;
   const url = new URL(req.url);
   const captchaBlock = await enforceXtreamAuthProbeCaptcha(
     req,
@@ -134,6 +127,7 @@ export async function GET(req: NextRequest) {
       if (epgAction) {
         return NextResponse.json(EMPTY_XTREAM_EPG);
       }
+      recordIptvApiError("catalog_upstream_error");
       return NextResponse.json(
         {
           error:
@@ -164,6 +158,7 @@ export async function GET(req: NextRequest) {
       if (epgAction) {
         return NextResponse.json(EMPTY_XTREAM_EPG);
       }
+      recordIptvApiError("catalog_upstream_error");
       return NextResponse.json(
         {
           error:
@@ -176,6 +171,7 @@ export async function GET(req: NextRequest) {
     if (epgAction) {
       return NextResponse.json(EMPTY_XTREAM_EPG);
     }
+    recordIptvApiError("catalog_upstream_error");
     return NextResponse.json(
       {
         error:

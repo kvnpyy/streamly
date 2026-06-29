@@ -16,24 +16,16 @@ const MAX_COUNT = 24;
 const MAX_PER_SHELF = 12;
 
 import type { ShelfBatchItem } from "@/lib/live-catalog-shelf-batch";
-
-function readCreds(req: NextRequest) {
-  const server = req.headers.get("x-iptv-server");
-  const username = req.headers.get("x-iptv-username");
-  const password = req.headers.get("x-iptv-password");
-  if (!server || !username || !password) return null;
-  return { server: server.replace(/\/+$/, ""), username, password };
-}
+import { requireIptvCredsFromRequest } from "@/lib/iptv-request-creds";
 
 /**
  * One request per "Show more" — next category page + shelf previews.
  * Uses a single in-memory catalog load (no double disk parse).
  */
 export async function GET(req: NextRequest) {
-  const creds = readCreds(req);
-  if (!creds) {
-    return NextResponse.json({ error: "Missing credentials" }, { status: 400 });
-  }
+  const credsOrRes = requireIptvCredsFromRequest(req);
+  if (credsOrRes instanceof NextResponse) return credsOrRes;
+  const creds = credsOrRes;
 
   const region = (req.nextUrl.searchParams.get("region")?.trim() ||
     "All") as TvRegion;

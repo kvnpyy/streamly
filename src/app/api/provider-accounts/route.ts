@@ -11,6 +11,7 @@ import {
   ProviderCryptoError,
 } from "@/lib/provider-account-crypto";
 import { authenticateXtreamPanel } from "@/lib/xtream-panel-auth";
+import { recordIptvApiError } from "@/lib/iptv-api-error-metrics";
 import type { XtreamCredentials } from "@/lib/xtream-types";
 import { desc, eq } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
@@ -94,9 +95,10 @@ export async function POST(req: NextRequest) {
   try {
     accountResponse = await authenticateXtreamPanel(creds);
   } catch {
+    recordIptvApiError("provider_verify_failed");
     return NextResponse.json(
       { error: "Could not verify credentials with your IPTV server." },
-      { status: 400 }
+      { status: 502 }
     );
   }
 

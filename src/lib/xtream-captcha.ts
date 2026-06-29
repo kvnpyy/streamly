@@ -1,3 +1,4 @@
+import { recordIptvApiError } from "@/lib/iptv-api-error-metrics";
 import { timingSafeEqual } from "node:crypto";
 
 import { NextResponse, type NextRequest } from "next/server";
@@ -67,6 +68,17 @@ export async function enforceXtreamAuthProbeCaptcha(
     return null;
   }
 
+  /** Signed-in Streamly users reconnecting a playlist — same trust as saved-provider verify. */
+  try {
+    const { auth } = await import("@/auth");
+    const streamlySession = await auth();
+    if (streamlySession?.user?.id) {
+      return null;
+    }
+  } catch {
+    /* auth unavailable in tests / edge */
+  }
+
   /**
    * Living-room browsers (Tizen, webOS, Fire TV Silk, etc.): Cloudflare Turnstile
    * often breaks on old WebKit `postMessage` shapes (`data` not a string → `.split`
@@ -81,6 +93,7 @@ export async function enforceXtreamAuthProbeCaptcha(
 
   const token = req.headers.get("x-turnstile-token")?.trim();
   if (!token) {
+    recordIptvApiError("turnstile_required");
     return NextResponse.json(
       {
         error:
@@ -92,6 +105,7 @@ export async function enforceXtreamAuthProbeCaptcha(
 
   const ok = await verifyTurnstileToken(token);
   if (!ok) {
+    recordIptvApiError("turnstile_failed");
     return NextResponse.json(
       { error: "Verification challenge failed. Refresh and try again." },
       { status: 403 }
