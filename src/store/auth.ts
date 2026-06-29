@@ -1,6 +1,7 @@
 "use client";
 
 import type { AuthResponse, XtreamCredentials } from "@/lib/xtream-types";
+import { normalizeServer } from "@/lib/utils";
 import { useEffect, useState } from "react";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
@@ -136,7 +137,14 @@ export const useAuth = create<AuthState>()(
     (set, _get, api) => ({
       creds: null,
       account: null,
-      setCreds: (creds) => set({ creds }),
+      setCreds: (creds) =>
+        set({
+          creds: {
+            server: normalizeServer(creds.server),
+            username: creds.username.trim(),
+            password: creds.password,
+          },
+        }),
       setAccount: (account) => set({ account }),
       signOut: () => {
         clearAuthSessionBridge();

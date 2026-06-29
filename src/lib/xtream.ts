@@ -21,7 +21,7 @@ import {
   normalizeLiveStreamsPayload,
   normalizeLiveStreamsPayloadAsync,
 } from "./xtream-live-catalog";
-import { parsePositiveRouteId } from "./utils";
+import { parsePositiveRouteId, normalizeServer } from "./utils";
 import { yieldToMain } from "./yield-to-main";
 import { resolveProviderMediaUrl } from "./image-proxy";
 
@@ -257,8 +257,8 @@ async function call<T>(
       ? String(params.action)
       : null;
   const headers: Record<string, string> = {
-    "x-iptv-server": creds.server,
-    "x-iptv-username": creds.username,
+    "x-iptv-server": normalizeServer(creds.server),
+    "x-iptv-username": creds.username.trim(),
     "x-iptv-password": creds.password,
   };
   const tok = opts?.turnstileToken?.trim();
@@ -748,7 +748,7 @@ export function buildStreamUrl(
     kind === "live"
       ? `live/${user}/${pass}/${streamId}.m3u8`
       : `${kind}/${user}/${pass}/${streamId}.${ext || "mp4"}`;
-  const upstream = `${creds.server.replace(/\/+$/, "")}/${path}`;
+  const upstream = `${normalizeServer(creds.server)}/${path}`;
   const params = new URLSearchParams({
     u: upstream,
     type: kind === "live" ? "hls" : "vod",

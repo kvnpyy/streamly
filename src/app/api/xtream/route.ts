@@ -18,10 +18,11 @@ import {
   setXtreamUpstreamCached,
   xtreamUpstreamCacheKey,
 } from "@/lib/xtream-upstream-cache";
+import { fetchXtreamPanelWithRetry } from "@/lib/xtream-upstream-fetch";
 import { requireIptvCredsFromRequest } from "@/lib/iptv-request-creds";
 import { NextRequest, NextResponse } from "next/server";
 
-const UPSTREAM_TIMEOUT_MS = 12_000;
+const UPSTREAM_TIMEOUT_MS = 18_000;
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -112,7 +113,7 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const res = await fetch(upstream.toString(), {
+    const res = await fetchXtreamPanelWithRetry(upstream.toString(), {
       method: "GET",
       headers: {
         "User-Agent":

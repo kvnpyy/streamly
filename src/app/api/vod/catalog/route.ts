@@ -1,12 +1,6 @@
-import {
-  catalogDiskKey,
-  readCatalogDisk,
-  writeCatalogDisk,
-} from "@/lib/xtream-catalog-disk-cache";
 import { xtreamCatalogCacheControlHeader } from "@/lib/xtream-catalog-cache";
 import { slimVodCatalogBody } from "@/lib/slim-vod-catalog";
-import { fetchVodCatalogOnServer } from "@/lib/xtream-server-vod-catalog";
-import type { VodCatalogBundle } from "@/lib/vod-catalog-bundle";
+import { getCachedVodCatalogEntry } from "@/lib/vod-catalog-server-cache";
 import { NextRequest, NextResponse } from "next/server";
 import { requireIptvCredsFromRequest } from "@/lib/iptv-request-creds";
 
@@ -18,30 +12,17 @@ export async function GET(req: NextRequest) {
   if (credsOrRes instanceof NextResponse) return credsOrRes;
   const creds = credsOrRes;
 
-  const diskKey = catalogDiskKey("vod", creds);
   const slim =
     req.headers.get("x-vod-catalog-slim") === "1" ||
     req.nextUrl.searchParams.get("slim") === "1";
 
-  const diskHit = await readCatalogDisk<VodCatalogBundle>(diskKey);
-  if (diskHit) {
-    const body = slim ? slimVodCatalogBody(diskHit) : diskHit;
-    return NextResponse.json(body, {
-      headers: {
-        "Cache-Control": xtreamCatalogCacheControlHeader(),
-        "X-Vod-Catalog-Source": "disk",
-      },
-    });
-  }
-
   try {
-    const bundle = await fetchVodCatalogOnServer(creds, { signal: req.signal });
-    void writeCatalogDisk(diskKey, bundle).catch(() => {});
+    const { bundle } = await getCachedVodCatalogEntry(creds);
     const body = slim ? slimVodCatalogBody(bundle) : bundle;
     return NextResponse.json(body, {
       headers: {
         "Cache-Control": xtreamCatalogCacheControlHeader(),
-        "X-Vod-Catalog-Source": "upstream",
+        "X-Vod-Catalog-Source": "cache",
       },
     });
   } catch (e) {

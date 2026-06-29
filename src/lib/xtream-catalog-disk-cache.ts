@@ -3,6 +3,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { Category, LiveStream } from "@/lib/xtream-types";
 import { XTREAM_CATALOG_CACHE_MAX_AGE_SEC } from "@/lib/xtream-catalog-cache";
+import { normalizeServer } from "@/lib/utils";
 
 export type LiveCatalogBundle = {
   categories: Category[];
@@ -29,7 +30,9 @@ export function liveCatalogDiskKey(creds: {
   password: string;
 }): string {
   return createHash("sha256")
-    .update(`${creds.server}\x1f${creds.username}\x1f${creds.password}`)
+    .update(
+      `${normalizeServer(creds.server)}\x1f${creds.username.trim()}\x1f${creds.password}`
+    )
     .digest("hex");
 }
 
@@ -76,13 +79,14 @@ export function catalogDiskKey(
 
 export async function readCatalogDisk<T>(
   key: string,
-  nowMs = Date.now()
+  nowMs = Date.now(),
+  opts?: { allowStale?: boolean }
 ): Promise<T | null> {
   try {
     const raw = await readFile(filePath(key), "utf8");
     const env = JSON.parse(raw) as GenericEnvelope<T>;
     if (!env?.bundle || typeof env.expiresAt !== "number") return null;
-    if (env.expiresAt <= nowMs) return null;
+    if (env.expiresAt <= nowMs && !opts?.allowStale) return null;
     return env.bundle;
   } catch {
     return null;

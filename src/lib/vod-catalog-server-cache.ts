@@ -31,6 +31,8 @@ type SeriesCacheEntry = {
 const TTL_MS = 180_000;
 const vodCache = new Map<string, VodCacheEntry>();
 const seriesCache = new Map<string, SeriesCacheEntry>();
+const refreshingVodKeys = new Set<string>();
+const refreshingSeriesKeys = new Set<string>();
 
 function normalizeVodBundle(bundle: VodCatalogBundle): VodCacheEntry {
   const index =
@@ -75,6 +77,42 @@ function trimMap<T>(map: Map<string, T>): void {
   if (oldest) map.delete(oldest[0]);
 }
 
+function refreshVodCatalogInBackground(
+  creds: { server: string; username: string; password: string },
+  key: string
+) {
+  if (refreshingVodKeys.has(key)) return;
+  refreshingVodKeys.add(key);
+  void fetchVodCatalogOnServer(creds)
+    .then((bundle) => {
+      void writeCatalogDisk(key, bundle).catch(() => {});
+      vodCache.set(key, normalizeVodBundle(bundle));
+      trimMap(vodCache);
+    })
+    .catch(() => {})
+    .finally(() => {
+      refreshingVodKeys.delete(key);
+    });
+}
+
+function refreshSeriesCatalogInBackground(
+  creds: { server: string; username: string; password: string },
+  key: string
+) {
+  if (refreshingSeriesKeys.has(key)) return;
+  refreshingSeriesKeys.add(key);
+  void fetchSeriesCatalogOnServer(creds)
+    .then((bundle) => {
+      void writeCatalogDisk(key, bundle).catch(() => {});
+      seriesCache.set(key, normalizeSeriesBundle(bundle));
+      trimMap(seriesCache);
+    })
+    .catch(() => {})
+    .finally(() => {
+      refreshingSeriesKeys.delete(key);
+    });
+}
+
 export async function getCachedVodCatalogEntry(creds: {
   server: string;
   username: string;
@@ -92,12 +130,26 @@ export async function getCachedVodCatalogEntry(creds: {
     return entry;
   }
 
-  const bundle = await fetchVodCatalogOnServer(creds);
-  void writeCatalogDisk(key, bundle).catch(() => {});
-  const entry = normalizeVodBundle(bundle);
-  vodCache.set(key, entry);
-  trimMap(vodCache);
-  return entry;
+  const staleDisk = await readCatalogDisk<VodCatalogBundle>(key, now, {
+    allowStale: true,
+  });
+  if (staleDisk) {
+    const entry = normalizeVodBundle(staleDisk);
+    vodCache.set(key, entry);
+    refreshVodCatalogInBackground(creds, key);
+    return entry;
+  }
+
+  try {
+    const bundle = await fetchVodCatalogOnServer(creds);
+    void writeCatalogDisk(key, bundle).catch(() => {});
+    const entry = normalizeVodBundle(bundle);
+    vodCache.set(key, entry);
+    trimMap(vodCache);
+    return entry;
+  } catch {
+    throw new Error("Could not load movie catalog.");
+  }
 }
 
 export async function getCachedSeriesCatalogEntry(creds: {
@@ -117,10 +169,24 @@ export async function getCachedSeriesCatalogEntry(creds: {
     return entry;
   }
 
-  const bundle = await fetchSeriesCatalogOnServer(creds);
-  void writeCatalogDisk(key, bundle).catch(() => {});
-  const entry = normalizeSeriesBundle(bundle);
-  seriesCache.set(key, entry);
-  trimMap(seriesCache);
-  return entry;
+  const staleDisk = await readCatalogDisk<SeriesCatalogBundle>(key, now, {
+    allowStale: true,
+  });
+  if (staleDisk) {
+    const entry = normalizeSeriesBundle(staleDisk);
+    seriesCache.set(key, entry);
+    refreshSeriesCatalogInBackground(creds, key);
+    return entry;
+  }
+
+  try {
+    const bundle = await fetchSeriesCatalogOnServer(creds);
+    void writeCatalogDisk(key, bundle).catch(() => {});
+    const entry = normalizeSeriesBundle(bundle);
+    seriesCache.set(key, entry);
+    trimMap(seriesCache);
+    return entry;
+  } catch {
+    throw new Error("Could not load series catalog.");
+  }
 }

@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { isXtreamCatalogCacheAction } from "@/lib/xtream-catalog-cache";
 import { XTREAM_CATALOG_CACHE_MAX_AGE_SEC } from "@/lib/xtream-catalog-cache";
 import { isXtreamEpgAction } from "@/lib/xtream-epg-actions";
+import { normalizeServer } from "@/lib/utils";
 
 type Entry = { body: string; expiresAt: number };
 
@@ -33,7 +34,7 @@ export function xtreamUpstreamCacheKey(
     .sort()
     .map((k) => `${k}=${params[k]}`)
     .join("&");
-  const raw = `${creds.server}\x1f${creds.username}\x1f${creds.password}\x1f${sorted}`;
+  const raw = `${normalizeServer(creds.server)}\x1f${creds.username.trim()}\x1f${creds.password}\x1f${sorted}`;
   return createHash("sha256").update(raw).digest("hex");
 }
 

@@ -3,6 +3,7 @@ import "server-only";
 import { tryHandleReviewPanelRequest } from "@/lib/review-panel/handler";
 import type { AuthResponse, XtreamCredentials } from "@/lib/xtream-types";
 import { normalizeServer } from "@/lib/utils";
+import { fetchXtreamPanelWithRetry } from "@/lib/xtream-upstream-fetch";
 
 const XTREAM_UA =
   "Mozilla/5.0 (Linux; Android 9; SM-G960F) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36 IPTVSmartersPlayer/3.1.5";
@@ -25,15 +26,18 @@ export async function authenticateXtreamPanel(
   upstream.searchParams.set("username", creds.username);
   upstream.searchParams.set("password", creds.password);
 
-  const res = await fetch(upstream.toString(), {
-    method: "GET",
-    headers: {
-      "User-Agent": XTREAM_UA,
-      Accept: "application/json,text/plain,*/*",
-    },
-    cache: "no-store",
-    signal,
-  });
+  const res = await fetchXtreamPanelWithRetry(
+    upstream.toString(),
+    {
+      method: "GET",
+      headers: {
+        "User-Agent": XTREAM_UA,
+        Accept: "application/json,text/plain,*/*",
+      },
+      cache: "no-store",
+      signal: signal ?? AbortSignal.timeout(18_000),
+    }
+  );
 
   const text = await res.text();
   if (!res.ok) {

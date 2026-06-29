@@ -1,10 +1,5 @@
-import {
-  liveCatalogDiskKey,
-  readLiveCatalogDisk,
-  writeLiveCatalogDisk,
-} from "@/lib/xtream-catalog-disk-cache";
+import { getCachedLiveCatalogEntry } from "@/lib/live-catalog-server-cache";
 import { xtreamCatalogCacheControlHeader } from "@/lib/xtream-catalog-cache";
-import { fetchLiveCatalogOnServer } from "@/lib/xtream-server-live-catalog";
 import type { LiveCatalogBundle } from "@/lib/xtream";
 import { NextRequest, NextResponse } from "next/server";
 import { requireIptvCredsFromRequest } from "@/lib/iptv-request-creds";
@@ -32,37 +27,22 @@ export const dynamic = "force-dynamic";
 
 /**
  * One-shot live catalogue: categories + merged streams, normalized on the VPS.
- * Disk + in-memory upstream caches make repeat Live TV visits much faster.
+ * Uses stale disk + in-memory cache when upstream is slow or unavailable.
  */
 export async function GET(req: NextRequest) {
   const credsOrRes = requireIptvCredsFromRequest(req);
   if (credsOrRes instanceof NextResponse) return credsOrRes;
   const creds = credsOrRes;
 
-  const diskKey = liveCatalogDiskKey(creds);
   const slim = req.headers.get("x-live-catalog-slim") === "1";
 
-  const diskHit = await readLiveCatalogDisk(diskKey);
-  if (diskHit) {
-    const body = slim ? slimCatalogBody(diskHit) : diskHit;
-    return NextResponse.json(body, {
-      headers: {
-        "Cache-Control": xtreamCatalogCacheControlHeader(),
-        "X-Live-Catalog-Source": "disk",
-      },
-    });
-  }
-
   try {
-    const bundle = await fetchLiveCatalogOnServer(creds, {
-      signal: req.signal,
-    });
-    void writeLiveCatalogDisk(diskKey, bundle).catch(() => {});
+    const { bundle } = await getCachedLiveCatalogEntry(creds);
     const body = slim ? slimCatalogBody(bundle) : bundle;
     return NextResponse.json(body, {
       headers: {
         "Cache-Control": xtreamCatalogCacheControlHeader(),
-        "X-Live-Catalog-Source": "upstream",
+        "X-Live-Catalog-Source": "cache",
       },
     });
   } catch (e) {

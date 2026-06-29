@@ -7,7 +7,10 @@ import { isXtreamCatalogCacheAction } from "@/lib/xtream-catalog-cache";
 import { EMPTY_XTREAM_EPG, isXtreamEpgAction } from "@/lib/xtream-epg-actions";
 import { tryHandleReviewPanelRequest } from "@/lib/review-panel/handler";
 
-const UPSTREAM_TIMEOUT_MS = 12_000;
+import { normalizeServer } from "@/lib/utils";
+import { fetchXtreamPanelWithRetry } from "@/lib/xtream-upstream-fetch";
+
+const UPSTREAM_TIMEOUT_MS = 18_000;
 
 export type XtreamServerCreds = {
   server: string;
@@ -40,14 +43,15 @@ export async function fetchXtreamUpstreamJson(
     }
   }
 
-  const upstream = new URL(`${creds.server}/player_api.php`);
+  const server = normalizeServer(creds.server);
+  const upstream = new URL(`${server}/player_api.php`);
   upstream.searchParams.set("username", creds.username);
   upstream.searchParams.set("password", creds.password);
   for (const [k, v] of Object.entries(params)) {
     if (v) upstream.searchParams.set(k, v);
   }
 
-  const res = await fetch(upstream.toString(), {
+  const res = await fetchXtreamPanelWithRetry(upstream.toString(), {
     method: "GET",
     headers: {
       "User-Agent":
