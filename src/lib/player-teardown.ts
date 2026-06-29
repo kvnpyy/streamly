@@ -1,4 +1,9 @@
-/** Pause immediately; defer hls.destroy / detach so close paints before heavy work (all clients). */
+/** Pause immediately; defer detach / resume I/O so close paints before heavy work (all clients). */
+
+export type HlsTeardownTarget = {
+  stopLoad(): void;
+  destroy(): void;
+} | null | undefined;
 
 export function pauseVideoElement(video: HTMLVideoElement): void {
   try {
@@ -16,6 +21,33 @@ export type ScheduleDeferredPlayerTeardownOptions = {
 /** Every client defers heavy teardown on close — TV, mobile WebViews, and desktop Chrome. */
 export function shouldDeferPlayerCloseTeardown(): boolean {
   return true;
+}
+
+/** Stop fragment/manifest loading and destroy an hls.js instance (safe if already torn down). */
+export function destroyHlsInstance(hls: HlsTeardownTarget): void {
+  if (!hls) return;
+  try {
+    hls.stopLoad();
+  } catch {
+    /* noop */
+  }
+  try {
+    hls.destroy();
+  } catch {
+    /* noop */
+  }
+}
+
+/**
+ * Pause `<video>` and tear down hls.js immediately — used on close and after fatal errors
+ * so retries don't race browse remount and freeze the tab.
+ */
+export function eagerStopPlayerMedia(
+  video: HTMLVideoElement | null | undefined,
+  hls: HlsTeardownTarget
+): void {
+  if (video) pauseVideoElement(video);
+  destroyHlsInstance(hls);
 }
 
 /**
@@ -52,22 +84,41 @@ export function scheduleDeferredPlayerTeardown(
   };
 }
 
-/** Two animation frames — browse remount after player close paint (all clients). */
+/**
+ * Browse remount after player close — idle + timeout so it runs after sync hls teardown
+ * and the close paint (same window as deferred detach).
+ */
 export function scheduleBrowseRemountAfterClose(onMount: () => void): () => void {
-  if (typeof requestAnimationFrame === "undefined") {
-    const t = setTimeout(onMount, 0);
-    return () => clearTimeout(t);
-  }
   let cancelled = false;
-  let raf2 = 0;
-  const raf1 = requestAnimationFrame(() => {
-    raf2 = requestAnimationFrame(() => {
-      if (!cancelled) onMount();
+  const finish = () => {
+    if (!cancelled) onMount();
+  };
+
+  if (typeof requestIdleCallback !== "undefined") {
+    const id = requestIdleCallback(finish, { timeout: 200 });
+    return () => {
+      cancelled = true;
+      cancelIdleCallback(id);
+    };
+  }
+
+  if (typeof requestAnimationFrame !== "undefined") {
+    let raf2 = 0;
+    const raf1 = requestAnimationFrame(() => {
+      raf2 = requestAnimationFrame(() => {
+        if (!cancelled) finish();
+      });
     });
-  });
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(raf1);
+      if (raf2) cancelAnimationFrame(raf2);
+    };
+  }
+
+  const t = setTimeout(finish, 0);
   return () => {
     cancelled = true;
-    cancelAnimationFrame(raf1);
-    if (raf2) cancelAnimationFrame(raf2);
+    clearTimeout(t);
   };
 }

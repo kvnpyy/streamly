@@ -76,6 +76,7 @@ import {
 import { playbackBreadcrumb } from "@/lib/playback-telemetry";
 import { withLiveHlsCompatMse } from "@/lib/stream-url";
 import { detachVideoElement, resetVideoElement, safeVideoPlay, voidSafeVideoPlay } from "@/lib/video-play";
+import { eagerStopPlayerMedia } from "@/lib/player-teardown";
 import { isAmazonSilkUserAgent } from "@/lib/tv-user-agent";
 import {
   isPlayPauseShortcutKey,
@@ -295,6 +296,7 @@ export function PlayerOverlay() {
   /** After recovery, suppress fatal overlays while MSE restabilizes (stops 2s re-error loop). */
   const livePlaybackErrorSuppressUntilRef = useRef(0);
   const cancelLiveMediaErrorDeferRef = useRef<() => void>(() => {});
+  const deferredTeardownCancelRef = useRef<(() => void) | null>(null);
   /** Desktop Chromium live defaults to lowest safe rendition; set true when user picks Quality → Auto. */
   const userChoseAutoHlsQualityRef = useRef(false);
   /** After user opens Quality once, stop re-pinning lowest-safe on each manifest refresh. */
@@ -913,6 +915,7 @@ export function PlayerOverlay() {
     vodPrepKickRef,
     vodSeekRestartTimerRef,
     stallTimer,
+    deferredTeardownCancelRef,
     requestVodTranscodeFallbackRef,
     setError,
     setStreamSupportRequestId,
@@ -1516,6 +1519,14 @@ export function PlayerOverlay() {
     playerClosingRef.current = true;
     playerHistoryActiveRef.current = false;
     if (hideTimer.current) clearTimeout(hideTimer.current);
+    cancelLiveMediaErrorDeferRef.current();
+    deferredTeardownCancelRef.current?.();
+    deferredTeardownCancelRef.current = null;
+    const video = videoRef.current;
+    const hls = hlsRef.current;
+    eagerStopPlayerMedia(video, hls);
+    hlsRef.current = null;
+    if (video) detachVideoElement(video);
     document.documentElement.classList.remove("player-immersive");
     setShowSettings(false);
     setShowSubs(false);

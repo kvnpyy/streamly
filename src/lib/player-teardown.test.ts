@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  destroyHlsInstance,
+  eagerStopPlayerMedia,
   pauseVideoElement,
   scheduleDeferredPlayerTeardown,
   shouldDeferPlayerCloseTeardown,
@@ -16,6 +18,29 @@ describe("pauseVideoElement", () => {
     const video = { pause: vi.fn() } as unknown as HTMLVideoElement;
     pauseVideoElement(video);
     expect(video.pause).toHaveBeenCalledOnce();
+  });
+});
+
+describe("destroyHlsInstance", () => {
+  it("stops load and destroys hls", () => {
+    const hls = { stopLoad: vi.fn(), destroy: vi.fn() };
+    destroyHlsInstance(hls);
+    expect(hls.stopLoad).toHaveBeenCalledOnce();
+    expect(hls.destroy).toHaveBeenCalledOnce();
+  });
+
+  it("no-ops on null", () => {
+    expect(() => destroyHlsInstance(null)).not.toThrow();
+  });
+});
+
+describe("eagerStopPlayerMedia", () => {
+  it("pauses video and destroys hls", () => {
+    const video = { pause: vi.fn() } as unknown as HTMLVideoElement;
+    const hls = { stopLoad: vi.fn(), destroy: vi.fn() };
+    eagerStopPlayerMedia(video, hls);
+    expect(video.pause).toHaveBeenCalledOnce();
+    expect(hls.destroy).toHaveBeenCalledOnce();
   });
 });
 

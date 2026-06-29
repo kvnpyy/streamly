@@ -36,6 +36,7 @@ import { withLiveHlsCompatMse } from "@/lib/stream-url";
 import { isAmazonSilkUserAgent, isTvClassUserAgent } from "@/lib/tv-user-agent";
 import { humanizePlaybackErrorResponse } from "@/lib/playback-error-message";
 import {
+  destroyHlsInstance,
   pauseVideoElement,
   scheduleDeferredPlayerTeardown,
 } from "@/lib/player-teardown";
@@ -92,6 +93,7 @@ export type UsePlayerPlaybackPipelineParams = {
   vodPrepKickRef: RefObject<AbortController | null>;
   vodSeekRestartTimerRef: RefObject<ReturnType<typeof setTimeout> | null>;
   stallTimer: RefObject<ReturnType<typeof setTimeout> | null>;
+  deferredTeardownCancelRef: RefObject<(() => void) | null>;
   requestVodTranscodeFallbackRef: RefObject<() => boolean>;
   setError: Dispatch<SetStateAction<string | null>>;
   setStreamSupportRequestId: Dispatch<SetStateAction<string | null>>;
@@ -149,6 +151,7 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
     vodPrepKickRef,
     vodSeekRestartTimerRef,
     stallTimer,
+    deferredTeardownCancelRef,
     requestVodTranscodeFallbackRef,
     setError,
     setStreamSupportRequestId,
@@ -177,6 +180,9 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
     if (!open || !current) return;
     const video = videoRef.current;
     if (!video) return;
+
+    deferredTeardownCancelRef.current?.();
+    deferredTeardownCancelRef.current = null;
 
     const timelineHold = vodTimelineHoldRef.current;
 
@@ -240,16 +246,7 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
 
     const cleanupHls = () => {
       if (hlsRef.current) {
-        try {
-          hlsRef.current.stopLoad();
-        } catch {
-          /* noop */
-        }
-        try {
-          hlsRef.current.destroy();
-        } catch {
-          /* noop */
-        }
+        destroyHlsInstance(hlsRef.current);
         hlsRef.current = null;
       }
     };
@@ -337,8 +334,9 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
         pauseVideoElement(video);
         cancelled = true;
         if (stallTimer.current) clearTimeout(stallTimer.current);
-        scheduleDeferredPlayerTeardown(() => {
-          cleanupHls();
+        cleanupHls();
+        deferredTeardownCancelRef.current = scheduleDeferredPlayerTeardown(() => {
+          deferredTeardownCancelRef.current = null;
           detachVideoElement(video);
         });
       };
@@ -482,11 +480,18 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
           requestId: streamSupportRequestIdRef.current ?? undefined,
           channelId: current?.id,
         });
+        const activeHls = hlsRef.current;
+        if (activeHls) {
+          try {
+            activeHls.stopLoad();
+          } catch {
+            /* noop */
+          }
+        }
         if (!isLive) {
           cleanupHls();
-          return;
         }
-        /** Don't stopLoad on live — Try again soft-restarts load; stopLoad left panels stuck with no buffer. */
+        /** Live: keep the hls.js instance for Try again (soft reload); stopLoad halts retry storms. */
       };
 
       const runStabilizeBrowserFriendlyCodecs = () => {
@@ -1211,7 +1216,9 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
       }
       if (stallTimer.current) clearTimeout(stallTimer.current);
 
-      scheduleDeferredPlayerTeardown(() => {
+      cleanupHls();
+      deferredTeardownCancelRef.current = scheduleDeferredPlayerTeardown(() => {
+        deferredTeardownCancelRef.current = null;
         if (video && creds && current && current.kind !== "live") {
           const key = vodResumeStorageKey(browseAccountKey(creds), current);
           const activeUrl = vodPlaybackUrl ?? current.url;
@@ -1233,7 +1240,6 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
             usePrefs.getState().saveVodResume(key, absolute);
           }
         }
-        cleanupHls();
         if (vodTranscodeHls) {
           releaseVodTranscodePlayback(url);
         }
@@ -1272,6 +1278,7 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
     vodPrepKickRef,
     vodSeekRestartTimerRef,
     stallTimer,
+    deferredTeardownCancelRef,
     requestVodTranscodeFallbackRef,
     setError,
     setStreamSupportRequestId,
