@@ -45,7 +45,10 @@ export function TvSimpleSettings() {
     clearRecents,
   } = usePrefs();
 
-  const [view, setView] = useState<SettingsView>("menu");
+  const [view, setView] = useState<SettingsView>(() => {
+    if (typeof window === "undefined") return "menu";
+    return window.location.hash === "#playlists" ? "playlists" : "menu";
+  });
   const [rows, setRows] = useState<SavedProviderAccountRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -96,13 +99,6 @@ export function TvSimpleSettings() {
     }, 0);
     return () => window.clearTimeout(id);
   }, [view, loadPlaylists]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    if (window.location.hash === "#playlists") {
-      setView("playlists");
-    }
-  }, []);
 
   async function activatePlaylist(id: string) {
     setBusyId(id);
