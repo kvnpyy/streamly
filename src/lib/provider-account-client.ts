@@ -11,6 +11,11 @@ export type SavedProviderAccountRow = {
   createdAt?: string | Date;
 };
 
+export type SavedProviderAccountsResult = {
+  accounts: SavedProviderAccountRow[];
+  activeAccountId: string | null;
+};
+
 export type SavedProviderAccountDetail = {
   id: string;
   label: string;
@@ -21,21 +26,26 @@ export type SavedProviderAccountDetail = {
 const origin =
   typeof window !== "undefined" ? window.location.origin : "";
 
-export async function fetchSavedProviderAccounts(): Promise<
-  SavedProviderAccountRow[]
-> {
+export async function fetchSavedProviderAccounts(): Promise<SavedProviderAccountsResult> {
   const r = await fetch(`${origin}/api/provider-accounts`, {
     credentials: "include",
     cache: "no-store",
   });
   const data = (await r.json().catch(() => ({}))) as {
     accounts?: SavedProviderAccountRow[];
+    activeAccountId?: string | null;
     error?: string;
   };
   if (!r.ok) {
     throw new Error(data.error || `Could not load accounts (${r.status}).`);
   }
-  return data.accounts ?? [];
+  return {
+    accounts: data.accounts ?? [],
+    activeAccountId:
+      typeof data.activeAccountId === "string" && data.activeAccountId
+        ? data.activeAccountId
+        : null,
+  };
 }
 
 export async function fetchSavedProviderAccount(

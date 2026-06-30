@@ -114,8 +114,11 @@ export function StreamlyOnboardingConnect() {
       }
     });
     void fetchSavedProviderAccounts()
-      .then((rows) => {
-        if (!cancelled) setSavedPlaylists(rows);
+      .then(({ accounts, activeAccountId }) => {
+        if (!cancelled) {
+          setSavedPlaylists(accounts);
+          if (activeAccountId) setActiveSavedId(activeAccountId);
+        }
       })
       .catch((e) => {
         if (!cancelled) {
@@ -131,7 +134,7 @@ export function StreamlyOnboardingConnect() {
     return () => {
       cancelled = true;
     };
-  }, [streamlySignedIn]);
+  }, [streamlySignedIn, setActiveSavedId]);
 
   async function activateSavedPlaylist(id: string) {
     setActivatingId(id);

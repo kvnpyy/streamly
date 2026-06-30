@@ -78,14 +78,16 @@ export function ProviderAccountsPanel() {
     setLoading(true);
     setError(null);
     try {
-      setRows(await fetchSavedProviderAccounts());
+      const { accounts, activeAccountId } = await fetchSavedProviderAccounts();
+      setRows(accounts);
+      if (activeAccountId) setActiveSavedId(activeAccountId);
     } catch (e) {
       setRows([]);
       setError(e instanceof Error ? e.message : "Network error loading accounts.");
     } finally {
       setLoading(false);
     }
-  }, [status]);
+  }, [status, setActiveSavedId]);
 
   useEffect(() => {
     const t = window.setTimeout(() => void load(), 0);

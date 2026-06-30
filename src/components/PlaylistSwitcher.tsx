@@ -45,7 +45,7 @@ export function PlaylistSwitcher({
   const [switchError, setSwitchError] = useState<string | null>(null);
 
   const {
-    data: rows = [],
+    data: savedProviders,
     isPending: loadingList,
     error: fetchError,
     refetch,
@@ -54,6 +54,15 @@ export function PlaylistSwitcher({
     queryFn: fetchSavedProviderAccounts,
     enabled: status === "authenticated",
   });
+
+  const rows = savedProviders?.accounts ?? [];
+
+  useEffect(() => {
+    const serverActive = savedProviders?.activeAccountId;
+    if (serverActive) {
+      setActiveSavedId(serverActive);
+    }
+  }, [savedProviders?.activeAccountId, setActiveSavedId]);
 
   const rootRef = useRef<HTMLDivElement>(null);
 

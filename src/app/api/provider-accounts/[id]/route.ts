@@ -2,6 +2,10 @@ import { auth } from "@/auth";
 import { getDb } from "@/db";
 import { iptvProviderAccounts } from "@/db/schema";
 import {
+  clearUserActiveIptvProviderIfMatches,
+  setUserActiveIptvProviderAccountId,
+} from "@/lib/active-iptv-provider";
+import {
   attachSessionCookie,
   SessionCookieEncodeError,
 } from "@/lib/auth-session-cookie";
@@ -245,6 +249,7 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx) {
     );
 
   if (credsChanged) {
+    await setUserActiveIptvProviderAccountId(uid, id);
     try {
       const res = NextResponse.json({
         ok: true,
@@ -287,5 +292,6 @@ export async function DELETE(_req: NextRequest, ctx: RouteCtx) {
   if (!rows.length) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
+  await clearUserActiveIptvProviderIfMatches(uid, id);
   return NextResponse.json({ ok: true });
 }

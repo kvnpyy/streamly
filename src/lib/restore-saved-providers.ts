@@ -6,7 +6,12 @@ import type { XtreamCredentials } from "@/lib/xtream-types";
 
 export type SavedProviderAccountListItem = { id: string };
 
-/** Pick which saved account to activate (pref wins when still valid, else most recent). */
+export type SavedProviderAccountsList = {
+  accounts: SavedProviderAccountListItem[];
+  activeAccountId: string | null;
+};
+
+/** Pick which saved account to activate (server active id wins, then device pref, else most recent). */
 export function pickSavedProviderAccountId(
   accounts: SavedProviderAccountListItem[],
   preferredId: string | null | undefined
@@ -64,7 +69,7 @@ export async function fetchIptvSessionCredsFromApi(
 export async function listSavedProviderAccounts(
   origin: string,
   signal?: AbortSignal
-): Promise<SavedProviderAccountListItem[]> {
+): Promise<SavedProviderAccountsList> {
   const r = await fetch(`${origin}/api/provider-accounts`, {
     credentials: "include",
     cache: "no-store",
@@ -72,9 +77,14 @@ export async function listSavedProviderAccounts(
   });
   const listJson = (await r.json().catch(() => ({}))) as {
     accounts?: SavedProviderAccountListItem[];
+    activeAccountId?: string | null;
   };
-  if (!r.ok) return [];
-  return listJson.accounts ?? [];
+  if (!r.ok) return { accounts: [], activeAccountId: null };
+  const active =
+    typeof listJson.activeAccountId === "string" && listJson.activeAccountId
+      ? listJson.activeAccountId
+      : null;
+  return { accounts: listJson.accounts ?? [], activeAccountId: active };
 }
 
 export async function activateSavedProviderOnServer(

@@ -2,6 +2,10 @@ import { auth } from "@/auth";
 import { getDb } from "@/db";
 import { iptvProviderAccounts, users } from "@/db/schema";
 import {
+  readUserActiveIptvProviderAccountId,
+  setUserActiveIptvProviderAccountId,
+} from "@/lib/active-iptv-provider";
+import {
   attachSessionCookie,
   SessionCookieEncodeError,
 } from "@/lib/auth-session-cookie";
@@ -36,7 +40,9 @@ export async function GET() {
     .where(eq(iptvProviderAccounts.userId, uid))
     .orderBy(desc(iptvProviderAccounts.updatedAt));
 
-  return NextResponse.json({ accounts: rows });
+  const activeAccountId = await readUserActiveIptvProviderAccountId(uid);
+
+  return NextResponse.json({ accounts: rows, activeAccountId });
 }
 
 async function requireStreamUserId(
@@ -153,6 +159,8 @@ export async function POST(req: NextRequest) {
       .set({ payload: updatedPayload, updatedAt: now })
       .where(eq(iptvProviderAccounts.id, existingId));
 
+    await setUserActiveIptvProviderAccountId(uid, existingId);
+
     try {
       const res = NextResponse.json({ id: existingId, label, account: accountResponse });
       attachSessionCookie(res, req, creds);
@@ -202,6 +210,8 @@ export async function POST(req: NextRequest) {
     }
     throw e;
   }
+
+  await setUserActiveIptvProviderAccountId(uid, id);
 
   try {
     const res = NextResponse.json({

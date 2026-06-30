@@ -72,14 +72,16 @@ export function TvSimpleSettings() {
     setLoading(true);
     setError(null);
     try {
-      setRows(await fetchSavedProviderAccounts());
+      const { accounts, activeAccountId } = await fetchSavedProviderAccounts();
+      setRows(accounts);
+      if (activeAccountId) setActiveSavedId(activeAccountId);
     } catch (e) {
       setRows([]);
       setError(e instanceof Error ? e.message : "Could not load playlists.");
     } finally {
       setLoading(false);
     }
-  }, [streamSignedIn]);
+  }, [streamSignedIn, setActiveSavedId]);
 
   useEffect(() => {
     if (!streamSignedIn) {

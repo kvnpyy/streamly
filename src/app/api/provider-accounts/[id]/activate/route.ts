@@ -1,6 +1,7 @@
 import { auth } from "@/auth";
 import { getDb } from "@/db";
 import { iptvProviderAccounts } from "@/db/schema";
+import { setUserActiveIptvProviderAccountId } from "@/lib/active-iptv-provider";
 import {
   attachSessionCookie,
   SessionCookieEncodeError,
@@ -72,6 +73,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
       .update(iptvProviderAccounts)
       .set({ updatedAt: new Date() })
       .where(eq(iptvProviderAccounts.id, id));
+    await setUserActiveIptvProviderAccountId(uid, id);
     return res;
   } catch (e) {
     if (e instanceof SessionCookieEncodeError) {

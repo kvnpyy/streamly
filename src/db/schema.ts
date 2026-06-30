@@ -17,6 +17,8 @@ export const users = sqliteTable("users", {
     mode: "timestamp_ms",
   }),
   welcomeEmailSentAt: integer("welcome_email_sent_at", { mode: "timestamp_ms" }),
+  /** Last activated `iptv_provider_accounts.id` — synced across devices for Streamly users. */
+  activeIptvProviderAccountId: text("active_iptv_provider_account_id"),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
 });
 

@@ -5,7 +5,8 @@ import { usePrefs } from "@/store/preferences";
 
 /**
  * After Xtream auth succeeds in the browser: save to server (Streamly account)
- * or device session cookie, then caller typically assigns `/app`.
+ * or device session cookie. Call only from explicit user connect flows — never
+ * from session bootstrap (stale device cookies must not overwrite server creds).
  */
 export async function persistIptvAfterBrowserLogin(
   creds: XtreamCredentials
