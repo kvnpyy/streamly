@@ -27,6 +27,8 @@ describe("getCategoryRegion", () => {
   it("maps Canada-named categories to North America", () => {
     expect(getCategoryRegion("Canada | General")).toBe("North America");
     expect(getCategoryRegion("CA | Sports")).toBe("North America");
+    expect(getCategoryRegion("|AM| CANADA GENERAL")).toBe("North America");
+    expect(getCategoryCountryIso("|AM| CANADA GENERAL")).toBe("CA");
   });
 });
 
@@ -35,6 +37,9 @@ describe("categoryMatchesRegion", () => {
     expect(categoryMatchesRegion("US | Sports", "North America")).toBe(true);
     expect(categoryMatchesRegion("CA | Sports", "North America")).toBe(true);
     expect(categoryMatchesRegion("Canada | News", "North America")).toBe(true);
+    expect(categoryMatchesRegion("|AM| CANADA GENERAL", "North America")).toBe(
+      true
+    );
     expect(categoryMatchesRegion("UK | Sports", "North America")).toBe(false);
   });
 
@@ -43,6 +48,9 @@ describe("categoryMatchesRegion", () => {
       false
     );
     expect(categoryMatchesRegion("|ALB| CHILDREN", "North America")).toBe(
+      false
+    );
+    expect(categoryMatchesRegion("|AM| MEXICO GENERAL", "North America")).toBe(
       false
     );
     expect(categoryMatchesRegion("|EU| SW MAX PPV", "Europe")).toBe(true);
