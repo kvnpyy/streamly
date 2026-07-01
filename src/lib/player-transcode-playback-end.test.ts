@@ -5,6 +5,7 @@ import {
   isEncodeCaughtUp,
   isNearEpisodeEnd,
   shouldTreatTranscodeAsEnded,
+  shouldTreatTranscodeSnapAsEnded,
 } from "./player-transcode-playback-end";
 
 function mockVideo(opts: {
@@ -94,6 +95,20 @@ describe("shouldTreatTranscodeAsEnded", () => {
         durationSec: 0,
         encodedSecRel: 600,
       })
+    ).toBe(true);
+  });
+});
+
+describe("shouldTreatTranscodeSnapAsEnded", () => {
+  it("does not treat mid-episode snap-back as ended", () => {
+    expect(
+      shouldTreatTranscodeSnapAsEnded(12, 580, 0, 3600)
+    ).toBe(false);
+  });
+
+  it("treats snap-back near the finale as ended", () => {
+    expect(
+      shouldTreatTranscodeSnapAsEnded(1655, 1660, 1943, 3601)
     ).toBe(true);
   });
 });

@@ -11,6 +11,16 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.11.7",
+    date: "2026-07-01",
+    summary: "Stabilize series transcode playback and stop false autoplay skips.",
+    highlights: [
+      "Player: only fire transcode ended near the real finale — HLS snap-backs mid-episode no longer advance.",
+      "Player: simplify episode URL setup and stop prep UI from resetting mid-playback.",
+      "Series: disable neighbor transcode warming and transcode-buffer autoplay polling.",
+    ],
+  },
+  {
     version: "0.11.5",
     date: "2026-07-01",
     summary: "Series playback no longer auto-advances when transcode encode stalls mid-episode.",

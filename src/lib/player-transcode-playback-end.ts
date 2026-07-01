@@ -84,9 +84,10 @@ export function shouldTreatTranscodeAsEnded(
   if (isNearEpisodeEnd(absolute, durationSec)) return true;
 
   if (isEncodeCaughtUp(relative, encodedSecRel)) {
-    // Unknown duration — encoder finished the whole short title.
-    if (!Number.isFinite(durationSec) || durationSec < 60) return true;
-    // Encoded window reached the episode finale (common after tc_seek resume).
+    // Unknown duration — only end when a substantial encode window finished.
+    if (!Number.isFinite(durationSec) || durationSec < 60) {
+      return encodedSecRel >= 90;
+    }
     if (
       encodedSecRel > 8 &&
       isNearEpisodeEnd(startOffsetSec + encodedSecRel, durationSec)
@@ -97,6 +98,18 @@ export function shouldTreatTranscodeAsEnded(
   }
 
   return false;
+}
+
+/** HLS snap-back near the finale — mid-episode snaps are recovery, not ended. */
+export function shouldTreatTranscodeSnapAsEnded(
+  currentRel: number,
+  maxSeenRel: number,
+  startOffsetSec: number,
+  durationSec: number
+): boolean {
+  if (!detectTranscodeBackwardSnap(currentRel, maxSeenRel)) return false;
+  const absolute = startOffsetSec + currentRel;
+  return isNearEpisodeEnd(absolute, durationSec);
 }
 
 export type SignalTranscodeEndedOpts = {

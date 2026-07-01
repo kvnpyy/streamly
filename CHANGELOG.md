@@ -23,6 +23,17 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.11.7] — 2026-07-01
+
+Stabilize series transcode playback and stop false autoplay skips.
+
+### Fixed
+- **Transcode ended detection** — HLS snap-backs and encode stalls no longer dispatch `ended` mid-episode; autoplay only runs at the real finale or on native `ended`.
+- **Player startup** — episode transcode URL is set once per episode in layout; prep UI no longer resets when transcode flags flip mid-playback.
+- **Series warm / autoplay** — disabled neighbor transcode warming and removed transcode-buffer polling that advanced episodes early.
+
+---
+
 ## [0.11.5] — 2026-07-01
 
 Series playback no longer auto-advances when transcode encode stalls mid-episode.

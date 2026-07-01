@@ -57,6 +57,7 @@ import {
   isAtTranscodeBufferEdge,
   isEncodeCaughtUp,
   shouldTreatTranscodeAsEnded,
+  shouldTreatTranscodeSnapAsEnded,
   signalTranscodePlaybackEnded,
 } from "@/lib/player-transcode-playback-end";
 import { browseAccountKey, usePrefs } from "@/store/preferences";
@@ -236,6 +237,24 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
       isLive
     );
     const vodTranscodeHls = !isLive && playbackUrlUsesVodTranscode(url);
+    if (!timelineHold && vodTranscodeHls) {
+      try {
+        const origin =
+          typeof window !== "undefined"
+            ? window.location.origin
+            : "http://localhost";
+        const tcSeek = Number(
+          new URL(url, origin).searchParams.get("tc_seek") ?? "0"
+        );
+        if (Number.isFinite(tcSeek) && tcSeek >= 15) {
+          const seek = Math.floor(tcSeek);
+          setTime(seek);
+          vodStartOffsetRef.current = seek;
+        }
+      } catch {
+        /* noop */
+      }
+    }
     setLoading(!vodTranscodeHls);
 
     const preferredVol = readPreferredPlayerVolume();
@@ -831,19 +850,6 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
           }
           // Live: let hls.js retry fragments — edge `startLoad(-1)` on every frag error causes pause/freeze loops.
           if (!isLive && fragish) {
-            const vv = videoRef.current;
-            if (vodTranscodeHls && vv) {
-              const atEnd = shouldTreatTranscodeAsEnded({
-                video: vv,
-                startOffsetSec: vodStartOffsetRef.current,
-                durationSec: vodDurationHintRef.current,
-                encodedSecRel: vodEncodedSecRef.current,
-              });
-              if (atEnd) {
-                signalTranscodePlaybackEnded({ video: vv, hls });
-                return;
-              }
-            }
             try {
               const vv = videoRef.current;
               const pos =
@@ -898,19 +904,6 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
               }
               try {
                 const vv = videoRef.current;
-                if (
-                  vodTranscodeHls &&
-                  vv &&
-                  shouldTreatTranscodeAsEnded({
-                    video: vv,
-                    startOffsetSec: vodStartOffsetRef.current,
-                    durationSec: vodDurationHintRef.current,
-                    encodedSecRel: vodEncodedSecRef.current,
-                  })
-                ) {
-                  signalTranscodePlaybackEnded({ video: vv, hls });
-                  break;
-                }
                 const pos =
                   vv && Number.isFinite(vv.currentTime)
                     ? Math.max(0, vv.currentTime)
@@ -951,19 +944,6 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
               } else {
                 try {
                   const vv = videoRef.current;
-                  if (
-                    vodTranscodeHls &&
-                    vv &&
-                    shouldTreatTranscodeAsEnded({
-                      video: vv,
-                      startOffsetSec: vodStartOffsetRef.current,
-                      durationSec: vodDurationHintRef.current,
-                      encodedSecRel: vodEncodedSecRef.current,
-                    })
-                  ) {
-                    signalTranscodePlaybackEnded({ video: vv, hls });
-                    break;
-                  }
                   const pos =
                     vodTranscodeHls && vv && Number.isFinite(vv.currentTime)
                       ? Math.max(0, vv.currentTime)
@@ -1147,8 +1127,20 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
             }
 
             if (detectTranscodeBackwardSnap(rel, maxSeenRelTime)) {
-              transcodeEndSignaled = true;
-              signalTranscodePlaybackEnded({ video: vv, hls });
+              const durationSec = vodDurationHintRef.current;
+              if (
+                shouldTreatTranscodeSnapAsEnded(
+                  rel,
+                  maxSeenRelTime,
+                  vodStartOffsetRef.current,
+                  durationSec
+                )
+              ) {
+                transcodeEndSignaled = true;
+                signalTranscodePlaybackEnded({ video: vv, hls });
+              } else {
+                maxSeenRelTime = rel;
+              }
               return;
             }
 

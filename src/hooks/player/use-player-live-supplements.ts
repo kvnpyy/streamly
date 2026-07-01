@@ -6,7 +6,6 @@ import { isAppleMobileWebKitDevice } from "@/lib/browser";
 import { tryCapAbrLower } from "@/lib/live-hls-playback";
 import { withLiveHlsCompatMse } from "@/lib/stream-url";
 import { isTvClassUserAgent } from "@/lib/tv-user-agent";
-import { warmSeriesPlaylistNeighbor } from "@/lib/vod-transcode-url";
 import { voidSafeVideoPlay } from "@/lib/video-play";
 import type { PlayerSource } from "@/store/player";
 import type { PlayerPlaylist } from "@/store/player";
@@ -84,19 +83,8 @@ export function usePlayerLiveSupplements(p: UsePlayerLiveSupplementsParams) {
     if (silkLikeClient || mobileLikeViewport) return;
     const items = playlist.items;
     const n = items.length;
-    const compatMse = tvBrowser || silkLikeClient;
 
-    if (playlist.kind === "series") {
-      const next = items[index + 1];
-      if (!next) return;
-      // Only warm the immediate next episode — prev + wrap-around warmed extra
-      // transcode jobs and tripped single-connection panels mid-playback.
-      const delayMs = 45_000;
-      const timer = window.setTimeout(() => {
-        warmSeriesPlaylistNeighbor(next, { compatMse });
-      }, delayMs);
-      return () => window.clearTimeout(timer);
-    }
+    if (playlist.kind === "series") return;
 
     const warm = (i: number) => {
       const u = items[i]?.url;

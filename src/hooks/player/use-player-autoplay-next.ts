@@ -1,14 +1,12 @@
 "use client";
 
 import {
-  AUTOPLAY_COUNTDOWN_SEC,
   autoplayDisplayCountdownSec,
   episodeAutoplayKey,
   getSeriesNextEpisode,
   shouldAutoplayOnEnded,
   shouldOfferAutoplayNext,
 } from "@/lib/player-autoplay-next";
-import { shouldTreatTranscodeAsEnded } from "@/lib/player-transcode-playback-end";
 import type { PlayerPlaylist, PlayerSource } from "@/store/player";
 import {
   useCallback,
@@ -28,9 +26,6 @@ export type UsePlayerAutoplayNextParams = {
   durationSec: number;
   videoRef: RefObject<HTMLVideoElement | null>;
   onPlayNext: () => void;
-  usesTranscode?: boolean;
-  startOffsetSecRef?: RefObject<number>;
-  encodedSecRelRef?: RefObject<number>;
 };
 
 export type UsePlayerAutoplayNextResult = {
@@ -54,9 +49,6 @@ export function usePlayerAutoplayNext(
     durationSec,
     videoRef,
     onPlayNext,
-    usesTranscode = false,
-    startOffsetSecRef,
-    encodedSecRelRef,
   } = p;
 
   const nextEpisode = useMemo(
@@ -68,8 +60,6 @@ export function usePlayerAutoplayNext(
 
   const [dismissedKey, setDismissedKey] = useState<string | null>(null);
   const [watchCreditsKey, setWatchCreditsKey] = useState<string | null>(null);
-  const [finaleOffer, setFinaleOffer] = useState(false);
-  const [finaleCountdown, setFinaleCountdown] = useState<number | null>(null);
   const advancedRef = useRef(false);
   const onPlayNextRef = useRef(onPlayNext);
 
@@ -79,7 +69,6 @@ export function usePlayerAutoplayNext(
 
   useEffect(() => {
     advancedRef.current = false;
-    queueMicrotask(() => setFinaleCountdown(null));
   }, [episodeKey]);
 
   const dismissedForEpisode =
@@ -118,65 +107,6 @@ export function usePlayerAutoplayNext(
   useEffect(() => {
     if (positionCountdownSec === 0) advanceToNext();
   }, [positionCountdownSec, advanceToNext]);
-
-  useEffect(() => {
-    if (!usesTranscode || !open || dismissedForEpisode || watchCreditsForEpisode) {
-      return () => setFinaleOffer(false);
-    }
-    const tick = () => {
-      const v = videoRef.current;
-      if (!v) {
-        setFinaleOffer(false);
-        return;
-      }
-      setFinaleOffer(
-        shouldTreatTranscodeAsEnded({
-          video: v,
-          startOffsetSec: startOffsetSecRef?.current ?? 0,
-          durationSec,
-          encodedSecRel: encodedSecRelRef?.current ?? 0,
-        })
-      );
-    };
-    tick();
-    const timer = window.setInterval(tick, 1500);
-    return () => {
-      window.clearInterval(timer);
-      setFinaleOffer(false);
-    };
-  }, [
-    usesTranscode,
-    open,
-    dismissedForEpisode,
-    watchCreditsForEpisode,
-    durationSec,
-    videoRef,
-    startOffsetSecRef,
-    encodedSecRelRef,
-  ]);
-
-  const showFinaleCard =
-    finaleOffer && hasNextEpisode && !dismissedForEpisode && !watchCreditsForEpisode;
-
-  useEffect(() => {
-    if (!showFinaleCard) {
-      queueMicrotask(() => setFinaleCountdown(null));
-      return;
-    }
-    queueMicrotask(() => setFinaleCountdown(AUTOPLAY_COUNTDOWN_SEC));
-  }, [showFinaleCard, episodeKey]);
-
-  useEffect(() => {
-    if (finaleCountdown == null || finaleCountdown <= 0) return;
-    const timer = window.setTimeout(() => {
-      setFinaleCountdown((c) => (c == null || c <= 1 ? 0 : c - 1));
-    }, 1000);
-    return () => window.clearTimeout(timer);
-  }, [finaleCountdown]);
-
-  useEffect(() => {
-    if (finaleCountdown === 0) advanceToNext();
-  }, [finaleCountdown, advanceToNext]);
 
   useEffect(() => {
     const v = videoRef.current;
@@ -225,20 +155,17 @@ export function usePlayerAutoplayNext(
   }, [advanceToNext]);
 
   const visibleCountdown =
-    showFinaleCard
-      ? finaleCountdown != null && finaleCountdown > 0
-        ? finaleCountdown
-        : null
-      : positionCountdownSec != null && positionCountdownSec > 0
-        ? positionCountdownSec
-        : null;
+    positionCountdownSec != null && positionCountdownSec > 0
+      ? positionCountdownSec
+      : null;
 
   return {
     visible:
       hasNextEpisode &&
       !dismissedForEpisode &&
       !watchCreditsForEpisode &&
-      ((shouldOffer && visibleCountdown != null) || showFinaleCard),
+      shouldOffer &&
+      visibleCountdown != null,
     nextEpisode,
     countdownSec: visibleCountdown,
     cancelAutoplay,
