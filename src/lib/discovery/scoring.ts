@@ -45,6 +45,7 @@ function movieToShelfItem(
     title: m.name,
     subtitle: m.year,
     rating: m.rating,
+    categoryId: String(m.category_id),
     isFavorite: isFavorite(mid),
     onToggleFavorite: () => toggleFavorite(m, mid),
   };
@@ -63,6 +64,7 @@ function seriesToShelfItem(
     title: s.name,
     subtitle: s.year,
     rating: s.rating,
+    categoryId: String(s.category_id),
     isFavorite: isFavorite(sid),
     onToggleFavorite: () => toggleFavorite(s, sid),
   };
@@ -258,20 +260,44 @@ export function buildForYouMovies(
     byId.set(mid, m);
   }
 
-  const scores = new Map<number, number>();
-  const bump = (id: number, amount: number) => {
-    scores.set(id, (scores.get(id) ?? 0) + amount);
+  const recentIds = new Set(
+    recents.filter((r) => r.kind === "movie").map((r) => r.id)
+  );
+  const movieRecents = recents.filter((r) => r.kind === "movie");
+  const movieFavorites = favorites.filter((f) => f.kind === "movie");
+  const favoriteIds = new Set(movieFavorites.map((f) => f.id));
+
+  const categoryAffinity = new Map<string, number>();
+  const bumpCategory = (catId: string, amount: number) => {
+    categoryAffinity.set(catId, (categoryAffinity.get(catId) ?? 0) + amount);
   };
 
-  recents
-    .filter((r) => r.kind === "movie")
-    .forEach((r, i) => bump(r.id, 40 - Math.min(i, 20)));
-  favorites
-    .filter((f) => f.kind === "movie")
-    .forEach((f) => bump(f.id, 25));
+  for (const [i, r] of movieRecents.entries()) {
+    const m = byId.get(r.id);
+    if (m) bumpCategory(String(m.category_id), 30 - Math.min(i, 15));
+  }
+  for (const f of movieFavorites) {
+    const m = byId.get(f.id);
+    if (m) bumpCategory(String(m.category_id), 20);
+  }
+
+  const scores = new Map<number, number>();
+  for (const [id, m] of byId) {
+    if (recentIds.has(id)) continue;
+
+    const rating = parseFloat(m.rating || "0") || 0;
+    const catBoost = categoryAffinity.get(String(m.category_id)) ?? 0;
+    let score = rating * 2 + catBoost;
+    if (!favoriteIds.has(id)) score += 5;
+
+    if (categoryAffinity.size === 0 && movieRecents.length === 0) {
+      score = rating;
+    }
+
+    if (score > 0) scores.set(id, score);
+  }
 
   const ranked = [...scores.entries()]
-    .filter(([id]) => byId.has(id))
     .sort((a, b) => b[1] - a[1])
     .slice(0, opts.limit ?? 18);
 
@@ -298,20 +324,44 @@ export function buildForYouSeries(
     byId.set(sid, s);
   }
 
-  const scores = new Map<number, number>();
-  const bump = (id: number, amount: number) => {
-    scores.set(id, (scores.get(id) ?? 0) + amount);
+  const recentIds = new Set(
+    recents.filter((r) => r.kind === "series").map((r) => r.id)
+  );
+  const seriesRecents = recents.filter((r) => r.kind === "series");
+  const seriesFavorites = favorites.filter((f) => f.kind === "series");
+  const favoriteIds = new Set(seriesFavorites.map((f) => f.id));
+
+  const categoryAffinity = new Map<string, number>();
+  const bumpCategory = (catId: string, amount: number) => {
+    categoryAffinity.set(catId, (categoryAffinity.get(catId) ?? 0) + amount);
   };
 
-  recents
-    .filter((r) => r.kind === "series")
-    .forEach((r, i) => bump(r.id, 40 - Math.min(i, 20)));
-  favorites
-    .filter((f) => f.kind === "series")
-    .forEach((f) => bump(f.id, 25));
+  for (const [i, r] of seriesRecents.entries()) {
+    const s = byId.get(r.id);
+    if (s) bumpCategory(String(s.category_id), 30 - Math.min(i, 15));
+  }
+  for (const f of seriesFavorites) {
+    const s = byId.get(f.id);
+    if (s) bumpCategory(String(s.category_id), 20);
+  }
+
+  const scores = new Map<number, number>();
+  for (const [id, s] of byId) {
+    if (recentIds.has(id)) continue;
+
+    const rating = parseFloat(s.rating || "0") || 0;
+    const catBoost = categoryAffinity.get(String(s.category_id)) ?? 0;
+    let score = rating * 2 + catBoost;
+    if (!favoriteIds.has(id)) score += 5;
+
+    if (categoryAffinity.size === 0 && seriesRecents.length === 0) {
+      score = rating;
+    }
+
+    if (score > 0) scores.set(id, score);
+  }
 
   const ranked = [...scores.entries()]
-    .filter(([id]) => byId.has(id))
     .sort((a, b) => b[1] - a[1])
     .slice(0, opts.limit ?? 18);
 

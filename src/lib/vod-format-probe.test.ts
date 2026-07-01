@@ -5,6 +5,7 @@ import {
   extFromHttpUrl,
   probeVodProxyUrl,
   resolveBestVodPlayTarget,
+  VOD_FORMAT_PROBE_GAP_MS,
   vodAlternateExtensionCandidates,
 } from "./vod-format-probe";
 
@@ -38,11 +39,14 @@ describe("extensionsToProbe", () => {
     expect(extensionsToProbe(["mp4"], "mp4")).toEqual([]);
   });
 
-  it("probes alternates but not declared mkv", () => {
+  it("lists browser-friendly alternates before mkv", () => {
     const candidates = vodAlternateExtensionCandidates("mkv");
-    const probe = extensionsToProbe(candidates, "mkv");
-    expect(probe).not.toContain("mkv");
-    expect(probe).toContain("mp4");
+    expect(extensionsToProbe(candidates, "mkv")).toEqual([
+      "mp4",
+      "m4v",
+      "mov",
+      "ts",
+    ]);
   });
 });
 
@@ -78,13 +82,29 @@ describe("resolveBestVodPlayTarget", () => {
   });
 
   it("picks first probe hit for mkv metadata", async () => {
-    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+    const fetchMock = vi.fn(async (url: string) => {
       const u = String(url);
-      if (u.includes("99.mp4")) {
-        return new Response(null, {
-          status: 200,
-          headers: { "content-type": "video/mp4" },
-        });
+      if (u.includes("probe=1") && u.includes("99.mp4")) {
+        return new Response(null, { status: 204 });
+      }
+      return new Response(null, { status: 404 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await resolveBestVodPlayTarget(creds, "movie", 99, {
+      declaredExt: "mkv",
+      probeGapMs: 0,
+    });
+    expect(result.containerExt).toBe("mp4");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(String(fetchMock.mock.calls[0]?.[0])).toContain("probe=1");
+  });
+
+  it("probes extensions one at a time with a gap", async () => {
+    const fetchMock = vi.fn(async (url: string) => {
+      const u = String(url);
+      if (u.includes("99.m4v")) {
+        return new Response(null, { status: 204 });
       }
       return new Response(null, { status: 404 });
     });
@@ -92,9 +112,10 @@ describe("resolveBestVodPlayTarget", () => {
 
     const result = await resolveBestVodPlayTarget(creds, "series", 99, {
       declaredExt: "mkv",
+      probeGapMs: 5,
     });
-    expect(result.containerExt).toBe("mp4");
-    expect(fetchMock).toHaveBeenCalled();
+    expect(result.containerExt).toBe("m4v");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it("falls back to declared mkv when probes fail", async () => {
@@ -105,6 +126,7 @@ describe("resolveBestVodPlayTarget", () => {
 
     const result = await resolveBestVodPlayTarget(creds, "series", 42, {
       declaredExt: "mkv",
+      probeGapMs: 0,
     });
     expect(result.containerExt).toBe("mkv");
     expect(result.proxyUrl).toContain("42.mkv");
@@ -123,6 +145,16 @@ describe("probeVodProxyUrl", () => {
     vi.unstubAllGlobals();
   });
 
+  it("accepts 204 from probe mode", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(null, { status: 204 }))
+    );
+    await expect(
+      probeVodProxyUrl("/api/stream?u=http%3A%2F%2Fx%2F1.mp4&type=vod")
+    ).resolves.toBe(true);
+  });
+
   it("rejects HTML error pages", async () => {
     vi.stubGlobal(
       "fetch",
@@ -136,5 +168,11 @@ describe("probeVodProxyUrl", () => {
     await expect(
       probeVodProxyUrl("/api/stream?u=http%3A%2F%2Fx%2F1.mp4&type=vod")
     ).resolves.toBe(false);
+  });
+});
+
+describe("VOD_FORMAT_PROBE_GAP_MS", () => {
+  it("uses a pause long enough for single-connection panels", () => {
+    expect(VOD_FORMAT_PROBE_GAP_MS).toBeGreaterThanOrEqual(500);
   });
 });

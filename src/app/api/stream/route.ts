@@ -27,7 +27,10 @@ import {
   releaseVodTranscodeJobs,
   upstreamEligibleForVodTranscode,
 } from "@/lib/vod-transcode";
-import { NextRequest } from "next/server";
+import {
+  browserFriendlyVodSnippet,
+  looksLikeHtmlContentType,
+} from "@/lib/vod-stream-probe-server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -279,6 +282,70 @@ async function handle(req: NextRequest, head: boolean) {
         headers: corsHeaders({ "content-type": "text/plain" }, requestId),
       })
     );
+  }
+
+  if (
+    url.searchParams.get("probe") === "1" &&
+    type === "vod" &&
+    !transcodeMode
+  ) {
+    const probeHeaders = new Headers();
+    probeHeaders.set("user-agent", IPTV_UA_VOD);
+    probeHeaders.set("range", "bytes=0-15");
+    probeHeaders.set(
+      "referer",
+      `${upstreamUrl.protocol}//${upstreamUrl.host}/`
+    );
+    probeHeaders.set("origin", `${upstreamUrl.protocol}//${upstreamUrl.host}`);
+    probeHeaders.set("connection", "close");
+
+    try {
+      const upstream = await fetchUpstream(upstreamUrl.toString(), {
+        method: "GET",
+        headers: probeHeaders,
+        redirect: "follow",
+        cache: "no-store",
+        signal: req.signal,
+      });
+      const status = upstream.status;
+      if (status === 404 || status === 410 || status === 403) {
+        return respondShort(
+          new Response(null, { status, headers: corsHeaders({}, requestId) })
+        );
+      }
+      if (!upstream.ok && status !== 206) {
+        return respondShort(
+          new Response(null, {
+            status: 502,
+            headers: corsHeaders({}, requestId),
+          })
+        );
+      }
+      const ct = upstream.headers.get("content-type") ?? "";
+      if (looksLikeHtmlContentType(ct)) {
+        return respondShort(
+          new Response(null, {
+            status: 404,
+            headers: corsHeaders({}, requestId),
+          })
+        );
+      }
+      const buf = new Uint8Array(await upstream.arrayBuffer());
+      const playable = browserFriendlyVodSnippet(buf);
+      return respondShort(
+        new Response(null, {
+          status: playable ? 204 : 404,
+          headers: corsHeaders({}, requestId),
+        })
+      );
+    } catch {
+      return respondShort(
+        new Response(null, {
+          status: 502,
+          headers: corsHeaders({}, requestId),
+        })
+      );
+    }
   }
 
   const fwdHeaders = new Headers();

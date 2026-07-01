@@ -98,12 +98,12 @@ describe("buildVodDiscoveryShelvesPayload", () => {
     expect(payload.newlyAdded.map((x) => x.id)).toEqual([503, 502, 501]);
   });
 
-  it("builds for-you from recent ids", () => {
+  it("builds for-you suggestions from taste, not continue watching", () => {
     const payload = buildVodDiscoveryShelvesPayload(vodBundle, {
       ...baseOpts,
       recentIds: [503, 501],
     });
-    expect(payload.forYou.map((x) => x.id)).toEqual([503, 501]);
+    expect(payload.forYou.map((x) => x.id)).toEqual([502]);
   });
 });
 

@@ -7,6 +7,8 @@ export type VodDiscoveryShelfItemDto = {
   subtitle?: string;
   rating?: string;
   container_extension?: string;
+  /** Provider category — used to filter shelves without rebuilding rows. */
+  categoryId?: string;
 };
 
 export type GenreDiscoveryShelfDto = {

@@ -14,6 +14,7 @@ export type MediaShelfItem = {
   title: string;
   subtitle?: string;
   rating?: string;
+  categoryId?: string;
   isFavorite?: boolean;
   onToggleFavorite?: () => void;
   /** Primary action — play/resume. When set, card click plays; use `detailHref` for info. */

@@ -29,8 +29,8 @@ export const DISCOVERY_SHELF_META: Record<string, DiscoveryShelfMeta> = {
   vod_for_you_movies: {
     id: "vod_for_you_movies",
     title: "For you",
-    eyebrow: "Your watch history",
-    signal: "Based on your recents and favorites on this device",
+    eyebrow: "Suggested for you",
+    signal: "New picks based on genres you watch and favorite",
     kind: "movie",
     seeAllHref: "/app/movies",
   },
@@ -61,8 +61,8 @@ export const DISCOVERY_SHELF_META: Record<string, DiscoveryShelfMeta> = {
   vod_for_you_series: {
     id: "vod_for_you_series",
     title: "For you",
-    eyebrow: "Your watch history",
-    signal: "Based on your recents and favorites on this device",
+    eyebrow: "Suggested for you",
+    signal: "New picks based on genres you watch and favorite",
     kind: "series",
     seeAllHref: "/app/series",
   },

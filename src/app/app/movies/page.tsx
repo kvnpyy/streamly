@@ -27,6 +27,8 @@ import {
 } from "@/lib/vod-catalog-infinite";
 import { vodItemsQueryOptions } from "@/lib/vod-catalog-items";
 import { vodDiscoveryShelvesQueryOptions } from "@/lib/vod-discovery-shelves-query";
+import { filterMediaShelfItems } from "@/lib/vod-discovery-shelf-filter";
+import { useFilteredVodDiscoveryShelves } from "@/hooks/use-filtered-vod-discovery-shelves";
 import type { VodStream, XtreamCredentials } from "@/lib/xtream-types";
 import { useAuth } from "@/store/auth";
 import { browseAccountKey, usePrefs } from "@/store/preferences";
@@ -282,6 +284,7 @@ function MoviesPageInner({
           title: r.name,
           subtitle: movie?.year,
           rating: movie?.rating,
+          categoryId: movie ? String(movie.category_id) : undefined,
           isFavorite: isFavorite("movie", mid),
           onToggleFavorite: () =>
             toggleFavorite({ kind: "movie", id: mid, name: r.name, icon: r.icon }),
@@ -315,18 +318,12 @@ function MoviesPageInner({
 
   const [discoveryReady, setDiscoveryReady] = useState(false);
   useEffect(() => {
-    if (
-      selected !== "all" ||
-      qFilter ||
-      languageActive ||
-      slimCatalog.isLoading ||
-      !discoveryOn
-    ) {
+    if (slimCatalog.isLoading || !discoveryOn) {
       queueMicrotask(() => setDiscoveryReady(false));
       return;
     }
     return scheduleWhenIdle(() => setDiscoveryReady(true), 2_500);
-  }, [selected, qFilter, languageActive, slimCatalog.isLoading, discoveryOn]);
+  }, [slimCatalog.isLoading, discoveryOn]);
 
   const discoveryShelves = useQuery(
     vodDiscoveryShelvesQueryOptions(
@@ -351,29 +348,29 @@ function MoviesPageInner({
     [isFavorite, toggleFavoriteMovie, playMovie]
   );
 
-  const topRatedItems = useMemo(
-    () => attachMovieShelves(discoveryShelves.data?.topRated ?? []),
-    [discoveryShelves.data?.topRated, attachMovieShelves]
+  const shelfFilter = useMemo(
+    () => ({
+      categoryId: selected,
+      q: qFilter.trim() || undefined,
+      lang: languageActive ? selectedLanguage : undefined,
+      categoryNameById: new Map(
+        filteredCats.map((c) => [String(c.category_id), c.category_name])
+      ),
+    }),
+    [selected, qFilter, languageActive, selectedLanguage, filteredCats]
   );
-  const newlyAddedItems = useMemo(
-    () => attachMovieShelves(discoveryShelves.data?.newlyAdded ?? []),
-    [discoveryShelves.data?.newlyAdded, attachMovieShelves]
+
+  const {
+    topRated: topRatedItems,
+    newlyAdded: newlyAddedItems,
+    forYou: forYouItems,
+    trending: trendingItems,
+    genreShelves,
+  } = useFilteredVodDiscoveryShelves(
+    discoveryShelves.data,
+    shelfFilter,
+    attachMovieShelves
   );
-  const forYouItems = useMemo(
-    () => attachMovieShelves(discoveryShelves.data?.forYou ?? []),
-    [discoveryShelves.data?.forYou, attachMovieShelves]
-  );
-  const trendingItems = useMemo(
-    () => attachMovieShelves(discoveryShelves.data?.trending ?? []),
-    [discoveryShelves.data?.trending, attachMovieShelves]
-  );
-  const genreShelves = useMemo(() => {
-    const shelves = discoveryShelves.data?.genreShelves ?? [];
-    return shelves.map((shelf) => ({
-      ...shelf,
-      items: attachMovieShelves(shelf.items),
-    }));
-  }, [discoveryShelves.data?.genreShelves, attachMovieShelves]);
 
   const recentLookupList = useMemo(
     () => recentMoviesPage.data?.items ?? [],
@@ -381,20 +378,23 @@ function MoviesPageInner({
   );
 
   const playableRecentMovies = useMemo(
-    () => enrichMovieShelfItems(recentMovieItems, recentLookupList),
-    [recentMovieItems, recentLookupList, enrichMovieShelfItems]
+    () =>
+      enrichMovieShelfItems(
+        filterMediaShelfItems(recentMovieItems, shelfFilter),
+        recentLookupList
+      ),
+    [recentMovieItems, recentLookupList, enrichMovieShelfItems, shelfFilter]
   );
 
   const showDiscovery =
-    discoveryReady &&
-    discoveryOn &&
-    selected === "all" &&
-    !qFilter &&
-    sort === "added" &&
-    !slimCatalog.isLoading;
+    discoveryReady && discoveryOn && !slimCatalog.isLoading;
+
+  const hasActiveBrowseFilter =
+    selected !== "all" || Boolean(qFilter.trim()) || languageActive;
 
   const tvPresentation = useTvPresentation();
-  const tvShelfBrowse = tvPresentation && showDiscovery;
+  const tvShelfBrowse =
+    tvPresentation && showDiscovery && !hasActiveBrowseFilter && sort === "added";
 
   const deferredVisible = useDeferredValue(visible);
   const displayVisible = shouldUseInstantCatalogGrid(sort, qFilter)
@@ -500,7 +500,7 @@ function MoviesPageInner({
         </div>
       </header>
 
-      {/* ── Discovery shelves (hidden when user has active filters) ── */}
+      {/* ── Discovery shelves (items filtered when browse filters are active) ── */}
       {showDiscovery && (
         <div className="space-y-6">
           {playableRecentMovies.length > 0 && (

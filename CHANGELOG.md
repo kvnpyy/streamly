@@ -22,9 +22,13 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 ## [Unreleased]
 
 ### Added
+- **VOD format probe (`probe=1`)** — sequential MP4/M4V/MOV/TS checks with a 700ms gap and 16-byte upstream sniff so single-connection panels are not exhausted before MKV transcode.
 - **Proactive IPTV API health monitoring** — server tracks user-impacting error rates (missing credentials, Turnstile blocks, provider verify failures, stream 4xx). `/api/metrics` exposes `apiHealth`; hourly cron emails when thresholds spike. Run `npm run monitor:health-report` on the VPS to triage.
 
 ### Fixed
+- **Movies/Series discovery shelves** — shelves stay visible when category, language, or search filters are active; only non-matching titles are removed.
+- **For you vs Continue Watching** — For You suggests unwatched titles by genre taste; excludes continue-watching recents.
+- **VOD playback on strict panels** — format probing no longer hammers the provider with parallel extension requests before MKV fallback.
 - **HTTP 502 on catalog/browse** — serve stale disk cache when IPTV panels are slow or briefly offline; retry upstream fetches; normalize server URLs in stream paths and disk cache keys.
 - **HTTP 400 connection failures** — allow empty IPTV passwords; normalize server URLs that include `/player_api.php`; URL-encode credentials in stream paths; exempt signed-in Streamly users from Turnstile on reconnect; softer VOD pre-play probe when providers return 4xx.
 

@@ -27,6 +27,8 @@ import {
   seriesItemsQueryOptions,
 } from "@/lib/series-catalog-items";
 import { seriesDiscoveryShelvesQueryOptions } from "@/lib/series-discovery-shelves-query";
+import { filterMediaShelfItems } from "@/lib/vod-discovery-shelf-filter";
+import { useFilteredVodDiscoveryShelves } from "@/hooks/use-filtered-vod-discovery-shelves";
 import type { SeriesItem, XtreamCredentials } from "@/lib/xtream-types";
 import { useAuth } from "@/store/auth";
 import { browseAccountKey, usePrefs } from "@/store/preferences";
@@ -297,6 +299,7 @@ function SeriesPageInner({
           title: r.name,
           subtitle: s?.year,
           rating: s?.rating,
+          categoryId: s ? String(s.category_id) : undefined,
           isFavorite: isFavorite("series", sid),
           onToggleFavorite: () =>
             toggleFavorite({ kind: "series", id: sid, name: r.name, icon: r.icon }),
@@ -330,18 +333,12 @@ function SeriesPageInner({
 
   const [discoveryReady, setDiscoveryReady] = useState(false);
   useEffect(() => {
-    if (
-      selected !== "all" ||
-      qFilter ||
-      languageActive ||
-      slimCatalog.isLoading ||
-      !discoveryOn
-    ) {
+    if (slimCatalog.isLoading || !discoveryOn) {
       queueMicrotask(() => setDiscoveryReady(false));
       return;
     }
     return scheduleWhenIdle(() => setDiscoveryReady(true), 2_500);
-  }, [selected, qFilter, languageActive, slimCatalog.isLoading, discoveryOn]);
+  }, [slimCatalog.isLoading, discoveryOn]);
 
   const discoveryShelves = useQuery(
     seriesDiscoveryShelvesQueryOptions(
@@ -365,40 +362,44 @@ function SeriesPageInner({
     [isFavorite, toggleFavoriteSeriesItem]
   );
 
-  const topRatedSeriesItems = useMemo(
-    () => attachSeriesShelves(discoveryShelves.data?.topRated ?? []),
-    [discoveryShelves.data?.topRated, attachSeriesShelves]
+  const shelfFilter = useMemo(
+    () => ({
+      categoryId: selected,
+      q: qFilter.trim() || undefined,
+      lang: languageActive ? selectedLanguage : undefined,
+      categoryNameById: new Map(
+        filteredCats.map((c) => [String(c.category_id), c.category_name])
+      ),
+    }),
+    [selected, qFilter, languageActive, selectedLanguage, filteredCats]
   );
-  const newlyAddedSeriesItems = useMemo(
-    () => attachSeriesShelves(discoveryShelves.data?.newlyAdded ?? []),
-    [discoveryShelves.data?.newlyAdded, attachSeriesShelves]
+
+  const {
+    topRated: topRatedSeriesItems,
+    newlyAdded: newlyAddedSeriesItems,
+    forYou: forYouSeriesItems,
+    trending: trendingSeriesItems,
+    genreShelves,
+  } = useFilteredVodDiscoveryShelves(
+    discoveryShelves.data,
+    shelfFilter,
+    attachSeriesShelves
   );
-  const forYouSeriesItems = useMemo(
-    () => attachSeriesShelves(discoveryShelves.data?.forYou ?? []),
-    [discoveryShelves.data?.forYou, attachSeriesShelves]
+
+  const filteredRecentSeriesItems = useMemo(
+    () => filterMediaShelfItems(recentSeriesItems, shelfFilter),
+    [recentSeriesItems, shelfFilter]
   );
-  const trendingSeriesItems = useMemo(
-    () => attachSeriesShelves(discoveryShelves.data?.trending ?? []),
-    [discoveryShelves.data?.trending, attachSeriesShelves]
-  );
-  const genreShelves = useMemo(() => {
-    const shelves = discoveryShelves.data?.genreShelves ?? [];
-    return shelves.map((shelf) => ({
-      ...shelf,
-      items: attachSeriesShelves(shelf.items),
-    }));
-  }, [discoveryShelves.data?.genreShelves, attachSeriesShelves]);
 
   const showDiscovery =
-    discoveryReady &&
-    discoveryOn &&
-    selected === "all" &&
-    !qFilter &&
-    sort === "added" &&
-    !slimCatalog.isLoading;
+    discoveryReady && discoveryOn && !slimCatalog.isLoading;
+
+  const hasActiveBrowseFilter =
+    selected !== "all" || Boolean(qFilter.trim()) || languageActive;
 
   const tvPresentation = useTvPresentation();
-  const tvShelfBrowse = tvPresentation && showDiscovery;
+  const tvShelfBrowse =
+    tvPresentation && showDiscovery && !hasActiveBrowseFilter && sort === "added";
 
   const deferredVisible = useDeferredValue(visible);
   const displayVisible = shouldUseInstantCatalogGrid(sort, qFilter)
@@ -494,14 +495,14 @@ function SeriesPageInner({
         </div>
       </header>
 
-      {/* ── Discovery shelves (hidden when user has active filters) ── */}
+      {/* ── Discovery shelves (items filtered when browse filters are active) ── */}
       {showDiscovery && (
         <div className="space-y-6">
-          {recentSeriesItems.length > 0 && (
+          {filteredRecentSeriesItems.length > 0 && (
             <MediaShelf
               eyebrow="Pick up where you left off"
               title="Continue Watching"
-              items={recentSeriesItems}
+              items={filteredRecentSeriesItems}
             />
           )}
           {discoveryOn && forYouSeriesItems.length > 0 && (

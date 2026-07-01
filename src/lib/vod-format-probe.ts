@@ -1,13 +1,15 @@
 import { buildDirectSourceProxyUrl, buildStreamUrl } from "@/lib/xtream";
 import type { XtreamCredentials } from "@/lib/xtream-types";
-import { upstreamMediaExtFromProxyUrl } from "@/lib/vod-transcode-url";
+import { looksLikeHtmlContentType } from "@/lib/vod-stream-probe-server";
 import { normalizeContainerExt, vodContainerUiHint } from "@/lib/utils";
 
-/** Extensions worth trying before falling back to panel-declared MKV/AVI. */
+/** Browser-friendly extensions to try before falling back to MKV/AVI. */
 const PREFERRED_VOD_EXTS = ["mp4", "m4v", "mov", "ts"] as const;
 
 const PROBE_TIMEOUT_MS = 4500;
 const PROBE_CACHE_MS = 30 * 60_000;
+/** Pause between extension probes so single-connection panels can release the slot. */
+export const VOD_FORMAT_PROBE_GAP_MS = 700;
 
 const probeCache = new Map<
   string,
@@ -47,7 +49,7 @@ export function vodAlternateExtensionCandidates(
   return ordered;
 }
 
-/** Extensions to HEAD-probe before using the declared risky container. */
+/** Extensions to probe sequentially before using declared MKV/AVI. */
 export function extensionsToProbe(
   candidates: string[],
   declaredExt: string | undefined | null
@@ -57,7 +59,9 @@ export function extensionsToProbe(
   if (vodContainerUiHint(declared) !== "risky" && declared !== "unknown") {
     return [];
   }
-  return candidates.filter((ext) => ext !== declared);
+  return PREFERRED_VOD_EXTS.filter(
+    (ext) => ext !== declared && candidates.includes(ext)
+  );
 }
 
 function defaultVodFallbackExt(
@@ -68,29 +72,52 @@ function defaultVodFallbackExt(
   return kind === "series" ? "mkv" : "mp4";
 }
 
-function looksLikeHtmlContentType(contentType: string): boolean {
-  const ct = contentType.toLowerCase();
-  return ct.includes("text/html") || ct.includes("application/xhtml");
+function appendFormatProbeParam(proxyUrl: string): string {
+  try {
+    const parsed = new URL(proxyUrl, "http://localhost");
+    parsed.searchParams.set("probe", "1");
+    return `${parsed.pathname}?${parsed.searchParams.toString()}`;
+  } catch {
+    const join = proxyUrl.includes("?") ? "&" : "?";
+    return `${proxyUrl}${join}probe=1`;
+  }
 }
 
-/** Lightweight same-origin probe via `/api/stream` (HEAD or tiny Range). */
+function sleepMs(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new DOMException("Aborted", "AbortError"));
+      return;
+    }
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", onAbort);
+      reject(new DOMException("Aborted", "AbortError"));
+    };
+    signal?.addEventListener("abort", onAbort);
+  });
+}
+
+/** Lightweight same-origin probe via `/api/stream?probe=1` (16-byte Range upstream). */
 export async function probeVodProxyUrl(
   proxyUrl: string,
   signal?: AbortSignal
 ): Promise<boolean> {
   if (typeof window === "undefined") return true;
 
-  const ext = upstreamMediaExtFromProxyUrl(proxyUrl) ?? "mp4";
+  const probeUrl = appendFormatProbeParam(proxyUrl);
   const controller = new AbortController();
   const onAbort = () => controller.abort();
   signal?.addEventListener("abort", onAbort);
   const timer = window.setTimeout(() => controller.abort(), PROBE_TIMEOUT_MS);
 
   try {
-    const preferHead = ext === "mp4" || ext === "m4v" || ext === "mov";
-    const res = await fetch(proxyUrl, {
-      method: preferHead ? "HEAD" : "GET",
-      ...(preferHead ? {} : { headers: { Range: "bytes=0-0" } }),
+    const res = await fetch(probeUrl, {
+      method: "GET",
       credentials: "same-origin",
       cache: "no-store",
       signal: controller.signal,
@@ -99,6 +126,7 @@ export async function probeVodProxyUrl(
     if (res.status === 404 || res.status === 410 || res.status === 403) {
       return false;
     }
+    if (res.status === 204) return true;
     const ct = res.headers.get("content-type") ?? "";
     if (looksLikeHtmlContentType(ct)) return false;
     return res.ok || res.status === 206;
@@ -120,11 +148,13 @@ export type ResolveVodPlayTargetOpts = {
   signal?: AbortSignal;
   /** Tests / SSR — skip network probes. */
   skipProbe?: boolean;
+  /** Override gap between extension probes (ms). */
+  probeGapMs?: number;
 };
 
 /**
- * Pick the best proxied VOD URL: `direct_source` first, then probe MP4/M4V when
- * the panel says MKV, then fall back to declared extension.
+ * Pick the best proxied VOD URL: `direct_source` first, then probe MP4/M4V/MOV/TS
+ * one at a time when the panel says MKV, then fall back to declared extension.
  */
 export async function resolveBestVodPlayTarget(
   creds: XtreamCredentials,
@@ -164,8 +194,19 @@ export async function resolveBestVodPlayTarget(
   }
 
   const candidates = vodAlternateExtensionCandidates(opts?.declaredExt);
-  for (const ext of extensionsToProbe(candidates, opts?.declaredExt)) {
+  const toProbe = extensionsToProbe(candidates, opts?.declaredExt);
+  const gapMs = opts?.probeGapMs ?? VOD_FORMAT_PROBE_GAP_MS;
+
+  for (let i = 0; i < toProbe.length; i++) {
+    const ext = toProbe[i]!;
     if (opts?.signal?.aborted) break;
+    if (i > 0) {
+      try {
+        await sleepMs(gapMs, opts?.signal);
+      } catch {
+        break;
+      }
+    }
     const proxyUrl = buildStreamUrl(creds, kind, streamId, ext);
     const ok = await probeVodProxyUrl(proxyUrl, opts?.signal);
     if (ok) {

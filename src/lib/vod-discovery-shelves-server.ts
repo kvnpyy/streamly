@@ -45,6 +45,7 @@ function movieDto(m: VodStream, mid: number): VodDiscoveryShelfItemDto {
     subtitle: m.year,
     rating: m.rating,
     container_extension: m.container_extension,
+    categoryId: String(m.category_id),
   };
 }
 
@@ -56,6 +57,7 @@ function seriesDto(s: SeriesItem, sid: number): VodDiscoveryShelfItemDto {
     title: s.name,
     subtitle: s.year,
     rating: s.rating,
+    categoryId: String(s.category_id),
   };
 }
 
@@ -67,6 +69,7 @@ function stripMovieShelf(items: MediaShelfItem[]): VodDiscoveryShelfItemDto[] {
     title: item.title,
     subtitle: item.subtitle,
     rating: item.rating,
+    categoryId: item.categoryId,
   }));
 }
 
@@ -132,6 +135,7 @@ function buildGenreShelvesDto(
       title: item.title,
       subtitle: item.subtitle,
       rating: item.rating,
+      categoryId: item.categoryId,
     })),
   }));
 }
