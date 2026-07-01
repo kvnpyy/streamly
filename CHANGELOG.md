@@ -23,6 +23,18 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.11.2] — 2026-07-01
+
+VOD probing no longer exhausts single-connection IPTV panels.
+
+### Fixed
+- **VOD format probe** — only checks MP4 once (not MP4/M4V/MOV/TS); stops on provider busy (502/551) instead of burning four slots.
+- **VOD fallback** — brief cooldown before opening the declared MKV stream so single-connection panels can release.
+- **MKV + transcode** — skips pre-play extension probes when server transcode is enabled.
+- **Series detail** — removed automatic transcode warm on page load that opened a provider connection before Play.
+
+---
+
 ## [0.11.1] — 2026-07-01
 
 Live TV search finds channels across the full catalog.

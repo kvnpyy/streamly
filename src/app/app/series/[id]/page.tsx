@@ -32,7 +32,7 @@ import { pickSimilarSeries } from "@/lib/similar-titles";
 import { ArrowLeft, Check, Heart, Play, Star } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 
 function SeriesDetailSkeleton() {
   return (
@@ -244,20 +244,6 @@ export default function SeriesDetail() {
     },
     [creds, seriesId, info.data, play, episodePlaylist, addRecent, tvBrowser]
   );
-
-  /** Prime transcode for the episode users are most likely to play first. */
-  useEffect(() => {
-    if (!creds || orderedEpisodes.length === 0) return;
-    const pick =
-      resumeTarget ??
-      ({
-        season: orderedEpisodes[0]!.season,
-        episode: orderedEpisodes[0]!.ep,
-      } as const);
-    warmVodTranscodePlay(buildSeriesEpisodePlayUrl(creds, pick.episode), {
-      compatMse: tvBrowser,
-    });
-  }, [creds, resumeTarget, orderedEpisodes, tvBrowser]);
 
   if (!creds) {
     return <SeriesDetailSkeleton />;

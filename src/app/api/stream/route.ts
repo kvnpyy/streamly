@@ -314,10 +314,23 @@ async function handle(req: NextRequest, head: boolean) {
           new Response(null, { status, headers: corsHeaders({}, requestId) })
         );
       }
+      if (
+        status === 551 ||
+        status === 503 ||
+        status === 429 ||
+        status === 502
+      ) {
+        return respondShort(
+          new Response(null, {
+            status: 409,
+            headers: corsHeaders({ "x-vod-probe": "busy" }, requestId),
+          })
+        );
+      }
       if (!upstream.ok && status !== 206) {
         return respondShort(
           new Response(null, {
-            status: 502,
+            status: 404,
             headers: corsHeaders({}, requestId),
           })
         );

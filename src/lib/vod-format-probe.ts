@@ -1,15 +1,24 @@
 import { buildDirectSourceProxyUrl, buildStreamUrl } from "@/lib/xtream";
 import type { XtreamCredentials } from "@/lib/xtream-types";
 import { looksLikeHtmlContentType } from "@/lib/vod-stream-probe-server";
+import {
+  isVodTranscodeEnabledClient,
+  vodContainerNeedsServerPrep,
+} from "@/lib/vod-transcode-url";
 import { normalizeContainerExt, vodContainerUiHint } from "@/lib/utils";
 
 /** Browser-friendly extensions to try before falling back to MKV/AVI. */
 const PREFERRED_VOD_EXTS = ["mp4", "m4v", "mov", "ts"] as const;
 
+/** Only MP4 is probed — extra extensions were exhausting single-connection panels. */
+export const VOD_FORMAT_PROBE_EXTS = ["mp4"] as const;
+
 const PROBE_TIMEOUT_MS = 4500;
 const PROBE_CACHE_MS = 30 * 60_000;
 /** Pause between extension probes so single-connection panels can release the slot. */
 export const VOD_FORMAT_PROBE_GAP_MS = 700;
+/** Cooldown after any probe attempt before opening the declared MKV/AVI stream. */
+export const VOD_FORMAT_PROBE_FALLBACK_COOLDOWN_MS = 1_200;
 
 const probeCache = new Map<
   string,
@@ -18,10 +27,22 @@ const probeCache = new Map<
 
 export type VodPlayKind = "movie" | "series";
 
+export type VodProbeResult = "hit" | "miss" | "busy";
+
 export function extFromHttpUrl(url: string): string | null {
   const path = url.split(/[?#]/)[0].toLowerCase();
   const m = path.match(/\.([a-z0-9]{2,5})$/);
   return m ? m[1]! : null;
+}
+
+export function isProbeUpstreamBusyStatus(status: number): boolean {
+  return (
+    status === 409 ||
+    status === 429 ||
+    status === 502 ||
+    status === 503 ||
+    status === 551
+  );
 }
 
 /** Ordered playback extensions: prefer MP4-family when metadata is risky/unknown. */
@@ -49,7 +70,7 @@ export function vodAlternateExtensionCandidates(
   return ordered;
 }
 
-/** Extensions to probe sequentially before using declared MKV/AVI. */
+/** Extensions to probe sequentially before using declared MKV/AVI (MP4 only). */
 export function extensionsToProbe(
   candidates: string[],
   declaredExt: string | undefined | null
@@ -59,9 +80,24 @@ export function extensionsToProbe(
   if (vodContainerUiHint(declared) !== "risky" && declared !== "unknown") {
     return [];
   }
-  return PREFERRED_VOD_EXTS.filter(
+  return VOD_FORMAT_PROBE_EXTS.filter(
     (ext) => ext !== declared && candidates.includes(ext)
   );
+}
+
+function vodFormatProbeDisabled(): boolean {
+  const v = process.env.NEXT_PUBLIC_VOD_FORMAT_PROBE?.trim();
+  return v === "0" || v === "false";
+}
+
+/** Skip pre-play probes when server transcode will handle MKV or probing is disabled. */
+export function shouldSkipVodFormatProbe(declaredExt: string | undefined | null): boolean {
+  if (vodFormatProbeDisabled()) return true;
+  const declared = normalizeContainerExt(declaredExt);
+  if (isVodTranscodeEnabledClient() && vodContainerNeedsServerPrep(declared)) {
+    return true;
+  }
+  return false;
 }
 
 function defaultVodFallbackExt(
@@ -106,8 +142,8 @@ function sleepMs(ms: number, signal?: AbortSignal): Promise<void> {
 export async function probeVodProxyUrl(
   proxyUrl: string,
   signal?: AbortSignal
-): Promise<boolean> {
-  if (typeof window === "undefined") return true;
+): Promise<VodProbeResult> {
+  if (typeof window === "undefined") return "hit";
 
   const probeUrl = appendFormatProbeParam(proxyUrl);
   const controller = new AbortController();
@@ -123,15 +159,17 @@ export async function probeVodProxyUrl(
       signal: controller.signal,
     });
 
+    if (res.status === 204) return "hit";
     if (res.status === 404 || res.status === 410 || res.status === 403) {
-      return false;
+      return "miss";
     }
-    if (res.status === 204) return true;
+    if (isProbeUpstreamBusyStatus(res.status)) return "busy";
     const ct = res.headers.get("content-type") ?? "";
-    if (looksLikeHtmlContentType(ct)) return false;
-    return res.ok || res.status === 206;
+    if (looksLikeHtmlContentType(ct)) return "miss";
+    if (res.ok || res.status === 206) return "hit";
+    return "miss";
   } catch {
-    return false;
+    return "busy";
   } finally {
     window.clearTimeout(timer);
     signal?.removeEventListener("abort", onAbort);
@@ -150,11 +188,13 @@ export type ResolveVodPlayTargetOpts = {
   skipProbe?: boolean;
   /** Override gap between extension probes (ms). */
   probeGapMs?: number;
+  /** Override cooldown before fallback stream (ms). */
+  probeFallbackCooldownMs?: number;
 };
 
 /**
- * Pick the best proxied VOD URL: `direct_source` first, then probe MP4/M4V/MOV/TS
- * one at a time when the panel says MKV, then fall back to declared extension.
+ * Pick the best proxied VOD URL: `direct_source` first, then probe MP4 when the
+ * panel says MKV, then fall back to declared extension.
  */
 export async function resolveBestVodPlayTarget(
   creds: XtreamCredentials,
@@ -193,13 +233,27 @@ export async function resolveBestVodPlayTarget(
     return { proxyUrl, containerExt: declared };
   }
 
+  if (shouldSkipVodFormatProbe(declared)) {
+    const fallbackExt = defaultVodFallbackExt(kind, declared);
+    return {
+      proxyUrl: buildStreamUrl(creds, kind, streamId, fallbackExt),
+      containerExt: fallbackExt,
+    };
+  }
+
   const candidates = vodAlternateExtensionCandidates(opts?.declaredExt);
   const toProbe = extensionsToProbe(candidates, opts?.declaredExt);
   const gapMs = opts?.probeGapMs ?? VOD_FORMAT_PROBE_GAP_MS;
+  const fallbackCooldownMs =
+    opts?.probeFallbackCooldownMs ?? VOD_FORMAT_PROBE_FALLBACK_COOLDOWN_MS;
+
+  let probesAttempted = 0;
+  let upstreamBusy = false;
 
   for (let i = 0; i < toProbe.length; i++) {
     const ext = toProbe[i]!;
     if (opts?.signal?.aborted) break;
+    if (upstreamBusy) break;
     if (i > 0) {
       try {
         await sleepMs(gapMs, opts?.signal);
@@ -208,10 +262,23 @@ export async function resolveBestVodPlayTarget(
       }
     }
     const proxyUrl = buildStreamUrl(creds, kind, streamId, ext);
-    const ok = await probeVodProxyUrl(proxyUrl, opts?.signal);
-    if (ok) {
+    const result = await probeVodProxyUrl(proxyUrl, opts?.signal);
+    probesAttempted += 1;
+    if (result === "hit") {
       probeCache.set(cacheKey, { ext, proxyUrl, at: Date.now() });
       return { proxyUrl, containerExt: ext };
+    }
+    if (result === "busy") {
+      upstreamBusy = true;
+      break;
+    }
+  }
+
+  if (probesAttempted > 0) {
+    try {
+      await sleepMs(fallbackCooldownMs, opts?.signal);
+    } catch {
+      /* aborted */
     }
   }
 

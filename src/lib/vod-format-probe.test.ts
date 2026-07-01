@@ -3,8 +3,12 @@ import {
   clearVodFormatProbeCache,
   extensionsToProbe,
   extFromHttpUrl,
+  isProbeUpstreamBusyStatus,
   probeVodProxyUrl,
   resolveBestVodPlayTarget,
+  shouldSkipVodFormatProbe,
+  VOD_FORMAT_PROBE_EXTS,
+  VOD_FORMAT_PROBE_FALLBACK_COOLDOWN_MS,
   VOD_FORMAT_PROBE_GAP_MS,
   vodAlternateExtensionCandidates,
 } from "./vod-format-probe";
@@ -39,14 +43,19 @@ describe("extensionsToProbe", () => {
     expect(extensionsToProbe(["mp4"], "mp4")).toEqual([]);
   });
 
-  it("lists browser-friendly alternates before mkv", () => {
+  it("only probes mp4 before mkv fallback", () => {
     const candidates = vodAlternateExtensionCandidates("mkv");
-    expect(extensionsToProbe(candidates, "mkv")).toEqual([
-      "mp4",
-      "m4v",
-      "mov",
-      "ts",
-    ]);
+    expect(extensionsToProbe(candidates, "mkv")).toEqual(["mp4"]);
+    expect(VOD_FORMAT_PROBE_EXTS).toEqual(["mp4"]);
+  });
+});
+
+describe("isProbeUpstreamBusyStatus", () => {
+  it("treats panel limit and proxy errors as busy", () => {
+    expect(isProbeUpstreamBusyStatus(409)).toBe(true);
+    expect(isProbeUpstreamBusyStatus(502)).toBe(true);
+    expect(isProbeUpstreamBusyStatus(551)).toBe(true);
+    expect(isProbeUpstreamBusyStatus(404)).toBe(false);
   });
 });
 
@@ -58,6 +67,14 @@ describe("extFromHttpUrl", () => {
   });
 });
 
+describe("shouldSkipVodFormatProbe", () => {
+  it("skips when server transcode will handle mkv", () => {
+    vi.stubEnv("NEXT_PUBLIC_VOD_TRANSCODE", "1");
+    expect(shouldSkipVodFormatProbe("mkv")).toBe(true);
+    vi.unstubAllEnvs();
+  });
+});
+
 describe("resolveBestVodPlayTarget", () => {
   beforeEach(() => {
     clearVodFormatProbeCache();
@@ -65,10 +82,12 @@ describe("resolveBestVodPlayTarget", () => {
       setTimeout: globalThis.setTimeout.bind(globalThis),
       clearTimeout: globalThis.clearTimeout.bind(globalThis),
     });
+    vi.unstubAllEnvs();
   });
 
   afterEach(() => {
     vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
   });
 
   it("uses direct_source without probing", async () => {
@@ -81,7 +100,7 @@ describe("resolveBestVodPlayTarget", () => {
     expect(result.proxyUrl).toContain(encodeURIComponent("99.mp4"));
   });
 
-  it("picks first probe hit for mkv metadata", async () => {
+  it("picks mp4 when probe succeeds for mkv metadata", async () => {
     const fetchMock = vi.fn(async (url: string) => {
       const u = String(url);
       if (u.includes("probe=1") && u.includes("99.mp4")) {
@@ -94,31 +113,28 @@ describe("resolveBestVodPlayTarget", () => {
     const result = await resolveBestVodPlayTarget(creds, "movie", 99, {
       declaredExt: "mkv",
       probeGapMs: 0,
+      probeFallbackCooldownMs: 0,
     });
     expect(result.containerExt).toBe("mp4");
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(String(fetchMock.mock.calls[0]?.[0])).toContain("probe=1");
   });
 
-  it("probes extensions one at a time with a gap", async () => {
-    const fetchMock = vi.fn(async (url: string) => {
-      const u = String(url);
-      if (u.includes("99.m4v")) {
-        return new Response(null, { status: 204 });
-      }
-      return new Response(null, { status: 404 });
-    });
+  it("stops probing after upstream busy and falls back to mkv", async () => {
+    const fetchMock = vi.fn(async () => new Response(null, { status: 409 }));
     vi.stubGlobal("fetch", fetchMock);
 
-    const result = await resolveBestVodPlayTarget(creds, "series", 99, {
+    const result = await resolveBestVodPlayTarget(creds, "series", 42, {
       declaredExt: "mkv",
-      probeGapMs: 5,
+      probeGapMs: 0,
+      probeFallbackCooldownMs: 0,
     });
-    expect(result.containerExt).toBe("m4v");
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(result.containerExt).toBe("mkv");
+    expect(result.proxyUrl).toContain("42.mkv");
   });
 
-  it("falls back to declared mkv when probes fail", async () => {
+  it("falls back to declared mkv when mp4 probe misses", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async () => new Response(null, { status: 404 }))
@@ -127,9 +143,22 @@ describe("resolveBestVodPlayTarget", () => {
     const result = await resolveBestVodPlayTarget(creds, "series", 42, {
       declaredExt: "mkv",
       probeGapMs: 0,
+      probeFallbackCooldownMs: 0,
     });
     expect(result.containerExt).toBe("mkv");
     expect(result.proxyUrl).toContain("42.mkv");
+  });
+
+  it("skips network probes when transcode handles mkv", async () => {
+    vi.stubEnv("NEXT_PUBLIC_VOD_TRANSCODE", "1");
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await resolveBestVodPlayTarget(creds, "series", 42, {
+      declaredExt: "mkv",
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(result.containerExt).toBe("mkv");
   });
 });
 
@@ -152,7 +181,17 @@ describe("probeVodProxyUrl", () => {
     );
     await expect(
       probeVodProxyUrl("/api/stream?u=http%3A%2F%2Fx%2F1.mp4&type=vod")
-    ).resolves.toBe(true);
+    ).resolves.toBe("hit");
+  });
+
+  it("treats upstream busy as busy", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(null, { status: 409 }))
+    );
+    await expect(
+      probeVodProxyUrl("/api/stream?u=http%3A%2F%2Fx%2F1.mp4&type=vod")
+    ).resolves.toBe("busy");
   });
 
   it("rejects HTML error pages", async () => {
@@ -167,12 +206,13 @@ describe("probeVodProxyUrl", () => {
     );
     await expect(
       probeVodProxyUrl("/api/stream?u=http%3A%2F%2Fx%2F1.mp4&type=vod")
-    ).resolves.toBe(false);
+    ).resolves.toBe("miss");
   });
 });
 
 describe("VOD_FORMAT_PROBE_GAP_MS", () => {
   it("uses a pause long enough for single-connection panels", () => {
     expect(VOD_FORMAT_PROBE_GAP_MS).toBeGreaterThanOrEqual(500);
+    expect(VOD_FORMAT_PROBE_FALLBACK_COOLDOWN_MS).toBeGreaterThanOrEqual(1_000);
   });
 });

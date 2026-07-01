@@ -11,6 +11,16 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.11.2",
+    date: "2026-07-01",
+    summary: "VOD probing no longer exhausts single-connection IPTV panels.",
+    highlights: [
+      "VOD: probe only MP4 (not four extensions) and stop immediately when the provider is busy.",
+      "VOD: skip format probes when server MKV transcode is enabled; cooldown before fallback playback.",
+      "Series: removed auto transcode warm on page load that stole provider slots before Play.",
+    ],
+  },
+  {
     version: "0.11.1",
     date: "2026-07-01",
     summary: "Live TV search finds channels across the full catalog.",
