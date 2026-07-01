@@ -11,6 +11,16 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.11.3",
+    date: "2026-07-01",
+    summary: "Series episodes no longer restart or skip on first play.",
+    highlights: [
+      "Player: stop prefetching neighboring episodes as raw MKV — use transcode warm only.",
+      "Player: bake resume seek into the first transcode URL so playback does not start at 0 and jump.",
+      "Player: initialize transcode URL before the pipeline attaches to avoid a double restart.",
+    ],
+  },
+  {
     version: "0.11.2",
     date: "2026-07-01",
     summary: "VOD probing no longer exhausts single-connection IPTV panels.",

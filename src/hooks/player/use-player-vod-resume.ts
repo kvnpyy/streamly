@@ -70,6 +70,22 @@ export function usePlayerVodResume(p: UsePlayerVodResumeParams) {
     const activeUrl = vodPlaybackUrl ?? current.url;
     const usesTranscode = playbackUrlUsesVodTranscode(activeUrl);
 
+    if (usesTranscode) {
+      try {
+        const origin =
+          typeof window !== "undefined" ? window.location.origin : "http://localhost";
+        const tcSeek = Number(
+          new URL(activeUrl, origin).searchParams.get("tc_seek") ?? "0"
+        );
+        if (Number.isFinite(tcSeek) && tcSeek >= 15) {
+          vodResumeLockedRef.current = true;
+          return;
+        }
+      } catch {
+        /* noop */
+      }
+    }
+
     let disposed = false;
 
     const readDuration = () => {

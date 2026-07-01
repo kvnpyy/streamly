@@ -6,6 +6,7 @@ import { isAppleMobileWebKitDevice } from "@/lib/browser";
 import { tryCapAbrLower } from "@/lib/live-hls-playback";
 import { withLiveHlsCompatMse } from "@/lib/stream-url";
 import { isTvClassUserAgent } from "@/lib/tv-user-agent";
+import { warmSeriesPlaylistNeighbor } from "@/lib/vod-transcode-url";
 import { voidSafeVideoPlay } from "@/lib/video-play";
 import type { PlayerSource } from "@/store/player";
 import type { PlayerPlaylist } from "@/store/player";
@@ -16,6 +17,7 @@ export type UsePlayerLiveSupplementsParams = {
   chromiumDesktopClient: boolean;
   silkLikeClient: boolean;
   mobileLikeViewport: boolean;
+  tvBrowser: boolean;
   videoRef: RefObject<HTMLVideoElement | null>;
   hlsRef: RefObject<InstanceType<typeof Hls> | null>;
   playlist: PlayerPlaylist | null;
@@ -30,6 +32,7 @@ export function usePlayerLiveSupplements(p: UsePlayerLiveSupplementsParams) {
     chromiumDesktopClient,
     silkLikeClient,
     mobileLikeViewport,
+    tvBrowser,
     videoRef,
     hlsRef,
     playlist,
@@ -81,6 +84,19 @@ export function usePlayerLiveSupplements(p: UsePlayerLiveSupplementsParams) {
     if (silkLikeClient || mobileLikeViewport) return;
     const items = playlist.items;
     const n = items.length;
+    const compatMse = tvBrowser || silkLikeClient;
+
+    if (playlist.kind === "series") {
+      const warmNeighbor = (i: number) => {
+        const item = items[i];
+        if (!item) return;
+        warmSeriesPlaylistNeighbor(item, { compatMse });
+      };
+      warmNeighbor((index + 1) % n);
+      warmNeighbor((index - 1 + n) % n);
+      return;
+    }
+
     const warm = (i: number) => {
       const u = items[i]?.url;
       if (!u) return;
@@ -92,14 +108,7 @@ export function usePlayerLiveSupplements(p: UsePlayerLiveSupplementsParams) {
     };
     warm((index + 1) % n);
     warm((index - 1 + n) % n);
-  }, [
-    open,
-    playlist,
-    index,
-    current?.url,
-    silkLikeClient,
-    mobileLikeViewport,
-  ]);
+  }, [open, playlist, index, silkLikeClient, mobileLikeViewport, tvBrowser]);
 
   useEffect(() => {
     if (!open || !current || current.kind !== "live") return;

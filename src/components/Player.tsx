@@ -14,6 +14,7 @@ import {
 import { buildCastMediaDescriptor } from "@/lib/cast-media-url";
 import {
   appendVodTranscodeHls,
+  buildInitialVodPlaybackUrl,
   buildVodTranscodeRetryUrl,
   buildVodTranscodeSeekUrl,
   canVodTranscodeProxyUrl,
@@ -105,7 +106,7 @@ import {
   VolumeX,
   X,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import dynamic from "next/dynamic";
 
 const PlayerEpgDrawer = dynamic(
@@ -552,7 +553,7 @@ export function PlayerOverlay() {
       }
       setVodPrepStartedAt((prev) => prev ?? Date.now());
     });
-  }, [open, current, current?.url, current?.id, vodPlaybackUrl, vodPrepEligible]);
+  }, [open, current, current?.url, current?.id, vodPrepEligible]);
 
   /** Slow server encode — nudge bar; hard fail only if decode never starts. */
   useEffect(() => {
@@ -827,40 +828,67 @@ export function PlayerOverlay() {
     };
   }, [open]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!open || !current) {
       vodTriedTranscodeRef.current = false;
-      queueMicrotask(() => {
-        setVodPlaybackUrl(null);
-        setVodTranscodeBoost(false);
-        setVodSeekInFlight(false);
-        setVodSeekTargetSec(null);
-      });
+      setVodPlaybackUrl(null);
+      setVodTranscodeBoost(false);
+      setVodSeekInFlight(false);
+      setVodSeekTargetSec(null);
       return;
     }
+    if (current.kind === "live") {
+      setVodPlaybackUrl(null);
+      setVodTranscodeBoost(false);
+      return;
+    }
+
     const preferServerTranscode =
       isVodTranscodeEnabledClient() &&
       vodNeedsServerTranscodePrep(current.containerExt, current.url) &&
       canVodTranscodeProxyUrl(current.url);
-    queueMicrotask(() => {
-      if (preferServerTranscode) {
-        vodTriedTranscodeRef.current = true;
-        setVodTranscodeBoost(true);
-        warmVodTranscodePlay(current.url, {
-          compatMse: tvBrowser || silkLikeClient,
-        });
-        setVodPlaybackUrl(
-          appendVodTranscodeHls(current.url, {
-            compatMse: tvBrowser || silkLikeClient,
-          })
-        );
-      } else {
-        setVodPlaybackUrl(current.url);
-        setVodTranscodeBoost(false);
-        vodTriedTranscodeRef.current = false;
+
+    const accountKey = creds ? browseAccountKey(creds) : undefined;
+    const resumeKey = vodResumeStorageKey(accountKey, current);
+    const stored =
+      resumeKey != null ? usePrefs.getState().getVodResume(resumeKey) : null;
+    const resumeSec =
+      stored != null && stored >= 15 ? Math.floor(stored) : null;
+
+    if (preferServerTranscode) {
+      vodTriedTranscodeRef.current = true;
+      setVodTranscodeBoost(true);
+      if (resumeSec != null) {
+        vodTimelineHoldRef.current = {
+          absoluteTimeSec: resumeSec,
+          startOffsetSec: resumeSec,
+        };
+        vodResumeLockedRef.current = true;
+        vodStartOffsetRef.current = resumeSec;
+        setVodSeekInFlight(true);
+        setVodSeekTargetSec(resumeSec);
       }
-    });
-  }, [open, current, tvBrowser, silkLikeClient]);
+      const url = buildInitialVodPlaybackUrl(current.url, {
+        containerExt: current.containerExt,
+        compatMse: tvBrowser || silkLikeClient,
+        resumeSec,
+      });
+      setVodPlaybackUrl(url);
+      warmVodTranscodePlay(current.url, {
+        compatMse: tvBrowser || silkLikeClient,
+      });
+    } else {
+      setVodPlaybackUrl(current.url);
+      setVodTranscodeBoost(false);
+      vodTriedTranscodeRef.current = false;
+    }
+  }, [
+    open,
+    current,
+    creds,
+    tvBrowser,
+    silkLikeClient,
+  ]);
 
   /** Pre-warm the next episode while the current one plays (series binge). */
   useEffect(() => {
@@ -961,6 +989,7 @@ export function PlayerOverlay() {
     chromiumDesktopClient,
     silkLikeClient,
     mobileLikeViewport,
+    tvBrowser,
     videoRef,
     hlsRef,
     playlist,

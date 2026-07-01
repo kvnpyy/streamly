@@ -252,3 +252,51 @@ export function warmVodTranscodePlay(
       warmLastAt.set(url, Date.now());
     });
 }
+
+/**
+ * First playback URL for MKV/AVI — applies server transcode and optional resume seek
+ * so the pipeline does not start at 0s and restart after resume logic runs.
+ */
+export function buildInitialVodPlaybackUrl(
+  proxyUrl: string,
+  opts: {
+    containerExt?: string;
+    compatMse?: boolean;
+    resumeSec?: number | null;
+  }
+): string {
+  if (!isVodTranscodeEnabledClient()) return proxyUrl;
+  if (!canVodTranscodeProxyUrl(proxyUrl)) return proxyUrl;
+  if (!vodNeedsServerTranscodePrep(opts.containerExt, proxyUrl)) return proxyUrl;
+
+  const resume =
+    opts.resumeSec != null && Number.isFinite(opts.resumeSec) && opts.resumeSec >= 15
+      ? Math.floor(opts.resumeSec)
+      : null;
+  if (resume != null) {
+    const seekUrl = buildVodTranscodeSeekUrl(proxyUrl, proxyUrl, resume, {
+      compatMse: opts.compatMse,
+    });
+    if (seekUrl) return seekUrl;
+  }
+  return appendVodTranscodeHls(proxyUrl, { compatMse: opts.compatMse });
+}
+
+/** Warm a neighboring series episode without fetching raw MKV (single-connection panels). */
+export function warmSeriesPlaylistNeighbor(
+  item: { url: string; containerExt?: string },
+  opts?: { compatMse?: boolean }
+): void {
+  if (!item.url) return;
+  if (
+    isVodTranscodeEnabledClient() &&
+    vodNeedsServerTranscodePrep(item.containerExt, item.url) &&
+    canVodTranscodeProxyUrl(item.url)
+  ) {
+    warmVodTranscodePlay(item.url, opts);
+    return;
+  }
+  if (playbackUrlUsesVodTranscode(item.url)) {
+    warmVodTranscodePlay(item.url, opts);
+  }
+}

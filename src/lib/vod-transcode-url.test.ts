@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   appendVodTranscodeHls,
+  buildInitialVodPlaybackUrl,
   buildVodTranscodeRetryUrl,
   canVodTranscodeProxyUrl,
   inferVodContainerExtFromProxyUrl,
@@ -86,6 +87,17 @@ describe("vod-transcode-url", () => {
       kindIsLive: false,
     });
     expect(out).toContain("transcode=hls");
+    vi.unstubAllEnvs();
+  });
+
+  it("buildInitialVodPlaybackUrl bakes resume seek into first transcode load", () => {
+    vi.stubEnv("NEXT_PUBLIC_VOD_TRANSCODE", "1");
+    const out = buildInitialVodPlaybackUrl(base, {
+      containerExt: "mkv",
+      resumeSec: 612,
+    });
+    expect(out).toContain("transcode=hls");
+    expect(out).toContain("tc_seek=612");
     vi.unstubAllEnvs();
   });
 });

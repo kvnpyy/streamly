@@ -23,6 +23,17 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.11.3] — 2026-07-01
+
+Series episodes no longer restart or skip on first play.
+
+### Fixed
+- **Series binge warm** — neighboring episodes are no longer fetched as raw MKV (which tripped single-connection panels and caused opening-credit flashes).
+- **Resume + transcode** — continue-watching position is applied on the first transcode request (`tc_seek`) instead of starting at 0s and seeking after decode begins.
+- **Player startup** — transcode URL is set before the playback pipeline attaches, avoiding a one-time restart at the beginning of each episode.
+
+---
+
 ## [0.11.2] — 2026-07-01
 
 VOD probing no longer exhausts single-connection IPTV panels.
