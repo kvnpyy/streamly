@@ -83,18 +83,18 @@ export function usePlayerLiveSupplements(p: UsePlayerLiveSupplementsParams) {
     if (!open || !playlist || playlist.items.length < 2 || index < 0) return;
     if (silkLikeClient || mobileLikeViewport) return;
     const items = playlist.items;
-    const n = items.length;
     const compatMse = tvBrowser || silkLikeClient;
 
     if (playlist.kind === "series") {
-      const warmNeighbor = (i: number) => {
-        const item = items[i];
-        if (!item) return;
-        warmSeriesPlaylistNeighbor(item, { compatMse });
-      };
-      warmNeighbor((index + 1) % n);
-      warmNeighbor((index - 1 + n) % n);
-      return;
+      const next = items[index + 1];
+      if (!next) return;
+      // Only warm the immediate next episode — prev + wrap-around warmed extra
+      // transcode jobs and tripped single-connection panels mid-playback.
+      const delayMs = 45_000;
+      const timer = window.setTimeout(() => {
+        warmSeriesPlaylistNeighbor(next, { compatMse });
+      }, delayMs);
+      return () => window.clearTimeout(timer);
     }
 
     const warm = (i: number) => {

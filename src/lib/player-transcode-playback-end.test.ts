@@ -65,6 +65,25 @@ describe("shouldTreatTranscodeAsEnded", () => {
         encodedSecRel: 120,
       })
     ).toBe(false);
+    expect(
+      shouldTreatTranscodeAsEnded({
+        video: mockVideo({ currentTime: 119.5, bufferedEnd: 119.9 }),
+        startOffsetSec: 0,
+        durationSec: 3600,
+        encodedSecRel: 120,
+      })
+    ).toBe(false);
+  });
+
+  it("does not end mid-episode after tc_seek resume when encode stalls", () => {
+    expect(
+      shouldTreatTranscodeAsEnded({
+        video: mockVideo({ currentTime: 119.5, bufferedEnd: 119.9 }),
+        startOffsetSec: 1800,
+        durationSec: 3600,
+        encodedSecRel: 120,
+      })
+    ).toBe(false);
   });
 
   it("ends when encoder caught up even without a reliable duration hint", () => {

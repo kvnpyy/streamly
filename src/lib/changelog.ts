@@ -11,6 +11,16 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.11.5",
+    date: "2026-07-01",
+    summary: "Series playback no longer auto-advances when transcode encode stalls mid-episode.",
+    highlights: [
+      "Player: only treat transcode as ended near the real episode finale — not when encode catches up mid-playback.",
+      "Series: warm only the next episode (delayed) instead of prev/next MKV transcode jobs that stole the provider slot.",
+      "Resume: fix timeline-hold race that cleared continue-watching position before the pipeline attached.",
+    ],
+  },
+  {
     version: "0.11.3",
     date: "2026-07-01",
     summary: "Series episodes no longer restart or skip on first play.",

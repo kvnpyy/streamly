@@ -1171,10 +1171,7 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
 
             if (isAtTranscodeBufferEdge(vv)) {
               edgeStallTicks += 1;
-              if (
-                edgeStallTicks >= 3 &&
-                isEncodeCaughtUp(rel, encodedSecRel)
-              ) {
+              if (edgeStallTicks >= 3 && atFinale) {
                 transcodeEndSignaled = true;
                 signalTranscodePlaybackEnded({ video: vv, hls });
                 return;

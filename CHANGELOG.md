@@ -23,6 +23,17 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.11.5] — 2026-07-01
+
+Series playback no longer auto-advances when transcode encode stalls mid-episode.
+
+### Fixed
+- **False episode end** — reaching the live transcode buffer edge no longer fires `ended` unless the playhead is actually near the episode finale (fixes frequent auto-skip to the next episode).
+- **Series warm** — only the immediate next episode is warmed, after a delay; prev-episode and wrap-around warm removed to avoid single-connection panel contention.
+- **Resume bootstrap** — timeline hold is applied atomically on episode change so continue-watching is not cleared before the pipeline starts.
+
+---
+
 ## [0.11.3] — 2026-07-01
 
 Series episodes no longer restart or skip on first play.

@@ -544,17 +544,6 @@ export function PlayerOverlay() {
   const episodeIdentityRef = useRef<string | null>(null);
 
   useEffect(() => {
-    if (open && current) {
-      const identity = `${current.kind}:${current.id}:${current.url}`;
-      if (episodeIdentityRef.current !== identity) {
-        episodeIdentityRef.current = identity;
-        vodTimelineHoldRef.current = null;
-        vodResumeLockedRef.current = false;
-      }
-    } else if (!open) {
-      episodeIdentityRef.current = null;
-    }
-
     const activeHold = vodTimelineHoldRef.current;
     if (activeHold) {
       vodStartOffsetRef.current = activeHold.startOffsetSec;
@@ -904,21 +893,6 @@ export function PlayerOverlay() {
     });
   }, [open, current, creds, tvBrowser, silkLikeClient]);
 
-  /** Pre-warm the next episode while the current one plays (series binge). */
-  useEffect(() => {
-    if (!open || !playlist || playlist.kind !== "series" || index < 0) return;
-    const next = playlist.items[index + 1];
-    if (!next) return;
-    if (
-      isVodTranscodeEnabledClient() &&
-      vodNeedsServerTranscodePrep(next.containerExt, next.url)
-    ) {
-      warmVodTranscodePlay(next.url, {
-        compatMse: tvBrowser || silkLikeClient,
-      });
-    }
-  }, [open, playlist, index, tvBrowser, silkLikeClient]);
-
   // iOS / older WebKit: redundant playsinline attrs avoid fullscreen-only decode paths.
   useEffect(() => {
     if (!open || !current) return;
@@ -930,13 +904,27 @@ export function PlayerOverlay() {
 
   // Resume timeline refs must be set before the playback pipeline effect runs.
   useLayoutEffect(() => {
-    if (!open || !current || current.kind === "live" || !autoVodPlaybackUrl) {
-      if (!open) vodResumeBootstrappedRef.current = "";
+    if (!open || !current) {
+      if (!open) {
+        episodeIdentityRef.current = null;
+        vodResumeBootstrappedRef.current = "";
+      }
       return;
     }
-    const episodeKey = `${current.kind}:${current.id}:${current.url}`;
-    if (vodResumeBootstrappedRef.current === episodeKey) return;
-    vodResumeBootstrappedRef.current = episodeKey;
+
+    const identity = `${current.kind}:${current.id}:${current.url}`;
+    if (episodeIdentityRef.current !== identity) {
+      episodeIdentityRef.current = identity;
+      vodTimelineHoldRef.current = null;
+      vodResumeLockedRef.current = false;
+      vodStartOffsetRef.current = 0;
+      vodEncodedSecRef.current = 0;
+      vodResumeBootstrappedRef.current = "";
+    }
+
+    if (current.kind === "live" || !autoVodPlaybackUrl) return;
+    if (vodResumeBootstrappedRef.current === identity) return;
+    vodResumeBootstrappedRef.current = identity;
 
     if (!playbackUrlUsesVodTranscode(autoVodPlaybackUrl)) return;
 

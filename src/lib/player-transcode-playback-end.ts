@@ -79,18 +79,21 @@ export function shouldTreatTranscodeAsEnded(
   if (!isAtTranscodeBufferEdge(video)) return false;
 
   const relative = video.currentTime;
-
-  if (isEncodeCaughtUp(relative, encodedSecRel)) return true;
-
   const absolute = startOffsetSec + relative;
+
   if (isNearEpisodeEnd(absolute, durationSec)) return true;
 
-  if (
-    encodedSecRel > 8 &&
-    relative >= encodedSecRel - TRANSCODE_BUFFER_EDGE_SEC &&
-    isNearEpisodeEnd(startOffsetSec + encodedSecRel, durationSec)
-  ) {
-    return true;
+  if (isEncodeCaughtUp(relative, encodedSecRel)) {
+    // Unknown duration — encoder finished the whole short title.
+    if (!Number.isFinite(durationSec) || durationSec < 60) return true;
+    // Encoded window reached the episode finale (common after tc_seek resume).
+    if (
+      encodedSecRel > 8 &&
+      isNearEpisodeEnd(startOffsetSec + encodedSecRel, durationSec)
+    ) {
+      return true;
+    }
+    return false;
   }
 
   return false;
