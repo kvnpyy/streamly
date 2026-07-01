@@ -552,29 +552,10 @@ export function PlayerOverlay() {
     episodeIdentityRef.current = episodeIdentity;
     vodTimelineHoldRef.current = null;
     vodResumeLockedRef.current = false;
-
-    const activeHold = vodTimelineHoldRef.current;
-    if (activeHold) {
-      vodStartOffsetRef.current = activeHold.startOffsetSec;
-      vodEncodedSecRef.current = 0;
-    } else {
-      vodStartOffsetRef.current = 0;
-      vodEncodedSecRef.current = 0;
-    }
+    vodStartOffsetRef.current = 0;
+    vodEncodedSecRef.current = 0;
 
     queueMicrotask(() => {
-      if (activeHold) {
-        setTime(activeHold.absoluteTimeSec);
-        if (activeHold.durationSec && activeHold.durationSec > 1) {
-          setVodTotalSec(activeHold.durationSec);
-          vodDurationHintRef.current = activeHold.durationSec;
-        }
-        setVodSeekTargetSec(activeHold.absoluteTimeSec);
-        setVodSeekInFlight(true);
-        setVideoHasFrame(false);
-        setLoading(true);
-        return;
-      }
       setVideoHasFrame(false);
       setVodPrepProgress(8);
       setVodPrepStartedAt(Date.now());
