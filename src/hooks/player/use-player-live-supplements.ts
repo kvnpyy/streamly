@@ -83,6 +83,7 @@ export function usePlayerLiveSupplements(p: UsePlayerLiveSupplementsParams) {
     if (!open || !playlist || playlist.items.length < 2 || index < 0) return;
     if (silkLikeClient || mobileLikeViewport) return;
     const items = playlist.items;
+    const n = items.length;
     const compatMse = tvBrowser || silkLikeClient;
 
     if (playlist.kind === "series") {
