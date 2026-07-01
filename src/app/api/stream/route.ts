@@ -31,6 +31,7 @@ import {
   browserFriendlyVodSnippet,
   looksLikeHtmlContentType,
 } from "@/lib/vod-stream-probe-server";
+import { NextRequest } from "next/server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
