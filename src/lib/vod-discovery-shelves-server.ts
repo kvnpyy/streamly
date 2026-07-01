@@ -135,7 +135,7 @@ function buildGenreShelvesDto(
       title: item.title,
       subtitle: item.subtitle,
       rating: item.rating,
-      categoryId: item.categoryId,
+      categoryId: shelf.categoryId,
     })),
   }));
 }
