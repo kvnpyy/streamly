@@ -11,6 +11,25 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.11.0",
+    date: "2026-07-01",
+    summary:
+      "Discovery shelf filters, smarter For You rows, and gentler VOD format probing.",
+    highlights: [
+      "Movies/Series: discovery shelves stay visible under filters — only non-matching titles drop out.",
+      "For You: suggests new titles from genre taste instead of repeating Continue Watching.",
+      "VOD: probe MP4/M4V/MOV/TS one at a time with lightweight upstream checks before MKV transcode.",
+    ],
+  },
+  {
+    version: "0.10.5",
+    date: "2026-06-27",
+    summary: "Probe for MP4 and other browser-friendly VOD formats before MKV.",
+    highlights: [
+      "VOD format probe when panel metadata says MKV — try MP4/M4V/MOV/TS before playback.",
+    ],
+  },
+  {
     version: "0.10.4",
     date: "2026-06-27",
     summary: "Sanitize player error messages when providers return HTML.",
