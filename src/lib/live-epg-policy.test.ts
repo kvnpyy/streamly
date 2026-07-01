@@ -12,9 +12,12 @@ import {
 describe("live-epg-policy", () => {
   it("disables heavy discovery scans by default", () => {
     expect(isLiveDiscoveryEpgNetworkEnabled()).toBe(false);
-    expect(isLiveProgrammeSearchEnabled()).toBe(false);
     expect(isLiveGuideEpgEnabled()).toBe(false);
     expect(isLiveGuideEpgEnabled({ livingRoom: true })).toBe(true);
+  });
+
+  it("enables programme-title live search by default", () => {
+    expect(isLiveProgrammeSearchEnabled()).toBe(true);
   });
 
   it("enables tile and shelf EPG by default", () => {

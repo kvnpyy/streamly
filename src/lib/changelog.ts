@@ -11,6 +11,16 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.11.1",
+    date: "2026-07-01",
+    summary: "Live TV search finds channels across the full catalog.",
+    highlights: [
+      "Live TV: server-side name search scans the full channel list instead of a 240-row sample.",
+      "Live TV: programme (EPG) title search enabled by default on the Live page and shelf browse.",
+      "Live TV: search results play correctly from shelf browse without a category context.",
+    ],
+  },
+  {
     version: "0.11.0",
     date: "2026-07-01",
     summary:

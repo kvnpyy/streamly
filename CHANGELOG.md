@@ -23,6 +23,16 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.11.1] — 2026-07-01
+
+Live TV search finds channels across the full catalog.
+
+### Fixed
+- **Live TV search** — server-side name search scans the full channel list instead of a 240-row sample; programme (EPG) title search is on by default.
+- **Live shelf search playback** — channels from search results play without requiring a shelf row context.
+
+---
+
 ## [0.11.0] — 2026-07-01
 
 Discovery shelf filters, smarter For You rows, and gentler VOD format probing.

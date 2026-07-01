@@ -27,9 +27,9 @@ export function isLiveShelfEpgEnabled(): boolean {
   return envDefaultOn("NEXT_PUBLIC_LIVE_SHELF_EPG");
 }
 
-/** Network short-EPG scan for programme-title live search. */
+/** Network short-EPG scan for programme-title live search (default on). */
 export function isLiveProgrammeSearchEnabled(): boolean {
-  return envEnabled("NEXT_PUBLIC_LIVE_PROGRAMME_SEARCH");
+  return envDefaultOn("NEXT_PUBLIC_LIVE_PROGRAMME_SEARCH");
 }
 
 /** Per-tile provider EPG on virtualized live lists (default on; in-view only). */

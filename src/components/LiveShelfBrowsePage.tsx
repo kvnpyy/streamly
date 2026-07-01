@@ -135,8 +135,11 @@ export function LiveShelfBrowsePage({
 
   const shelfOpenChannel = useCallback(
     (c: LiveStream, shelf?: LiveShelfMeta) => {
-      if (!shelf) return;
-      openLiveShelfChannel(creds, c, shelf);
+      if (shelf) {
+        openLiveShelfChannel(creds, c, shelf);
+      } else {
+        play(liveStreamToPlayerSource(creds, c));
+      }
       addRecent({
         kind: "live",
         id: c.stream_id,
@@ -147,7 +150,7 @@ export function LiveShelfBrowsePage({
           : {}),
       });
     },
-    [addRecent, creds]
+    [addRecent, creds, play]
   );
 
   const recentLiveIds = useMemo(
@@ -359,6 +362,7 @@ export function LiveShelfBrowsePage({
         <LiveShelfNameSearch
           creds={creds}
           qLower={deferredQLower}
+          tvRegion={tvRegion}
           categoryNameById={categoryNameById}
           openChannel={shelfOpenChannel}
           isFavorite={(id) => isFavorite("live", id)}

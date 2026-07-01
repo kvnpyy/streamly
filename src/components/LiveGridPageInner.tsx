@@ -18,6 +18,7 @@ import {
   fetchLiveCategoryChannels,
   liveCategoryChannelsQueryOptions,
 } from "@/lib/live-catalog-channels";
+import { liveChannelSearchQueryOptions } from "@/lib/live-catalog-search";
 import { catalogKeys } from "@/lib/catalog-queries";
 import { EMPTY_LIVE_STREAMS } from "@/lib/live-browse-streams";
 import { prefetchLiveGuideChunk } from "@/lib/guide-chunk-prefetch";
@@ -64,10 +65,7 @@ import { useContinueRecentPlay } from "@/hooks/use-continue-recent-play";
 import { usePlayer } from "@/store/player";
 import { usePrefs } from "@/store/preferences";
 import { nowPlayingTitleFromListings } from "@/lib/hooks";
-import {
-  buildLiveChannelIndex,
-  filterLiveChannelsByName,
-} from "@/lib/live-channel-index";
+import { buildLiveChannelIndex } from "@/lib/live-channel-index";
 import {
   isLivePageDiscoveryEnabled,
   isLiveProgrammeSearchEnabled,
@@ -222,6 +220,17 @@ export function LiveGridPageInner({ shell }: { shell: LivePageShell }) {
     )
   );
 
+  const liveSearchActive = Boolean(qLower) && view === "list";
+  const liveChannelSearchQuery = useQuery(
+    liveChannelSearchQueryOptions(
+      creds,
+      qLower,
+      deferredSelected,
+      tvRegionForChannels,
+      shouldLoadChannelList && liveSearchActive
+    )
+  );
+
   const categoryFilteredStreams = useMemo(() => {
     const rows = categoryChannelsQuery.data ?? EMPTY_LIVE_STREAMS;
     if (view === "guide") {
@@ -230,9 +239,22 @@ export function LiveGridPageInner({ shell }: { shell: LivePageShell }) {
     return rows;
   }, [categoryChannelsQuery.data, view]);
 
+  const searchScanPool = liveChannelSearchQuery.data?.scanPool ?? [];
+  const searchNameMatches = liveChannelSearchQuery.data?.matches ?? [];
+
+  const programmeSearchStreams = useMemo(() => {
+    if (!qLower) return categoryFilteredStreams;
+    if (searchScanPool.length) return searchScanPool;
+    return categoryFilteredStreams;
+  }, [qLower, categoryFilteredStreams, searchScanPool]);
+
   const channelsLoading =
     categoryChannelsQuery.isLoading ||
-    (categoryChannelsQuery.isFetching && !categoryChannelsQuery.data?.length);
+    (categoryChannelsQuery.isFetching && !categoryChannelsQuery.data?.length) ||
+    (liveSearchActive &&
+      (liveChannelSearchQuery.isLoading ||
+        (liveChannelSearchQuery.isFetching &&
+          !liveChannelSearchQuery.data?.matches?.length)));
 
   const deferredBrowseCategories = useDeferredValue(sortedFilteredCats);
   const streamsForShelfBrowse = EMPTY_LIVE_STREAMS;
@@ -270,10 +292,10 @@ export function LiveGridPageInner({ shell }: { shell: LivePageShell }) {
     () =>
       programmeSearchOn &&
       programmeSearchQLower &&
-      categoryFilteredStreams.length
-        ? buildLiveChannelIndex(categoryFilteredStreams)
+      programmeSearchStreams.length
+        ? buildLiveChannelIndex(programmeSearchStreams)
         : null,
-    [programmeSearchOn, programmeSearchQLower, categoryFilteredStreams]
+    [programmeSearchOn, programmeSearchQLower, programmeSearchStreams]
   );
 
   const scanPlan = useMemo(() => {
@@ -429,33 +451,24 @@ export function LiveGridPageInner({ shell }: { shell: LivePageShell }) {
     programmeSearchOn,
   ]);
 
-  const deferredFilteredForSearch = useDeferredValue(
-    qLower ? categoryFilteredStreams : []
-  );
-
-  const deferredChannelIndex = useMemo(() => {
-    if (!deferredFilteredForSearch.length) return null;
-    return buildLiveChannelIndex(deferredFilteredForSearch);
-  }, [deferredFilteredForSearch]);
-
   const nameMatched = useMemo(() => {
     if (!qLower) return categoryFilteredStreams;
-    if (!deferredChannelIndex) return [];
-    return filterLiveChannelsByName(deferredChannelIndex, qLower);
-  }, [deferredChannelIndex, qLower, categoryFilteredStreams]);
+    return searchNameMatches;
+  }, [qLower, categoryFilteredStreams, searchNameMatches]);
 
   const visible = useMemo(() => {
     if (!qLower) return categoryFilteredStreams;
     if (!programmeSearchOn) return nameMatched;
     return mergeLiveSearchResults(
       nameMatched,
-      categoryFilteredStreams,
+      programmeSearchStreams,
       qLower,
       nowPlayingMap,
       epgSearchTitleByStreamId
     );
   }, [
     categoryFilteredStreams,
+    programmeSearchStreams,
     qLower,
     nameMatched,
     programmeSearchOn,

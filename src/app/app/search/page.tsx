@@ -8,18 +8,15 @@ import { VirtualMediaCatalogGrid } from "@/components/VirtualMediaCatalogGrid";
 import { SectionHeader, SkeletonGrid } from "@/components/SectionHeader";
 import { useTvBrowser } from "@/components/TvBrowserProvider";
 import { useCatalogPlay } from "@/hooks/use-catalog-play";
-import { useChunkedNameSearchIndex } from "@/hooks/use-chunked-name-search-index";
 import { useGlobalProgrammeSearch } from "@/hooks/use-global-programme-search";
 import {
   seriesCatalogSearchQueryOptions,
   vodCatalogSearchQueryOptions,
 } from "@/lib/catalog-items-search";
-import { liveCategoryChannelsQueryOptions } from "@/lib/live-catalog-channels";
-import { LIVE_LIST_MAX_CHANNELS } from "@/lib/live-guide-limits";
+import { liveChannelSearchQueryOptions } from "@/lib/live-catalog-search";
+import { buildLiveChannelIndex } from "@/lib/live-channel-index";
+import { isLiveProgrammeSearchEnabled } from "@/lib/live-epg-policy";
 import { useSlashFocusSearch } from "@/lib/use-slash-focus-search";
-import {
-  filterLiveChannelsByName,
-} from "@/lib/live-channel-index";
 import { looksAdult, parsePositiveRouteId } from "@/lib/utils";
 import {
   buildLiveFlipPlaylist,
@@ -52,11 +49,12 @@ function SearchInner() {
   const f = q.trim().toLowerCase();
   const searchEnabled = f.length >= MIN_SEARCH_LEN;
 
-  const liveChannels = useQuery(
-    liveCategoryChannelsQueryOptions(
+  const liveSearch = useQuery(
+    liveChannelSearchQueryOptions(
       creds,
+      f,
       "all",
-      LIVE_LIST_MAX_CHANNELS,
+      undefined,
       searchEnabled
     )
   );
@@ -67,15 +65,16 @@ function SearchInner() {
     seriesCatalogSearchQueryOptions(creds, f, searchEnabled)
   );
 
-  const liveChannelIndex = useChunkedNameSearchIndex(
-    liveChannels.data ?? [],
-    (s) => s.name,
-    searchEnabled && (liveChannels.data?.length ?? 0) > 0
-  );
+  const liveScanPool = liveSearch.data?.scanPool ?? liveSearch.data?.matches ?? [];
+
+  const liveChannelIndex = useMemo(() => {
+    if (!searchEnabled || !liveScanPool.length) return null;
+    return buildLiveChannelIndex(liveScanPool);
+  }, [liveScanPool, searchEnabled]);
 
   const filteredLiveByName = useMemo(() => {
-    if (!searchEnabled || !liveChannelIndex) return [];
-    const matched = filterLiveChannelsByName(liveChannelIndex, f);
+    if (!searchEnabled) return [];
+    const matched = liveSearch.data?.matches ?? [];
     const out: typeof matched = [];
     for (const s of matched) {
       if (out.length >= MAX_PER_SECTION) break;
@@ -83,14 +82,14 @@ function SearchInner() {
       out.push(s);
     }
     return out;
-  }, [liveChannelIndex, f, safe, searchEnabled]);
+  }, [liveSearch.data?.matches, safe, searchEnabled]);
 
   const { liveMatches, programmeScanning } = useGlobalProgrammeSearch(
     creds,
     f,
     filteredLiveByName,
     liveChannelIndex,
-    searchEnabled
+    searchEnabled && isLiveProgrammeSearchEnabled()
   );
 
   const filteredLive = useMemo(() => {
@@ -130,7 +129,7 @@ function SearchInner() {
 
   const catalogLoading =
     searchEnabled &&
-    (liveChannels.isFetching || vodSearch.isFetching || seriesSearch.isFetching);
+    (liveSearch.isFetching || vodSearch.isFetching || seriesSearch.isFetching);
 
   const loading = catalogLoading && deferredLive.length + deferredVod.length + deferredSeries.length === 0;
 
