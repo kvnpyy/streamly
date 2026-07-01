@@ -282,6 +282,8 @@ export function PlayerOverlay() {
   );
   /** Survives transcode seek reload — consumed by pipeline / prep reset effects. */
   const vodTimelineHoldRef = useRef<VodTimelineHold | null>(null);
+  /** Ensures resume timeline refs are set once per episode before the pipeline runs. */
+  const vodResumeBootstrappedRef = useRef("");
   /** Blocks initial resume from re-firing after a user seek or transcode URL swap. */
   const vodResumeLockedRef = useRef(false);
   /** While true, ignore video timeupdate → UI time (prevents seek-bar snap-back). */
@@ -324,8 +326,10 @@ export function PlayerOverlay() {
   const streamSupportRequestIdRef = useRef<string | null>(null);
   const [needsTapToPlay, setNeedsTapToPlay] = useState(false);
   const [stalled, setStalled] = useState(false);
-  /** Overrides `current.url` when falling back to server HLS transcode for MKV/HEVC VOD. */
-  const [vodPlaybackUrl, setVodPlaybackUrl] = useState<string | null>(null);
+  /** Overrides auto-derived VOD URL for seek/retry; cleared on episode change. */
+  const [vodPlaybackOverride, setVodPlaybackOverride] = useState<string | null>(
+    null
+  );
   const [vodTranscodeBoost, setVodTranscodeBoost] = useState(false);
   const [videoHasFrame, setVideoHasFrame] = useState(false);
   const [vodPrepStartedAt, setVodPrepStartedAt] = useState<number | null>(null);
@@ -402,6 +406,33 @@ export function PlayerOverlay() {
 
   const isLive = current?.kind === "live";
   const creds = useAuth((s) => s.creds);
+
+  const autoVodPlaybackUrl = useMemo(() => {
+    if (!open || !current || current.kind === "live") return null;
+
+    const preferServerTranscode =
+      isVodTranscodeEnabledClient() &&
+      vodNeedsServerTranscodePrep(current.containerExt, current.url) &&
+      canVodTranscodeProxyUrl(current.url);
+
+    if (!preferServerTranscode) return current.url;
+
+    const accountKey = creds ? browseAccountKey(creds) : undefined;
+    const resumeKey = vodResumeStorageKey(accountKey, current);
+    const stored =
+      resumeKey != null ? usePrefs.getState().getVodResume(resumeKey) : null;
+    const resumeSec =
+      stored != null && stored >= 15 ? Math.floor(stored) : null;
+
+    return buildInitialVodPlaybackUrl(current.url, {
+      containerExt: current.containerExt,
+      compatMse: tvBrowser || silkLikeClient,
+      resumeSec,
+    });
+  }, [open, current, creds, tvBrowser, silkLikeClient]);
+
+  const vodPlaybackUrl = vodPlaybackOverride ?? autoVodPlaybackUrl;
+
   const liveStreamId = isLive ? current?.id : undefined;
   /** Header “Now:” only while player is open — no background EPG when overlay is closed. */
   const epgShort = useShortEPG(liveStreamId, 24, open && !!liveStreamId);
@@ -697,7 +728,7 @@ export function PlayerOverlay() {
         }
       }
 
-      setVodPlaybackUrl(url);
+      setVodPlaybackOverride(url);
       void fetch(url, { credentials: "same-origin", cache: "no-store" }).catch(
         () => {}
       );
@@ -757,7 +788,7 @@ export function PlayerOverlay() {
       if (retryUrl) {
         vodTriedTranscodeRef.current = true;
         setVodTranscodeBoost(true);
-        setVodPlaybackUrl(retryUrl);
+        setVodPlaybackOverride(retryUrl);
         setLoading(false);
         const kick = new AbortController();
         vodPrepKickRef.current = kick;
@@ -776,7 +807,7 @@ export function PlayerOverlay() {
           compatMse: tvBrowser || silkLikeClient,
           resetCache: true,
         });
-        setVodPlaybackUrl(url);
+        setVodPlaybackOverride(url);
         setLoading(false);
         const kick = new AbortController();
         vodPrepKickRef.current = kick;
@@ -802,7 +833,7 @@ export function PlayerOverlay() {
     if (!canVodTranscodeProxyUrl(current.url)) return false;
     vodTriedTranscodeRef.current = true;
     setVodTranscodeBoost(true);
-    setVodPlaybackUrl(
+    setVodPlaybackOverride(
       appendVodTranscodeHls(current.url, {
         compatMse: tvBrowser || silkLikeClient,
       })
@@ -828,18 +859,18 @@ export function PlayerOverlay() {
     };
   }, [open]);
 
-  useLayoutEffect(() => {
-    if (!open || !current) {
-      vodTriedTranscodeRef.current = false;
-      setVodPlaybackUrl(null);
-      setVodTranscodeBoost(false);
-      setVodSeekInFlight(false);
-      setVodSeekTargetSec(null);
-      return;
-    }
-    if (current.kind === "live") {
-      setVodPlaybackUrl(null);
-      setVodTranscodeBoost(false);
+  useEffect(() => {
+    queueMicrotask(() => setVodPlaybackOverride(null));
+  }, [open, current?.kind, current?.id, current?.url]);
+
+  useEffect(() => {
+    if (!open || !current || current.kind === "live") {
+      queueMicrotask(() => {
+        vodTriedTranscodeRef.current = false;
+        setVodTranscodeBoost(false);
+        setVodSeekInFlight(false);
+        setVodSeekTargetSec(null);
+      });
       return;
     }
 
@@ -855,40 +886,23 @@ export function PlayerOverlay() {
     const resumeSec =
       stored != null && stored >= 15 ? Math.floor(stored) : null;
 
-    if (preferServerTranscode) {
-      vodTriedTranscodeRef.current = true;
-      setVodTranscodeBoost(true);
-      if (resumeSec != null) {
-        vodTimelineHoldRef.current = {
-          absoluteTimeSec: resumeSec,
-          startOffsetSec: resumeSec,
-        };
-        vodResumeLockedRef.current = true;
-        vodStartOffsetRef.current = resumeSec;
-        setVodSeekInFlight(true);
-        setVodSeekTargetSec(resumeSec);
+    queueMicrotask(() => {
+      if (preferServerTranscode) {
+        vodTriedTranscodeRef.current = true;
+        setVodTranscodeBoost(true);
+        warmVodTranscodePlay(current.url, {
+          compatMse: tvBrowser || silkLikeClient,
+        });
+        if (resumeSec != null) {
+          setVodSeekInFlight(true);
+          setVodSeekTargetSec(resumeSec);
+        }
+      } else {
+        setVodTranscodeBoost(false);
+        vodTriedTranscodeRef.current = false;
       }
-      const url = buildInitialVodPlaybackUrl(current.url, {
-        containerExt: current.containerExt,
-        compatMse: tvBrowser || silkLikeClient,
-        resumeSec,
-      });
-      setVodPlaybackUrl(url);
-      warmVodTranscodePlay(current.url, {
-        compatMse: tvBrowser || silkLikeClient,
-      });
-    } else {
-      setVodPlaybackUrl(current.url);
-      setVodTranscodeBoost(false);
-      vodTriedTranscodeRef.current = false;
-    }
-  }, [
-    open,
-    current,
-    creds,
-    tvBrowser,
-    silkLikeClient,
-  ]);
+    });
+  }, [open, current, creds, tvBrowser, silkLikeClient]);
 
   /** Pre-warm the next episode while the current one plays (series binge). */
   useEffect(() => {
@@ -913,6 +927,37 @@ export function PlayerOverlay() {
     v.setAttribute("playsinline", "true");
     v.setAttribute("webkit-playsinline", "true");
   }, [open, current]);
+
+  // Resume timeline refs must be set before the playback pipeline effect runs.
+  useLayoutEffect(() => {
+    if (!open || !current || current.kind === "live" || !autoVodPlaybackUrl) {
+      if (!open) vodResumeBootstrappedRef.current = "";
+      return;
+    }
+    const episodeKey = `${current.kind}:${current.id}:${current.url}`;
+    if (vodResumeBootstrappedRef.current === episodeKey) return;
+    vodResumeBootstrappedRef.current = episodeKey;
+
+    if (!playbackUrlUsesVodTranscode(autoVodPlaybackUrl)) return;
+
+    try {
+      const origin =
+        typeof window !== "undefined" ? window.location.origin : "http://localhost";
+      const tcSeek = Number(
+        new URL(autoVodPlaybackUrl, origin).searchParams.get("tc_seek") ?? "0"
+      );
+      if (Number.isFinite(tcSeek) && tcSeek >= 15) {
+        vodTimelineHoldRef.current = {
+          absoluteTimeSec: tcSeek,
+          startOffsetSec: tcSeek,
+        };
+        vodResumeLockedRef.current = true;
+        vodStartOffsetRef.current = tcSeek;
+      }
+    } catch {
+      /* noop */
+    }
+  }, [open, current, autoVodPlaybackUrl]);
 
   usePlayerPlaybackPipeline({
     open,
