@@ -105,14 +105,18 @@ export function usePlayerAutoplayNext(
   }, [hasNextEpisode]);
 
   useEffect(() => {
-    if (positionCountdownSec === 0) advanceToNext();
-  }, [positionCountdownSec, advanceToNext]);
+    if (positionCountdownSec !== 0) return;
+    const v = videoRef.current;
+    if (v?.paused) return;
+    advanceToNext();
+  }, [positionCountdownSec, advanceToNext, videoRef]);
 
   useEffect(() => {
     const v = videoRef.current;
     if (!v || !open) return;
 
     const onEnded = () => {
+      if (v.paused && !v.ended) return;
       if (
         !shouldAutoplayOnEnded({
           kind: current?.kind,

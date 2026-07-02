@@ -76,6 +76,7 @@ export function shouldTreatTranscodeAsEnded(
 ): boolean {
   const { video, startOffsetSec, durationSec, encodedSecRel } = params;
   if (video.paused && video.ended) return true;
+  if (video.paused) return false;
   if (!isAtTranscodeBufferEdge(video)) return false;
 
   const relative = video.currentTime;

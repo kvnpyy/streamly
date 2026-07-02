@@ -97,6 +97,21 @@ describe("shouldTreatTranscodeAsEnded", () => {
       })
     ).toBe(true);
   });
+
+  it("does not end while paused at the encode edge", () => {
+    expect(
+      shouldTreatTranscodeAsEnded({
+        video: {
+          ...mockVideo({ currentTime: 3565, bufferedEnd: 3565.4 }),
+          paused: true,
+          ended: false,
+        } as HTMLVideoElement,
+        startOffsetSec: 0,
+        durationSec: 3600,
+        encodedSecRel: 3568,
+      })
+    ).toBe(false);
+  });
 });
 
 describe("shouldTreatTranscodeSnapAsEnded", () => {

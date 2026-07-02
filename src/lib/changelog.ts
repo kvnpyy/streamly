@@ -11,6 +11,16 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.11.9",
+    date: "2026-07-01",
+    summary: "Pause is respected during MKV transcode; no more random resume or skip.",
+    highlights: [
+      "Player: stop calling play() on every transcode fragment — fixes unprompted resume while paused.",
+      "Player: remove transcode edge watcher that nudged HLS and fired fake ended events.",
+      "Autoplay: ignore synthetic ended while paused; do not advance on countdown when paused.",
+    ],
+  },
+  {
     version: "0.11.7",
     date: "2026-07-01",
     summary: "Stabilize series transcode playback and stop false autoplay skips.",

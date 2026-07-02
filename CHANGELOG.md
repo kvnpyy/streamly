@@ -23,6 +23,17 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.11.9] — 2026-07-01
+
+Pause is respected during MKV transcode; no more random resume or skip.
+
+### Fixed
+- **Pause** — transcode fragment loads no longer call `video.play()` on every segment (fixes unprompted resume and timeline jumps while paused).
+- **Edge watcher removed** — the transcode buffer interval no longer runs `hls.startLoad` or dispatches fake `ended` events mid-episode.
+- **Autoplay** — next-episode advance ignores synthetic `ended` while paused and skips countdown when the user has paused.
+
+---
+
 ## [0.11.7] — 2026-07-01
 
 Stabilize series transcode playback and stop false autoplay skips.

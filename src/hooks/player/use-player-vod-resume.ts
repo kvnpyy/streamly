@@ -104,10 +104,7 @@ export function usePlayerVodResume(p: UsePlayerVodResumeParams) {
       const hls = hlsRef.current;
       if (hls && usesTranscode) {
         const encoded = vodEncodedSecRef.current;
-        if (encoded < 2) {
-          vodResumeLockedRef.current = false;
-          return;
-        }
+        if (encoded < 2) return;
         const rel = vodRelativeSec(absolute, {
           usesTranscode: true,
           startOffsetSec: off,
