@@ -24,6 +24,7 @@ import {
 import { parsePositiveRouteId, normalizeServer } from "./utils";
 import { yieldToMain } from "./yield-to-main";
 import { resolveProviderMediaUrl } from "./image-proxy";
+import { normalizeSeriesEpisodesMap } from "./series-episodes";
 
 export { normalizeLiveStreamsPayload } from "./xtream-live-catalog";
 
@@ -171,12 +172,14 @@ function normalizeSeriesInfoResponse(raw: unknown, seriesId: number): SeriesInfo
     }
   }
 
-  const episodes: Record<string, SeriesEpisode[]> = {};
+  let episodes: Record<string, SeriesEpisode[]> = {};
   const epRaw = r.episodes;
   if (epRaw && typeof epRaw === "object" && !Array.isArray(epRaw)) {
+    const rawBySeason: Record<string, SeriesEpisode[]> = {};
     for (const [seasonKey, list] of Object.entries(epRaw)) {
-      if (Array.isArray(list)) episodes[seasonKey] = list as SeriesEpisode[];
+      if (Array.isArray(list)) rawBySeason[seasonKey] = list as SeriesEpisode[];
     }
+    episodes = normalizeSeriesEpisodesMap(rawBySeason, { seriesId }).episodes;
   }
 
   let info = r.info;

@@ -18,6 +18,7 @@ import { MY_LIST_LABEL } from "@/lib/my-list";
 import { buildImageProxy, buildSeriesEpisodePlayUrl, xtream } from "@/lib/xtream";
 import { resolveSeriesEpisodePlayUrl } from "@/lib/vod-format-probe";
 import { inferVodContainerExtFromProxyUrl, warmVodTranscodePlay } from "@/lib/vod-transcode-url";
+import { sortSeriesEpisodes } from "@/lib/series-episodes";
 import type { SeriesEpisode } from "@/lib/xtream-types";
 import { useAuth } from "@/store/auth";
 import { usePlayer, type PlayerPlaylist } from "@/store/player";
@@ -129,15 +130,7 @@ export default function SeriesDetail() {
     );
     const out: { season: string; ep: SeriesEpisode }[] = [];
     for (const season of seasonKeys) {
-      const eps = data.episodes[season] || [];
-      const sorted = [...eps].sort((a, b) => {
-        const an = Number(a.episode_num);
-        const bn = Number(b.episode_num);
-        if (Number.isFinite(an) && Number.isFinite(bn)) return an - bn;
-        return String(a.episode_num).localeCompare(String(b.episode_num), undefined, {
-          numeric: true,
-        });
-      });
+      const sorted = sortSeriesEpisodes(data.episodes[season] || []);
       for (const ep of sorted) out.push({ season, ep });
     }
     return out;
@@ -183,6 +176,13 @@ export default function SeriesDetail() {
     }
     return seasons[0] ?? null;
   }, [manualSeason, seasons, resumeTarget]);
+
+  const activeSeasonEpisodes = useMemo(() => {
+    if (!activeSeason) return [] as SeriesEpisode[];
+    return orderedEpisodes
+      .filter(({ season }) => season === activeSeason)
+      .map(({ ep }) => ep);
+  }, [activeSeason, orderedEpisodes]);
 
   const episodePlaylist = useMemo((): PlayerPlaylist | null => {
     if (!creds || seriesId == null) return null;
@@ -318,7 +318,6 @@ export default function SeriesDetail() {
     );
   }
   const fav = isFavorite("series", seriesId);
-  const episodes = activeSeason ? info.data.episodes[activeSeason] || [] : [];
   const backdrop = meta.backdrop_path?.[0];
 
   return (
@@ -477,8 +476,8 @@ export default function SeriesDetail() {
         </div>
 
         <VirtualEpisodeList
-          items={episodes}
-          itemKey={(ep) => ep.id}
+          items={activeSeasonEpisodes}
+          itemKey={(ep) => `${ep.id}-${ep.episode_num}`}
           renderItem={(ep) => {
             const extHint = vodContainerUiHint(ep.container_extension);
             const extLabel = normalizeContainerExt(ep.container_extension);
@@ -510,7 +509,7 @@ export default function SeriesDetail() {
             };
             return (
               <button
-                key={ep.id}
+                key={`${ep.id}-${ep.episode_num}`}
                 onFocus={warmTranscode}
                 onMouseEnter={warmTranscode}
                 onClick={() => playEpisode(activeSeason!, ep)}

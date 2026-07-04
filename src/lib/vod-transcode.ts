@@ -17,6 +17,10 @@ import {
   planFromProbeCodecs,
   type VodTranscodePlan,
 } from "@/lib/vod-transcode-plan";
+import {
+  pickBestAudioStreamIndex,
+  type ProbedAudioStream,
+} from "@/lib/vod-transcode-audio";
 import { spawn, type ChildProcess } from "child_process";
 import crypto from "crypto";
 import fs from "fs";
@@ -209,56 +213,95 @@ function ffprobeBinary(): string {
   return "ffprobe";
 }
 
-type ProbedCodecs = { video: string | null; audio: string | null };
+type ProbedCodecs = {
+  video: string | null;
+  audio: string | null;
+  audioStreamIndex: number | null;
+  audioStreamCount: number;
+};
 
-/** One ffprobe round-trip for both streams — halves provider latency vs dual probes. */
+/** One ffprobe round-trip — picks the best audio stream index for ffmpeg `-map`. */
 async function probeStreamCodecs(upstream: string): Promise<ProbedCodecs> {
   const referer = upstreamReferer(upstream);
   const args = [
     ...ffprobeInputArgs(referer, true),
     "-select_streams",
-    "v:0,a:0",
+    "v:0,a",
     "-show_entries",
-    "stream=codec_name,codec_type",
+    "stream=index,codec_name,codec_type,channels",
     "-of",
     "json",
     upstream,
   ];
 
   return new Promise((resolve) => {
+    const empty: ProbedCodecs = {
+      video: null,
+      audio: null,
+      audioStreamIndex: null,
+      audioStreamCount: 0,
+    };
     const proc = spawn(ffprobeBinary(), args, {
       stdio: ["ignore", "pipe", "pipe"],
     });
     let out = "";
     const timer = setTimeout(() => {
       proc.kill("SIGKILL");
-      resolve({ video: null, audio: null });
+      resolve(empty);
     }, 10_000);
     proc.stdout?.on("data", (c: Buffer) => {
       out += c.toString();
     });
     proc.on("error", () => {
       clearTimeout(timer);
-      resolve({ video: null, audio: null });
+      resolve(empty);
     });
     proc.on("close", () => {
       clearTimeout(timer);
       try {
         const parsed = JSON.parse(out) as {
-          streams?: Array<{ codec_type?: string; codec_name?: string }>;
+          streams?: Array<{
+            index?: number;
+            codec_type?: string;
+            codec_name?: string;
+            channels?: number;
+          }>;
         };
         let video: string | null = null;
-        let audio: string | null = null;
+        const audioStreams: ProbedAudioStream[] = [];
         for (const stream of parsed.streams ?? []) {
           const type = stream.codec_type?.toLowerCase();
           const name = stream.codec_name?.trim() || null;
-          if (!name) continue;
-          if (type === "video" && !video) video = name;
-          if (type === "audio" && !audio) audio = name;
+          const index =
+            typeof stream.index === "number" && Number.isFinite(stream.index)
+              ? stream.index
+              : null;
+          if (type === "video" && !video && name) video = name;
+          if (type === "audio" && index != null) {
+            audioStreams.push({
+              index,
+              codec: name,
+              channels:
+                typeof stream.channels === "number" &&
+                Number.isFinite(stream.channels)
+                  ? stream.channels
+                  : 0,
+            });
+          }
         }
-        resolve({ video, audio });
+        const audioStreamIndex = pickBestAudioStreamIndex(audioStreams);
+        const picked =
+          audioStreamIndex != null
+            ? audioStreams.find((s) => s.index === audioStreamIndex)
+            : null;
+        resolve({
+          video,
+          audio: picked?.codec ?? null,
+          audioStreamIndex,
+          audioStreamCount: audioStreams.length,
+        });
       } catch {
-        resolve({ video: null, audio: null });
+        resolve(empty);
       }
     });
   });
@@ -268,6 +311,7 @@ type JobMeta = {
   plan: VodTranscodePlan;
   durationSec: number | null;
   startOffsetSec?: number;
+  audioStreamIndex?: number | null;
 };
 
 async function probeDurationSec(upstream: string): Promise<number | null> {
@@ -336,16 +380,29 @@ async function resolveJobMeta(job: TranscodeJob): Promise<JobMeta> {
     return cached;
   }
 
-  const { video: videoCodec, audio: audioCodec } = await probeStreamCodecs(
-    job.upstream
-  );
+  const { video: videoCodec, audio: audioCodec, audioStreamIndex, audioStreamCount } =
+    await probeStreamCodecs(job.upstream);
   const plan = planFromProbeCodecs(videoCodec, audioCodec, {
     maxHeight: transcodeMaxHeight(),
   });
+  if (audioStreamCount === 0) {
+    console.warn(
+      `[vod-transcode] no audio streams in upstream (key=${job.key})`
+    );
+  } else if (audioStreamIndex == null) {
+    console.warn(
+      `[vod-transcode] could not pick audio stream (key=${job.key}, tracks=${audioStreamCount})`
+    );
+  } else if (audioStreamCount > 1) {
+    console.warn(
+      `[vod-transcode] mapped audio stream index ${audioStreamIndex} of ${audioStreamCount} track(s) (key=${job.key})`
+    );
+  }
   const meta: JobMeta = {
     plan,
     durationSec: null,
     startOffsetSec: job.startOffsetSec,
+    audioStreamIndex,
   };
   await writeJobMeta(job.dir, meta);
 
@@ -697,7 +754,7 @@ async function resumeTranscodeJob(job: TranscodeJob): Promise<void> {
     await spawnFfmpeg(job, meta.plan, {
       seekInSourceSec: job.startOffsetSec + encoded,
       startSegmentNumber: prefixCount,
-    });
+    }, meta.audioStreamIndex);
   } catch (err) {
     job.state = "failed";
     job.error =
@@ -817,7 +874,8 @@ async function waitForReady(
 async function spawnFfmpeg(
   job: TranscodeJob,
   plan: VodTranscodePlan,
-  resume?: { seekInSourceSec: number; startSegmentNumber: number }
+  resume?: { seekInSourceSec: number; startSegmentNumber: number },
+  audioStreamIndex?: number | null
 ): Promise<void> {
   if (job.proc && job.proc.exitCode == null) return;
   if (activeTranscodeCount() >= maxConcurrentJobs()) {
@@ -846,7 +904,7 @@ async function spawnFfmpeg(
     "-map",
     "0:v:0?",
     "-map",
-    "0:a:0?",
+    audioStreamIndex != null ? `0:${audioStreamIndex}?` : "0:a:0?",
   ];
 
   if (plan.mode === "copy") {
@@ -1160,7 +1218,7 @@ async function beginTranscodeJob(job: TranscodeJob): Promise<void> {
     if (job.state === "failed") return;
 
     job.state = "starting";
-    await spawnFfmpeg(job, plan);
+    await spawnFfmpeg(job, plan, undefined, meta.audioStreamIndex);
   } catch (err) {
     job.state = "failed";
     job.error =
