@@ -11,6 +11,16 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.11.12",
+    date: "2026-07-04",
+    summary: "Mobile and desktop get stronger background recovery after tab sleep or bfcache restore.",
+    highlights: [
+      "Player: listen for pagehide/pageshow and freeze/resume — covers mobile Safari bfcache and Android tab discard.",
+      "Player: iPhone/iPad after long background now full pipeline reinit instead of a bare play() on a stale native HLS session.",
+      "Player: shared recovery planner for all clients — gentle/soft HLS on Chromium, safe reinit everywhere.",
+    ],
+  },
+  {
     version: "0.11.11",
     date: "2026-07-04",
     summary: "TV browsers no longer freeze after overnight standby when leaving the player.",

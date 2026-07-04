@@ -23,6 +23,17 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.11.12] — 2026-07-04
+
+Mobile and desktop get stronger background recovery after tab sleep or bfcache restore.
+
+### Fixed
+- **pagehide / pageshow** — recover after mobile Safari bfcache and tab restore, not only `visibilitychange`.
+- **freeze / resume** — suspend and recover on Android Chrome page lifecycle events.
+- **iOS long background** — full pipeline reinit after 60s+ hidden instead of only calling `play()` on a stale native HLS session.
+
+---
+
 ## [0.11.11] — 2026-07-04
 
 TV browsers no longer freeze after overnight standby when leaving the player.

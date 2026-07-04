@@ -7,15 +7,13 @@ import {
   applyGentleLiveHlsRecovery,
   applySoftLiveHlsRecovery,
 } from "@/lib/live-hls-playback";
+import {
+  planBackgroundRecovery,
+  type BackgroundContentKind,
+} from "@/lib/player-page-lifecycle";
 import { suspendPlayerMediaForBackground } from "@/lib/player-teardown";
 import type { PlayerSource } from "@/store/player";
 import { voidSafeVideoPlay } from "@/lib/video-play";
-
-/** Pause loading when the tab/TV hides briefly (screen off, app switch). */
-const BACKGROUND_SUSPEND_MS = 5_000;
-
-/** After overnight standby, VOD transcode/MSE needs a full pipeline reinit. */
-const LONG_BACKGROUND_MS = 60_000;
 
 export type UsePlayerPageLifecycleParams = {
   open: boolean;
@@ -27,8 +25,8 @@ export type UsePlayerPageLifecycleParams = {
 };
 
 /**
- * Suspend media on TV/tab sleep and recover without `video.load()` on wake.
- * Sync `load()` after a stale HLS/MSE session freezes Samsung/Fire TV browsers.
+ * Suspend media on tab/TV sleep; recover on wake without sync `video.load()`.
+ * Listens to visibilitychange, pagehide/pageshow (bfcache), and freeze/resume.
  */
 export function usePlayerPageLifecycle(p: UsePlayerPageLifecycleParams) {
   const {
@@ -46,58 +44,112 @@ export function usePlayerPageLifecycle(p: UsePlayerPageLifecycleParams) {
   useEffect(() => {
     if (!open || !current) return;
 
-    const onVis = () => {
-      if (document.visibilityState === "hidden") {
-        hiddenAtRef.current = Date.now();
-        suspendPlayerMediaForBackground(videoRef.current, hlsRef.current);
-        suspendedRef.current = true;
-        return;
-      }
+    const contentKind: BackgroundContentKind =
+      current.kind === "live" ? "live" : current.kind === "series" ? "series" : "vod";
 
-      if (document.visibilityState !== "visible" || hiddenAtRef.current <= 0) {
-        return;
-      }
+    const markBackground = () => {
+      if (!hiddenAtRef.current) hiddenAtRef.current = Date.now();
+      if (suspendedRef.current) return;
+      suspendPlayerMediaForBackground(videoRef.current, hlsRef.current);
+      suspendedRef.current = true;
+    };
 
-      const hiddenMs = Date.now() - hiddenAtRef.current;
-      hiddenAtRef.current = 0;
-      if (hiddenMs < BACKGROUND_SUSPEND_MS || !suspendedRef.current) return;
-      suspendedRef.current = false;
-
+    const applyRecoveryPlan = (hiddenMs: number) => {
       const video = videoRef.current;
       if (!video) return;
 
-      if (isAppleMobileWebKitDevice()) {
-        voidSafeVideoPlay(video);
-        return;
-      }
+      const plan = planBackgroundRecovery({
+        hiddenMs,
+        isAppleMobileWebKit: isAppleMobileWebKitDevice(),
+        hasHls: !!hlsRef.current,
+        contentKind,
+      });
 
-      if (current.kind === "live") {
-        const hls = hlsRef.current;
-        if (hls) {
+      switch (plan.action) {
+        case "none":
+          return;
+        case "play":
+          voidSafeVideoPlay(video);
+          return;
+        case "full-reinit":
+          onWakeFullReinit();
+          return;
+        case "gentle-hls": {
+          const hls = hlsRef.current;
+          if (!hls) {
+            onWakeFullReinit();
+            return;
+          }
           try {
-            if (hiddenMs >= LONG_BACKGROUND_MS) {
-              applySoftLiveHlsRecovery(hls, video, hlsLiveEdgeRestartGateRef);
-            } else {
-              applyGentleLiveHlsRecovery(hls, video);
-            }
+            applyGentleLiveHlsRecovery(hls, video);
           } catch {
             onWakeFullReinit();
           }
-        } else {
-          onWakeFullReinit();
+          return;
         }
-        return;
-      }
-
-      if (hiddenMs >= LONG_BACKGROUND_MS) {
-        onWakeFullReinit();
-      } else {
-        voidSafeVideoPlay(video);
+        case "soft-hls": {
+          const hls = hlsRef.current;
+          if (!hls) {
+            onWakeFullReinit();
+            return;
+          }
+          try {
+            applySoftLiveHlsRecovery(hls, video, hlsLiveEdgeRestartGateRef);
+          } catch {
+            onWakeFullReinit();
+          }
+          return;
+        }
       }
     };
 
-    document.addEventListener("visibilitychange", onVis);
-    return () => document.removeEventListener("visibilitychange", onVis);
+    const recoverFromBackground = () => {
+      if (!suspendedRef.current || hiddenAtRef.current <= 0) return;
+      const hiddenMs = Date.now() - hiddenAtRef.current;
+      hiddenAtRef.current = 0;
+      suspendedRef.current = false;
+      applyRecoveryPlan(hiddenMs);
+    };
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "hidden") {
+        markBackground();
+        return;
+      }
+      if (document.visibilityState === "visible") {
+        recoverFromBackground();
+      }
+    };
+
+    const onPageHide = () => {
+      markBackground();
+    };
+
+    const onPageShow = (event: PageTransitionEvent) => {
+      if (event.persisted) recoverFromBackground();
+    };
+
+    const onFreeze = () => {
+      markBackground();
+    };
+
+    const onResume = () => {
+      recoverFromBackground();
+    };
+
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    window.addEventListener("pagehide", onPageHide);
+    window.addEventListener("pageshow", onPageShow);
+    document.addEventListener("freeze", onFreeze);
+    document.addEventListener("resume", onResume);
+
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      window.removeEventListener("pagehide", onPageHide);
+      window.removeEventListener("pageshow", onPageShow);
+      document.removeEventListener("freeze", onFreeze);
+      document.removeEventListener("resume", onResume);
+    };
   }, [
     open,
     current,

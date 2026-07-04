@@ -50,7 +50,7 @@ export function eagerStopPlayerMedia(
   destroyHlsInstance(hls);
 }
 
-/** TV standby / tab hidden: pause and stop fragment fetches without destroying MSE. */
+/** Tab/TV hidden: pause and stop fragment fetches without destroying MSE. */
 export function suspendPlayerMediaForBackground(
   video: HTMLVideoElement | null | undefined,
   hls: HlsTeardownTarget
