@@ -11,6 +11,16 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.11.11",
+    date: "2026-07-04",
+    summary: "TV browsers no longer freeze after overnight standby when leaving the player.",
+    highlights: [
+      "Player: suspend HLS on TV/tab sleep (pause + stopLoad) instead of leaving a stale MSE session overnight.",
+      "Player: wake recovery uses soft HLS reload — never sync video.load(), which froze Samsung/Fire TV after standby.",
+      "Player: defer hls.destroy on close so browse remount does not race teardown and lock the whole browser.",
+    ],
+  },
+  {
     version: "0.11.9",
     date: "2026-07-01",
     summary: "Pause is respected during MKV transcode; no more random resume or skip.",

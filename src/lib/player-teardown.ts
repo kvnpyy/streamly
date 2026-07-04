@@ -39,8 +39,8 @@ export function destroyHlsInstance(hls: HlsTeardownTarget): void {
 }
 
 /**
- * Pause `<video>` and tear down hls.js immediately — used on close and after fatal errors
- * so retries don't race browse remount and freeze the tab.
+ * Pause `<video>` and tear down hls.js immediately — used after fatal errors when a sync
+ * stop is required before retry. Prefer deferred teardown on player close.
  */
 export function eagerStopPlayerMedia(
   video: HTMLVideoElement | null | undefined,
@@ -48,6 +48,20 @@ export function eagerStopPlayerMedia(
 ): void {
   if (video) pauseVideoElement(video);
   destroyHlsInstance(hls);
+}
+
+/** TV standby / tab hidden: pause and stop fragment fetches without destroying MSE. */
+export function suspendPlayerMediaForBackground(
+  video: HTMLVideoElement | null | undefined,
+  hls: HlsTeardownTarget
+): void {
+  if (video) pauseVideoElement(video);
+  if (!hls) return;
+  try {
+    hls.stopLoad();
+  } catch {
+    /* noop */
+  }
 }
 
 /**
@@ -88,14 +102,18 @@ export function scheduleDeferredPlayerTeardown(
  * Browse remount after player close — idle + timeout so it runs after sync hls teardown
  * and the close paint (same window as deferred detach).
  */
-export function scheduleBrowseRemountAfterClose(onMount: () => void): () => void {
+export function scheduleBrowseRemountAfterClose(
+  onMount: () => void,
+  opts: { maxWaitMs?: number } = {}
+): () => void {
+  const { maxWaitMs = 320 } = opts;
   let cancelled = false;
   const finish = () => {
     if (!cancelled) onMount();
   };
 
   if (typeof requestIdleCallback !== "undefined") {
-    const id = requestIdleCallback(finish, { timeout: 200 });
+    const id = requestIdleCallback(finish, { timeout: maxWaitMs });
     return () => {
       cancelled = true;
       cancelIdleCallback(id);

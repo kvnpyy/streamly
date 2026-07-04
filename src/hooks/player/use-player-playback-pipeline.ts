@@ -347,9 +347,11 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
         pauseVideoElement(video);
         cancelled = true;
         if (stallTimer.current) clearTimeout(stallTimer.current);
-        cleanupHls();
+        const hlsToDestroy = hlsRef.current;
+        hlsRef.current = null;
         deferredTeardownCancelRef.current = scheduleDeferredPlayerTeardown(() => {
           deferredTeardownCancelRef.current = null;
+          destroyHlsInstance(hlsToDestroy);
           detachVideoElement(video);
         });
       };
@@ -1112,7 +1114,8 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
       }
       if (stallTimer.current) clearTimeout(stallTimer.current);
 
-      cleanupHls();
+      const hlsToDestroy = hlsRef.current;
+      hlsRef.current = null;
       deferredTeardownCancelRef.current = scheduleDeferredPlayerTeardown(() => {
         deferredTeardownCancelRef.current = null;
         if (video && creds && current && current.kind !== "live") {
@@ -1136,6 +1139,7 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
             usePrefs.getState().saveVodResume(key, absolute);
           }
         }
+        destroyHlsInstance(hlsToDestroy);
         if (vodTranscodeHls) {
           releaseVodTranscodePlayback(url);
         }

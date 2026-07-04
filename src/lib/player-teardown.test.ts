@@ -5,6 +5,7 @@ import {
   pauseVideoElement,
   scheduleDeferredPlayerTeardown,
   shouldDeferPlayerCloseTeardown,
+  suspendPlayerMediaForBackground,
 } from "@/lib/player-teardown";
 
 describe("shouldDeferPlayerCloseTeardown", () => {
@@ -41,6 +42,17 @@ describe("eagerStopPlayerMedia", () => {
     eagerStopPlayerMedia(video, hls);
     expect(video.pause).toHaveBeenCalledOnce();
     expect(hls.destroy).toHaveBeenCalledOnce();
+  });
+});
+
+describe("suspendPlayerMediaForBackground", () => {
+  it("pauses video and stops hls load without destroying", () => {
+    const video = { pause: vi.fn() } as unknown as HTMLVideoElement;
+    const hls = { stopLoad: vi.fn(), destroy: vi.fn() };
+    suspendPlayerMediaForBackground(video, hls);
+    expect(video.pause).toHaveBeenCalledOnce();
+    expect(hls.stopLoad).toHaveBeenCalledOnce();
+    expect(hls.destroy).not.toHaveBeenCalled();
   });
 });
 

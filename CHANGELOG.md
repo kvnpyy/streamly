@@ -23,6 +23,17 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.11.11] — 2026-07-04
+
+TV browsers no longer freeze after overnight standby when leaving the player.
+
+### Fixed
+- **TV overnight freeze** — suspend HLS on TV/tab sleep (`pause` + `stopLoad`) instead of leaving a stale MSE session running overnight.
+- **Wake recovery** — soft HLS reload on resume; removed `video.load()` wake path that froze Samsung/Fire TV browsers after standby.
+- **Player close** — defer `hls.destroy` on close so browse UI remount does not race teardown and lock the whole browser tab.
+
+---
+
 ## [0.11.9] — 2026-07-01
 
 Pause is respected during MKV transcode; no more random resume or skip.

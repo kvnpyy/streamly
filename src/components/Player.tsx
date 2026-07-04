@@ -43,6 +43,7 @@ import {
 import { useHlsRuntime } from "@/hooks/use-hls-runtime";
 import { usePlayerCast } from "@/hooks/player/use-player-cast";
 import { usePlayerLiveSupplements } from "@/hooks/player/use-player-live-supplements";
+import { usePlayerPageLifecycle } from "@/hooks/player/use-player-page-lifecycle";
 import { usePlayerPlaybackPipeline } from "@/hooks/player/use-player-playback-pipeline";
 import { usePlayerStallEscalation } from "@/hooks/player/use-player-stall-escalation";
 import { usePlayerVideoEvents } from "@/hooks/player/use-player-video-events";
@@ -77,7 +78,7 @@ import {
 import { playbackBreadcrumb } from "@/lib/playback-telemetry";
 import { withLiveHlsCompatMse } from "@/lib/stream-url";
 import { detachVideoElement, resetVideoElement, safeVideoPlay, voidSafeVideoPlay } from "@/lib/video-play";
-import { eagerStopPlayerMedia } from "@/lib/player-teardown";
+import { pauseVideoElement } from "@/lib/player-teardown";
 import { isAmazonSilkUserAgent } from "@/lib/tv-user-agent";
 import {
   isPlayPauseShortcutKey,
@@ -971,6 +972,24 @@ export function PlayerOverlay() {
     index,
   });
 
+  const wakeReinitPlayback = useCallback(() => {
+    livePlaybackRecoveryGenRef.current += 1;
+    liveTryAgainStrikeRef.current = 0;
+    setError(null);
+    setStalled(false);
+    setLoading(true);
+    setPlaybackRetryKey((k) => k + 1);
+  }, []);
+
+  usePlayerPageLifecycle({
+    open,
+    current,
+    videoRef,
+    hlsRef,
+    hlsLiveEdgeRestartGateRef,
+    onWakeFullReinit: wakeReinitPlayback,
+  });
+
   usePlayerVideoEvents({
     open,
     current,
@@ -1527,10 +1546,7 @@ export function PlayerOverlay() {
     deferredTeardownCancelRef.current?.();
     deferredTeardownCancelRef.current = null;
     const video = videoRef.current;
-    const hls = hlsRef.current;
-    eagerStopPlayerMedia(video, hls);
-    hlsRef.current = null;
-    if (video) detachVideoElement(video);
+    if (video) pauseVideoElement(video);
     document.documentElement.classList.remove("player-immersive");
     setShowSettings(false);
     setShowSubs(false);

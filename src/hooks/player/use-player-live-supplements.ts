@@ -4,9 +4,7 @@ import { useEffect, type RefObject } from "react";
 import type Hls from "hls.js";
 import { isAppleMobileWebKitDevice } from "@/lib/browser";
 import { tryCapAbrLower } from "@/lib/live-hls-playback";
-import { withLiveHlsCompatMse } from "@/lib/stream-url";
 import { isTvClassUserAgent } from "@/lib/tv-user-agent";
-import { voidSafeVideoPlay } from "@/lib/video-play";
 import type { PlayerSource } from "@/store/player";
 import type { PlayerPlaylist } from "@/store/player";
 
@@ -23,7 +21,7 @@ export type UsePlayerLiveSupplementsParams = {
   index: number;
 };
 
-/** Live ABR downshift on repeated `waiting`, playlist warm, tab visibility reload. */
+/** Live ABR downshift on repeated `waiting`, playlist warm. */
 export function usePlayerLiveSupplements(p: UsePlayerLiveSupplementsParams) {
   const {
     open,
@@ -98,41 +96,4 @@ export function usePlayerLiveSupplements(p: UsePlayerLiveSupplementsParams) {
     warm((index + 1) % n);
     warm((index - 1 + n) % n);
   }, [open, playlist, index, silkLikeClient, mobileLikeViewport, tvBrowser]);
-
-  useEffect(() => {
-    if (!open || !current || current.kind !== "live") return;
-    let hiddenAt = 0;
-    const onVis = () => {
-      if (document.visibilityState === "hidden") {
-        hiddenAt = Date.now();
-        return;
-      }
-      if (
-        document.visibilityState === "visible" &&
-        hiddenAt > 0 &&
-        Date.now() - hiddenAt > 5000 &&
-        !hlsRef.current &&
-        videoRef.current &&
-        current.url
-      ) {
-        if (isAppleMobileWebKitDevice()) {
-          hiddenAt = 0;
-          return;
-        }
-        const v = videoRef.current;
-        const u = withLiveHlsCompatMse(current.url, true);
-        try {
-          v.pause();
-          v.removeAttribute("src");
-          v.load();
-          v.src = u;
-          voidSafeVideoPlay(v);
-        } catch {
-          /* noop */
-        }
-      }
-    };
-    document.addEventListener("visibilitychange", onVis);
-    return () => document.removeEventListener("visibilitychange", onVis);
-  }, [open, current, videoRef, hlsRef]);
 }
