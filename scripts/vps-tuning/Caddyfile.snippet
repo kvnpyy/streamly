@@ -1,6 +1,11 @@
 # Production Caddy site block for iptvwebplayer.org
 # Install: sudo cp to /etc/caddy/Caddyfile (backup first), then: sudo caddy validate --config /etc/caddy/Caddyfile && sudo systemctl reload caddy
 
+# Apex only in the app; www must redirect so Cloudflare origin TLS succeeds (avoids 525).
+www.iptvwebplayer.org {
+	redir https://iptvwebplayer.org{uri} permanent
+}
+
 iptvwebplayer.org {
 	encode gzip zstd
 
