@@ -1,6 +1,7 @@
 "use client";
 
 import { dispatchMyListToggle } from "@/lib/my-list";
+import { mergePersistedPrefs } from "@/lib/prefs-persist-merge";
 import { sanitizeRecents } from "@/lib/watch-state-sync";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
@@ -67,7 +68,7 @@ type PersistedPrefsV8 = Pick<
   | "tvRegionFilter"
 >;
 
-type PrefsState = {
+export type PrefsState = {
   favorites: Favorite[];
   recents: RecentItem[];
   browseByAccount: Record<string, BrowsePrefs>;
@@ -244,6 +245,7 @@ export const usePrefs = create<PrefsState>()(
       version: 8,
       /** Defer localStorage parse — `PrefsRehydrateBootstrap` rehydrates on idle. */
       skipHydration: true,
+      merge: mergePersistedPrefs,
       partialize: (s) => ({
         favorites: s.favorites,
         recents: s.recents,

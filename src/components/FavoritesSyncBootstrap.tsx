@@ -158,6 +158,7 @@ export function FavoritesSyncBootstrap({ children }: { children: ReactNode }) {
     () => false
   );
   const pullDoneForKeyRef = useRef<string | null>(null);
+  const activePullKeyRef = useRef<string | null>(null);
   const favPushTimerRef = useRef<number | null>(null);
   const watchPushTimerRef = useRef<number | null>(null);
   const favPushingRef = useRef(false);
@@ -176,6 +177,7 @@ export function FavoritesSyncBootstrap({ children }: { children: ReactNode }) {
 
     let cancelled = false;
     pullDoneForKeyRef.current = accountKey;
+    activePullKeyRef.current = accountKey;
 
     const key = accountKey;
 
@@ -203,11 +205,12 @@ export function FavoritesSyncBootstrap({ children }: { children: ReactNode }) {
       } catch {
         return;
       }
-      if (cancelled) return;
+      if (cancelled || activePullKeyRef.current !== key) return;
 
       if (remoteFavorites !== null) {
         const local = usePrefs.getState().favorites;
         const merged = mergeFavorites(local, remoteFavorites);
+        if (cancelled || activePullKeyRef.current !== key) return;
         skipNextFavPushRef.current = true;
         usePrefs.getState().setFavorites(merged);
 
@@ -227,6 +230,7 @@ export function FavoritesSyncBootstrap({ children }: { children: ReactNode }) {
         const mergedResume = sanitizeVodResumeSec(
           mergeVodResumeSec(localResume, remoteWatch.vodResumeSec)
         );
+        if (cancelled || activePullKeyRef.current !== key) return;
         skipNextWatchPushRef.current = true;
         usePrefs.getState().setRecents(mergedRecents);
         usePrefs.getState().setVodResumeSec(mergedResume);
@@ -245,12 +249,15 @@ export function FavoritesSyncBootstrap({ children }: { children: ReactNode }) {
 
     return () => {
       cancelled = true;
+      if (activePullKeyRef.current === accountKey) {
+        activePullKeyRef.current = null;
+      }
       cancelIdle();
     };
   }, [streamSignedIn, accountKey, prefsHydrated, onStaleCloudSession, onLibraryHome]);
 
   useEffect(() => {
-    if (!streamSignedIn || !accountKey) return;
+    if (!streamSignedIn || !accountKey || !prefsHydrated) return;
     const key = accountKey;
 
     const unsub = usePrefs.subscribe((state, prev) => {
@@ -313,7 +320,7 @@ export function FavoritesSyncBootstrap({ children }: { children: ReactNode }) {
         watchPushTimerRef.current = null;
       }
     };
-  }, [streamSignedIn, accountKey, onStaleCloudSession]);
+  }, [streamSignedIn, accountKey, prefsHydrated, onStaleCloudSession]);
 
   useEffect(() => {
     if (!streamSignedIn) {
