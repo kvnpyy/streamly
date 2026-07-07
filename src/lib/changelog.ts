@@ -11,6 +11,17 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.11.14",
+    date: "2026-07-07",
+    summary: "Mobile live TV recovers when audio plays but the picture stays frozen.",
+    highlights: [
+      "Player: auto-reload on audio-only live playback and native iOS frozen-frame recovery.",
+      "Player: pin phone live streams to browser-safe HLS quality rungs (HEVC/Dolby drift).",
+      "Player: Try again on the “hearing audio but no picture” banner.",
+      "Infra: redirect www to apex in Caddy.",
+    ],
+  },
+  {
     version: "0.11.12",
     date: "2026-07-04",
     summary: "Mobile and desktop get stronger background recovery after tab sleep or bfcache restore.",

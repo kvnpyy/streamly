@@ -23,6 +23,20 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.11.14] — 2026-07-07
+
+Mobile live TV recovers when audio plays but the picture stays frozen.
+
+### Fixed
+- **Mobile live audio-only** — auto-reload on a safer HLS quality rung when video dimensions stay zero; Try again on the banner.
+- **Native iOS frozen frame** — reload the stream when playback time stops advancing (without buffer-low seeks that caused jumps).
+- **Phone live quality lock** — start on the lowest browser-safe rung so ABR cannot drift into HEVC/Dolby mid-playback.
+
+### Changed
+- **www redirect** — Caddy redirects `www` to apex domain.
+
+---
+
 ## [0.11.12] — 2026-07-04
 
 Mobile and desktop get stronger background recovery after tab sleep or bfcache restore.
