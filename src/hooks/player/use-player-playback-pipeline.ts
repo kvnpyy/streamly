@@ -333,6 +333,9 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
         silkLike ||
         window.matchMedia("(max-width: 768px)").matches);
 
+    const mobilePhoneLive =
+      isLive && mobileLike && !livingRoomLike && !silkLike && !appleMobileLiveMse;
+
     const unsupportedBrowserAudioMsg = livingRoomLike || silkLike
       ? "This channel’s audio (often AC-3/E-AC-3) isn’t supported in the Amazon Silk / TV browser player. Try another channel, use Chromecast, or watch with a native IPTV app on the same device if available."
       : isSafariFamilyWithoutChromium() || isAppleMobileWebKitDevice()
@@ -451,8 +454,12 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
       const tvLiveQualityLockEligible =
         isLive && (livingRoomLike || silkLike) && !appleMobileLiveMse;
 
+      const mobileLiveQualityLockEligible = mobilePhoneLive;
+
       const liveManifestStabilizeLocked =
-        chromiumLiveQualityLockEligible || tvLiveQualityLockEligible;
+        chromiumLiveQualityLockEligible ||
+        tvLiveQualityLockEligible ||
+        mobileLiveQualityLockEligible;
 
       /**
        * Live playlists refresh and ABR climbs — re-apply filters so we don't drift into HEVC/Dolby variants Chromium can't decode over MSE.
@@ -516,6 +523,7 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
           livingRoomLike,
           silkLike,
           appleMobileLiveMse,
+          mobilePhoneLive,
         });
       };
 
@@ -628,7 +636,7 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
           return;
         }
         runStabilizeBrowserFriendlyCodecs();
-        if (chromiumLiveQualityLockEligible) {
+        if (chromiumLiveQualityLockEligible || mobileLiveQualityLockEligible) {
           const startIdx = indexOfLowestSafeLevel(hls.levels);
           if (startIdx >= 0) {
             try {

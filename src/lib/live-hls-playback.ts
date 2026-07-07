@@ -325,6 +325,8 @@ export type StabilizeLiveHlsContext = {
   livingRoomLike: boolean;
   silkLike: boolean;
   appleMobileLiveMse: boolean;
+  /** Phone-sized mobile live (not TV/Silk) — pin safe quality rung to avoid HEVC/Dolby drift. */
+  mobilePhoneLive?: boolean;
 };
 
 export function stabilizeBrowserFriendlyCodecs(
@@ -354,7 +356,10 @@ export function stabilizeBrowserFriendlyCodecs(
     }
   }
 
-  if ((ctx.livingRoomLike || ctx.silkLike) && hls.levels?.length) {
+  if (
+    (ctx.livingRoomLike || ctx.silkLike || ctx.mobilePhoneLive) &&
+    hls.levels?.length
+  ) {
     try {
       const startIdx = indexOfLowestSafeLevel(hls.levels);
       if (startIdx >= 0) {

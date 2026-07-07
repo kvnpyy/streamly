@@ -995,6 +995,7 @@ export function PlayerOverlay() {
     current,
     videoRef,
     hlsRef,
+    hlsLiveEdgeRestartGateRef,
     usesTranscodePlayback,
     vodTotalSec,
     vodDurationHintRef,
@@ -2349,11 +2350,18 @@ export function PlayerOverlay() {
                     Hearing audio but no picture
                   </div>
                   <div className="text-white/75 text-xs mt-1 leading-snug">
-                    Some IPTV feeds expose sound without a drawable video track in Safari
-                    (channel poster quirks, HLS variants, or codecs WebKit won&apos;t paint).
-                    Try Chrome or Edge, another browser, your provider&apos;s native app, or a
-                    different listing for this channel if available.
+                    Some IPTV feeds expose sound without a drawable video track in mobile
+                    browsers (HLS variants or codecs WebKit won&apos;t paint). We&apos;re
+                    trying to reload on a safer quality — tap Try again if the picture
+                    stays frozen.
                   </div>
+                  <button
+                    type="button"
+                    onClick={() => recoverPlaybackFromError()}
+                    className="mt-3 px-4 py-2 rounded-lg btn-brand text-sm"
+                  >
+                    Try again
+                  </button>
                 </div>
               </div>
             )}

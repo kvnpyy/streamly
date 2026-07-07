@@ -5,6 +5,7 @@ import type Hls from "hls.js";
 import { isAppleMobileWebKitDevice } from "@/lib/browser";
 import {
   applyGentleLiveHlsRecovery,
+  applySoftLiveHlsRecovery,
   LIVE_PLAYBACK_ERROR_GRACE_MS,
   LIVE_VIDEO_ERROR_DEFER_MS,
   liveCodecUserMessage,
@@ -26,6 +27,7 @@ export type UsePlayerVideoEventsParams = {
   current: PlayerSource | null;
   videoRef: RefObject<HTMLVideoElement | null>;
   hlsRef: RefObject<InstanceType<typeof Hls> | null>;
+  hlsLiveEdgeRestartGateRef: RefObject<number>;
   usesTranscodePlayback: boolean;
   vodTotalSec: number;
   vodDurationHintRef: RefObject<number>;
@@ -58,6 +60,7 @@ export function usePlayerVideoEvents(p: UsePlayerVideoEventsParams) {
     current,
     videoRef,
     hlsRef,
+    hlsLiveEdgeRestartGateRef,
     usesTranscodePlayback,
     vodTotalSec,
     vodDurationHintRef,
@@ -106,6 +109,10 @@ export function usePlayerVideoEvents(p: UsePlayerVideoEventsParams) {
     /** Throttle React state from `timeupdate` — frequent setState competes with video decode on WebKit. */
     let lastUiFlushMs = 0;
     let lastMarkPictureMs = 0;
+    /** Sustained audio-without-picture — auto-reload before surfacing the banner. */
+    let liveNoPictureSince = 0;
+    let liveNoPictureRecoveries = 0;
+    let lastNoPictureRecoveryMs = 0;
 
     const cancelLiveKickTimer = () => {
       if (liveKickTimer) {
@@ -164,6 +171,25 @@ export function usePlayerVideoEvents(p: UsePlayerVideoEventsParams) {
       } catch {
         /* noop */
       }
+    };
+
+    const recoverLiveNoPicture = () => {
+      const vv = videoRef.current;
+      if (!vv || vv.paused || current?.kind !== "live") return;
+      const hls = hlsRef.current;
+      if (hls) {
+        try {
+          if (liveNoPictureRecoveries >= 2) {
+            applySoftLiveHlsRecovery(hls, vv, hlsLiveEdgeRestartGateRef);
+          } else {
+            applyGentleLiveHlsRecovery(hls, vv);
+          }
+        } catch {
+          voidSafeVideoPlay(vv);
+        }
+        return;
+      }
+      reloadNativeLiveSource();
     };
 
     const kickLiveIfBufferLow = () => {
@@ -283,8 +309,23 @@ export function usePlayerVideoEvents(p: UsePlayerVideoEventsParams) {
         v.videoHeight === 0
       ) {
         setLiveAudioNoPicture(true);
-      } else if (v.videoWidth > 0) {
-        setLiveAudioNoPicture(false);
+        if (liveNoPictureSince <= 0) liveNoPictureSince = nowUi;
+        const sustainedMs = nowUi - liveNoPictureSince;
+        if (
+          sustainedMs >= 4000 &&
+          liveNoPictureRecoveries < 3 &&
+          nowUi - lastNoPictureRecoveryMs >= 12_000
+        ) {
+          lastNoPictureRecoveryMs = nowUi;
+          liveNoPictureRecoveries += 1;
+          recoverLiveNoPicture();
+        }
+      } else {
+        if (v.videoWidth > 0) {
+          setLiveAudioNoPicture(false);
+          liveNoPictureSince = 0;
+          liveNoPictureRecoveries = 0;
+        }
       }
 
       if (
@@ -311,10 +352,41 @@ export function usePlayerVideoEvents(p: UsePlayerVideoEventsParams) {
       }
 
       if (!isLiveStream || v.paused) return;
-      if (nativeAppleLive) return;
 
       const ct = v.currentTime;
       const now = performance.now();
+
+      /**
+       * Native iPhone/iPad live: skip buffer-low seeks (they cause jumps) but still
+       * recover when the decode surface freezes — audio can continue with a stuck frame.
+       */
+      if (nativeAppleLive) {
+        if (
+          v.videoWidth > 0 &&
+          v.videoHeight > 0 &&
+          !v.error &&
+          v.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA
+        ) {
+          if (liveProgress.lastCt < 0) {
+            liveProgress.lastCt = ct;
+            liveProgress.stuckSince = now;
+          } else if (Math.abs(ct - liveProgress.lastCt) > 0.2) {
+            nativeStallKicks = 0;
+            liveProgress.lastCt = ct;
+            liveProgress.stuckSince = now;
+          } else if (
+            now - liveProgress.stuckSince > 12_000 &&
+            nativeStallKicks < 3
+          ) {
+            liveProgress.stuckSince = now;
+            liveProgress.lastCt = ct;
+            nativeStallKicks += 1;
+            reloadNativeLiveSource();
+          }
+        }
+        return;
+      }
+
       if (liveProgress.lastCt < 0) {
         liveProgress.lastCt = ct;
         liveProgress.stuckSince = now;
@@ -532,6 +604,7 @@ export function usePlayerVideoEvents(p: UsePlayerVideoEventsParams) {
     chromiumDesktopClient,
     videoRef,
     hlsRef,
+    hlsLiveEdgeRestartGateRef,
     vodDurationHintRef,
     vodStartOffsetRef,
     vodScrubbingRef,
