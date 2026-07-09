@@ -3,11 +3,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { CastMediaDescriptor } from "@/lib/cast-media-url";
 import {
-  appendCastStreamQuery,
-  normalizeCastLiveManifestUrl,
-  waitForCastPlaylistReady,
-} from "@/lib/cast-media-url";
-import { resolveCastLiveHlsUrl } from "@/lib/cast-live-hls";
+  isCastPreparedMediaFresh,
+  prepareCastPlayUrl,
+  resolveLiveCastUrlViaServer,
+  type CastPreparedMedia,
+} from "@/lib/cast-prepare";
+import { buildImageProxyAbsolute } from "@/lib/image-proxy";
 import {
   CAST_SENDER_SCRIPT_SRC,
   shouldAttemptChromecastSenderLoad,
@@ -31,12 +32,22 @@ declare global {
             setOptions: (o: unknown) => void;
             requestSession: () => Promise<unknown>;
             getCastState?: () => number;
+            addEventListener?: (
+              type: string,
+              listener: (event: unknown) => void
+            ) => void;
+            removeEventListener?: (
+              type: string,
+              listener: (event: unknown) => void
+            ) => void;
             getCurrentSession?: () => {
               loadMedia: (r: unknown) => Promise<void>;
               getMediaSession?: () => {
                 playerState?: number;
                 idleReason?: number;
-                addUpdateListener: (listener: (isAlive: boolean) => void) => number;
+                addUpdateListener: (
+                  listener: (isAlive: boolean) => void
+                ) => number;
                 removeUpdateListener: (listenerId: number) => void;
               } | null;
             } | null;
@@ -46,6 +57,9 @@ declare global {
           CONNECTED: number;
           NOT_CONNECTED: number;
           CONNECTING: number;
+        };
+        CastContextEventType?: {
+          CAST_STATE_CHANGED: string;
         };
       };
     };
@@ -59,6 +73,13 @@ declare global {
           LoadRequest: new (mediaInfo: unknown) => unknown;
           PlayerState?: { IDLE: number };
           IdleReason?: { ERROR: number };
+          MetadataType?: { GENERIC: number };
+          GenericMediaMetadata?: new () => {
+            type: number;
+            title?: string;
+            images?: Array<{ url: string }>;
+          };
+          Image?: new (url: string) => { url: string };
         };
       };
     };
@@ -76,6 +97,21 @@ export type UsePlayerCastParams = {
   onCastStarted: () => void;
 };
 
+function isCastSessionConnected(): boolean {
+  try {
+    const fw = window.cast?.framework;
+    const ctx = fw?.CastContext?.getInstance?.();
+    const CastState = fw?.CastState;
+    if (!ctx || CastState == null) return false;
+    return (
+      ctx.getCastState?.() === CastState.CONNECTED &&
+      Boolean(ctx.getCurrentSession?.())
+    );
+  } catch {
+    return false;
+  }
+}
+
 /** Chromecast Web Sender SDK — loads when share panel opens (or desktop non-Silk). */
 export function usePlayerCast({
   open,
@@ -91,7 +127,21 @@ export function usePlayerCast({
   const [castActionMessage, setCastActionMessage] = useState<string | null>(
     null
   );
+  const [castSessionConnected, setCastSessionConnected] = useState(false);
   const castSdkReadyRef = useRef(false);
+  const preparedRef = useRef<CastPreparedMedia | null>(null);
+  const prepAbortRef = useRef<AbortController | null>(null);
+  const loadInFlightRef = useRef(false);
+  const lastAutoLoadedSourceRef = useRef<string | null>(null);
+  const castMediaRef = useRef(castMedia);
+  const currentRef = useRef(current);
+  const getLiveHlsManifestUrlRef = useRef(getLiveHlsManifestUrl);
+  const onCastStartedRef = useRef(onCastStarted);
+
+  castMediaRef.current = castMedia;
+  currentRef.current = current;
+  getLiveHlsManifestUrlRef.current = getLiveHlsManifestUrl;
+  onCastStartedRef.current = onCastStarted;
 
   const shouldInitCastSdk = open && (!silkLikeClient || showShare);
 
@@ -100,7 +150,12 @@ export function usePlayerCast({
       queueMicrotask(() => {
         setCastSenderState("inactive");
         setCastActionMessage(null);
+        setCastSessionConnected(false);
       });
+      preparedRef.current = null;
+      lastAutoLoadedSourceRef.current = null;
+      prepAbortRef.current?.abort();
+      prepAbortRef.current = null;
       return;
     }
     if (typeof window === "undefined") return;
@@ -112,14 +167,45 @@ export function usePlayerCast({
     }
 
     if (castSdkReadyRef.current && window.cast?.framework) {
-      queueMicrotask(() => setCastSenderState("ready"));
-      return;
+      let castStateListener: ((event: unknown) => void) | null = null;
+      queueMicrotask(() => {
+        setCastSenderState("ready");
+        setCastSessionConnected(isCastSessionConnected());
+      });
+      try {
+        const fw = window.cast?.framework;
+        const ctx = fw?.CastContext?.getInstance?.();
+        const eventType = fw?.CastContextEventType?.CAST_STATE_CHANGED;
+        if (ctx?.addEventListener && eventType) {
+          castStateListener = () => {
+            setCastSessionConnected(isCastSessionConnected());
+          };
+          ctx.addEventListener(eventType, castStateListener);
+        }
+      } catch {
+        /* optional */
+      }
+      return () => {
+        if (castStateListener) {
+          try {
+            const fw = window.cast?.framework;
+            const ctx = fw?.CastContext?.getInstance?.();
+            const eventType = fw?.CastContextEventType?.CAST_STATE_CHANGED;
+            if (ctx?.removeEventListener && eventType) {
+              ctx.removeEventListener(eventType, castStateListener);
+            }
+          } catch {
+            /* noop */
+          }
+        }
+      };
     }
 
     let cancelled = false;
     let pollTimer: number | null = null;
     let giveUpTimer: number | null = null;
     let completed = false;
+    let castStateListener: ((event: unknown) => void) | null = null;
 
     const clearTimers = () => {
       if (pollTimer != null) {
@@ -144,7 +230,24 @@ export function usePlayerCast({
       completed = true;
       clearTimers();
       castSdkReadyRef.current = true;
-      queueMicrotask(() => setCastSenderState("ready"));
+      queueMicrotask(() => {
+        setCastSenderState("ready");
+        setCastSessionConnected(isCastSessionConnected());
+      });
+
+      try {
+        const fw = window.cast?.framework;
+        const ctx = fw?.CastContext?.getInstance?.();
+        const eventType = fw?.CastContextEventType?.CAST_STATE_CHANGED;
+        if (ctx?.addEventListener && eventType) {
+          castStateListener = () => {
+            setCastSessionConnected(isCastSessionConnected());
+          };
+          ctx.addEventListener(eventType, castStateListener);
+        }
+      } catch {
+        /* optional */
+      }
     };
 
     let castOptionsApplied = false;
@@ -179,6 +282,18 @@ export function usePlayerCast({
       succeed();
       return () => {
         cancelled = true;
+        if (castStateListener) {
+          try {
+            const fw = window.cast?.framework;
+            const ctx = fw?.CastContext?.getInstance?.();
+            const eventType = fw?.CastContextEventType?.CAST_STATE_CHANGED;
+            if (ctx?.removeEventListener && eventType) {
+              ctx.removeEventListener(eventType, castStateListener);
+            }
+          } catch {
+            /* noop */
+          }
+        }
       };
     }
 
@@ -233,21 +348,96 @@ export function usePlayerCast({
       clearTimers();
       if (prevGCastCb) window.__onGCastApiAvailable = prevGCastCb;
       else delete window.__onGCastApiAvailable;
+      if (castStateListener) {
+        try {
+          const fw = window.cast?.framework;
+          const ctx = fw?.CastContext?.getInstance?.();
+          const eventType = fw?.CastContextEventType?.CAST_STATE_CHANGED;
+          if (ctx?.removeEventListener && eventType) {
+            ctx.removeEventListener(eventType, castStateListener);
+          }
+        } catch {
+          /* noop */
+        }
+      }
     };
   }, [open, shouldInitCastSdk]);
 
-  const cast = useCallback(async () => {
-    if (!castMedia) return;
-    setCastActionMessage(null);
-    try {
+  /** Background pre-warm while the user watches in-browser. */
+  useEffect(() => {
+    if (!open || !castMedia) {
+      preparedRef.current = null;
+      prepAbortRef.current?.abort();
+      prepAbortRef.current = null;
+      return;
+    }
+    if (castMedia.blockedReason) {
+      preparedRef.current = null;
+      return;
+    }
+    if (
+      isCastPreparedMediaFresh(preparedRef.current, castMedia.url)
+    ) {
+      return;
+    }
+
+    prepAbortRef.current?.abort();
+    const ac = new AbortController();
+    prepAbortRef.current = ac;
+    preparedRef.current = null;
+
+    const timer = window.setTimeout(() => {
+      void prepareCastPlayUrl(castMedia, {
+        origin: window.location.origin,
+        getLiveHlsManifestUrl: getLiveHlsManifestUrlRef.current,
+        signal: ac.signal,
+        resolveLiveViaServer: (manifestUrl) =>
+          resolveLiveCastUrlViaServer(manifestUrl, {
+            signal: ac.signal,
+            origin: window.location.origin,
+          }),
+        timeoutMs: 45_000,
+      })
+        .then((prepared) => {
+          if (ac.signal.aborted) return;
+          if (castMediaRef.current?.url !== prepared.sourceUrl) return;
+          preparedRef.current = prepared;
+        })
+        .catch(() => {
+          /* pre-warm is best-effort; cast() will retry */
+        });
+    }, 800);
+
+    return () => {
+      window.clearTimeout(timer);
+      ac.abort();
+    };
+  }, [open, castMedia]);
+
+  const loadPreparedOntoSession = useCallback(
+    async (opts?: { requestSessionIfNeeded?: boolean; quiet?: boolean }) => {
+      const media = castMediaRef.current;
+      const src = currentRef.current;
+      if (!media) return false;
+      if (media.blockedReason) {
+        if (!opts?.quiet) {
+          setCastActionMessage(media.blockedReason);
+          window.setTimeout(() => setCastActionMessage(null), 10_000);
+        }
+        return false;
+      }
+
       const ctx = window.cast?.framework?.CastContext?.getInstance?.();
       if (!ctx) {
-        setCastActionMessage(
-          "Cast isn’t ready yet. Wait a moment, refresh the page, or use Copy stream URL."
-        );
-        window.setTimeout(() => setCastActionMessage(null), 8000);
-        return;
+        if (!opts?.quiet) {
+          setCastActionMessage(
+            "Cast isn’t ready yet. Wait a moment, refresh the page, or use Copy TV-safe stream URL."
+          );
+          window.setTimeout(() => setCastActionMessage(null), 8000);
+        }
+        return false;
       }
+
       const fw = window.cast?.framework;
       const CastState = fw?.CastState;
       const alreadyConnected =
@@ -255,68 +445,91 @@ export function usePlayerCast({
         ctx.getCastState?.() === CastState.CONNECTED &&
         ctx.getCurrentSession?.();
       if (!alreadyConnected) {
+        if (!opts?.requestSessionIfNeeded) return false;
         await ctx.requestSession();
       }
+
       const ChromeMedia = window.chrome?.cast?.media;
       if (!ChromeMedia?.MediaInfo || !ChromeMedia.LoadRequest) {
-        setCastActionMessage(
-          "This browser doesn’t expose Chromecast media APIs. Try Chrome or Edge, or copy the stream URL."
-        );
-        window.setTimeout(() => setCastActionMessage(null), 8000);
-        return;
+        if (!opts?.quiet) {
+          setCastActionMessage(
+            "This browser doesn’t expose Chromecast media APIs. Try Chrome or Edge, or copy the TV-safe stream URL."
+          );
+          window.setTimeout(() => setCastActionMessage(null), 8000);
+        }
+        return false;
       }
 
-      setCastActionMessage("Preparing stream for your TV…");
-      let playUrl = castMedia.url;
-      try {
-        if (castMedia.streamType === "live") {
-          const levelUrl = getLiveHlsManifestUrl?.() ?? null;
-          if (levelUrl) {
-            playUrl = normalizeCastLiveManifestUrl(
-              window.location.origin,
-              levelUrl
-            );
-          }
-          playUrl = await resolveCastLiveHlsUrl(playUrl);
+      let prepared = isCastPreparedMediaFresh(preparedRef.current, media.url)
+        ? preparedRef.current
+        : null;
+
+      if (!prepared) {
+        if (!opts?.quiet) {
+          setCastActionMessage("Preparing stream for your TV…");
         }
-        playUrl = appendCastStreamQuery(playUrl);
-        await waitForCastPlaylistReady(playUrl, { timeoutMs: 45_000 });
-      } catch (prepErr) {
-        const msg =
-          prepErr instanceof Error && prepErr.message
-            ? prepErr.message
-            : "Could not prepare stream for your TV.";
-        setCastActionMessage(
-          `${msg} Try again in a moment, or copy the stream URL for VLC on your TV.`
-        );
-        window.setTimeout(() => setCastActionMessage(null), 10_000);
-        return;
+        try {
+          prepared = await prepareCastPlayUrl(media, {
+            origin: window.location.origin,
+            getLiveHlsManifestUrl: getLiveHlsManifestUrlRef.current,
+            resolveLiveViaServer: (manifestUrl) =>
+              resolveLiveCastUrlViaServer(manifestUrl, {
+                origin: window.location.origin,
+              }),
+            timeoutMs: 45_000,
+          });
+          preparedRef.current = prepared;
+        } catch (prepErr) {
+          const msg =
+            prepErr instanceof Error && prepErr.message
+              ? prepErr.message
+              : "Could not prepare stream for your TV.";
+          if (!opts?.quiet) {
+            setCastActionMessage(
+              `${msg} Try again in a moment, or copy the TV-safe stream URL for VLC on your TV.`
+            );
+            window.setTimeout(() => setCastActionMessage(null), 10_000);
+          }
+          return false;
+        }
       }
-      setCastActionMessage(null);
+
+      if (!opts?.quiet) setCastActionMessage(null);
 
       const mediaInfo = new ChromeMedia.MediaInfo(
-        playUrl,
-        castMedia.contentType || "application/x-mpegURL"
+        prepared.playUrl,
+        prepared.contentType || "application/x-mpegURL"
       ) as {
         streamType?: number;
-        metadata?: { type: number; title?: string };
+        metadata?: {
+          type: number;
+          title?: string;
+          images?: Array<{ url: string }>;
+        };
       };
       if (ChromeMedia.StreamType) {
         mediaInfo.streamType =
-          castMedia.streamType === "live"
+          prepared.streamType === "live"
             ? ChromeMedia.StreamType.LIVE
             : ChromeMedia.StreamType.BUFFERED;
       }
       try {
-        const title = current?.title ?? "Stream";
-        const CM = ChromeMedia as typeof ChromeMedia & {
-          MetadataType?: { GENERIC: number };
-          GenericMediaMetadata?: new () => { type: number; title?: string };
-        };
+        const title = src?.title ?? "Stream";
+        const CM = ChromeMedia;
         if (CM.MetadataType && CM.GenericMediaMetadata) {
           const meta = new CM.GenericMediaMetadata();
           meta.type = CM.MetadataType.GENERIC;
           meta.title = title;
+          const poster = src?.poster
+            ? buildImageProxyAbsolute(src.poster)
+            : undefined;
+          if (poster) {
+            if (CM.Image) {
+              meta.images = [new CM.Image(poster)];
+            } else {
+              meta.images = [{ url: poster }];
+            }
+          }
           mediaInfo.metadata = meta;
         }
       } catch {
@@ -329,13 +542,17 @@ export function usePlayerCast({
       request.autoplay = true;
       const session = ctx.getCurrentSession?.();
       if (!session) {
-        setCastActionMessage(
-          "No Cast session. Pick your Chromecast or Google TV again, or copy the stream URL."
-        );
-        window.setTimeout(() => setCastActionMessage(null), 8000);
-        return;
+        if (!opts?.quiet) {
+          setCastActionMessage(
+            "No Cast session. Pick your Chromecast or Google TV again, or copy the TV-safe stream URL."
+          );
+          window.setTimeout(() => setCastActionMessage(null), 8000);
+        }
+        return false;
       }
       await session.loadMedia(request);
+      setCastSessionConnected(true);
+      lastAutoLoadedSourceRef.current = media.url;
 
       const mediaSession = session.getMediaSession?.();
       if (mediaSession && ChromeMedia.PlayerState && ChromeMedia.IdleReason) {
@@ -348,7 +565,7 @@ export function usePlayerCast({
             mediaSession.idleReason === idleReason.ERROR
           ) {
             setCastActionMessage(
-              "Your TV could not play this stream (codec or provider block). Try another channel or copy the stream URL for your TV app."
+              "Your TV could not play this stream (codec or provider block). Try another channel, or copy the TV-safe stream URL for VLC."
             );
             window.setTimeout(() => setCastActionMessage(null), 12_000);
             mediaSession.removeUpdateListener(listenerId);
@@ -356,7 +573,19 @@ export function usePlayerCast({
         });
       }
 
-      onCastStarted();
+      onCastStartedRef.current();
+      return true;
+    },
+    []
+  );
+
+  const cast = useCallback(async () => {
+    if (!castMediaRef.current) return;
+    if (loadInFlightRef.current) return;
+    loadInFlightRef.current = true;
+    setCastActionMessage(null);
+    try {
+      await loadPreparedOntoSession({ requestSessionIfNeeded: true });
     } catch (err) {
       const code =
         err &&
@@ -372,19 +601,59 @@ export function usePlayerCast({
             : null;
       setCastActionMessage(
         code
-          ? `Cast failed (${code}). Try again, use another receiver, or copy the stream URL for VLC on your TV.`
-          : "Cast failed. Try again, move to the same Wi‑Fi as your TV, or copy the stream URL for VLC / your provider app."
+          ? `Cast failed (${code}). Try again, use another receiver, or copy the TV-safe stream URL for VLC on your TV.`
+          : "Cast failed. Try again, move to the same Wi‑Fi as your TV, or copy the TV-safe stream URL for VLC."
       );
       window.setTimeout(() => setCastActionMessage(null), 9000);
       if (process.env.NODE_ENV !== "production") {
         console.warn("Cast failed", err);
       }
+    } finally {
+      loadInFlightRef.current = false;
     }
-  }, [castMedia, current, getLiveHlsManifestUrl, onCastStarted]);
+  }, [loadPreparedOntoSession]);
+
+  /** When already casting, follow channel / title changes automatically. */
+  useEffect(() => {
+    if (!open || !castMedia || castSenderState !== "ready") return;
+    if (!castSessionConnected && !isCastSessionConnected()) return;
+    if (castMedia.blockedReason) return;
+    if (lastAutoLoadedSourceRef.current === castMedia.url) return;
+    if (loadInFlightRef.current) return;
+
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      if (cancelled) return;
+      if (loadInFlightRef.current) return;
+      loadInFlightRef.current = true;
+      void loadPreparedOntoSession({
+        requestSessionIfNeeded: false,
+        quiet: true,
+      })
+        .catch(() => {
+          /* auto-follow is best-effort */
+        })
+        .finally(() => {
+          loadInFlightRef.current = false;
+        });
+    }, 400);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [
+    open,
+    castMedia,
+    castSenderState,
+    castSessionConnected,
+    loadPreparedOntoSession,
+  ]);
 
   return {
     castSenderState,
     castActionMessage,
+    castSessionConnected,
     cast,
   };
 }

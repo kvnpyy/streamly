@@ -7,11 +7,15 @@ import {
   playbackSpeedLabel,
 } from "@/lib/player-playback-speed";
 import { cn } from "@/lib/utils";
-import { isChromiumBasedDesktopBrowser } from "@/lib/browser";
+import {
+  isAppleMobileWebKitDevice,
+  isChromiumBasedDesktopBrowser,
+} from "@/lib/browser";
 import { hlsRenditionLabel } from "@/lib/live-hls-playback";
 import { AnimatePresence, motion } from "framer-motion";
 import type { Level } from "hls.js";
 import {
+  Airplay,
   Cast,
   Captions,
   Check,
@@ -51,10 +55,14 @@ export type PlayerControlMenusProps = {
   onSwitchLevel: (lvl: number) => void;
   castSenderState: CastSenderUiState;
   castMedia: { url: string; contentType: string } | null;
+  castSessionConnected: boolean;
   onCast: () => void;
   castActionMessage: string | null;
+  airPlayAvailable: boolean;
+  onAirPlay: () => void;
   copied: boolean;
-  onCopyDirectUrl: () => void;
+  onCopyTvSafeUrl: () => void;
+  tvSafeUrl: string | null;
   directUrl: string | null;
 };
 
@@ -82,10 +90,14 @@ export function PlayerControlMenus({
   onSwitchLevel,
   castSenderState,
   castMedia,
+  castSessionConnected,
   onCast,
   castActionMessage,
+  airPlayAvailable,
+  onAirPlay,
   copied,
-  onCopyDirectUrl,
+  onCopyTvSafeUrl,
+  tvSafeUrl,
   directUrl,
 }: PlayerControlMenusProps) {
   const closeOtherPanels = (except: "subs" | "settings" | "share") => {
@@ -93,6 +105,13 @@ export function PlayerControlMenus({
     if (except !== "settings") setShowSettings(false);
     if (except !== "share") setShowShare(false);
   };
+
+  const appleWebKit =
+    typeof navigator !== "undefined" && isAppleMobileWebKitDevice();
+  const showCastChrome =
+    castSenderState === "ready" ||
+    castSenderState === "loading" ||
+    castSessionConnected;
 
   return (
     <>
@@ -323,6 +342,48 @@ export function PlayerControlMenus({
         </AnimatePresence>
       </div>
 
+      {showCastChrome && (
+        <button
+          type="button"
+          onClick={() => void onCast()}
+          disabled={castSenderState !== "ready" || !castMedia}
+          aria-label={
+            castSessionConnected ? "Casting — change TV or stop" : "Cast to TV"
+          }
+          title={
+            castSessionConnected
+              ? "Connected — tap to cast this stream again or pick another TV"
+              : "Cast to Chromecast or Google TV"
+          }
+          className={cn(
+            "size-9 grid place-items-center rounded-lg hover:bg-white/10 disabled:opacity-40 disabled:cursor-not-allowed",
+            castSessionConnected && "bg-white/15 text-(--brand-2)"
+          )}
+        >
+          <Cast className="size-4" />
+        </button>
+      )}
+
+      {appleWebKit && (
+        <button
+          type="button"
+          onClick={onAirPlay}
+          disabled={!airPlayAvailable}
+          aria-label="AirPlay"
+          title={
+            airPlayAvailable
+              ? "AirPlay to Apple TV or a compatible display"
+              : "No AirPlay devices nearby"
+          }
+          className={cn(
+            "size-9 grid place-items-center rounded-lg hover:bg-white/10",
+            !airPlayAvailable && "opacity-40 cursor-not-allowed"
+          )}
+        >
+          <Airplay className="size-4" />
+        </button>
+      )}
+
       <div className="relative">
         <button
           type="button"
@@ -350,43 +411,78 @@ export function PlayerControlMenus({
                 Cast & open elsewhere
               </div>
               <div className="px-3 pb-1 text-[10px] text-white/45 leading-snug">
-                Cast to TV uses{" "}
-                <span className="text-white/60">Google Cast</span> (Chromecast,
-                Google TV, Cast‑built‑in displays). Streams play through this
-                app&apos;s server so your TV can reach them. MKV episodes use a
-                short HLS prep on the TV. Roku, Samsung hubs, and AirPlay need
-                the copied URL.
+                {appleWebKit ? (
+                  <>
+                    On iPhone and iPad, use{" "}
+                    <span className="text-white/60">AirPlay</span> to send the
+                    playing stream to Apple TV. For other TVs, copy the TV-safe
+                    URL below.
+                  </>
+                ) : (
+                  <>
+                    <span className="text-white/60">Google Cast</span> works in
+                    Chrome, Edge, or Brave (Chromecast / Google TV). Streams play
+                    through this app&apos;s server. MKV titles use a short HLS
+                    prep. On iPhone use AirPlay; other TVs can use the TV-safe
+                    URL.
+                  </>
+                )}
               </div>
-              <button
-                type="button"
-                onClick={() => void onCast()}
-                disabled={castSenderState !== "ready" || !castMedia}
-                className="w-full text-left px-3 py-2 rounded-lg text-sm hover:bg-white/10 flex flex-col gap-0.5 disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                <span className="flex items-center gap-2">
-                  <Cast className="size-4 shrink-0" />
-                  <span>
-                    {castSenderState === "ready" && "Cast to TV"}
-                    {castSenderState === "loading" && "Cast to TV (loading…)"}
-                    {castSenderState === "unsupported" &&
-                      "Cast to TV (not in this browser)"}
-                    {castSenderState === "failed" && "Cast to TV (unavailable)"}
-                    {castSenderState === "inactive" && "Cast to TV"}
+              {appleWebKit ? (
+                <button
+                  type="button"
+                  onClick={onAirPlay}
+                  disabled={!airPlayAvailable}
+                  className="w-full text-left px-3 py-2 rounded-lg text-sm hover:bg-white/10 flex flex-col gap-0.5 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  <span className="flex items-center gap-2">
+                    <Airplay className="size-4 shrink-0" />
+                    <span>AirPlay</span>
                   </span>
-                </span>
-                {castSenderState === "unsupported" && (
-                  <span className="pl-6 text-[11px] text-white/50 leading-snug">
-                    Use Chrome, Edge, or Brave on a computer or Android. On iPhone,
-                    copy the URL below.
+                  {!airPlayAvailable && (
+                    <span className="pl-6 text-[11px] text-white/50 leading-snug">
+                      No AirPlay devices detected. Make sure your Apple TV is on
+                      the same Wi‑Fi.
+                    </span>
+                  )}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => void onCast()}
+                  disabled={castSenderState !== "ready" || !castMedia}
+                  className="w-full text-left px-3 py-2 rounded-lg text-sm hover:bg-white/10 flex flex-col gap-0.5 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  <span className="flex items-center gap-2">
+                    <Cast className="size-4 shrink-0" />
+                    <span>
+                      {castSenderState === "ready" &&
+                        (castSessionConnected
+                          ? "Cast this stream"
+                          : "Cast to TV")}
+                      {castSenderState === "loading" &&
+                        "Cast to TV (loading…)"}
+                      {castSenderState === "unsupported" &&
+                        "Cast to TV (not in this browser)"}
+                      {castSenderState === "failed" &&
+                        "Cast to TV (unavailable)"}
+                      {castSenderState === "inactive" && "Cast to TV"}
+                    </span>
                   </span>
-                )}
-                {castSenderState === "failed" && (
-                  <span className="pl-6 text-[11px] text-white/50 leading-snug">
-                    Cast didn’t load (blocked network, extension, or ad blocker).
-                    Refresh or copy the stream URL.
-                  </span>
-                )}
-              </button>
+                  {castSenderState === "unsupported" && (
+                    <span className="pl-6 text-[11px] text-white/50 leading-snug">
+                      Use Chrome, Edge, or Brave on a computer or Android. On
+                      iPhone, use AirPlay.
+                    </span>
+                  )}
+                  {castSenderState === "failed" && (
+                    <span className="pl-6 text-[11px] text-white/50 leading-snug">
+                      Cast didn’t load (blocked network, extension, or ad
+                      blocker). Refresh or copy the TV-safe stream URL.
+                    </span>
+                  )}
+                </button>
+              )}
               {castActionMessage && (
                 <div className="mx-2 mb-1 rounded-lg border border-amber-400/25 bg-amber-950/40 px-2.5 py-2 text-[11px] text-amber-50/95 leading-snug">
                   {castActionMessage}
@@ -394,15 +490,16 @@ export function PlayerControlMenus({
               )}
               <button
                 type="button"
-                onClick={onCopyDirectUrl}
-                className="w-full text-left px-3 py-2 rounded-lg text-sm hover:bg-white/10 flex items-center gap-2"
+                onClick={onCopyTvSafeUrl}
+                disabled={!tvSafeUrl}
+                className="w-full text-left px-3 py-2 rounded-lg text-sm hover:bg-white/10 flex items-center gap-2 disabled:opacity-40"
               >
                 {copied ? (
                   <Check className="size-4 text-(--brand-2)" />
                 ) : (
                   <Copy className="size-4" />
                 )}
-                {copied ? "Copied!" : "Copy stream URL"}
+                {copied ? "Copied!" : "Copy TV-safe stream URL"}
               </button>
               {directUrl && (
                 <a
@@ -413,11 +510,12 @@ export function PlayerControlMenus({
                   className="w-full text-left px-3 py-2 rounded-lg text-sm hover:bg-white/10 flex items-center gap-2"
                 >
                   <ExternalLink className="size-4" />
-                  Open in external player
+                  Open provider URL in external player
                 </a>
               )}
               <div className="px-3 pt-1 pb-2 text-[10px] text-white/40">
-                Paste the URL into VLC, IINA, or Infuse to stream on any device.
+                Paste the TV-safe URL into VLC, Infuse, or your TV app. The
+                provider URL may not work on Apple TV or Chromecast.
               </div>
             </motion.div>
           )}

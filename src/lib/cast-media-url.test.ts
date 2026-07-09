@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   appendCastStreamQuery,
   buildCastMediaDescriptor,
+  buildTvSafeStreamCopyUrl,
   sanitizeProxyUrlForCast,
   toAbsoluteAppUrl,
 } from "./cast-media-url";
@@ -40,6 +41,7 @@ describe("cast-media-url", () => {
     expect(d!.url).not.toContain("compat=mse");
     expect(d!.contentType).toBe("application/x-mpegURL");
     expect(d!.streamType).toBe("live");
+    expect(d!.blockedReason).toBeUndefined();
   });
 
   it("strips compat=mse from active transcode playback URLs", () => {
@@ -58,6 +60,18 @@ describe("cast-media-url", () => {
     expect(d!.url).toContain("tc_seek=120");
     expect(d!.url).not.toContain("compat=mse");
     expect(d!.streamType).toBe("live");
+  });
+
+  it("blocks raw MKV cast when transcode is disabled", () => {
+    vi.stubEnv("NEXT_PUBLIC_VOD_TRANSCODE", "0");
+    const d = buildCastMediaDescriptor({
+      origin: "https://app.example",
+      current: movie,
+      isLive: false,
+      proxyPlaybackUrl: movie.url,
+    });
+    expect(d!.contentType).toBe("video/x-matroska");
+    expect(d!.blockedReason).toMatch(/MKV/i);
   });
 
   it("uses live HLS proxy for channels", () => {
@@ -79,6 +93,17 @@ describe("cast-media-url", () => {
     expect(d!.streamType).toBe("live");
     expect(d!.contentType).toBe("application/vnd.apple.mpegurl");
     expect(d!.url).toContain("cast=1");
+  });
+
+  it("buildTvSafeStreamCopyUrl tags cast=1 and strips compat", () => {
+    const url = buildTvSafeStreamCopyUrl({
+      origin: "https://app.example",
+      proxyPlaybackUrl:
+        "/api/stream?u=1&type=hls&compat=mse",
+    });
+    expect(url).toBe(
+      "https://app.example/api/stream?u=1&type=hls&cast=1"
+    );
   });
 
   it("toAbsoluteAppUrl, sanitizeProxyUrlForCast, appendCastStreamQuery", () => {

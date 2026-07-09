@@ -23,6 +23,22 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.12.0] — 2026-07-09
+
+Cast to TV starts faster and more reliably; iPhone gets real AirPlay.
+
+### Added
+- **Cast pre-warm** — resolve and warm Chromecast-safe HLS while watching so Cast to TV is near-instant.
+- **`/api/cast/resolve`** — server picks a single playable media playlist for live cast.
+- **Persistent Cast button** — Cast in the main player chrome; connected sessions follow channel changes.
+- **iOS AirPlay** — AirPlay picker from the player; Share prioritizes AirPlay and a TV-safe proxied URL.
+
+### Fixed
+- **Title + cast icon, no video** — stop sending master playlists / raw MKV to the default Chromecast receiver.
+- **TV-safe copy URL** — Share copies same-origin `/api/stream?cast=1` instead of the raw provider URL.
+
+---
+
 ## [0.11.14] — 2026-07-07
 
 Mobile live TV recovers when audio plays but the picture stays frozen.

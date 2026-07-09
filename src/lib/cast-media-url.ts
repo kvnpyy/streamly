@@ -7,9 +7,7 @@ import {
   vodNeedsServerTranscodePrep,
   vodTranscodeBaseProxyUrl,
 } from "@/lib/vod-transcode-url";
-import {
-  liveCastPlaylistLooksReady,
-} from "@/lib/cast-live-hls";
+import { liveCastPlaylistLooksReady } from "@/lib/cast-live-hls";
 import type { PlayerSource } from "@/store/player";
 
 export type CastStreamKind = "live" | "buffered";
@@ -18,6 +16,8 @@ export type CastMediaDescriptor = {
   url: string;
   contentType: string;
   streamType: CastStreamKind;
+  /** When set, Chromecast loadMedia must not proceed (e.g. raw MKV). */
+  blockedReason?: string;
 };
 
 export function toAbsoluteAppUrl(origin: string, pathOrUrl: string): string {
@@ -60,6 +60,28 @@ export function normalizeCastLiveManifestUrl(
 ): string {
   const path = sanitizeProxyUrlForCast(manifestUrl, origin);
   return appendCastStreamQuery(toAbsoluteAppUrl(origin, path));
+}
+
+/**
+ * Same-origin proxied URL safe to paste into VLC / Infuse / Apple TV apps.
+ * Prefer cast-tagged playback URL over raw Xtream provider URLs.
+ */
+export function buildTvSafeStreamCopyUrl(opts: {
+  origin: string;
+  /** Active browser / cast proxy playback URL. */
+  proxyPlaybackUrl: string | null | undefined;
+  /** Fallback cast descriptor URL. */
+  castUrl?: string | null;
+}): string | null {
+  const { origin, proxyPlaybackUrl, castUrl } = opts;
+  const raw = castUrl || proxyPlaybackUrl;
+  if (!raw || !origin) return null;
+  try {
+    const path = sanitizeProxyUrlForCast(raw, origin);
+    return appendCastStreamQuery(toAbsoluteAppUrl(origin, path));
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -164,12 +186,37 @@ export function buildCastMediaDescriptor(opts: {
   }
 
   const ext = (current.containerExt || "mp4").toLowerCase();
+
+  // Default Media Receiver cannot play Matroska — require HLS transcode.
+  if (ext === "mkv" || /\.mkv($|[?#])/i.test(proxyPath)) {
+    if (!isVodTranscodeEnabledClient() || !canVodTranscodeProxyUrl(current.url)) {
+      return {
+        url: absolute,
+        contentType: "video/x-matroska",
+        streamType: "buffered",
+        blockedReason:
+          "This title is MKV and cannot cast directly. Enable HLS prep or copy the TV-safe stream URL for VLC.",
+      };
+    }
+    const base =
+      vodTranscodeBaseProxyUrl(proxyPlaybackUrl) ??
+      vodTranscodeBaseProxyUrl(current.url) ??
+      stripVodTranscodeParams(current.url);
+    const seek =
+      seekSec != null && seekSec > 2 ? Math.floor(seekSec) : undefined;
+    const hlsPath = sanitizeProxyUrlForCast(
+      appendVodTranscodeHls(base, { seekSec: seek }),
+      origin
+    );
+    return {
+      url: appendCastStreamQuery(toAbsoluteAppUrl(origin, hlsPath)),
+      contentType: "application/x-mpegURL",
+      streamType: "live",
+    };
+  }
+
   const contentType =
-    ext === "mkv"
-      ? "video/x-matroska"
-      : ext === "webm"
-        ? "video/webm"
-        : "video/mp4";
+    ext === "webm" ? "video/webm" : "video/mp4";
 
   return {
     url: absolute,

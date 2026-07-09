@@ -11,6 +11,17 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.12.0",
+    date: "2026-07-09",
+    summary: "Cast to TV starts faster and more reliably; iPhone gets real AirPlay.",
+    highlights: [
+      "Cast: pre-warm Chromecast-safe HLS while you watch so Cast to TV is near-instant.",
+      "Cast: server resolve picks a playable media playlist — fixes title + cast icon with no video.",
+      "Cast: persistent Cast button, auto-follow when already connected, poster metadata, MKV via HLS only.",
+      "iOS: AirPlay picker from the player; Share copies a TV-safe proxied URL instead of the raw provider link.",
+    ],
+  },
+  {
     version: "0.11.14",
     date: "2026-07-07",
     summary: "Mobile live TV recovers when audio plays but the picture stays frozen.",

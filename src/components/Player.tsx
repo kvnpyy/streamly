@@ -11,7 +11,10 @@ import {
   buildImageProxy,
   buildImageProxyAbsolute,
 } from "@/lib/image-proxy";
-import { buildCastMediaDescriptor } from "@/lib/cast-media-url";
+import {
+  buildCastMediaDescriptor,
+  buildTvSafeStreamCopyUrl,
+} from "@/lib/cast-media-url";
 import {
   appendVodTranscodeHls,
   buildInitialVodPlaybackUrl,
@@ -149,6 +152,8 @@ type VideoWebKit = HTMLVideoElement & {
   /** Preferred on some WKWebView builds (Brave iOS) when webkitEnterFullscreen is flaky. */
   webkitSetPresentationMode?: (mode: "inline" | "fullscreen") => void;
   webkitPresentationMode?: string;
+  webkitShowPlaybackTargetPicker?: () => void;
+  webkitCurrentPlaybackTargetIsWireless?: boolean;
 };
 
 function requestDomFullscreen(target: Element): void {
@@ -882,12 +887,14 @@ export function PlayerOverlay() {
   }, [open, current, creds, tvBrowser, silkLikeClient]);
 
   // iOS / older WebKit: redundant playsinline attrs avoid fullscreen-only decode paths.
+  // x-webkit-airplay allows routing the playing element to Apple TV.
   useEffect(() => {
     if (!open || !current) return;
     const v = videoRef.current;
     if (!v) return;
     v.setAttribute("playsinline", "true");
     v.setAttribute("webkit-playsinline", "true");
+    v.setAttribute("x-webkit-airplay", "allow");
   }, [open, current]);
 
   usePlayerPlaybackPipeline({
@@ -1953,15 +1960,81 @@ export function PlayerOverlay() {
     return Array.isArray(raw) ? raw[0] ?? null : raw;
   }, [isLive]);
 
-  const { castSenderState, castActionMessage, cast } = usePlayerCast({
-    open,
-    showShare,
-    silkLikeClient,
-    castMedia,
-    current,
-    getLiveHlsManifestUrl,
-    onCastStarted,
-  });
+  const { castSenderState, castActionMessage, castSessionConnected, cast } =
+    usePlayerCast({
+      open,
+      showShare,
+      silkLikeClient,
+      castMedia,
+      current,
+      getLiveHlsManifestUrl,
+      onCastStarted,
+    });
+
+  const tvSafeUrl = useMemo(() => {
+    if (typeof window === "undefined") return null;
+    const proxyUrl = vodPlaybackUrl ?? current?.url ?? null;
+    return buildTvSafeStreamCopyUrl({
+      origin: window.location.origin,
+      proxyPlaybackUrl: proxyUrl,
+      castUrl: castMedia?.url ?? null,
+    });
+  }, [vodPlaybackUrl, current?.url, castMedia?.url]);
+
+  const [airPlayAvailable, setAirPlayAvailable] = useState(false);
+
+  useEffect(() => {
+    if (!open || !current) {
+      queueMicrotask(() => setAirPlayAvailable(false));
+      return;
+    }
+    if (!isAppleMobileWebKitDevice()) {
+      queueMicrotask(() => setAirPlayAvailable(false));
+      return;
+    }
+    const v = videoRef.current;
+    if (!v) return;
+
+    const onAvailability = (e: Event) => {
+      const avail = (e as Event & { availability?: string }).availability;
+      setAirPlayAvailable(avail === "available");
+    };
+    v.addEventListener(
+      "webkitplaybacktargetavailabilitychanged",
+      onAvailability
+    );
+    // Optimistic: picker may still work even before the event fires.
+    setAirPlayAvailable(
+      typeof (v as VideoWebKit).webkitShowPlaybackTargetPicker === "function"
+    );
+    return () => {
+      v.removeEventListener(
+        "webkitplaybacktargetavailabilitychanged",
+        onAvailability
+      );
+    };
+  }, [open, current]);
+
+  const showAirPlayPicker = useCallback(() => {
+    const v = videoRef.current as VideoWebKit | null;
+    if (!v?.webkitShowPlaybackTargetPicker) return;
+    try {
+      v.webkitShowPlaybackTargetPicker();
+    } catch {
+      /* gesture / unsupported */
+    }
+  }, []);
+
+  const copyTvSafeUrl = useCallback(async () => {
+    if (!tvSafeUrl) return;
+    try {
+      await navigator.clipboard.writeText(tvSafeUrl);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      /* noop */
+    }
+  }, [tvSafeUrl]);
 
   const copyDirectUrl = useCallback(async () => {
     if (!directUrl) return;
@@ -2755,10 +2828,14 @@ export function PlayerOverlay() {
                           onSwitchLevel={switchLevel}
                           castSenderState={castSenderState}
                           castMedia={castMedia}
+                          castSessionConnected={castSessionConnected}
                           onCast={() => void cast()}
                           castActionMessage={castActionMessage}
+                          airPlayAvailable={airPlayAvailable}
+                          onAirPlay={showAirPlayPicker}
                           copied={copied}
-                          onCopyDirectUrl={() => void copyDirectUrl()}
+                          onCopyTvSafeUrl={() => void copyTvSafeUrl()}
+                          tvSafeUrl={tvSafeUrl}
                           directUrl={directUrl}
                         />
 
