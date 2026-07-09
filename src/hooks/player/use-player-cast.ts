@@ -138,10 +138,12 @@ export function usePlayerCast({
   const getLiveHlsManifestUrlRef = useRef(getLiveHlsManifestUrl);
   const onCastStartedRef = useRef(onCastStarted);
 
-  castMediaRef.current = castMedia;
-  currentRef.current = current;
-  getLiveHlsManifestUrlRef.current = getLiveHlsManifestUrl;
-  onCastStartedRef.current = onCastStarted;
+  useEffect(() => {
+    castMediaRef.current = castMedia;
+    currentRef.current = current;
+    getLiveHlsManifestUrlRef.current = getLiveHlsManifestUrl;
+    onCastStartedRef.current = onCastStarted;
+  }, [castMedia, current, getLiveHlsManifestUrl, onCastStarted]);
 
   const shouldInitCastSdk = open && (!silkLikeClient || showShare);
 
