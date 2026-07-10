@@ -75,7 +75,7 @@ declare global {
           StreamType?: { LIVE: number; BUFFERED: number };
           MediaInfo: new (url: string, contentType: string) => unknown;
           LoadRequest: new (mediaInfo: unknown) => unknown;
-          PlayerState?: { IDLE: number };
+          PlayerState?: { IDLE: number; PLAYING?: number; BUFFERING?: number };
           IdleReason?: { ERROR: number };
           MetadataType?: { GENERIC: number };
           GenericMediaMetadata?: new () => {
@@ -626,13 +626,16 @@ export function usePlayerCast({
           }
         };
 
-        if (mediaSession.playerState === playerState.PLAYING) {
+        if (
+          playerState.PLAYING != null &&
+          mediaSession.playerState === playerState.PLAYING
+        ) {
           markPlaying();
         } else {
           stallTimerRef.current = window.setTimeout(() => {
             stallTimerRef.current = null;
             const state = mediaSession.playerState;
-            if (state === playerState.PLAYING) {
+            if (playerState.PLAYING != null && state === playerState.PLAYING) {
               markPlaying();
               return;
             }
@@ -643,7 +646,10 @@ export function usePlayerCast({
         if (idleReason) {
           const listenerId = mediaSession.addUpdateListener((isAlive) => {
             if (!isAlive) return;
-            if (mediaSession.playerState === playerState.PLAYING) {
+            if (
+              playerState.PLAYING != null &&
+              mediaSession.playerState === playerState.PLAYING
+            ) {
               markPlaying();
               return;
             }
