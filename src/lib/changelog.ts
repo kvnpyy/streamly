@@ -11,6 +11,17 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.12.1",
+    date: "2026-07-10",
+    summary: "Fix Chromecast title-only stall; add cast monitoring.",
+    highlights: [
+      "Cast: always resolve a cast-safe H.264 ladder from the master — never reuse the browser’s HEVC/Dolby rung.",
+      "Cast: live segments keep type=hls (Smarters UA) so Chromecast can fetch IPTV CDNs.",
+      "Cast: 18s stall watchdog when the TV never reaches PLAYING.",
+      "Ops: cast funnel in /api/metrics, client /api/cast/events, token-gated /api/cast/diag.",
+    ],
+  },
+  {
     version: "0.12.0",
     date: "2026-07-09",
     summary: "Cast to TV starts faster and more reliably; iPhone gets real AirPlay.",

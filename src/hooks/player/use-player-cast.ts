@@ -8,12 +8,16 @@ import {
   resolveLiveCastUrlViaServer,
   type CastPreparedMedia,
 } from "@/lib/cast-prepare";
+import { castBreadcrumb } from "@/lib/cast-telemetry";
 import { buildImageProxyAbsolute } from "@/lib/image-proxy";
 import {
   CAST_SENDER_SCRIPT_SRC,
   shouldAttemptChromecastSenderLoad,
 } from "@/lib/player-cast";
 import type { PlayerSource } from "@/store/player";
+
+/** How long after loadMedia before we treat non-PLAYING as a stall. */
+const CAST_PLAYBACK_STALL_MS = 18_000;
 
 export type CastSenderUiState =
   | "inactive"
@@ -92,8 +96,6 @@ export type UsePlayerCastParams = {
   silkLikeClient: boolean;
   castMedia: CastMediaDescriptor | null;
   current: PlayerSource | null;
-  /** Active hls.js media playlist URL while live is playing in the browser. */
-  getLiveHlsManifestUrl?: () => string | null;
   onCastStarted: () => void;
 };
 
@@ -119,7 +121,6 @@ export function usePlayerCast({
   silkLikeClient,
   castMedia,
   current,
-  getLiveHlsManifestUrl,
   onCastStarted,
 }: UsePlayerCastParams) {
   const [castSenderState, setCastSenderState] =
@@ -133,17 +134,24 @@ export function usePlayerCast({
   const prepAbortRef = useRef<AbortController | null>(null);
   const loadInFlightRef = useRef(false);
   const lastAutoLoadedSourceRef = useRef<string | null>(null);
+  const stallTimerRef = useRef<number | null>(null);
+  const mediaListenerIdRef = useRef<number | null>(null);
   const castMediaRef = useRef(castMedia);
   const currentRef = useRef(current);
-  const getLiveHlsManifestUrlRef = useRef(getLiveHlsManifestUrl);
   const onCastStartedRef = useRef(onCastStarted);
 
   useEffect(() => {
     castMediaRef.current = castMedia;
     currentRef.current = current;
-    getLiveHlsManifestUrlRef.current = getLiveHlsManifestUrl;
     onCastStartedRef.current = onCastStarted;
-  }, [castMedia, current, getLiveHlsManifestUrl, onCastStarted]);
+  }, [castMedia, current, onCastStarted]);
+
+  const clearCastWatchdogs = useCallback(() => {
+    if (stallTimerRef.current != null) {
+      window.clearTimeout(stallTimerRef.current);
+      stallTimerRef.current = null;
+    }
+  }, []);
 
   const shouldInitCastSdk = open && (!silkLikeClient || showShare);
 
@@ -158,6 +166,7 @@ export function usePlayerCast({
       lastAutoLoadedSourceRef.current = null;
       prepAbortRef.current?.abort();
       prepAbortRef.current = null;
+      clearCastWatchdogs();
       return;
     }
     if (typeof window === "undefined") return;
@@ -363,7 +372,7 @@ export function usePlayerCast({
         }
       }
     };
-  }, [open, shouldInitCastSdk]);
+  }, [open, shouldInitCastSdk, clearCastWatchdogs]);
 
   /** Background pre-warm while the user watches in-browser. */
   useEffect(() => {
@@ -377,9 +386,7 @@ export function usePlayerCast({
       preparedRef.current = null;
       return;
     }
-    if (
-      isCastPreparedMediaFresh(preparedRef.current, castMedia.url)
-    ) {
+    if (isCastPreparedMediaFresh(preparedRef.current, castMedia.url)) {
       return;
     }
 
@@ -389,9 +396,12 @@ export function usePlayerCast({
     preparedRef.current = null;
 
     const timer = window.setTimeout(() => {
+      castBreadcrumb("cast_prep_start", {
+        kind: currentRef.current?.kind ?? null,
+        channelId: currentRef.current?.id ?? null,
+      });
       void prepareCastPlayUrl(castMedia, {
         origin: window.location.origin,
-        getLiveHlsManifestUrl: getLiveHlsManifestUrlRef.current,
         signal: ac.signal,
         resolveLiveViaServer: (manifestUrl) =>
           resolveLiveCastUrlViaServer(manifestUrl, {
@@ -404,9 +414,20 @@ export function usePlayerCast({
           if (ac.signal.aborted) return;
           if (castMediaRef.current?.url !== prepared.sourceUrl) return;
           preparedRef.current = prepared;
+          castBreadcrumb("cast_prep_ok", {
+            kind: currentRef.current?.kind ?? null,
+            channelId: currentRef.current?.id ?? null,
+            resolvePath: prepared.resolvePath ?? null,
+          });
         })
-        .catch(() => {
-          /* pre-warm is best-effort; cast() will retry */
+        .catch((err) => {
+          if (ac.signal.aborted) return;
+          castBreadcrumb("cast_prep_fail", {
+            kind: currentRef.current?.kind ?? null,
+            channelId: currentRef.current?.id ?? null,
+            message:
+              err instanceof Error ? err.message.slice(0, 120) : "prep_fail",
+          });
         });
     }, 800);
 
@@ -470,10 +491,13 @@ export function usePlayerCast({
         if (!opts?.quiet) {
           setCastActionMessage("Preparing stream for your TV…");
         }
+        castBreadcrumb("cast_prep_start", {
+          kind: src?.kind ?? null,
+          channelId: src?.id ?? null,
+        });
         try {
           prepared = await prepareCastPlayUrl(media, {
             origin: window.location.origin,
-            getLiveHlsManifestUrl: getLiveHlsManifestUrlRef.current,
             resolveLiveViaServer: (manifestUrl) =>
               resolveLiveCastUrlViaServer(manifestUrl, {
                 origin: window.location.origin,
@@ -481,11 +505,21 @@ export function usePlayerCast({
             timeoutMs: 45_000,
           });
           preparedRef.current = prepared;
+          castBreadcrumb("cast_prep_ok", {
+            kind: src?.kind ?? null,
+            channelId: src?.id ?? null,
+            resolvePath: prepared.resolvePath ?? null,
+          });
         } catch (prepErr) {
           const msg =
             prepErr instanceof Error && prepErr.message
               ? prepErr.message
               : "Could not prepare stream for your TV.";
+          castBreadcrumb("cast_prep_fail", {
+            kind: src?.kind ?? null,
+            channelId: src?.id ?? null,
+            message: msg.slice(0, 120),
+          });
           if (!opts?.quiet) {
             setCastActionMessage(
               `${msg} Try again in a moment, or copy the TV-safe stream URL for VLC on your TV.`
@@ -552,33 +586,103 @@ export function usePlayerCast({
         }
         return false;
       }
+
+      clearCastWatchdogs();
       await session.loadMedia(request);
       setCastSessionConnected(true);
       lastAutoLoadedSourceRef.current = media.url;
+      castBreadcrumb("cast_load_media", {
+        kind: src?.kind ?? null,
+        channelId: src?.id ?? null,
+        resolvePath: prepared.resolvePath ?? null,
+        streamType: prepared.streamType,
+      });
 
       const mediaSession = session.getMediaSession?.();
-      if (mediaSession && ChromeMedia.PlayerState && ChromeMedia.IdleReason) {
-        const playerState = ChromeMedia.PlayerState;
-        const idleReason = ChromeMedia.IdleReason;
-        const listenerId = mediaSession.addUpdateListener((isAlive) => {
-          if (!isAlive) return;
-          if (
-            mediaSession.playerState === playerState.IDLE &&
-            mediaSession.idleReason === idleReason.ERROR
-          ) {
+      const playerState = ChromeMedia.PlayerState;
+      const idleReason = ChromeMedia.IdleReason;
+
+      if (mediaSession && playerState) {
+        const markPlaying = () => {
+          clearCastWatchdogs();
+          castBreadcrumb("cast_playing", {
+            kind: src?.kind ?? null,
+            channelId: src?.id ?? null,
+          });
+        };
+
+        const onStall = () => {
+          castBreadcrumb("cast_stall", {
+            kind: src?.kind ?? null,
+            channelId: src?.id ?? null,
+            playerState: mediaSession.playerState ?? null,
+            resolvePath: prepared.resolvePath ?? null,
+          });
+          if (!opts?.quiet) {
             setCastActionMessage(
-              "Your TV could not play this stream (codec or provider block). Try another channel, or copy the TV-safe stream URL for VLC."
+              "Your TV connected but video never started (codec or provider block). Try another channel, or copy the TV-safe stream URL for VLC."
             );
-            window.setTimeout(() => setCastActionMessage(null), 12_000);
-            mediaSession.removeUpdateListener(listenerId);
+            window.setTimeout(() => setCastActionMessage(null), 14_000);
           }
-        });
+        };
+
+        if (mediaSession.playerState === playerState.PLAYING) {
+          markPlaying();
+        } else {
+          stallTimerRef.current = window.setTimeout(() => {
+            stallTimerRef.current = null;
+            const state = mediaSession.playerState;
+            if (state === playerState.PLAYING) {
+              markPlaying();
+              return;
+            }
+            onStall();
+          }, CAST_PLAYBACK_STALL_MS);
+        }
+
+        if (idleReason) {
+          const listenerId = mediaSession.addUpdateListener((isAlive) => {
+            if (!isAlive) return;
+            if (mediaSession.playerState === playerState.PLAYING) {
+              markPlaying();
+              return;
+            }
+            if (
+              mediaSession.playerState === playerState.IDLE &&
+              mediaSession.idleReason === idleReason.ERROR
+            ) {
+              clearCastWatchdogs();
+              castBreadcrumb("cast_idle_error", {
+                kind: src?.kind ?? null,
+                channelId: src?.id ?? null,
+                resolvePath: prepared.resolvePath ?? null,
+              });
+              setCastActionMessage(
+                "Your TV could not play this stream (codec or provider block). Try another channel, or copy the TV-safe stream URL for VLC."
+              );
+              window.setTimeout(() => setCastActionMessage(null), 12_000);
+              mediaSession.removeUpdateListener(listenerId);
+            }
+          });
+          mediaListenerIdRef.current = listenerId;
+        }
+      } else {
+        // No media session API — still arm a soft stall message.
+        stallTimerRef.current = window.setTimeout(() => {
+          stallTimerRef.current = null;
+          castBreadcrumb("cast_stall", {
+            kind: src?.kind ?? null,
+            channelId: src?.id ?? null,
+            resolvePath: prepared.resolvePath ?? null,
+            playerState: "unknown",
+          });
+        }, CAST_PLAYBACK_STALL_MS);
       }
 
       onCastStartedRef.current();
       return true;
     },
-    []
+    [clearCastWatchdogs]
   );
 
   const cast = useCallback(async () => {
@@ -601,6 +705,11 @@ export function usePlayerCast({
               typeof (err as { code: unknown }).code === "number"
             ? String((err as { code: number }).code)
             : null;
+      castBreadcrumb("cast_session_fail", {
+        kind: currentRef.current?.kind ?? null,
+        channelId: currentRef.current?.id ?? null,
+        code: code ?? null,
+      });
       setCastActionMessage(
         code
           ? `Cast failed (${code}). Try again, use another receiver, or copy the TV-safe stream URL for VLC on your TV.`

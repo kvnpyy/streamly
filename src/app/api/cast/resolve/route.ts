@@ -1,4 +1,5 @@
 import { resolveLiveCastPlayUrlServer } from "@/lib/cast-resolve-server";
+import { recordCastMetric } from "@/lib/cast-metrics";
 import {
   isAllowedStreamProxyUserAgent,
   isStreamProxyUaCheckDisabled,
@@ -38,6 +39,7 @@ export async function GET(req: NextRequest) {
       origin,
       signal: req.signal,
     });
+    recordCastMetric("cast_resolve_ok");
     return NextResponse.json(
       { playUrl },
       {
@@ -48,6 +50,7 @@ export async function GET(req: NextRequest) {
       }
     );
   } catch (err) {
+    recordCastMetric("cast_resolve_fail");
     const message =
       err instanceof Error && err.message
         ? err.message

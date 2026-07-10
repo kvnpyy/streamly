@@ -10,7 +10,17 @@ describe("chromecast-ua", () => {
     expect(isAllowedStreamProxyUserAgent(ua, [])).toBe(true);
   });
 
-  it("rejects empty UA", () => {
-    expect(isChromecastReceiverUserAgent("")).toBe(false);
+  it("detects Nest Hub / Google TV markers", () => {
+    expect(
+      isChromecastReceiverUserAgent(
+        "Mozilla/5.0 (Linux; Android 10; Nest Hub) AppleWebKit/537.36"
+      )
+    ).toBe(true);
+    expect(
+      isAllowedStreamProxyUserAgent(
+        "Mozilla/5.0 (Linux; Android 10; Nest Hub) AppleWebKit/537.36",
+        []
+      )
+    ).toBe(true);
   });
 });

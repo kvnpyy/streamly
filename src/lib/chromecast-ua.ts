@@ -7,6 +7,9 @@ const CAST_RECEIVER_MARKERS = [
   "GoogleCast",
   "CastPlayer",
   "Chromecast",
+  /** Nest Hub / some Google TV builds */
+  "Nest Hub",
+  "Google TV",
 ] as const;
 
 export function isChromecastReceiverUserAgent(userAgent: string): boolean {

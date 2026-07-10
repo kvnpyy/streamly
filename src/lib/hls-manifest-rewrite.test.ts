@@ -26,4 +26,21 @@ describe("rewriteHlsManifest", () => {
     expect(out).toContain("compat=mse");
     expect(out).not.toMatch(/URI="http:\/\//);
   });
+
+  it("cast live manifests keep type=hls on segments (Smarters UA, not VLC)", () => {
+    const raw = [
+      "#EXTM3U",
+      "#EXTINF:6,",
+      "http://192.168.0.2:25461/live/user/pass/100.ts",
+    ].join("\n");
+    const out = rewriteHlsManifest(raw, base, {
+      compatMse: false,
+      forCast: true,
+      proxyOrigin: "https://app.example",
+    });
+    expect(out).toContain("https://app.example/api/stream?u=");
+    expect(out).toContain("type=hls");
+    expect(out).toContain("cast=1");
+    expect(out).not.toContain("type=vod");
+  });
 });

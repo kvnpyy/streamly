@@ -23,6 +23,22 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.12.1] — 2026-07-10
+
+Fix Chromecast title-only stall; add cast monitoring.
+
+### Fixed
+- **Cast HEVC reuse** — stop sending the browser’s active HLS level (often HEVC/Dolby); always resolve a cast-safe rung from the master.
+- **Cast live segment UA** — keep `type=hls` on cast live segments so upstream uses Smarters UA (VLC UA was 403ing many CDNs).
+- **Cast stall detection** — if the TV never reaches PLAYING within ~18s, show an actionable error instead of silent title+icon.
+
+### Added
+- **Cast metrics** — funnel counters in `/api/metrics` (`cast.prep_*`, `cast_stall`, `cast_stream_4xx`, …).
+- **`/api/cast/events`** — client reports prep/load/playing/stall for the funnel.
+- **`/api/cast/diag`** — token-gated probe (browser vs Chromecast UA + first segment) for support debugging.
+
+---
+
 ## [0.12.0] — 2026-07-09
 
 Cast to TV starts faster and more reliably; iPhone gets real AirPlay.

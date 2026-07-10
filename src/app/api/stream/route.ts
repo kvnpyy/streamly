@@ -8,6 +8,8 @@ import {
 } from "@/lib/stream-manifest-cache";
 import { clientIp } from "@/lib/client-ip";
 import { recordIptvApiError } from "@/lib/iptv-api-error-metrics";
+import { recordCastMetric } from "@/lib/cast-metrics";
+import { isChromecastReceiverUserAgent } from "@/lib/chromecast-ua";
 import { newRequestId, STREAM_PROXY_REQUEST_ID_HEADER } from "@/lib/request-id";
 import { passthroughStreamWithGracefulClose } from "@/lib/stream-proxy-passthrough";
 import {
@@ -160,6 +162,9 @@ async function handle(req: NextRequest, head: boolean) {
   if (!isStreamProxyUaCheckDisabled()) {
     const extras = streamProxyUaAllowExtraFromEnv();
     if (!isAllowedStreamProxyUserAgent(ua, extras)) {
+      if (new URL(req.url).searchParams.get("cast") === "1") {
+        recordCastMetric("cast_stream_forbidden_ua");
+      }
       return new Response("Forbidden", {
         status: 403,
         headers: corsHeaders({ "content-type": "text/plain" }, requestId),
@@ -369,7 +374,11 @@ async function handle(req: NextRequest, head: boolean) {
   }
   // Pick the UA most likely to keep this provider happy for this kind of
   // request (see comment near IPTV_UA_HLS / IPTV_UA_VOD).
-  fwdHeaders.set("user-agent", type === "hls" ? IPTV_UA_HLS : IPTV_UA_VOD);
+  // Live cast must use HLS/Smarters UA even if a stale manifest still has
+  // type=vod on segments — VLC UA often 403s live CDNs on Chromecast.
+  const useHlsUa =
+    type === "hls" || (forCast && url.searchParams.get("transcode") !== "hls");
+  fwdHeaders.set("user-agent", useHlsUa ? IPTV_UA_HLS : IPTV_UA_VOD);
   // Some providers also check Referer / Origin. Spoof it as the upstream.
   fwdHeaders.set(
     "referer",
@@ -421,8 +430,14 @@ async function handle(req: NextRequest, head: boolean) {
 
   if (upstream.status >= 400 && upstream.status < 500) {
     recordIptvApiError("stream_upstream_4xx");
+    if (forCast || isChromecastReceiverUserAgent(ua)) {
+      recordCastMetric("cast_stream_4xx");
+    }
   } else if (upstream.status >= 500) {
     recordIptvApiError("stream_upstream_5xx");
+    if (forCast || isChromecastReceiverUserAgent(ua)) {
+      recordCastMetric("cast_stream_5xx");
+    }
   }
 
   const contentType = upstream.headers.get("content-type");

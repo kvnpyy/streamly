@@ -1,6 +1,5 @@
 import {
   appendCastStreamQuery,
-  normalizeCastLiveManifestUrl,
   waitForCastPlaylistReady,
   type CastMediaDescriptor,
   type CastStreamKind,
@@ -14,6 +13,8 @@ export type CastPreparedMedia = {
   /** Descriptor URL this prep was built from (invalidation key). */
   sourceUrl: string;
   preparedAt: number;
+  /** How the live URL was resolved (for telemetry). */
+  resolvePath?: "server" | "client" | "vod" | "direct";
 };
 
 export const CAST_PREP_FRESH_MS = 90_000;
@@ -30,13 +31,14 @@ export function isCastPreparedMediaFresh(
 
 /**
  * Resolve + warm the exact URL Chromecast will loadMedia().
- * Live: media playlist only. VOD: wait until HLS/transcode playlist has segments.
+ * Live: always walk from the master cast URL to a cast-safe media playlist.
+ * Never reuse the browser's active hls.js level — that rung is often HEVC/Dolby
+ * that Chromecast's default receiver cannot decode (title + icon, no video).
  */
 export async function prepareCastPlayUrl(
   castMedia: CastMediaDescriptor,
   opts?: {
     origin?: string;
-    getLiveHlsManifestUrl?: () => string | null;
     signal?: AbortSignal;
     /** Prefer server resolve for live masters (falls back to client walk). */
     resolveLiveViaServer?: (manifestUrl: string) => Promise<string>;
@@ -48,9 +50,7 @@ export async function prepareCastPlayUrl(
   }
 
   let playUrl = castMedia.url;
-  const origin =
-    opts?.origin ??
-    (typeof window !== "undefined" ? window.location.origin : "");
+  let resolvePath: CastPreparedMedia["resolvePath"] = "direct";
 
   const isHls =
     /mpegurl/i.test(castMedia.contentType) ||
@@ -60,22 +60,22 @@ export async function prepareCastPlayUrl(
     isHls && castMedia.contentType === "application/vnd.apple.mpegurl";
 
   if (isLiveChannel) {
-    const levelUrl = opts?.getLiveHlsManifestUrl?.() ?? null;
-    if (levelUrl && origin) {
-      playUrl = normalizeCastLiveManifestUrl(origin, levelUrl);
-    }
+    playUrl = appendCastStreamQuery(castMedia.url);
     if (opts?.resolveLiveViaServer) {
       try {
         playUrl = await opts.resolveLiveViaServer(playUrl);
+        resolvePath = "server";
       } catch {
         playUrl = await resolveCastLiveHlsUrl(playUrl, {
           signal: opts?.signal,
         });
+        resolvePath = "client";
       }
     } else {
       playUrl = await resolveCastLiveHlsUrl(playUrl, {
         signal: opts?.signal,
       });
+      resolvePath = "client";
     }
     playUrl = appendCastStreamQuery(playUrl);
     await waitForCastPlaylistReady(playUrl, {
@@ -84,12 +84,14 @@ export async function prepareCastPlayUrl(
     });
   } else if (isHls) {
     playUrl = appendCastStreamQuery(playUrl);
+    resolvePath = "vod";
     await waitForCastPlaylistReady(playUrl, {
       signal: opts?.signal,
       timeoutMs: opts?.timeoutMs ?? 45_000,
     });
   } else {
     playUrl = appendCastStreamQuery(playUrl);
+    resolvePath = "direct";
   }
 
   return {
@@ -98,6 +100,7 @@ export async function prepareCastPlayUrl(
     streamType: castMedia.streamType,
     sourceUrl: castMedia.url,
     preparedAt: Date.now(),
+    resolvePath,
   };
 }
 
@@ -118,10 +121,15 @@ export async function resolveLiveCastUrlViaServer(
     signal: opts?.signal,
   });
   if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(
-      text.trim() || `Cast resolve failed (${res.status}).`
-    );
+    let message = `Cast resolve failed (${res.status}).`;
+    try {
+      const data = (await res.json()) as { error?: string };
+      if (data.error?.trim()) message = data.error.trim();
+    } catch {
+      const text = await res.text().catch(() => "");
+      if (text.trim()) message = text.trim();
+    }
+    throw new Error(message);
   }
   const data = (await res.json()) as { playUrl?: string };
   if (!data.playUrl || typeof data.playUrl !== "string") {

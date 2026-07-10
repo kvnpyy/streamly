@@ -16,18 +16,15 @@ export function rewriteHlsManifest(
   const castQs = opts.forCast ? "&cast=1" : "";
   const prefix = opts.proxyOrigin?.replace(/\/+$/, "") ?? "";
 
-  const upstreamStreamType = (upstreamAbs: string): "hls" | "vod" => {
-    try {
-      if (/\.m3u8(\?|$)/i.test(new URL(upstreamAbs).pathname)) return "hls";
-    } catch {
-      if (/\.m3u8(\?|$)/i.test(upstreamAbs)) return "hls";
-    }
-    return "vod";
-  };
-
+  /**
+   * Always `type=hls` on this rewrite path (live IPTV masters/media playlists).
+   * Cast previously used `type=vod` for `.ts` segments so range responses worked,
+   * but that switched upstream UA to VLC and broke many live CDNs on Chromecast
+   * (manifest OK → title shown → segments 403 → forever buffering).
+   * VOD cast uses `rewriteTranscodeManifest` with `type=vod&transcode=hls` instead.
+   */
   const proxyLine = (upstreamAbs: string) => {
-    const typeParam = opts.forCast ? upstreamStreamType(upstreamAbs) : "hls";
-    const rel = `/api/stream?u=${encodeURIComponent(upstreamAbs)}&type=${typeParam}${compatQs}${castQs}`;
+    const rel = `/api/stream?u=${encodeURIComponent(upstreamAbs)}&type=hls${compatQs}${castQs}`;
     return prefix ? `${prefix}${rel}` : rel;
   };
 

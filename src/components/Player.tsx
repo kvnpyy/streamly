@@ -1944,22 +1944,6 @@ export function PlayerOverlay() {
 
   const onCastStarted = useCallback(() => setShowShare(false), []);
 
-  const getLiveHlsManifestUrl = useCallback(() => {
-    if (!isLive) return null;
-    const hls = hlsRef.current;
-    if (!hls?.levels?.length) return null;
-    const idx =
-      hls.currentLevel >= 0
-        ? hls.currentLevel
-        : hls.loadLevel >= 0
-          ? hls.loadLevel
-          : hls.levels.length - 1;
-    const level = idx >= 0 ? hls.levels[idx] : null;
-    const raw = level?.url;
-    if (!raw) return null;
-    return Array.isArray(raw) ? raw[0] ?? null : raw;
-  }, [isLive]);
-
   const { castSenderState, castActionMessage, castSessionConnected, cast } =
     usePlayerCast({
       open,
@@ -1967,7 +1951,6 @@ export function PlayerOverlay() {
       silkLikeClient,
       castMedia,
       current,
-      getLiveHlsManifestUrl,
       onCastStarted,
     });
 
