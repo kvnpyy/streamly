@@ -17,7 +17,7 @@ import type { LiveStream, XtreamCredentials } from "@/lib/xtream-types";
 import { VirtualLiveChannelGrid } from "@/components/VirtualMediaCatalogGrid";
 import { LIVE_LIST_MAX_CHANNELS } from "@/lib/live-guide-limits";
 import { useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Play, Radio, Search, X } from "lucide-react";
+import { ArrowLeft, Heart, Play, Radio, Search, X } from "lucide-react";
 import {
   memo,
   useCallback,
@@ -43,6 +43,8 @@ export type TvCategoryViewProps = {
   creds?: XtreamCredentials;
   /** Category label for iptv-org region matching (e.g. "USA | Entertainment"). */
   categoryTitle?: string;
+  isFavorite?: (id: number) => boolean;
+  onToggleFavorite?: (c: LiveStream) => void;
 };
 
 // ---------------------------------------------------------------------------
@@ -83,6 +85,8 @@ export function TvCategoryView({
   onBack,
   creds,
   categoryTitle,
+  isFavorite,
+  onToggleFavorite,
 }: TvCategoryViewProps) {
   const listRef = useRef<HTMLDivElement>(null);
   const queryClient = useQueryClient();
@@ -434,6 +438,8 @@ export function TvCategoryView({
                 active={c.stream_id === activeStreamId}
                 onPlay={onPlay}
                 creds={creds}
+                favorite={isFavorite?.(c.stream_id) ?? false}
+                onToggleFavorite={onToggleFavorite}
               />
             )}
           />
@@ -461,6 +467,8 @@ type ChannelRowProps = {
   active: boolean;
   onPlay: (c: LiveStream) => void;
   creds?: XtreamCredentials;
+  favorite: boolean;
+  onToggleFavorite?: (c: LiveStream) => void;
 };
 
 const ChannelRow = memo(
@@ -470,6 +478,8 @@ const ChannelRow = memo(
     active,
     onPlay,
     creds,
+    favorite,
+    onToggleFavorite,
   }: ChannelRowProps) {
     const rowRef = useRef<HTMLDivElement>(null);
     const iconBg = proxiedCssBackground(channel.stream_icon, creds?.server);
@@ -562,6 +572,31 @@ const ChannelRow = memo(
           )}
         </div>
 
+        {/* My List heart — always visible when favorited; hover/focus otherwise */}
+        {onToggleFavorite && (
+          <button
+            type="button"
+            aria-label={favorite ? "Remove from My List" : "Add to My List"}
+            aria-pressed={favorite}
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleFavorite(channel);
+            }}
+            onKeyDown={(e) => e.stopPropagation()}
+            className={[
+              "shrink-0 size-11 rounded-full border flex items-center justify-center transition-all",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-400/70",
+              favorite
+                ? "opacity-100 bg-red-500/15 border-red-400/35 text-red-400"
+                : "opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 focus-visible:opacity-100 bg-white/6 border-white/12 text-white/50 hover:text-white hover:bg-white/12",
+            ].join(" ")}
+          >
+            <Heart
+              className={["size-5", favorite ? "fill-current" : ""].join(" ")}
+            />
+          </button>
+        )}
+
         {/* Play chevron — appears on hover/focus */}
         <div className="shrink-0 opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 transition-opacity">
           <div className="size-11 rounded-full bg-purple-500/25 border border-purple-400/35 flex items-center justify-center">
@@ -581,7 +616,9 @@ const ChannelRow = memo(
     prev.channel.stream_icon === next.channel.stream_icon &&
     prev.channel.num === next.channel.num &&
     prev.nowPlaying === next.nowPlaying &&
-    prev.active === next.active
+    prev.active === next.active &&
+    prev.favorite === next.favorite &&
+    prev.onToggleFavorite === next.onToggleFavorite
 );
 
 // ---------------------------------------------------------------------------

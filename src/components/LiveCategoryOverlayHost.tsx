@@ -30,11 +30,21 @@ export function LiveCategoryOverlayHost() {
   const playerOpen = usePlayer((s) => s.open);
   const activeStreamId = usePlayer((s) => s.current?.id);
   const addRecent = usePrefs((s) => s.addRecent);
+  const favorites = usePrefs((s) => s.favorites);
+  const toggleFavorite = usePrefs((s) => s.toggleFavorite);
   const storedTvRegion = usePrefs((s) => s.tvRegionFilter);
   const tvRegion =
     coerceTvRegion(storedTvRegion) ?? detectRegionFromTimezone();
   const { openCategoryId, openCategoryTitle, closeCategory } =
     useLiveOpenCategory();
+
+  const favoriteLiveIds = useMemo(() => {
+    const ids = new Set<number>();
+    for (const f of favorites) {
+      if (f.kind === "live") ids.add(f.id);
+    }
+    return ids;
+  }, [favorites]);
 
   const isLivePage = pathname === LIVE_PAGE_PATH;
 
@@ -96,6 +106,21 @@ export function LiveCategoryOverlayHost() {
     [addRecent, creds, openCategoryChannels]
   );
 
+  const onToggleFavorite = useCallback(
+    (c: LiveStream) => {
+      toggleFavorite({
+        kind: "live",
+        id: c.stream_id,
+        name: c.name,
+        icon: c.stream_icon,
+        ...(c.direct_source?.trim()
+          ? { meta: { direct_source: c.direct_source.trim() } }
+          : {}),
+      });
+    },
+    [toggleFavorite]
+  );
+
   if (!creds || !isLivePage || playerOpen || !openCategoryId) {
     return null;
   }
@@ -112,6 +137,8 @@ export function LiveCategoryOverlayHost() {
       creds={creds}
       onPlay={onPlay}
       onBack={closeCategory}
+      isFavorite={(id) => favoriteLiveIds.has(id)}
+      onToggleFavorite={onToggleFavorite}
     />
   );
 }
