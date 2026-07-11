@@ -11,6 +11,15 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.13.0",
+    date: "2026-07-11",
+    summary: "Favorite channels from the All Channels category popout.",
+    highlights: [
+      "Live: heart toggle on category overlay channel rows (“See all”) to add or remove from My List.",
+      "My List: same local prefs + cloud sync as the rest of the app.",
+    ],
+  },
+  {
     version: "0.12.1",
     date: "2026-07-10",
     summary: "Fix Chromecast title-only stall; add cast monitoring.",

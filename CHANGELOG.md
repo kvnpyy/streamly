@@ -23,6 +23,15 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.13.0] — 2026-07-11
+
+Favorite channels from the All Channels category popout.
+
+### Added
+- **Category overlay My List** — heart toggle on each channel row when you open a category from All Channels (“See all”), synced with My List prefs and cloud favorites.
+
+---
+
 ## [0.12.1] — 2026-07-10
 
 Fix Chromecast title-only stall; add cast monitoring.
