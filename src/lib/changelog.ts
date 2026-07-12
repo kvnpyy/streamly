@@ -11,6 +11,16 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.13.1",
+    date: "2026-07-11",
+    summary: "Fix Live TV black screen on smart TVs after opening a channel.",
+    highlights: [
+      "Player: delay background suspend so brief TV visibility flickers no longer pause HLS forever.",
+      "Player: wake from pagehide/pageshow always resumes loading (not only bfcache).",
+      "Player: after a real suspend, video.play() also restarts hls.js startLoad().",
+    ],
+  },
+  {
     version: "0.13.0",
     date: "2026-07-11",
     summary: "Favorite channels from the All Channels category popout.",

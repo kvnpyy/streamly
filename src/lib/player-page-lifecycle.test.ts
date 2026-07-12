@@ -3,7 +3,23 @@ import {
   PLAYER_BACKGROUND_SUSPEND_MS,
   PLAYER_LONG_BACKGROUND_MS,
   planBackgroundRecovery,
+  shouldDeferBackgroundSuspend,
 } from "@/lib/player-page-lifecycle";
+
+describe("shouldDeferBackgroundSuspend", () => {
+  it("defers suspend during brief TV visibility flickers", () => {
+    expect(shouldDeferBackgroundSuspend(0)).toBe(true);
+    expect(shouldDeferBackgroundSuspend(PLAYER_BACKGROUND_SUSPEND_MS - 1)).toBe(
+      true
+    );
+  });
+
+  it("allows suspend after the background threshold", () => {
+    expect(shouldDeferBackgroundSuspend(PLAYER_BACKGROUND_SUSPEND_MS)).toBe(
+      false
+    );
+  });
+});
 
 describe("planBackgroundRecovery", () => {
   it("ignores very short background", () => {

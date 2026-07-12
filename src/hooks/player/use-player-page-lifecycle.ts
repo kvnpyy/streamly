@@ -8,6 +8,7 @@ import {
   applySoftLiveHlsRecovery,
 } from "@/lib/live-hls-playback";
 import {
+  PLAYER_BACKGROUND_SUSPEND_MS,
   planBackgroundRecovery,
   type BackgroundContentKind,
 } from "@/lib/player-page-lifecycle";
@@ -25,8 +26,31 @@ export type UsePlayerPageLifecycleParams = {
 };
 
 /**
+ * Restart fragment loading after a background `stopLoad()`, then resume playback.
+ * `video.play()` alone leaves live TV black after suspend.
+ */
+function resumeAfterSuspend(
+  video: HTMLVideoElement,
+  hls: InstanceType<typeof Hls> | null
+): void {
+  if (hls) {
+    try {
+      hls.startLoad();
+    } catch {
+      /* noop */
+    }
+  }
+  voidSafeVideoPlay(video);
+}
+
+/**
  * Suspend media on tab/TV sleep; recover on wake without sync `video.load()`.
  * Listens to visibilitychange, pagehide/pageshow (bfcache), and freeze/resume.
+ *
+ * Critical: do **not** pause/`stopLoad` on the first hidden tick. TV browsers (Silk,
+ * Tizen, webOS) often fire brief visibility flickers when opening the player; an
+ * immediate suspend + “ignore short background” recovery left live streams paused
+ * forever (black screen, all channels).
  */
 export function usePlayerPageLifecycle(p: UsePlayerPageLifecycleParams) {
   const {
@@ -40,6 +64,7 @@ export function usePlayerPageLifecycle(p: UsePlayerPageLifecycleParams) {
 
   const hiddenAtRef = useRef(0);
   const suspendedRef = useRef(false);
+  const suspendTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (!open || !current) return;
@@ -47,11 +72,23 @@ export function usePlayerPageLifecycle(p: UsePlayerPageLifecycleParams) {
     const contentKind: BackgroundContentKind =
       current.kind === "live" ? "live" : current.kind === "series" ? "series" : "vod";
 
+    const clearSuspendTimer = () => {
+      if (suspendTimerRef.current != null) {
+        clearTimeout(suspendTimerRef.current);
+        suspendTimerRef.current = null;
+      }
+    };
+
     const markBackground = () => {
       if (!hiddenAtRef.current) hiddenAtRef.current = Date.now();
-      if (suspendedRef.current) return;
-      suspendPlayerMediaForBackground(videoRef.current, hlsRef.current);
-      suspendedRef.current = true;
+      if (suspendedRef.current || suspendTimerRef.current != null) return;
+      suspendTimerRef.current = setTimeout(() => {
+        suspendTimerRef.current = null;
+        // Woke before the delay elapsed (recover cleared hiddenAt).
+        if (!hiddenAtRef.current || suspendedRef.current) return;
+        suspendPlayerMediaForBackground(videoRef.current, hlsRef.current);
+        suspendedRef.current = true;
+      }, PLAYER_BACKGROUND_SUSPEND_MS);
     };
 
     const applyRecoveryPlan = (hiddenMs: number) => {
@@ -67,9 +104,11 @@ export function usePlayerPageLifecycle(p: UsePlayerPageLifecycleParams) {
 
       switch (plan.action) {
         case "none":
+          // Safety net: we only reach here after a real suspend; always resume.
+          resumeAfterSuspend(video, hlsRef.current);
           return;
         case "play":
-          voidSafeVideoPlay(video);
+          resumeAfterSuspend(video, hlsRef.current);
           return;
         case "full-reinit":
           onWakeFullReinit();
@@ -104,7 +143,15 @@ export function usePlayerPageLifecycle(p: UsePlayerPageLifecycleParams) {
     };
 
     const recoverFromBackground = () => {
-      if (!suspendedRef.current || hiddenAtRef.current <= 0) return;
+      clearSuspendTimer();
+      if (!hiddenAtRef.current) return;
+
+      // Brief flicker — never reached stopLoad/pause. Leave playback alone.
+      if (!suspendedRef.current) {
+        hiddenAtRef.current = 0;
+        return;
+      }
+
       const hiddenMs = Date.now() - hiddenAtRef.current;
       hiddenAtRef.current = 0;
       suspendedRef.current = false;
@@ -125,8 +172,9 @@ export function usePlayerPageLifecycle(p: UsePlayerPageLifecycleParams) {
       markBackground();
     };
 
-    const onPageShow = (event: PageTransitionEvent) => {
-      if (event.persisted) recoverFromBackground();
+    const onPageShow = () => {
+      // TV WebViews often fire pageshow without bfcache (`persisted=false`) on wake.
+      recoverFromBackground();
     };
 
     const onFreeze = () => {
@@ -144,6 +192,7 @@ export function usePlayerPageLifecycle(p: UsePlayerPageLifecycleParams) {
     document.addEventListener("resume", onResume);
 
     return () => {
+      clearSuspendTimer();
       document.removeEventListener("visibilitychange", onVisibilityChange);
       window.removeEventListener("pagehide", onPageHide);
       window.removeEventListener("pageshow", onPageShow);

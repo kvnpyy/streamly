@@ -4,6 +4,18 @@ export const PLAYER_BACKGROUND_SUSPEND_MS = 5_000;
 /** VOD transcode / stale MSE usually needs a full pipeline reinit after this long. */
 export const PLAYER_LONG_BACKGROUND_MS = 60_000;
 
+/**
+ * Delay before pause/`stopLoad` on hide. Brief TV visibility flickers must not
+ * suspend live playback — recovery used to ignore short backgrounds and left a
+ * permanent black screen.
+ */
+export function shouldDeferBackgroundSuspend(
+  hiddenMs: number,
+  minSuspendMs = PLAYER_BACKGROUND_SUSPEND_MS
+): boolean {
+  return hiddenMs < minSuspendMs;
+}
+
 export type BackgroundContentKind = "live" | "vod" | "series";
 
 export type BackgroundRecoveryPlan =

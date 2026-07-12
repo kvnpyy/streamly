@@ -23,6 +23,15 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.13.1] — 2026-07-11
+
+Fix Live TV black screen on smart TVs after opening a channel.
+
+### Fixed
+- **TV live black screen** — brief visibility/pagehide flickers on Silk/Tizen/webOS no longer pause HLS without resume; wake always restarts `startLoad()`.
+
+---
+
 ## [0.13.0] — 2026-07-11
 
 Favorite channels from the All Channels category popout.
