@@ -23,6 +23,11 @@ const CLIENT_REPORTABLE: ReadonlySet<CastMetricEvent> = new Set([
   "cast_session_fail",
 ]);
 
+const SENTRY_ISSUE_EVENTS: ReadonlySet<CastBreadcrumbEvent> = new Set([
+  "cast_stall",
+  "cast_idle_error",
+]);
+
 /** Map breadcrumb names to metrics counters where they align. */
 function metricForBreadcrumb(
   event: CastBreadcrumbEvent
@@ -71,11 +76,7 @@ export function castBreadcrumb(
         level,
         data: safe,
       });
-      if (
-        event === "cast_stall" ||
-        event === "cast_idle_error" ||
-        event === "cast_session_fail"
-      ) {
+      if (SENTRY_ISSUE_EVENTS.has(event)) {
         Sentry.captureMessage(`cast:${event}`, {
           level: "warning",
           tags: {
