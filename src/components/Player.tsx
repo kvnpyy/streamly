@@ -985,8 +985,67 @@ export function PlayerOverlay() {
     setError(null);
     setStalled(false);
     setLoading(true);
+
+    /**
+     * Long background → full reinit used to `setTime(0)` and reload without
+     * `tc_seek` / timeline hold, so pause → break → play restarted at 00:00.
+     */
+    if (current && current.kind !== "live") {
+      const v = videoRef.current;
+      const off = usesTranscodePlayback ? vodStartOffsetRef.current : 0;
+      let absolute = playbackTimeRef.current;
+      if (v && Number.isFinite(v.currentTime)) {
+        absolute = Math.max(absolute, off + v.currentTime);
+      }
+      const resumeKey = creds
+        ? vodResumeStorageKey(browseAccountKey(creds), current)
+        : null;
+      if (resumeKey) {
+        const saved = usePrefs.getState().getVodResume(resumeKey);
+        if (saved != null && Number.isFinite(saved)) {
+          absolute = Math.max(absolute, saved);
+        }
+      }
+      absolute = Math.max(0, absolute);
+      const durationSec =
+        vodDurationHintRef.current > 1
+          ? vodDurationHintRef.current
+          : vodTotalSec > 1
+            ? vodTotalSec
+            : undefined;
+      if (
+        resumeKey &&
+        durationSec &&
+        shouldPersistVodResume(absolute, durationSec)
+      ) {
+        usePrefs.getState().saveVodResume(resumeKey, absolute);
+      }
+
+      if (absolute >= 15) {
+        const onTranscode =
+          usesTranscodePlayback ||
+          playbackUrlUsesVodTranscode(vodPlaybackUrl ?? current.url);
+        if (onTranscode) {
+          restartTranscodeAtSeek(absolute);
+          return;
+        }
+        vodTimelineHoldRef.current = {
+          absoluteTimeSec: absolute,
+          startOffsetSec: 0,
+          durationSec,
+        };
+      }
+    }
+
     setPlaybackRetryKey((k) => k + 1);
-  }, []);
+  }, [
+    current,
+    creds,
+    usesTranscodePlayback,
+    vodPlaybackUrl,
+    vodTotalSec,
+    restartTranscodeAtSeek,
+  ]);
 
   usePlayerPageLifecycle({
     open,

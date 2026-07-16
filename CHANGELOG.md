@@ -23,6 +23,16 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.13.5] — 2026-07-16
+
+Resume VOD after a break at the right time — not 00:00.
+
+### Fixed
+- **Pause → break → play at 00:00** — wake full-reinit now restores absolute position / `tc_seek` instead of cold-starting the episode.
+- **Duplicate ffmpeg** — serialize per-job spawn so concurrent resume paths cannot orphan multiple encodes on one cache dir.
+
+---
+
 ## [0.13.4] — 2026-07-16
 
 Stop mid-episode Unable to play when the VPS is briefly overloaded.

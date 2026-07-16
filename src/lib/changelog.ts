@@ -11,6 +11,15 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.13.5",
+    date: "2026-07-16",
+    summary: "Resume VOD after a break at the right time — not 00:00.",
+    highlights: [
+      "Player: long-background wake reinit keeps continue-watching position and tc_seek.",
+      "VOD: serialize ffmpeg spawn so concurrent resumes cannot orphan duplicate encodes.",
+    ],
+  },
+  {
     version: "0.13.4",
     date: "2026-07-16",
     summary: "Stop mid-episode Unable to play when the VPS is briefly overloaded.",

@@ -524,6 +524,8 @@ export function releaseVodTranscodeJobs(upstream: string): number {
 const ensureJobInflight = new Map<string, Promise<TranscodeJob>>();
 /** Prevents duplicate ffmpeg spawns when ensureEncodingContinues races. */
 const beginTranscodeInflight = new Set<string>();
+/** Serialize spawn per job — concurrent callers used to orphan multiple ffmpeg on one dir. */
+const spawnFfmpegInflight = new Set<string>();
 
 function activeTranscodeCount(): number {
   let n = 0;
@@ -899,11 +901,37 @@ async function spawnFfmpeg(
   audioStreamIndex?: number | null
 ): Promise<void> {
   if (job.proc && job.proc.exitCode == null) return;
+  if (spawnFfmpegInflight.has(job.key)) return;
+  if (activeTranscodeCount() >= maxConcurrentJobs()) {
+    job.state = "queued";
+    return;
+  }
+  spawnFfmpegInflight.add(job.key);
+  try {
+    await spawnFfmpegLocked(job, plan, resume, audioStreamIndex);
+  } finally {
+    spawnFfmpegInflight.delete(job.key);
+  }
+}
+
+async function spawnFfmpegLocked(
+  job: TranscodeJob,
+  plan: VodTranscodePlan,
+  resume?: { seekInSourceSec: number; startSegmentNumber: number },
+  audioStreamIndex?: number | null
+): Promise<void> {
+  if (job.proc && job.proc.exitCode == null) return;
   if (activeTranscodeCount() >= maxConcurrentJobs()) {
     job.state = "queued";
     return;
   }
   await fsp.mkdir(job.dir, { recursive: true });
+  // Re-check after await — another caller may have started ffmpeg.
+  if (job.proc && job.proc.exitCode == null) return;
+  if (activeTranscodeCount() >= maxConcurrentJobs()) {
+    job.state = "queued";
+    return;
+  }
   const upstreamUrl = job.upstream;
   const refererHost = upstreamReferer(upstreamUrl);
   const segSec = hlsSegmentSeconds();
