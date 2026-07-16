@@ -7,6 +7,7 @@ import {
   manifestReferencesMissingOrGappedSegments,
   MAX_IN_PROGRESS_PLAYLIST_SEGMENTS,
   parseStreamlyDurationSec,
+  IN_PROGRESS_ENCODE_EDGE_HOLDBACK,
   prepareManifestForPlayback,
   rewriteTranscodeManifest,
   trimContiguousSegmentsFromStart,
@@ -45,9 +46,29 @@ describe("rewriteTranscodeManifest", () => {
     const out = prepareManifestForPlayback(raw, false, existing);
     expect(out).toContain("#EXT-X-DISCONTINUITY");
     const uriCount = out.split("\n").filter((l) => /seg_\d+\.ts/i.test(l)).length;
-    expect(uriCount).toBe(MAX_IN_PROGRESS_PLAYLIST_SEGMENTS);
+    expect(uriCount).toBe(
+      MAX_IN_PROGRESS_PLAYLIST_SEGMENTS - IN_PROGRESS_ENCODE_EDGE_HOLDBACK
+    );
     expect(out).toContain("seg_00000.ts");
     expect(out).not.toContain(`seg_${String(total - 1).padStart(5, "0")}.ts`);
+  });
+
+  it("holds back the encode edge while the playlist is still growing", () => {
+    const segs: string[] = ["#EXTM3U"];
+    for (let i = 0; i < 8; i++) {
+      segs.push("#EXTINF:4,", `seg_${String(i).padStart(5, "0")}.ts`);
+    }
+    const existing = new Set(
+      Array.from({ length: 8 }, (_, i) => `seg_${String(i).padStart(5, "0")}.ts`)
+    );
+    const growing = prepareManifestForPlayback(segs.join("\n"), false, existing);
+    expect(countManifestSegments(growing)).toBe(8 - IN_PROGRESS_ENCODE_EDGE_HOLDBACK);
+    expect(growing).toContain("seg_00005.ts");
+    expect(growing).not.toContain("seg_00007.ts");
+
+    const done = prepareManifestForPlayback(segs.join("\n"), true, existing);
+    expect(countManifestSegments(done)).toBe(8);
+    expect(done).toContain("seg_00007.ts");
   });
 
   it("stops at the first missing segment in the sequence", () => {
@@ -135,7 +156,7 @@ describe("rewriteTranscodeManifest", () => {
     );
     const out = prepareManifestForPlayback(raw, false, existing);
     const uriCount = out.split("\n").filter((l) => /seg_\d+\.ts/i.test(l)).length;
-    expect(uriCount).toBe(6);
+    expect(uriCount).toBe(6 - IN_PROGRESS_ENCODE_EDGE_HOLDBACK);
   });
 
   it("marks complete playlists as VOD and adds seek timeline tags", () => {

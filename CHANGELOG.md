@@ -23,6 +23,24 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.13.3] — 2026-07-16
+
+Stop VOD transcode playback from skipping a second when encode lags.
+
+### Fixed
+- **VOD skip/stutter** — in-progress HLS playlists hold back the freshest segments; player retries 503 prep instead of jumping ~1s buffer holes; hls.js stays further behind the encode edge.
+
+---
+
+## [0.13.2] — 2026-07-12
+
+Live Trending on TV loads much faster from cache.
+
+### Fixed
+- **Trending on TV speed** — warm assembled shelf is served even when the browser sends EPG hints; React Query no longer refetches as IndexedDB fills; cold hint wait cut from 2.5s to 400ms (skipped when local titles are warm).
+
+---
+
 ## [0.13.1] — 2026-07-11
 
 Fix Live TV black screen on smart TVs after opening a channel.

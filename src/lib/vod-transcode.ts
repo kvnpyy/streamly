@@ -1429,12 +1429,18 @@ export async function handleVodTranscodeRequest(opts: {
     void ensureEncodingContinues(job);
     const ready = await waitForReady(job, opts.signal);
     if (!ready) {
+      const stillEncoding =
+        job.state === "starting" ||
+        job.state === "running" ||
+        job.state === "queued";
       return {
-        status: 404,
+        status: stillEncoding ? 503 : 404,
         errorText: "Segment not ready yet.",
+        extraHeaders: stillEncoding ? { "retry-after": "2" } : undefined,
       };
     }
-    segmentReady = await waitForSegmentFile(segPath, 14_000);
+    /** Encode can lag on a busy VPS — wait longer than one HLS segment. */
+    segmentReady = await waitForSegmentFile(segPath, 28_000);
     if (!segmentReady) {
       const diskAfterWait = await listSegmentFiles(job.dir);
       const diskPrefix = contiguousSegmentCount(diskAfterWait);

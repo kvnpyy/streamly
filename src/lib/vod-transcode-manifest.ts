@@ -9,6 +9,13 @@ const ENCODED_DURATION_TAG_RE =
 /** ~60 min @ 4s segments — avoids truncating hour-long episodes while ffmpeg is still running. */
 export const MAX_IN_PROGRESS_PLAYLIST_SEGMENTS = 900;
 
+/**
+ * Hide the freshest N segments while ffmpeg is still writing. Clients that race the
+ * encode edge get 503/404 holes; hls.js then jumps ~1s (`maxBufferHole`) and playback
+ * "skips". Holdback keeps the published playlist a few seconds behind disk.
+ */
+export const IN_PROGRESS_ENCODE_EDGE_HOLDBACK = 2;
+
 export function sumExtinfDurationSec(manifestText: string): number {
   let sum = 0;
   for (const line of manifestText.split(/\r?\n/)) {
@@ -233,6 +240,12 @@ export function prepareManifestForPlayback(
   if (!playlistComplete && kept.length > MAX_IN_PROGRESS_PLAYLIST_SEGMENTS) {
     /** Keep from the start — VOD transcode always plays forward from seg_00000. */
     kept = kept.slice(0, MAX_IN_PROGRESS_PLAYLIST_SEGMENTS);
+  }
+  if (
+    !playlistComplete &&
+    kept.length >= IN_PROGRESS_ENCODE_EDGE_HOLDBACK + 2
+  ) {
+    kept = kept.slice(0, kept.length - IN_PROGRESS_ENCODE_EDGE_HOLDBACK);
   }
 
   const out = [...header];

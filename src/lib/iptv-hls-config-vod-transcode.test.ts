@@ -6,8 +6,9 @@ describe("buildVodTranscodeHlsJsConfig", () => {
     const cfg = buildVodTranscodeHlsJsConfig();
     expect(cfg.stretchShortVideoTrack).toBe(false);
     expect(cfg.maxLiveSyncPlaybackRate).toBe(1);
-    expect(cfg.liveSyncDurationCount).toBe(1);
-    expect(cfg.liveMaxLatencyDurationCount).toBe(3);
+    expect(cfg.liveSyncDurationCount).toBeGreaterThanOrEqual(3);
+    expect(cfg.liveMaxLatencyDurationCount).toBeGreaterThanOrEqual(6);
+    expect(cfg.maxBufferHole).toBeLessThanOrEqual(0.35);
     expect(cfg.liveSyncMode).toBe("buffered");
     expect(cfg.maxBufferLength).toBeGreaterThanOrEqual(32);
     expect(cfg.startFragPrefetch).toBe(true);

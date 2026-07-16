@@ -11,6 +11,26 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.13.3",
+    date: "2026-07-16",
+    summary: "Stop VOD transcode playback from skipping a second when encode lags.",
+    highlights: [
+      "VOD: hold the HLS playlist a few segments behind ffmpeg so clients stop racing the encode edge.",
+      "Player: wait/retry on 503 segment prep instead of restarting load and jumping buffer holes.",
+      "Player: stay further behind growing EVENT playlists and tighten maxBufferHole.",
+    ],
+  },
+  {
+    version: "0.13.2",
+    date: "2026-07-12",
+    summary: "Live Trending on TV loads much faster from cache.",
+    highlights: [
+      "Trending on TV: serve the warm assembled shelf even when the browser sends EPG hints.",
+      "Trending on TV: stop React Query refetch storms as IndexedDB/shelf hints fill in.",
+      "Trending on TV: skip the 2.5s shelf-hint wait when local titles are already warm.",
+    ],
+  },
+  {
     version: "0.13.1",
     date: "2026-07-11",
     summary: "Fix Live TV black screen on smart TVs after opening a channel.",

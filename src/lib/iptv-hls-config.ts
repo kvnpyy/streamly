@@ -175,31 +175,32 @@ export function buildIptvHlsJsConfig(opts: {
  */
 export function buildVodTranscodeHlsJsConfig() {
   /**
-   * EVENT transcode playlists look "live" to hls.js. Keep sync targets tight so
-   * hitting the buffer end does not fling the playhead back to an old encode edge.
+   * EVENT transcode playlists look "live" to hls.js. Stay a few segments behind the
+   * growing edge (server also holdbacks trailing segs). Prefer brief stalls over
+   * jumping buffer holes when a segment is still encoding (503).
    */
   return {
     maxBufferLength: 36,
     maxMaxBufferLength: 84,
     backBufferLength: 32,
-    maxBufferHole: 0.85,
+    maxBufferHole: 0.3,
     maxFragLookUpTolerance: 0.35,
     stretchShortVideoTrack: false,
     startFragPrefetch: true,
-    liveSyncDurationCount: 1,
-    liveMaxLatencyDurationCount: 3,
+    liveSyncDurationCount: 3,
+    liveMaxLatencyDurationCount: 6,
     liveSyncMode: "buffered" as const,
     maxLiveSyncPlaybackRate: 1,
     liveSyncOnStallIncrease: 0,
     initialLiveManifestSize: 1,
     manifestLoadingTimeOut: 30_000,
     levelLoadingTimeOut: 30_000,
-    fragLoadingTimeOut: 35_000,
+    fragLoadingTimeOut: 45_000,
     manifestLoadingMaxRetry: 28,
     levelLoadingMaxRetry: 28,
-    fragLoadingMaxRetry: 18,
+    fragLoadingMaxRetry: 24,
     nudgeOffset: 0.1,
-    nudgeMaxRetry: 14,
+    nudgeMaxRetry: 20,
     highBufferWatchdogPeriod: 5,
     startPosition: 0,
   };

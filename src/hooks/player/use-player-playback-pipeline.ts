@@ -607,6 +607,8 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
       /** Fatal `NETWORK_ERROR` streak — reset whenever data actually flows (Safari otherwise accumulates transient fatals). */
       let consecutiveNetworkErrors = 0;
       let transcodeManifestSoftRetries = 0;
+      /** Debounce `startLoad` on VOD-transcode frag errors — storming it races the encode edge. */
+      let lastTranscodeFragRestartAt = 0;
       const resetNetErrStreak = () => {
         consecutiveNetworkErrors = 0;
         transcodeManifestSoftRetries = 0;
@@ -855,6 +857,22 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
           if (!isLive && fragish) {
             const vv = videoRef.current;
             if (vv?.paused) return;
+            if (vodTranscodeHls) {
+              const httpCode =
+                typeof data.response?.code === "number"
+                  ? data.response.code
+                  : 0;
+              // 503 = segment still encoding — hls.js retries; restarting load jumps buffer holes.
+              if (
+                httpCode === 503 ||
+                data.details === Hls.ErrorDetails.FRAG_LOAD_TIMEOUT
+              ) {
+                return;
+              }
+              const now = performance.now();
+              if (now - lastTranscodeFragRestartAt < 3_000) return;
+              lastTranscodeFragRestartAt = now;
+            }
             try {
               const pos =
                 vodTranscodeHls && vv && Number.isFinite(vv.currentTime)
