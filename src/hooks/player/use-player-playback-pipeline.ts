@@ -569,14 +569,18 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
                 "Could not prepare this file for browser playback. If your IPTV plan allows only one stream, close other players and try again.",
                 xhr.status
               );
-              if (xhr.status === 503) {
-                // Server is still encoding the first segment — keep prep UI, let hls.js retry.
+              const vv = videoRef.current;
+              const midPlayback =
+                !!vv &&
+                (vv.currentTime > 0.5 ||
+                  vv.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA);
+              // 503 = still encoding. Mid-play 502 is often a brief overload /
+              // provider blip — hard-failing here kills an episode at ~10m.
+              if (xhr.status === 503 || (midPlayback && xhr.status === 502)) {
                 setVodPrepProgress((p) => Math.min(92, Math.max(p, 20) + 3));
                 return;
               }
-              surfacePlaybackError(
-                body
-              );
+              surfacePlaybackError(body);
               return;
             }
             if (vodTranscodeHls && !reqUrl.includes("media=")) {

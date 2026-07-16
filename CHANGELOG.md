@@ -23,6 +23,15 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.13.4] — 2026-07-16
+
+Stop mid-episode Unable to play when the VPS is briefly overloaded.
+
+### Fixed
+- **VOD hard-fail mid-play** — soft-retry 502 while an episode is already playing; resume failed ffmpeg jobs from flushed segments; lighter `ultrafast` x264 default.
+
+---
+
 ## [0.13.3] — 2026-07-16
 
 Stop VOD transcode playback from skipping a second when encode lags.

@@ -11,6 +11,16 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.13.4",
+    date: "2026-07-16",
+    summary: "Stop mid-episode Unable to play when the VPS is briefly overloaded.",
+    highlights: [
+      "Player: soft-retry mid-playback 502 on VOD transcode manifests instead of killing the episode.",
+      "VOD: resume a failed encode from flushed segments instead of returning hard 502.",
+      "VOD: default x264 preset ultrafast to cut CPU on small VPS hosts.",
+    ],
+  },
+  {
     version: "0.13.3",
     date: "2026-07-16",
     summary: "Stop VOD transcode playback from skipping a second when encode lags.",

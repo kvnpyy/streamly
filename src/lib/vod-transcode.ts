@@ -75,6 +75,18 @@ function cacheRoot(): string {
   );
 }
 
+function x264Preset(): string {
+  const raw = process.env.STREAM_TRANSCODE_X264_PRESET?.trim().toLowerCase();
+  const allowed = new Set([
+    "ultrafast",
+    "superfast",
+    "veryfast",
+    "faster",
+    "fast",
+  ]);
+  return raw && allowed.has(raw) ? raw : "ultrafast";
+}
+
 function maxConcurrentJobs(): number {
   const n = parseInt(process.env.STREAM_TRANSCODE_MAX_JOBS ?? "2", 10);
   return Number.isFinite(n) && n > 0 ? Math.min(n, 8) : 2;
@@ -772,8 +784,17 @@ async function ensureEncodingContinues(job: TranscodeJob): Promise<void> {
   try {
     raw = await fsp.readFile(path.join(job.dir, MANIFEST_NAME), "utf8");
   } catch {
-    if (job.state !== "failed") void beginTranscodeJob(job);
+    if (job.state === "failed") {
+      job.state = "starting";
+      job.error = undefined;
+    }
+    void beginTranscodeJob(job);
     return;
+  }
+
+  if (job.state === "failed") {
+    job.state = "ready";
+    job.error = undefined;
   }
 
   if (await isPlaylistFullyEncoded(job, raw)) return;
@@ -934,7 +955,7 @@ async function spawnFfmpeg(
       "-c:v",
       "libx264",
       "-preset",
-      "veryfast",
+      x264Preset(),
       "-profile:v",
       "main",
       "-pix_fmt",
@@ -1108,7 +1129,11 @@ async function ensureJobLocked(
     } else if (existing.state === "failed") {
       const again = await readManifestIfReady(dir);
       if (again) {
+        // Keep flushed segments and resume encode — do not leave a failed job
+        // that makes the next playlist poll return 502 mid-episode.
         existing.state = "ready";
+        existing.error = undefined;
+        void ensureEncodingContinues(existing);
         return existing;
       }
       await wipeTranscodeJobDir(dir, key);
@@ -1320,18 +1345,30 @@ export async function handleVodTranscodeRequest(opts: {
         job.state === "queued" ||
         job.error?.includes("busy") ||
         job.error?.includes("Too many");
-      if (stillStarting && !busy) {
+      if (stillStarting || busy) {
+        return {
+          status: 503,
+          errorText: busy
+            ? job.error ||
+              "Server is busy preparing other videos. Try again in a moment."
+            : "First video segment is still being prepared. Retry in a few seconds.",
+          extraHeaders: { "retry-after": busy ? "3" : "2" },
+        };
+      }
+      // Transient provider/ffmpeg blips — soft 503 so mid-play clients retry.
+      if (job.state === "failed") {
+        void ensureEncodingContinues(job);
         return {
           status: 503,
           errorText:
-            "First video segment is still being prepared. Retry in a few seconds.",
+            job.error ||
+            "Could not prepare transcoded stream. Retrying encode…",
           extraHeaders: { "retry-after": "2" },
         };
       }
       return {
-        status: busy ? 503 : 502,
+        status: 502,
         errorText: job.error || "Could not prepare transcoded stream.",
-        extraHeaders: busy ? { "retry-after": "3" } : undefined,
       };
     }
     const raw = await fsp.readFile(path.join(job.dir, MANIFEST_NAME), "utf8");
