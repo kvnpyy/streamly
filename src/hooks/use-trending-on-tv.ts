@@ -8,7 +8,10 @@ import {
   whenEpgLocalCacheHydrated,
 } from "@/lib/epg-local-cache";
 import { useEpgCacheReadiness } from "@/hooks/use-epg-cache-readiness";
-import { TRENDING_ON_TV_RESPONSE_TTL_MS } from "@/lib/epg-constants";
+import {
+  TRENDING_ON_TV_RESPONSE_TTL_MS,
+  TRENDING_ON_TV_SHELF_HINT_WAIT_MS,
+} from "@/lib/epg-constants";
 import { isLiveTrendingShelfEnabled } from "@/lib/live-epg-policy";
 import type { TvRegion } from "@/lib/geo-continent";
 import type { LiveStream, XtreamCredentials } from "@/lib/xtream-types";
@@ -43,6 +46,41 @@ export function trendingOnTvPlaceholderData(
 ): TrendingOnTvResponse | undefined {
   const prevRegion = previousQueryKey?.[3];
   return prevRegion === tvRegion ? previousData : undefined;
+}
+
+/**
+ * Local EPG / shelf hints are soft boosts for the POST body — never part of the
+ * React Query key (that caused refetch storms as IndexedDB filled).
+ */
+export function trendingOnTvQueryKey(
+  server: string,
+  username: string,
+  tvRegion: TvRegion,
+  priorityStreamIds: number[]
+): readonly [
+  "trending-on-tv",
+  string,
+  string,
+  TvRegion,
+  string,
+] {
+  return [
+    "trending-on-tv",
+    server,
+    username,
+    tvRegion,
+    priorityStreamIds.slice(0, 8).join(","),
+  ] as const;
+}
+
+/** Skip the cold hint wait when IndexedDB or shelf rows already have titles. */
+export function shouldSkipTrendingShelfHintWait(opts: {
+  localEpgTitleCount: number;
+  shelfHintCount: number;
+  minTitles?: number;
+}): boolean {
+  const min = opts.minTitles ?? LIVE_TRENDING_MIN_ITEMS;
+  return opts.localEpgTitleCount >= min || opts.shelfHintCount >= min;
 }
 
 function mergeEpgHints(
@@ -141,28 +179,15 @@ export function useTrendingOnTv({
   const discoveryOn =
     isDiscoveryShelvesEnabled() && isLiveTrendingShelfEnabled() && enabled;
 
-  const priorityStreamIds = [
-    ...recents.filter((r) => r.kind === "live").map((r) => r.id),
-    ...favorites.filter((f) => f.kind === "live").map((f) => f.id),
-  ];
+  const priorityStreamIds = useMemo(
+    () => [
+      ...recents.filter((r) => r.kind === "live").map((r) => r.id),
+      ...favorites.filter((f) => f.kind === "live").map((f) => f.id),
+    ],
+    [recents, favorites]
+  );
 
   const shelfEpgHints = useLiveBrowseUi((s) => s.shelfEpgHints);
-
-  /** Wait for shelf rows to publish EPG hints (Trending mounts above shelves in the DOM). */
-  const [shelfWaitDone, setShelfWaitDone] = useState(false);
-  const prevRegionRef = useRef(tvRegion);
-  useEffect(() => {
-    if (prevRegionRef.current !== tvRegion) {
-      prevRegionRef.current = tvRegion;
-      setShelfWaitDone(false);
-    }
-    if (shelfEpgHints.length >= LIVE_TRENDING_MIN_ITEMS) {
-      queueMicrotask(() => setShelfWaitDone(true));
-      return;
-    }
-    const t = setTimeout(() => setShelfWaitDone(true), 2_500);
-    return () => clearTimeout(t);
-  }, [tvRegion, shelfEpgHints.length]);
 
   const epgCache = useEpgCacheReadiness(
     creds.server,
@@ -170,26 +195,43 @@ export function useTrendingOnTv({
     discoveryOn
   );
 
-  const epgCacheBucket = Math.floor(epgCache.count / 8);
-  const shelfHintKey = useMemo(
+  /** Wait briefly for shelf rows only when local EPG is still empty. */
+  const [shelfWaitDone, setShelfWaitDone] = useState(false);
+  const prevRegionRef = useRef(tvRegion);
+  useEffect(() => {
+    if (prevRegionRef.current !== tvRegion) {
+      prevRegionRef.current = tvRegion;
+      setShelfWaitDone(false);
+    }
+    if (
+      shouldSkipTrendingShelfHintWait({
+        localEpgTitleCount: epgCache.count,
+        shelfHintCount: shelfEpgHints.length,
+      })
+    ) {
+      queueMicrotask(() => setShelfWaitDone(true));
+      return;
+    }
+    const t = setTimeout(
+      () => setShelfWaitDone(true),
+      TRENDING_ON_TV_SHELF_HINT_WAIT_MS
+    );
+    return () => clearTimeout(t);
+  }, [tvRegion, shelfEpgHints.length, epgCache.count]);
+
+  const queryKey = useMemo(
     () =>
-      shelfEpgHints
-        .slice(0, 24)
-        .map((h) => `${h.streamId}:${h.title}`)
-        .join("|"),
-    [shelfEpgHints]
+      trendingOnTvQueryKey(
+        creds.server,
+        creds.username,
+        tvRegion,
+        priorityStreamIds
+      ),
+    [creds.server, creds.username, tvRegion, priorityStreamIds]
   );
 
   const query = useQuery({
-    queryKey: [
-      "trending-on-tv",
-      creds.server,
-      creds.username,
-      tvRegion,
-      priorityStreamIds.join(","),
-      epgCacheBucket,
-      shelfHintKey,
-    ] as const,
+    queryKey,
     queryFn: ({ signal }) =>
       fetchTrendingOnTv(
         creds,
@@ -230,7 +272,11 @@ export function useTrendingOnTv({
     items,
     tmdbCountry: query.data?.tmdbCountry,
     loading,
-    warmingUp: epgCache.warmingUp && items.length === 0 && !query.isError,
+    /**
+     * Server builds the shelf; local EPG warmup must not keep the skeleton up
+     * for 6s after a fast cached response.
+     */
+    warmingUp: false,
     show: discoveryOn,
     hasItems: items.length >= LIVE_TRENDING_MIN_ITEMS,
     isError: query.isError,

@@ -14,7 +14,11 @@ const HOUR_MS = 60 * 60 * 1000;
 export const EPG_CACHE_TTL_MS = 4 * HOUR_MS;
 
 /**
- * Trending-on-TV shelf API result (server memory, hint-less requests only).
- * Aligns with EPG block length; TMDB weekly signal does not need minute-level refresh.
+ * Trending-on-TV shelf API result (server in-memory response cache).
+ * Served for the account+region even when the client sends EPG hints — hints
+ * only improve the next rebuild, they must not bypass a warm shelf.
  */
 export const TRENDING_ON_TV_RESPONSE_TTL_MS = 4 * HOUR_MS;
+
+/** Cold Live page: max wait for shelf EPG hints before the first trending request. */
+export const TRENDING_ON_TV_SHELF_HINT_WAIT_MS = 400;

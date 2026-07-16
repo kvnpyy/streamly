@@ -17,7 +17,10 @@ import {
   readTmdbTrendingFromDb,
   syncTmdbTrendingToDb,
 } from "@/lib/discovery/tmdb-sync";
-import { TRENDING_ON_TV_RESPONSE_TTL_MS } from "@/lib/epg-constants";
+import {
+  shouldServeTrendingResponseCache,
+  type TrendingResponseCacheEntry,
+} from "@/lib/discovery/trending-on-tv-cache";
 import { fetchNowPlayingTitleForChannel } from "@/lib/epg-server-short";
 import {
   getBulkServerEpgTitles,
@@ -35,7 +38,6 @@ import type { TvRegion } from "@/lib/geo-continent";
 import type { LiveStream, XtreamCredentials } from "@/lib/xtream-types";
 
 const EPG_CONCURRENCY = 8;
-const RESPONSE_CACHE_TTL_MS = TRENDING_ON_TV_RESPONSE_TTL_MS;
 const MAX_CATEGORIES_SAMPLE = 20;
 const CHANNELS_PER_CATEGORY = 8;
 /** Cap provider EPG fetches per request (serverless time limits). */
@@ -69,12 +71,7 @@ function tryEpgFallback(
   return shouldShowTrendingOnTvShelf(fallback) ? fallback : [];
 }
 
-type ResponseCacheEntry = {
-  items: ScoredLiveEntry[];
-  tmdbCountry: string;
-  at: number;
-};
-const responseCache = new Map<string, ResponseCacheEntry>();
+const responseCache = new Map<string, TrendingResponseCacheEntry>();
 
 export type EpgTitleHint = { streamId: number; title: string };
 
@@ -84,6 +81,11 @@ function responseKey(
   tmdbCountry: string
 ): string {
   return `${creds.server}|${creds.username}|${tvRegion}|${tmdbCountry}`;
+}
+
+/** Test helper — clear in-process shelf cache between cases. */
+export function clearTrendingOnTvResponseCacheForTests(): void {
+  responseCache.clear();
 }
 
 function mergeEpgHintsIntoSnapshots(
@@ -250,6 +252,27 @@ export async function buildTrendingOnTvForAccount(
 ): Promise<TrendingOnTvServerResult> {
   const tmdbCountry = resolveTmdbCountry({ tvRegion });
   const rawHints = opts?.epgHints ?? [];
+  const rKey = responseKey(creds, tvRegion, tmdbCountry);
+  const cached = responseCache.get(rKey);
+
+  /**
+   * Fast path: serve a warm assembled shelf even when the client sends EPG hints.
+   * Hints still land in the title cache so the *next* rebuild is richer.
+   */
+  if (cached && shouldServeTrendingResponseCache(cached)) {
+    if (rawHints.length > 0) {
+      setServerEpgTitlesBatch(creds, rawHints);
+    }
+    return {
+      items: cached.items,
+      tmdbCountry: cached.tmdbCountry,
+      cached: true,
+    };
+  }
+
+  if (cached && !shouldShowTrendingOnTvShelf(cached.items)) {
+    responseCache.delete(rKey);
+  }
 
   const { bundle, index, streamById } = await getCachedLiveCatalogEntry(creds);
   const categoryRows = bundle.categories.map((c) => ({
@@ -262,24 +285,6 @@ export async function buildTrendingOnTvForAccount(
     streamById,
     categoryRows
   );
-  const rKey = responseKey(creds, tvRegion, tmdbCountry);
-  const cached = responseCache.get(rKey);
-  if (
-    hints.length === 0 &&
-    cached &&
-    Date.now() - cached.at < RESPONSE_CACHE_TTL_MS
-  ) {
-    const fromCache = shouldShowTrendingOnTvShelf(cached.items)
-      ? cached.items
-      : [];
-    if (fromCache.length > 0) {
-      return { items: fromCache, tmdbCountry, cached: true };
-    }
-  }
-
-  if (hints.length > 0 && cached && !shouldShowTrendingOnTvShelf(cached.items)) {
-    responseCache.delete(rKey);
-  }
 
   await hydrateServerEpgCache(creds);
   if (hints.length > 0) {
