@@ -7,7 +7,8 @@
  *   npm run monitor:api-health-notify -- --dry-run
  */
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   parseApiHealthAlertState,
   shouldSendApiHealthAlert,
@@ -16,6 +17,17 @@ import {
 import { sendApiHealthAlertEmail } from "../src/lib/api-health-alert-mail";
 import { assessApiHealth } from "../src/lib/assess-api-health";
 import type { IptvApiErrorMetrics } from "../src/lib/iptv-api-error-metrics";
+
+/** True only when this file is the tsx/node entrypoint — not when imported by monitor:notify. */
+function isExecutedAsCli(): boolean {
+  const entry = process.argv[1];
+  if (!entry) return false;
+  try {
+    return resolve(fileURLToPath(import.meta.url)) === resolve(entry);
+  } catch {
+    return false;
+  }
+}
 
 const APP_DIR = process.cwd();
 const MONITOR_DIR = join(APP_DIR, "data", "monitor");
@@ -127,11 +139,13 @@ export async function runApiHealthNotify(opts?: { dryRun?: boolean }): Promise<v
   console.log(`[api-health:notify] sent ${health.overall} alert`);
 }
 
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
-
 async function main() {
   await runApiHealthNotify();
+}
+
+if (isExecutedAsCli()) {
+  main().catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });
 }
