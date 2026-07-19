@@ -11,6 +11,26 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.13.7",
+    date: "2026-07-18",
+    summary:
+      "Brave cast guidance, Continue Watching sync via PIN, and one clear search bar.",
+    highlights: [
+      "Cast: Brave Media Router / Shields recovery tips; Samsung needs Chromecast built-in.",
+      "PIN pairing carries Streamly session so Continue Watching syncs phone → TV.",
+      "Search: single TopBar field on Live/Movies/Series; unified min length and retry on failures.",
+    ],
+  },
+  {
+    version: "0.13.6",
+    date: "2026-07-18",
+    summary: "Quieter API health alerts and steadier VOD resume after background.",
+    highlights: [
+      "Monitor: stop duplicate API health alert emails.",
+      "Player: resume VOD after background at the saved position.",
+    ],
+  },
+  {
     version: "0.13.5",
     date: "2026-07-16",
     summary: "Resume VOD after a break at the right time — not 00:00.",

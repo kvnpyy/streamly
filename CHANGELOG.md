@@ -23,6 +23,27 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.13.7] — 2026-07-18
+
+Brave cast guidance, Continue Watching sync via PIN, and one clear search bar.
+
+### Fixed
+- **Cast (Brave → Samsung)** — Media Router / Shields recovery tips; Chromecast built-in required (not Smart View).
+- **Continue Watching** — PIN pairing carries Streamly session so progress syncs phone → TV; faster TV pull and server-side merge.
+- **Search** — single TopBar field on Live/Movies/Series; min length 2 everywhere; retry when search APIs fail.
+
+---
+
+## [0.13.6] — 2026-07-18
+
+Quieter API health alerts and steadier VOD resume after background.
+
+### Fixed
+- **Monitor** — stop duplicate API health alert emails.
+- **Player** — resume VOD after background at the saved position.
+
+---
+
 ## [0.13.5] — 2026-07-16
 
 Resume VOD after a break at the right time — not 00:00.
