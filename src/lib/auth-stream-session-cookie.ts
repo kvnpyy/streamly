@@ -17,7 +17,7 @@ function resolveAuthSecret(): string {
   return "iptv-stream-production-missing-auth-secret-replace-me!!!";
 }
 
-function useSecureCookies(req: NextRequest): boolean {
+function secureCookiesFromRequest(req: NextRequest): boolean {
   const proto =
     req.headers.get("x-forwarded-proto") ||
     req.nextUrl.protocol.replace(":", "");
@@ -33,7 +33,7 @@ export async function attachStreamSessionCookie(
   req: NextRequest,
   user: { id: string; email: string; name?: string | null }
 ): Promise<void> {
-  const secure = useSecureCookies(req);
+  const secure = secureCookiesFromRequest(req);
   const cookieName = streamSessionCookieName(secure);
   const secret = resolveAuthSecret();
   const token = await encode({

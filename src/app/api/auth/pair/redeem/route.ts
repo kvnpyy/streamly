@@ -43,7 +43,6 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    let streamLinked = false;
     if (pair.streamUserId) {
       const row = await getDb()
         .select({
@@ -67,7 +66,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const res = NextResponse.json({ ok: true, streamLinked });
+    const res = NextResponse.json({ ok: true, streamLinked: false });
     attachSessionCookie(res, req, pair.creds);
     return res;
   } catch (e) {
