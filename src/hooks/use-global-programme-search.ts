@@ -14,7 +14,8 @@ import type { LiveStream, XtreamCredentials } from "@/lib/xtream-types";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 
-const GLOBAL_SEARCH_EPG_SCAN = 36;
+/** Prefer scanning after name hits; raise slightly for better programme recall. */
+const GLOBAL_SEARCH_EPG_SCAN = 48;
 const GLOBAL_SEARCH_EPG_CONCURRENCY = 4;
 
 export function useGlobalProgrammeSearch(

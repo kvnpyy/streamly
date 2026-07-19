@@ -3,7 +3,10 @@ import {
   getCachedEpgKnownIds,
 } from "@/lib/epg-local-cache";
 import type { LiveChannelIndex } from "@/lib/live-channel-index";
-import { safeLower } from "@/lib/utils";
+import {
+  normalizeSearchText,
+  textMatchesSearch,
+} from "@/lib/search-normalize";
 import type { LiveStream, XtreamCredentials } from "@/lib/xtream-types";
 
 /** Rows per channel for on-air title lookup during live search. */
@@ -37,11 +40,12 @@ export function planLiveProgrammeSearch(
   const candidateIds: number[] = [];
   let nonNameMatchCount = 0;
 
+  const needle = normalizeSearchText(queryLower);
   for (let i = 0; i < streams.length; i++) {
     const s = streams[i]!;
     const nameMatch = nameLower
-      ? nameLower[i]!.includes(queryLower)
-      : safeLower(s.name).includes(queryLower);
+      ? textMatchesSearch(nameLower[i], needle)
+      : textMatchesSearch(s.name, needle);
     if (nameMatch) continue;
     nonNameMatchCount += 1;
     if (candidateIds.length < maxScan) {
@@ -66,13 +70,14 @@ export function mergeLiveSearchResults(
 ): LiveStream[] {
   if (!queryLower) return streams;
 
+  const needle = normalizeSearchText(queryLower);
   const out = nameMatched.slice();
   const seen = new Set(nameMatched.map((s) => s.stream_id));
   for (const s of streams) {
     if (seen.has(s.stream_id)) continue;
     const np =
       nowPlayingMap.get(s.stream_id) ?? programmeTitles.get(s.stream_id);
-    if (np && np.toLowerCase().includes(queryLower)) out.push(s);
+    if (np && textMatchesSearch(np, needle)) out.push(s);
   }
   return out;
 }
@@ -99,9 +104,9 @@ export function seedProgrammeSearchFromCache(
     candidateIds
   );
   const hits = new Map<number, string>();
-  const q = queryLower;
+  const needle = normalizeSearchText(queryLower);
   for (const [id, title] of bulk) {
-    if (title.toLowerCase().includes(q)) hits.set(id, title);
+    if (textMatchesSearch(title, needle)) hits.set(id, title);
   }
   return { hits, knownIds };
 }
@@ -112,17 +117,18 @@ export function filterStreamsByLiveQuery(
   nowPlayingMap: Map<number, string>,
   programmeTitles: Map<number, string>
 ): LiveStream[] {
-  if (!queryLower) return streams;
+  const needle = normalizeSearchText(queryLower);
+  if (!needle) return streams;
 
   const out: LiveStream[] = [];
   for (const s of streams) {
-    if (safeLower(s.name).includes(queryLower)) {
+    if (textMatchesSearch(s.name, needle)) {
       out.push(s);
       continue;
     }
     const np =
       nowPlayingMap.get(s.stream_id) ?? programmeTitles.get(s.stream_id);
-    if (np && np.toLowerCase().includes(queryLower)) out.push(s);
+    if (np && textMatchesSearch(np, needle)) out.push(s);
   }
   return out;
 }

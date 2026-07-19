@@ -1,7 +1,10 @@
 import type { TvRegion } from "@/lib/geo-continent";
 import { filterStreamsForTvRegion } from "@/lib/live-category-shelf";
 import { lookupStreamIdsForCategory } from "@/lib/live-stream-index";
-import { safeLower } from "@/lib/utils";
+import {
+  normalizeSearchText,
+  textMatchesSearch,
+} from "@/lib/search-normalize";
 import type { LiveStream } from "@/lib/xtream-types";
 import type { LiveCatalogBundle } from "@/lib/xtream";
 
@@ -97,7 +100,7 @@ export function searchLiveCatalog(
   streamById: Map<number, LiveStream>,
   opts: LiveCatalogSearchOpts
 ): LiveCatalogSearchResult {
-  const needle = safeLower(opts.q.trim());
+  const needle = normalizeSearchText(opts.q);
   if (!needle) {
     return { matches: [], scanPool: [], totalInScope: 0 };
   }
@@ -119,17 +122,25 @@ export function searchLiveCatalog(
   );
 
   const matches: LiveStream[] = [];
-  const scanPool: LiveStream[] = [];
-
   for (const s of inScope) {
-    if (safeLower(s.name).includes(needle) && matches.length < matchLimit) {
+    if (textMatchesSearch(s.name, needle) && matches.length < matchLimit) {
       matches.push(s);
     }
   }
 
-  for (const s of inScope) {
+  /** Prefer name hits first so EPG enrichment targets likely channels. */
+  const scanPool: LiveStream[] = [];
+  const seen = new Set<number>();
+  for (const s of matches) {
     if (scanPool.length >= scanPoolLimit) break;
     scanPool.push(s);
+    seen.add(s.stream_id);
+  }
+  for (const s of inScope) {
+    if (scanPool.length >= scanPoolLimit) break;
+    if (seen.has(s.stream_id)) continue;
+    scanPool.push(s);
+    seen.add(s.stream_id);
   }
 
   return {

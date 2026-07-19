@@ -8,6 +8,7 @@ import { buildLiveChannelIndex } from "@/lib/live-channel-index";
 import { isLiveProgrammeSearchEnabled } from "@/lib/live-epg-policy";
 import { LIVE_LIST_MAX_CHANNELS } from "@/lib/live-guide-limits";
 import type { TvRegion } from "@/lib/geo-continent";
+import { MIN_SEARCH_QUERY_LEN } from "@/lib/search-normalize";
 import type { LiveStream, XtreamCredentials } from "@/lib/xtream-types";
 import { useQuery } from "@tanstack/react-query";
 import { SkeletonGrid } from "@/components/SectionHeader";
@@ -32,9 +33,16 @@ export function LiveShelfNameSearch({
   onToggleFavorite: (c: LiveStream) => void;
 }) {
   const programmeSearchOn = isLiveProgrammeSearchEnabled();
+  const searchEnabled = qLower.trim().length >= MIN_SEARCH_QUERY_LEN;
 
   const searchQuery = useQuery(
-    liveChannelSearchQueryOptions(creds, qLower, "all", tvRegion, Boolean(qLower))
+    liveChannelSearchQueryOptions(
+      creds,
+      qLower,
+      "all",
+      tvRegion,
+      searchEnabled
+    )
   );
 
   const nameMatched = searchQuery.data?.matches ?? [];
@@ -50,13 +58,36 @@ export function LiveShelfNameSearch({
     qLower,
     nameMatched,
     channelIndex,
-    programmeSearchOn && Boolean(qLower) && Boolean(channelIndex)
+    programmeSearchOn && searchEnabled && Boolean(channelIndex)
   );
 
   const matches = programmeSearchOn ? liveMatches : nameMatched;
 
+  if (!searchEnabled) {
+    return (
+      <div className="card p-8 text-center text-sm text-(--text-muted)">
+        Type at least {MIN_SEARCH_QUERY_LEN} characters to search channels.
+      </div>
+    );
+  }
+
   if (searchQuery.isLoading || searchQuery.isFetching) {
     return <SkeletonGrid variant="tile" count={8} />;
+  }
+
+  if (searchQuery.isError) {
+    return (
+      <div className="card p-8 text-center text-sm text-(--text-muted) space-y-3">
+        <p>Search failed. Check your connection and try again.</p>
+        <button
+          type="button"
+          onClick={() => void searchQuery.refetch()}
+          className="h-9 px-4 rounded-xl btn-brand text-sm font-medium"
+        >
+          Retry
+        </button>
+      </div>
+    );
   }
 
   if (!matches.length && !programmeScanning) {
@@ -64,15 +95,23 @@ export function LiveShelfNameSearch({
       <div className="card p-8 text-center text-sm text-(--text-muted)">
         No channels match your search. Try a shorter name, another spelling, or
         pick a category from the sidebar.
+        {searchQuery.data?.totalInScope != null &&
+        searchQuery.data.totalInScope > (scanPool.length || 0) ? (
+          <span className="block mt-2 text-xs">
+            Showing partial results — refine your query for better matches.
+          </span>
+        ) : null}
       </div>
     );
   }
 
   return (
     <>
-      {programmeScanning && matches.length === 0 ? (
+      {programmeScanning ? (
         <p className="text-xs text-(--text-muted) mb-3">
-          Searching on-air programmes…
+          {matches.length === 0
+            ? "Searching on-air programmes…"
+            : "Scanning more programmes… (partial results)"}
         </p>
       ) : null}
       <VirtualLiveChannelGrid

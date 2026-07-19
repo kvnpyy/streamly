@@ -1,4 +1,5 @@
 import { catalogKeys } from "@/lib/catalog-queries";
+import { MIN_SEARCH_QUERY_LEN } from "@/lib/search-normalize";
 import { fetchSeriesItemsPage } from "@/lib/series-catalog-items";
 import { fetchVodItemsPage } from "@/lib/vod-catalog-items";
 import type { XtreamCredentials } from "@/lib/xtream-types";
@@ -23,7 +24,7 @@ export function vodCatalogSearchQueryOptions(
         { categoryId: "all", q: needle, limit: SEARCH_ITEMS_LIMIT },
         signal
       ),
-    enabled: enabled && needle.length >= 2,
+    enabled: enabled && needle.length >= MIN_SEARCH_QUERY_LEN,
     staleTime: 60_000,
     gcTime: 120_000,
     structuralSharing: false,
@@ -48,7 +49,7 @@ export function seriesCatalogSearchQueryOptions(
         { categoryId: "all", q: needle, limit: SEARCH_ITEMS_LIMIT },
         signal
       ),
-    enabled: enabled && needle.length >= 2,
+    enabled: enabled && needle.length >= MIN_SEARCH_QUERY_LEN,
     staleTime: 60_000,
     gcTime: 120_000,
     structuralSharing: false,

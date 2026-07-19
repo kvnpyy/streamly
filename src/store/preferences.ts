@@ -191,7 +191,7 @@ export const usePrefs = create<PrefsState>()(
           ].slice(0, 50),
         });
       },
-      clearRecents: () => set({ recents: [] }),
+      clearRecents: () => set({ recents: [], vodResumeSec: {} }),
       removeRecent: (kind, id) =>
         set({
           recents: get().recents.filter(

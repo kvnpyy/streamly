@@ -36,9 +36,19 @@ describe("issuePairCode / redeemPairCode", () => {
     const pin = await issuePairCode(TEST_CREDS);
     expect(pin).toMatch(/^\d{6}$/);
 
-    const creds = await redeemPairCode(pin);
-    expect(creds).toEqual(TEST_CREDS);
+    const pair = await redeemPairCode(pin);
+    expect(pair?.creds).toEqual(TEST_CREDS);
+    expect(pair?.streamUserId).toBeUndefined();
     expect(await redeemPairCode(pin)).toBeNull();
+  });
+
+  it("carries streamUserId when issued with Stream session", async () => {
+    const pin = await issuePairCode(TEST_CREDS, {
+      streamUserId: "user-abc-123",
+    });
+    const pair = await redeemPairCode(pin);
+    expect(pair?.creds).toEqual(TEST_CREDS);
+    expect(pair?.streamUserId).toBe("user-abc-123");
   });
 
   it("rejects invalid pins", async () => {
@@ -49,7 +59,8 @@ describe("issuePairCode / redeemPairCode", () => {
 
   it("strips non-digits from redeem input", async () => {
     const pin = await issuePairCode(TEST_CREDS);
-    expect(await redeemPairCode(`${pin.slice(0, 3)}-${pin.slice(3)}`)).toEqual(TEST_CREDS);
+    const pair = await redeemPairCode(`${pin.slice(0, 3)}-${pin.slice(3)}`);
+    expect(pair?.creds).toEqual(TEST_CREDS);
   });
 });
 

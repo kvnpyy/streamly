@@ -50,6 +50,7 @@ function LivePageInner({
         clearLiveSearch={shell.clearLiveSearch}
         deferredQLower={shell.deferredQLower}
         tvLivingRoom={shell.tvLivingRoom}
+        tvBrowser={shell.tvBrowser}
         liveSearchRef={shell.liveSearchRef}
       />
     );

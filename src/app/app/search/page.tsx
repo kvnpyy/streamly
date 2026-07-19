@@ -16,6 +16,7 @@ import {
 import { liveChannelSearchQueryOptions } from "@/lib/live-catalog-search";
 import { buildLiveChannelIndex } from "@/lib/live-channel-index";
 import { isLiveProgrammeSearchEnabled } from "@/lib/live-epg-policy";
+import { MIN_SEARCH_QUERY_LEN } from "@/lib/search-normalize";
 import { useSlashFocusSearch } from "@/lib/use-slash-focus-search";
 import { looksAdult, parsePositiveRouteId } from "@/lib/utils";
 import {
@@ -29,7 +30,6 @@ import { useQuery } from "@tanstack/react-query";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useDeferredValue, useMemo, useRef } from "react";
 
-const MIN_SEARCH_LEN = 2;
 const MAX_PER_SECTION = 48;
 
 function SearchInner() {
@@ -47,7 +47,7 @@ function SearchInner() {
   const safe = hideAdult && !parentalUnlocked;
 
   const f = q.trim().toLowerCase();
-  const searchEnabled = f.length >= MIN_SEARCH_LEN;
+  const searchEnabled = f.length >= MIN_SEARCH_QUERY_LEN;
 
   const liveSearch = useQuery(
     liveChannelSearchQueryOptions(
@@ -158,9 +158,24 @@ function SearchInner() {
             ? "Enter a title in the search box above to see matches here."
             : "Type in the search bar at the top of the screen to see matches here."}
         </div>
-      ) : f.length < MIN_SEARCH_LEN ? (
+      ) : f.length < MIN_SEARCH_QUERY_LEN ? (
         <div className="rounded-xl border border-(--line) bg-(--bg-2)/80 px-4 py-6 text-center text-sm text-(--text-muted)">
-          Type at least {MIN_SEARCH_LEN} characters to search the catalog.
+          Type at least {MIN_SEARCH_QUERY_LEN} characters to search the catalog.
+        </div>
+      ) : liveSearch.isError || vodSearch.isError || seriesSearch.isError ? (
+        <div className="rounded-xl border border-(--line) bg-(--bg-2)/80 px-4 py-6 text-center text-sm text-(--text-muted) space-y-3">
+          <p>Search couldn’t load completely. Check your connection and retry.</p>
+          <button
+            type="button"
+            onClick={() => {
+              void liveSearch.refetch();
+              void vodSearch.refetch();
+              void seriesSearch.refetch();
+            }}
+            className="h-9 px-4 rounded-xl btn-brand text-sm font-medium"
+          >
+            Retry search
+          </button>
         </div>
       ) : loading ? (
         <div className="space-y-8" aria-busy="true">

@@ -14,7 +14,7 @@ import { VodLanguageFilter } from "@/components/VodLanguageFilter";
 import { MediaCard } from "@/components/MediaCard";
 import { SectionHeader, SkeletonGrid } from "@/components/SectionHeader";
 import { parsePositiveRouteId } from "@/lib/utils";
-import { useDebouncedValue } from "@/lib/use-debounce";
+import { useCatalogBrowseSearch } from "@/lib/catalog-browse-search-context";
 import { useSlashFocusSearch } from "@/lib/use-slash-focus-search";
 import { looksAdult } from "@/lib/utils";
 import { slimVodCatalogQueryOptions } from "@/lib/slim-vod-catalog-query";
@@ -94,10 +94,9 @@ function MoviesPageInner({
   const [categoryOverride, setCategoryOverride] = useState<
     string | "all" | null
   >(null);
-  const [qInput, setQInput] = useState("");
-  const moviesSearchRef = useRef<HTMLInputElement>(null);
-  useSlashFocusSearch(moviesSearchRef);
-  const qFilter = useDebouncedValue(qInput, 140);
+  const { qFilter } = useCatalogBrowseSearch();
+  const slashSearchRef = useRef<HTMLInputElement | null>(null);
+  useSlashFocusSearch(slashSearchRef);
   const [sort, setSort] = useState<CatalogSort>("added");
   const catalogGridRef = useRef<HTMLDivElement>(null);
 
@@ -487,14 +486,6 @@ function MoviesPageInner({
             )}
           </div>
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full lg:w-auto shrink-0">
-            <input
-              ref={moviesSearchRef}
-              value={qInput}
-              onChange={(e) => setQInput(e.target.value)}
-              placeholder="Search movies…"
-              aria-label="Search movies"
-              className="h-10 px-3 rounded-xl bg-(--bg-2) border border-(--line) focus:border-(--brand)/50 outline-none text-sm w-full sm:w-56 min-w-0"
-            />
             <CatalogSortToggle sort={sort} onChange={handleSortChange} />
           </div>
         </div>

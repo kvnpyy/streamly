@@ -5,13 +5,12 @@ import {
   LIVE_SEARCH_SCAN_POOL_LIMIT,
   searchLiveCatalog,
 } from "@/lib/live-catalog-search-server";
+import { MIN_SEARCH_QUERY_LEN } from "@/lib/search-normalize";
 import { NextRequest, NextResponse } from "next/server";
 import { requireIptvCredsFromRequest } from "@/lib/iptv-request-creds";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-const MIN_QUERY_LEN = 1;
 
 /**
  * Full-catalog live channel search (name matches + capped scan pool for EPG).
@@ -22,7 +21,7 @@ export async function GET(req: NextRequest) {
   const creds = credsOrRes;
 
   const q = req.nextUrl.searchParams.get("q")?.trim() ?? "";
-  if (q.length < MIN_QUERY_LEN) {
+  if (q.length < MIN_SEARCH_QUERY_LEN) {
     return NextResponse.json(
       { error: "Search query is too short." },
       { status: 400 }

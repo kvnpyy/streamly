@@ -2,7 +2,11 @@ import {
   normalizeVodLanguageCode,
   vodItemMatchesLanguage,
 } from "@/lib/vod-language";
-import { safeLower, safeStr } from "@/lib/utils";
+import {
+  normalizeSearchText,
+  textMatchesSearch,
+} from "@/lib/search-normalize";
+import { safeStr } from "@/lib/utils";
 import {
   materializeSeriesIds,
   materializeVodStreamIds,
@@ -120,15 +124,15 @@ function sortSeriesItems(streams: SeriesItem[], sort: VodCatalogSort): SeriesIte
 }
 
 function filterVodByQuery(streams: VodStream[], q: string): VodStream[] {
-  const needle = safeLower(q.trim());
+  const needle = normalizeSearchText(q);
   if (!needle) return streams;
-  return streams.filter((s) => safeLower(s.name).includes(needle));
+  return streams.filter((s) => textMatchesSearch(s.name, needle));
 }
 
 function filterSeriesByQuery(streams: SeriesItem[], q: string): SeriesItem[] {
-  const needle = safeLower(q.trim());
+  const needle = normalizeSearchText(q);
   if (!needle) return streams;
-  return streams.filter((s) => safeLower(s.name).includes(needle));
+  return streams.filter((s) => textMatchesSearch(s.name, needle));
 }
 
 function categoryNameById(

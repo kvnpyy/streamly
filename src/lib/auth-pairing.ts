@@ -1,21 +1,27 @@
 /**
  * One-time TV linking PINs (SQLite-backed). Survives restarts and works across
  * multiple Node processes when they share the same DATABASE_URL file.
+ *
+ * Payload may include a Stream user id so redeem can mint a NextAuth session
+ * (Continue Watching / favorites sync) in addition to the Xtream cookie.
  */
 
 import { getDb } from "@/db";
 import { tvPairCodes, tvPairRedeemBuckets } from "@/db/schema";
 import {
+  decodeEncryptedJson,
   decodeSessionCookiePayload,
-  encodeSessionCookiePayload,
+  encodeEncryptedJson,
+  parseCredentialsFromSessionJson,
 } from "@/lib/auth-session-cookie";
 import type { XtreamCredentials } from "@/lib/xtream-types";
 import { randomInt } from "node:crypto";
 import { asc, count, eq, lt } from "drizzle-orm";
 
-export type PairEntry = {
+export type PairPayload = {
   creds: XtreamCredentials;
-  expiresAt: number;
+  /** Present when the issuer was signed into a Streamly account. */
+  streamUserId?: string;
 };
 
 /** Default 10 minutes */
@@ -31,6 +37,39 @@ function trimCreds(creds: XtreamCredentials): XtreamCredentials {
     username: creds.username.trim(),
     password: creds.password,
   };
+}
+
+export function encodePairPayload(payload: PairPayload): string {
+  const body: PairPayload = {
+    creds: trimCreds(payload.creds),
+  };
+  if (payload.streamUserId?.trim()) {
+    body.streamUserId = payload.streamUserId.trim();
+  }
+  return encodeEncryptedJson(body);
+}
+
+export function decodePairPayload(raw: string): PairPayload | null {
+  if (!raw || raw.length < 4) return null;
+
+  const parsed = decodeEncryptedJson(raw);
+  if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+    const creds = parseCredentialsFromSessionJson(JSON.stringify(parsed));
+    if (!creds) return null;
+    const streamUserId =
+      typeof (parsed as { streamUserId?: unknown }).streamUserId === "string"
+        ? (parsed as { streamUserId: string }).streamUserId.trim()
+        : undefined;
+    return {
+      creds,
+      streamUserId: streamUserId || undefined,
+    };
+  }
+
+  // Legacy: plain session-cookie style blob without JSON object wrapper path
+  const legacyCreds = decodeSessionCookiePayload(raw);
+  if (!legacyCreds) return null;
+  return { creds: legacyCreds };
 }
 
 async function sweepExpiredPins(): Promise<void> {
@@ -54,15 +93,27 @@ async function sweepExpiredPins(): Promise<void> {
   }
 }
 
+export type IssuePairCodeOptions = {
+  ttlMs?: number;
+  streamUserId?: string | null;
+};
+
 /** Returns a 6-digit PIN string. */
 export async function issuePairCode(
   creds: XtreamCredentials,
-  ttlMs = PAIR_TTL_MS
+  ttlOrOpts: number | IssuePairCodeOptions = PAIR_TTL_MS
 ): Promise<string> {
+  const opts: IssuePairCodeOptions =
+    typeof ttlOrOpts === "number" ? { ttlMs: ttlOrOpts } : ttlOrOpts;
+  const ttlMs = opts.ttlMs ?? PAIR_TTL_MS;
+
   await sweepExpiredPins();
   const db = getDb();
   const expiresAt = new Date(Date.now() + ttlMs);
-  const payload = encodeSessionCookiePayload(trimCreds(creds));
+  const payload = encodePairPayload({
+    creds: trimCreds(creds),
+    streamUserId: opts.streamUserId ?? undefined,
+  });
   const createdAt = new Date();
 
   let pin: string;
@@ -74,26 +125,34 @@ export async function issuePairCode(
       await sweepExpiredPins();
       guard = 0;
     }
-  } while (await db.select().from(tvPairCodes).where(eq(tvPairCodes.pin, pin)).get());
+  } while (
+    await db.select().from(tvPairCodes).where(eq(tvPairCodes.pin, pin)).get()
+  );
 
   await db.insert(tvPairCodes).values({ pin, payload, expiresAt, createdAt });
   return pin;
 }
 
-export async function redeemPairCode(pinRaw: string): Promise<XtreamCredentials | null> {
+export async function redeemPairCode(
+  pinRaw: string
+): Promise<PairPayload | null> {
   await sweepExpiredPins();
   const pin = pinRaw.replace(/\D/g, "").slice(0, 6);
   if (pin.length !== 6) return null;
 
   const db = getDb();
-  const entry = await db.select().from(tvPairCodes).where(eq(tvPairCodes.pin, pin)).get();
+  const entry = await db
+    .select()
+    .from(tvPairCodes)
+    .where(eq(tvPairCodes.pin, pin))
+    .get();
   if (!entry || entry.expiresAt.getTime() <= Date.now()) {
     if (entry) await db.delete(tvPairCodes).where(eq(tvPairCodes.pin, pin));
     return null;
   }
 
   await db.delete(tvPairCodes).where(eq(tvPairCodes.pin, pin));
-  return decodeSessionCookiePayload(entry.payload);
+  return decodePairPayload(entry.payload);
 }
 
 export async function pairingRedeemAllowed(ip: string): Promise<boolean> {

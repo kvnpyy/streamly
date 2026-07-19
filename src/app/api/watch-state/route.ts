@@ -3,6 +3,8 @@ import { getDb } from "@/db";
 import { userProviderWatchState } from "@/db/schema";
 import { isValidProviderAccountKey } from "@/lib/favorites-sync";
 import {
+  mergeRecents,
+  mergeVodResumeSec,
   sanitizeRecents,
   sanitizeVodResumeSec,
 } from "@/lib/watch-state-sync";
@@ -28,6 +30,28 @@ function isForeignKeyError(err: unknown): boolean {
     code === "SQLITE_CONSTRAINT_FOREIGNKEY" ||
     err.message.includes("FOREIGN KEY")
   );
+}
+
+function parseStoredWatch(row: {
+  recentsJson: string;
+  vodResumeJson: string;
+}): { recents: RecentItem[]; vodResumeSec: Record<string, number> } {
+  let recentsParsed: unknown;
+  let vodParsed: unknown;
+  try {
+    recentsParsed = JSON.parse(row.recentsJson);
+  } catch {
+    recentsParsed = [];
+  }
+  try {
+    vodParsed = JSON.parse(row.vodResumeJson);
+  } catch {
+    vodParsed = {};
+  }
+  return {
+    recents: sanitizeRecents(recentsParsed),
+    vodResumeSec: sanitizeVodResumeSec(vodParsed),
+  };
 }
 
 export async function GET(req: NextRequest) {
@@ -62,23 +86,8 @@ export async function GET(req: NextRequest) {
     });
   }
 
-  let recentsParsed: unknown;
-  let vodParsed: unknown;
-  try {
-    recentsParsed = JSON.parse(row.recentsJson);
-  } catch {
-    recentsParsed = [];
-  }
-  try {
-    vodParsed = JSON.parse(row.vodResumeJson);
-  } catch {
-    vodParsed = {};
-  }
-
-  return NextResponse.json({
-    recents: sanitizeRecents(recentsParsed),
-    vodResumeSec: sanitizeVodResumeSec(vodParsed),
-  });
+  const parsed = parseStoredWatch(row);
+  return NextResponse.json(parsed);
 }
 
 export async function PUT(req: NextRequest) {
@@ -104,8 +113,34 @@ export async function PUT(req: NextRequest) {
     return badRequest("Invalid accountKey");
   }
 
-  const recents = sanitizeRecents(b.recents);
-  const vodResumeSec = sanitizeVodResumeSec(b.vodResumeSec);
+  const incomingRecents = sanitizeRecents(b.recents);
+  const incomingResume = sanitizeVodResumeSec(b.vodResumeSec);
+
+  const existing = await getDb()
+    .select({
+      recentsJson: userProviderWatchState.recentsJson,
+      vodResumeJson: userProviderWatchState.vodResumeJson,
+    })
+    .from(userProviderWatchState)
+    .where(
+      and(
+        eq(userProviderWatchState.userId, uid),
+        eq(userProviderWatchState.providerAccountKey, accountKey)
+      )
+    )
+    .limit(1)
+    .get();
+
+  const stored = existing
+    ? parseStoredWatch(existing)
+    : { recents: [] as RecentItem[], vodResumeSec: {} as Record<string, number> };
+
+  const recents = sanitizeRecents(
+    mergeRecents(stored.recents, incomingRecents)
+  );
+  const vodResumeSec = sanitizeVodResumeSec(
+    mergeVodResumeSec(stored.vodResumeSec, incomingResume)
+  );
   const now = new Date();
 
   try {

@@ -14,13 +14,17 @@ import {
   usePrefs,
   type RecentItem,
 } from "@/store/preferences";
+import { SITE_NAME } from "@/lib/site-brand";
 import { Trash2 } from "lucide-react";
+import { useSession } from "next-auth/react";
 import Link from "next/link";
 import { useMemo } from "react";
 
 export default function ContinueWatchingPage() {
   const creds = useAuth((s) => s.creds)!;
   const tv = useTvBrowser();
+  const { status: streamStatus } = useSession();
+  const streamSignedIn = streamStatus === "authenticated";
   const { play } = usePlayer();
   const recents = usePrefs((s) => s.recents);
   const removeRecent = usePrefs((s) => s.removeRecent);
@@ -105,6 +109,21 @@ export default function ContinueWatchingPage() {
           </button>
         )}
       </div>
+
+      {!streamSignedIn && streamStatus !== "loading" && (
+        <div className="rounded-xl border border-(--brand)/25 bg-(--brand)/5 px-4 py-3 text-sm text-(--text-dim) leading-relaxed">
+          Continue Watching syncs across your phone and TV when you&apos;re
+          signed into {SITE_NAME}. Link this device with a PIN from a signed-in
+          phone or computer, or{" "}
+          <Link
+            href="/login"
+            className="text-(--brand-2) underline underline-offset-2 hover:text-(--text)"
+          >
+            sign in
+          </Link>
+          .
+        </div>
+      )}
 
       {recents.length === 0 ? (
         <div className="card p-12 text-center text-(--text-dim) space-y-3">

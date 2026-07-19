@@ -1,3 +1,4 @@
+import { auth } from "@/auth";
 import {
   decodeSessionCookiePayload,
   SESSION_COOKIE_NAME,
@@ -10,8 +11,9 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
- * Create a short-lived PIN so another device (e.g. TV) can claim the same Xtream session.
- * Caller must already have a valid HttpOnly session cookie.
+ * Create a short-lived PIN so another device (e.g. TV) can claim the same
+ * Xtream session — and, when the issuer is Stream-signed-in, the Stream session
+ * (Continue Watching / favorites sync).
  */
 export async function POST() {
   const jar = await cookies();
@@ -24,9 +26,14 @@ export async function POST() {
     return NextResponse.json({ error: "Invalid session" }, { status: 401 });
   }
 
-  const pin = await issuePairCode(creds);
+  const session = await auth();
+  const streamUserId =
+    typeof session?.user?.id === "string" ? session.user.id : null;
+
+  const pin = await issuePairCode(creds, { streamUserId });
   return NextResponse.json({
     pin,
     expiresInSeconds: Math.floor(PAIR_TTL_MS / 1000),
+    includesStreamSession: Boolean(streamUserId),
   });
 }

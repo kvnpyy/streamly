@@ -140,28 +140,44 @@ export function encodeLegacyPlainSessionCookie(
   );
 }
 
+/** Encrypt arbitrary JSON with the same AES-GCM scheme as session cookies. */
+export function encodeEncryptedJson(value: unknown): string {
+  const key = getSessionCryptoKey();
+  return encryptAes256Gcm(JSON.stringify(value), key);
+}
+
+/** Decrypt a v2. blob to parsed JSON, or null if invalid. */
+export function decodeEncryptedJson(raw: string): unknown | null {
+  if (!raw || !raw.startsWith(SESSION_COOKIE_V2_PREFIX)) return null;
+  const key = getSessionCryptoKeyForDecrypt();
+  if (!key) return null;
+  const plain = decryptAes256Gcm(
+    raw.slice(SESSION_COOKIE_V2_PREFIX.length),
+    key
+  );
+  if (!plain) return null;
+  try {
+    return JSON.parse(plain) as unknown;
+  } catch {
+    return null;
+  }
+}
+
 export function encodeSessionCookiePayload(creds: XtreamCredentials): string {
   const trimmed: XtreamCredentials = {
     server: creds.server.trim(),
     username: creds.username.trim(),
     password: creds.password,
   };
-  const key = getSessionCryptoKey();
-  const json = JSON.stringify({ creds: trimmed });
-  return encryptAes256Gcm(json, key);
+  return encodeEncryptedJson({ creds: trimmed });
 }
 
 export function decodeSessionCookiePayload(raw: string): XtreamCredentials | null {
   if (!raw || raw.length < 4) return null;
   if (raw.startsWith(SESSION_COOKIE_V2_PREFIX)) {
-    const key = getSessionCryptoKeyForDecrypt();
-    if (!key) return null;
-    const plain = decryptAes256Gcm(
-      raw.slice(SESSION_COOKIE_V2_PREFIX.length),
-      key
-    );
-    if (!plain) return null;
-    return parseCredentialsFromSessionJson(plain);
+    const parsed = decodeEncryptedJson(raw);
+    if (parsed == null) return null;
+    return parseCredentialsFromSessionJson(JSON.stringify(parsed));
   }
   return decodeLegacyPlainCookie(raw);
 }

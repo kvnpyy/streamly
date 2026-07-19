@@ -3,6 +3,7 @@ import type { TvRegion } from "@/lib/geo-continent";
 import type {
   LiveCatalogSearchResult,
 } from "@/lib/live-catalog-search-server";
+import { MIN_SEARCH_QUERY_LEN } from "@/lib/search-normalize";
 import type { XtreamCredentials } from "@/lib/xtream-types";
 import type { UseQueryOptions } from "@tanstack/react-query";
 
@@ -79,7 +80,7 @@ export function liveChannelSearchQueryOptions(
         tvRegion,
         signal,
       }),
-    enabled: enabled && needle.length >= 1,
+    enabled: enabled && needle.length >= MIN_SEARCH_QUERY_LEN,
     staleTime: 45_000,
     gcTime: 120_000,
     structuralSharing: false,

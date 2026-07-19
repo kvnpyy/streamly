@@ -11,6 +11,10 @@ import {
 import { castBreadcrumb } from "@/lib/cast-telemetry";
 import { buildImageProxyAbsolute } from "@/lib/image-proxy";
 import {
+  castSdkFailedMessage,
+  mapCastSessionError,
+} from "@/lib/cast-error-messages";
+import {
   CAST_SENDER_SCRIPT_SRC,
   shouldAttemptChromecastSenderLoad,
 } from "@/lib/player-cast";
@@ -453,10 +457,8 @@ export function usePlayerCast({
       const ctx = window.cast?.framework?.CastContext?.getInstance?.();
       if (!ctx) {
         if (!opts?.quiet) {
-          setCastActionMessage(
-            "Cast isn’t ready yet. Wait a moment, refresh the page, or use Copy TV-safe stream URL."
-          );
-          window.setTimeout(() => setCastActionMessage(null), 8000);
+          setCastActionMessage(castSdkFailedMessage());
+          window.setTimeout(() => setCastActionMessage(null), 12_000);
         }
         return false;
       }
@@ -469,16 +471,22 @@ export function usePlayerCast({
         ctx.getCurrentSession?.();
       if (!alreadyConnected) {
         if (!opts?.requestSessionIfNeeded) return false;
-        await ctx.requestSession();
+        try {
+          await ctx.requestSession();
+        } catch (sessionErr) {
+          if (!opts?.quiet) {
+            setCastActionMessage(mapCastSessionError(sessionErr));
+            window.setTimeout(() => setCastActionMessage(null), 12_000);
+          }
+          throw sessionErr;
+        }
       }
 
       const ChromeMedia = window.chrome?.cast?.media;
       if (!ChromeMedia?.MediaInfo || !ChromeMedia.LoadRequest) {
         if (!opts?.quiet) {
-          setCastActionMessage(
-            "This browser doesn’t expose Chromecast media APIs. Try Chrome or Edge, or copy the TV-safe stream URL."
-          );
-          window.setTimeout(() => setCastActionMessage(null), 8000);
+          setCastActionMessage(castSdkFailedMessage());
+          window.setTimeout(() => setCastActionMessage(null), 12_000);
         }
         return false;
       }
@@ -699,29 +707,14 @@ export function usePlayerCast({
     try {
       await loadPreparedOntoSession({ requestSessionIfNeeded: true });
     } catch (err) {
-      const code =
-        err &&
-        typeof err === "object" &&
-        "code" in err &&
-        typeof (err as { code: unknown }).code === "string"
-          ? (err as { code: string }).code
-          : err &&
-              typeof err === "object" &&
-              "code" in err &&
-              typeof (err as { code: unknown }).code === "number"
-            ? String((err as { code: number }).code)
-            : null;
+      const mapped = mapCastSessionError(err);
       castBreadcrumb("cast_session_fail", {
         kind: currentRef.current?.kind ?? null,
         channelId: currentRef.current?.id ?? null,
-        code: code ?? null,
+        message: mapped.slice(0, 120),
       });
-      setCastActionMessage(
-        code
-          ? `Cast failed (${code}). Try again, use another receiver, or copy the TV-safe stream URL for VLC on your TV.`
-          : "Cast failed. Try again, move to the same Wi‑Fi as your TV, or copy the TV-safe stream URL for VLC."
-      );
-      window.setTimeout(() => setCastActionMessage(null), 9000);
+      setCastActionMessage(mapped);
+      window.setTimeout(() => setCastActionMessage(null), 12_000);
       if (process.env.NODE_ENV !== "production") {
         console.warn("Cast failed", err);
       }

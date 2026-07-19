@@ -735,16 +735,16 @@ export function LiveGridPageInner({ shell }: { shell: LivePageShell }) {
           />
         ) : null}
       </div>
-      <LiveChannelSearchField
-        ref={liveSearchRef}
-        value={q}
-        onValueChange={setQ}
-        onClear={q ? clearLiveSearch : undefined}
-        className={cn(
-          "min-w-0",
-          tvLivingRoom ? "flex flex-1" : "hidden lg:flex"
-        )}
-      />
+      {/* Web: TopBar owns search. TV shell has no TopBar text field. */}
+      {tvBrowser || tvLivingRoom ? (
+        <LiveChannelSearchField
+          ref={liveSearchRef}
+          value={q}
+          onValueChange={setQ}
+          onClear={q ? clearLiveSearch : undefined}
+          className="flex flex-1 min-w-0"
+        />
+      ) : null}
     </div>
   );
 

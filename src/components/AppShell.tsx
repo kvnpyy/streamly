@@ -19,6 +19,7 @@ import { peekAuthSessionBridge, useAuth, useAuthStoreHydrated } from "@/store/au
 import { useSession } from "next-auth/react";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, type CSSProperties, type ReactNode } from "react";
+import { CatalogBrowseSearchProvider } from "@/lib/catalog-browse-search-context";
 import { LiveSearchProvider } from "@/lib/live-search-context";
 import { LIVE_PAGE_PATH } from "@/lib/use-live-page-search";
 import { usePlayerDocumentOpen } from "@/lib/use-player-open";
@@ -171,11 +172,13 @@ export function AppShell({ children }: { children: ReactNode }) {
         ) : (
           <TvTopNav />
         )}
-        {isLivePage ? (
-          <LiveSearchProvider>{mainInner}</LiveSearchProvider>
-        ) : (
-          mainInner
-        )}
+        <CatalogBrowseSearchProvider>
+          {isLivePage ? (
+            <LiveSearchProvider>{mainInner}</LiveSearchProvider>
+          ) : (
+            mainInner
+          )}
+        </CatalogBrowseSearchProvider>
         <PlayerOverlay />
         {isLivePage ? <LiveCategoryOverlayHost /> : null}
         <AppVersionBadge />
@@ -213,11 +216,13 @@ export function AppShell({ children }: { children: ReactNode }) {
   return (
     <div className="flex min-h-screen">
       <Sidebar />
-      {isLivePage ? (
-        <LiveSearchProvider>{mainColumn}</LiveSearchProvider>
-      ) : (
-        mainColumn
-      )}
+      <CatalogBrowseSearchProvider>
+        {isLivePage ? (
+          <LiveSearchProvider>{mainColumn}</LiveSearchProvider>
+        ) : (
+          mainColumn
+        )}
+      </CatalogBrowseSearchProvider>
       <MobileBottomNav />
       <PlayerOverlay />
       {isLivePage ? <LiveCategoryOverlayHost /> : null}

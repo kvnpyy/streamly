@@ -51,3 +51,17 @@ export function chromiumWalletExtensionPlaybackHint(): string | null {
   if (!isChromiumBasedDesktopBrowser()) return null;
   return "Wallet or privacy extensions can block playback in Chrome — try Incognito with extensions off.";
 }
+
+/**
+ * Brave desktop/Android. Prefer `navigator.brave`; UA alone is unreliable
+ * (Brave often reports as Chrome).
+ */
+export function isBraveBrowser(): boolean {
+  if (typeof navigator === "undefined") return false;
+  const nav = navigator as Navigator & {
+    brave?: { isBrave?: () => Promise<boolean> };
+  };
+  if (nav.brave && typeof nav.brave.isBrave === "function") return true;
+  const ua = navigator.userAgent || "";
+  return /\bBrave\b/i.test(ua);
+}

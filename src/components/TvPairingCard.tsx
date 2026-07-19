@@ -6,7 +6,11 @@ import { Loader2, Smartphone, Tv } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
-type IssueResponse = { pin: string; expiresInSeconds: number };
+type IssueResponse = {
+  pin: string;
+  expiresInSeconds: number;
+  includesStreamSession?: boolean;
+};
 
 export function TvPairingCard() {
   const tv = useTvBrowser();
@@ -46,6 +50,7 @@ export function TvPairingCard() {
       setActive({
         pin: data.pin,
         expiresInSeconds: data.expiresInSeconds ?? 600,
+        includesStreamSession: Boolean(data.includesStreamSession),
       });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed");
@@ -64,9 +69,10 @@ export function TvPairingCard() {
         Link a TV with a PIN
       </h3>
       <p className="text-sm text-(--text-dim) mb-4 leading-relaxed">
-        Sign in on your phone or computer here first. Generate a 6-digit code, then on the TV open{" "}
-        <strong className="text-(--text)">Sign in → Link with PIN</strong> and type it — no server URL
-        or password on the remote.{" "}
+        Sign in to {SITE_NAME} on your phone or computer first (so Continue
+        Watching syncs), then generate a 6-digit code. On the TV open{" "}
+        <strong className="text-(--text)">Sign in → Link with PIN</strong> and
+        type it — no server URL or password on the remote.{" "}
         <Link href="/tv" className="text-(--brand-2) underline underline-offset-2 hover:text-(--text)">
           TV setup guide
         </Link>
@@ -109,6 +115,16 @@ export function TvPairingCard() {
             <div className="mt-4 text-sm text-(--text-dim)">
               Expires in {mm}:{ss.toString().padStart(2, "0")}
             </div>
+            {active.includesStreamSession ? (
+              <div className="mt-3 text-xs text-(--brand-2) leading-snug">
+                Continue Watching and favorites will sync to this TV.
+              </div>
+            ) : (
+              <div className="mt-3 text-xs text-(--text-muted) leading-snug">
+                Playlist only — sign into {SITE_NAME} on this device first so
+                Continue Watching syncs across devices.
+              </div>
+            )}
           </div>
           <div className="flex flex-wrap gap-2">
             <button

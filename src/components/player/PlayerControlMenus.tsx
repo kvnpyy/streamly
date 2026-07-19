@@ -9,8 +9,14 @@ import {
 import { cn } from "@/lib/utils";
 import {
   isAppleMobileWebKitDevice,
+  isBraveBrowser,
   isChromiumBasedDesktopBrowser,
 } from "@/lib/browser";
+import {
+  braveCastRecoveryHint,
+  castSdkFailedMessage,
+  castSdkUnsupportedMessage,
+} from "@/lib/cast-error-messages";
 import { hlsRenditionLabel } from "@/lib/live-hls-playback";
 import { AnimatePresence, motion } from "framer-motion";
 import type { Level } from "hls.js";
@@ -108,6 +114,8 @@ export function PlayerControlMenus({
 
   const appleWebKit =
     typeof navigator !== "undefined" && isAppleMobileWebKitDevice();
+  const brave =
+    typeof navigator !== "undefined" && isBraveBrowser();
   const showCastChrome =
     castSenderState === "ready" ||
     castSenderState === "loading" ||
@@ -353,7 +361,7 @@ export function PlayerControlMenus({
           title={
             castSessionConnected
               ? "Connected — tap to cast this stream again or pick another TV"
-              : "Cast to Chromecast or Google TV"
+              : "Cast to Chromecast / Google TV (Samsung needs Chromecast built-in)"
           }
           className={cn(
             "size-9 grid place-items-center rounded-lg hover:bg-white/10 disabled:opacity-40 disabled:cursor-not-allowed",
@@ -421,10 +429,11 @@ export function PlayerControlMenus({
                 ) : (
                   <>
                     <span className="text-white/60">Google Cast</span> works in
-                    Chrome, Edge, or Brave (Chromecast / Google TV). Streams play
-                    through this app&apos;s server. MKV titles use a short HLS
-                    prep. On iPhone use AirPlay; other TVs can use the TV-safe
-                    URL.
+                    Chrome, Edge, or Brave to Chromecast / Google TV. Samsung
+                    TVs need <span className="text-white/60">Chromecast built-in</span>{" "}
+                    (Smart View is not supported). Streams play through this
+                    app&apos;s server. MKV titles use a short HLS prep. Or copy
+                    the TV-safe URL / open Streamly on the TV.
                   </>
                 )}
               </div>
@@ -471,16 +480,23 @@ export function PlayerControlMenus({
                   </span>
                   {castSenderState === "unsupported" && (
                     <span className="pl-6 text-[11px] text-white/50 leading-snug">
-                      Use Chrome, Edge, or Brave on a computer or Android. On
-                      iPhone, use AirPlay.
+                      {castSdkUnsupportedMessage()}
                     </span>
                   )}
                   {castSenderState === "failed" && (
                     <span className="pl-6 text-[11px] text-white/50 leading-snug">
-                      Cast didn’t load (blocked network, extension, or ad
-                      blocker). Refresh or copy the TV-safe stream URL.
+                      {castSdkFailedMessage()}
                     </span>
                   )}
+                  {brave &&
+                    castSenderState === "ready" &&
+                    !castSessionConnected && (
+                      <span className="pl-6 text-[11px] text-white/45 leading-snug">
+                        Brave tip: Media Router must be on at
+                        brave://settings/extensions. Lower Shields if devices
+                        don’t appear.
+                      </span>
+                    )}
                 </button>
               )}
               {castActionMessage && (
@@ -488,6 +504,14 @@ export function PlayerControlMenus({
                   {castActionMessage}
                 </div>
               )}
+              {brave &&
+                (castSenderState === "failed" ||
+                  castSenderState === "unsupported") &&
+                !castActionMessage && (
+                  <div className="mx-2 mb-1 rounded-lg border border-sky-400/20 bg-sky-950/35 px-2.5 py-2 text-[11px] text-sky-50/90 leading-snug">
+                    {braveCastRecoveryHint()}
+                  </div>
+                )}
               <button
                 type="button"
                 onClick={onCopyTvSafeUrl}

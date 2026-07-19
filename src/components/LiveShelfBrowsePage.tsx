@@ -58,6 +58,8 @@ export type LiveShelfBrowsePageProps = {
   clearLiveSearch: () => void;
   deferredQLower: string;
   tvLivingRoom: boolean;
+  /** TV browsers have no TopBar search field — keep the page field. */
+  tvBrowser?: boolean;
   liveSearchRef: React.RefObject<HTMLInputElement | null>;
 };
 
@@ -81,6 +83,7 @@ export function LiveShelfBrowsePage({
   clearLiveSearch,
   deferredQLower,
   tvLivingRoom,
+  tvBrowser = false,
   liveSearchRef,
 }: LiveShelfBrowsePageProps) {
   const { play } = usePlayer();
@@ -220,13 +223,16 @@ export function LiveShelfBrowsePage({
           />
         ) : null}
       </div>
-      <LiveChannelSearchField
-        ref={liveSearchRef}
-        value={q}
-        onValueChange={setQ}
-        onClear={q ? clearLiveSearch : undefined}
-        className={tvLivingRoom ? "flex flex-1" : "hidden lg:flex"}
-      />
+      {/* Web: TopBar owns search. TV shell has no TopBar text field. */}
+      {tvBrowser || tvLivingRoom ? (
+        <LiveChannelSearchField
+          ref={liveSearchRef}
+          value={q}
+          onValueChange={setQ}
+          onClear={q ? clearLiveSearch : undefined}
+          className="flex flex-1"
+        />
+      ) : null}
     </div>
   );
 

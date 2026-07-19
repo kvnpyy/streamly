@@ -40,7 +40,7 @@ const TURNSTILE_SITE_KEY =
     : "";
 
 export function StreamlyOnboardingConnect() {
-  const { data: session } = useSession();
+  const { data: session, update: updateSession } = useSession();
   const streamlySignedIn = Boolean(session?.user);
   const authBootstrapReady = useAuthBootstrapReady();
   const tv = useTvBrowser();
@@ -227,9 +227,18 @@ export function StreamlyOnboardingConnect() {
       });
       const redeemJson = (await redeem.json().catch(() => ({}))) as {
         error?: string;
+        streamLinked?: boolean;
       };
       if (!redeem.ok) {
         throw new Error(redeemJson.error || `Link failed (${redeem.status})`);
+      }
+
+      if (redeemJson.streamLinked) {
+        try {
+          await updateSession();
+        } catch {
+          /* session cookie is set; bootstrap will pick it up */
+        }
       }
 
       const sess = await fetch(`${window.location.origin}/api/iptv/session`, {

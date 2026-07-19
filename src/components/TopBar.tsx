@@ -7,6 +7,10 @@ import { isAmazonSilkUserAgent } from "@/lib/tv-user-agent";
 import { cn } from "@/lib/utils";
 import { SITE_NAME } from "@/lib/site-brand";
 import { useDebouncedValue } from "@/lib/use-debounce";
+import {
+  catalogBrowseSearchPlaceholder,
+  useCatalogBrowseSearchOptional,
+} from "@/lib/catalog-browse-search-context";
 import { useLiveSearchContextOptional } from "@/lib/live-search-context";
 import { LIVE_PAGE_PATH } from "@/lib/use-live-page-search";
 import { Search, Sparkles } from "lucide-react";
@@ -72,7 +76,9 @@ function TopBarInner({ title, subtitle }: { title?: string; subtitle?: string })
   const showSearchSubmit = tv || silkUa;
   const onSearchPage = pathname === "/app/search";
   const liveSearch = useLiveSearchContextOptional();
+  const catalogSearch = useCatalogBrowseSearchOptional();
   const onLivePage = pathname === LIVE_PAGE_PATH && liveSearch != null;
+  const onCatalogBrowse = catalogSearch != null;
   const urlQ = sp.get("q") ?? "";
 
   /**
@@ -106,7 +112,9 @@ function TopBarInner({ title, subtitle }: { title?: string; subtitle?: string })
     ? (searchDraft ?? urlQ)
     : onLivePage && liveSearch
       ? liveSearch.inputValue
-      : offRouteQuery;
+      : onCatalogBrowse && catalogSearch
+        ? catalogSearch.inputValue
+        : offRouteQuery;
 
   const pageTitle = title ?? routeTitle(pathname);
   const onHome = pathname === "/app";
@@ -182,6 +190,10 @@ function TopBarInner({ title, subtitle }: { title?: string; subtitle?: string })
               liveSearch.setInputValue(v);
               return;
             }
+            if (onCatalogBrowse && catalogSearch) {
+              catalogSearch.setInputValue(v);
+              return;
+            }
             router.push(`/app/search?q=${encodeURIComponent(v)}`);
           }}
         >
@@ -197,6 +209,8 @@ function TopBarInner({ title, subtitle }: { title?: string; subtitle?: string })
                   setSearchDraft(v);
                 } else if (onLivePage && liveSearch) {
                   liveSearch.setInputValue(v);
+                } else if (onCatalogBrowse && catalogSearch) {
+                  catalogSearch.setInputValue(v);
                 } else {
                   setOffRouteQuery(v);
                 }
@@ -207,6 +221,8 @@ function TopBarInner({ title, subtitle }: { title?: string; subtitle?: string })
                   setSearchDraft(v);
                 } else if (onLivePage && liveSearch) {
                   liveSearch.setInputValue(v);
+                } else if (onCatalogBrowse && catalogSearch) {
+                  catalogSearch.setInputValue(v);
                 } else {
                   setOffRouteQuery(v);
                 }
@@ -214,7 +230,9 @@ function TopBarInner({ title, subtitle }: { title?: string; subtitle?: string })
               placeholder={
                 onLivePage
                   ? "Search channels or programs…"
-                  : "Search channels, movies, series…"
+                  : onCatalogBrowse && catalogSearch
+                    ? catalogBrowseSearchPlaceholder(catalogSearch.kind)
+                    : "Search channels, movies, series…"
               }
               className="bg-transparent outline-none text-sm w-full min-w-0 placeholder:text-(--text-muted)"
             />
