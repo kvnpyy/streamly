@@ -15,6 +15,11 @@ import { withLiveHlsCompatMse } from "@/lib/stream-url";
 import { voidSafeVideoPlay } from "@/lib/video-play";
 import { writePreferredPlayerVolume } from "@/lib/player-volume-pref";
 import type { PlayerSource } from "@/store/player";
+import {
+  shouldTreatTranscodeAsEnded,
+  shouldTreatTranscodeSnapAsEnded,
+  signalTranscodePlaybackEnded,
+} from "@/lib/player-transcode-playback-end";
 
 function isBraveOnAppleMobile(): boolean {
   if (typeof navigator === "undefined") return false;
@@ -32,6 +37,7 @@ export type UsePlayerVideoEventsParams = {
   vodTotalSec: number;
   vodDurationHintRef: RefObject<number>;
   vodStartOffsetRef: RefObject<number>;
+  vodEncodedSecRef: RefObject<number>;
   vodScrubbingRef: RefObject<boolean>;
   mobileLikeViewport: boolean;
   chromiumDesktopClient: boolean;
@@ -65,6 +71,7 @@ export function usePlayerVideoEvents(p: UsePlayerVideoEventsParams) {
     vodTotalSec,
     vodDurationHintRef,
     vodStartOffsetRef,
+    vodEncodedSecRef,
     vodScrubbingRef,
     mobileLikeViewport,
     chromiumDesktopClient,
@@ -113,6 +120,8 @@ export function usePlayerVideoEvents(p: UsePlayerVideoEventsParams) {
     let liveNoPictureSince = 0;
     let liveNoPictureRecoveries = 0;
     let lastNoPictureRecoveryMs = 0;
+    let maxTranscodeRelSeen = 0;
+    let transcodeEndedSignaled = false;
 
     const cancelLiveKickTimer = () => {
       if (liveKickTimer) {
@@ -297,6 +306,37 @@ export function usePlayerVideoEvents(p: UsePlayerVideoEventsParams) {
         if (nowUi - lastMarkPictureMs >= 450) {
           lastMarkPictureMs = nowUi;
           markPictureReady();
+        }
+        if (!transcodeEndedSignaled && !v.paused && !vodScrubbingRef.current) {
+          const rel = v.currentTime;
+          if (rel > maxTranscodeRelSeen) maxTranscodeRelSeen = rel;
+          const durationSec =
+            vodDurationHintRef.current > 1
+              ? vodDurationHintRef.current
+              : vodTotalSec > 1
+                ? vodTotalSec
+                : 0;
+          const startOffset = vodStartOffsetRef.current;
+          const encodedSecRel = vodEncodedSecRef.current;
+          const atFinale = shouldTreatTranscodeAsEnded({
+            video: v,
+            startOffsetSec: startOffset,
+            durationSec,
+            encodedSecRel,
+          });
+          const snapFinale = shouldTreatTranscodeSnapAsEnded(
+            rel,
+            maxTranscodeRelSeen,
+            startOffset,
+            durationSec
+          );
+          if (atFinale || snapFinale) {
+            transcodeEndedSignaled = true;
+            signalTranscodePlaybackEnded({
+              video: v,
+              hls: hlsRef.current,
+            });
+          }
         }
       }
 
@@ -607,6 +647,7 @@ export function usePlayerVideoEvents(p: UsePlayerVideoEventsParams) {
     hlsLiveEdgeRestartGateRef,
     vodDurationHintRef,
     vodStartOffsetRef,
+    vodEncodedSecRef,
     vodScrubbingRef,
     cancelLiveMediaErrorDeferRef,
     livePlaybackErrorSuppressUntilRef,

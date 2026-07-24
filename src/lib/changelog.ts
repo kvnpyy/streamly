@@ -11,6 +11,18 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.13.8",
+    date: "2026-07-24",
+    summary:
+      "Download VOD episodes to disk before transcoding so playback no longer stalls or loops mid-episode.",
+    highlights: [
+      "VOD: cache the source file locally, then ffmpeg from disk (single-connection safe).",
+      "VOD: wait for enough downloaded bytes before seek/resume encodes; keep source across Try again.",
+      "VOD: never treat early ENDLIST as finished when the episode is incomplete.",
+      "Player: re-wire finale detection so series autoplay advances instead of live-sync looping.",
+    ],
+  },
+  {
     version: "0.13.7",
     date: "2026-07-18",
     summary:

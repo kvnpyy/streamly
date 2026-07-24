@@ -23,6 +23,21 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.13.8] — 2026-07-24
+
+Download VOD episodes to disk before transcoding so playback no longer stalls or loops mid-episode.
+
+### Fixed
+- **VOD mid-episode pause/loop** — download the source file locally first, then run ffmpeg from disk so a dropped provider connection cannot freeze or loop the playlist.
+- **False episode complete** — early `#EXT-X-ENDLIST` is ignored until ~92% of known duration (or a full source download) is encoded.
+- **Series finale loop** — re-wire transcode end detection so autoplay advances instead of hls.js live-sync snapping back.
+- **Stream ENOENT** — missing `index.m3u8` returns soft 503 and restarts the job instead of throwing.
+
+### Added
+- **VOD source cache** — `STREAM_VOD_SOURCE_DIR` / `STREAM_VOD_SOURCE_START_BYTES` (disable with `STREAM_VOD_SOURCE_CACHE=0`).
+
+---
+
 ## [0.13.7] — 2026-07-18
 
 Brave cast guidance, Continue Watching sync via PIN, and one clear search bar.

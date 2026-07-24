@@ -27,9 +27,27 @@ import fs from "fs";
 import fsp from "fs/promises";
 import path from "path";
 import { validateVodUpstreamReadable } from "@/lib/vod-transcode-upstream";
+import {
+  ensureVodSource,
+  getVodSourceStatus,
+  isVodSourceCacheEnabled,
+  isVodSourceComplete,
+  releaseVodSourceDownload,
+  reopenVodSourceIfTruncated,
+  touchVodSource,
+  vodSourceStartBytes,
+  waitForVodSourceBytes,
+  waitForVodSourceForSeek,
+  waitForVodSourceGrowth,
+  wipeVodSource,
+} from "@/lib/vod-source-cache";
 
 const IPTV_UA_VOD = "VLC/3.0.20 LibVLC/3.0.20";
 const MANIFEST_NAME = "index.m3u8";
+
+function isHttpInput(input: string): boolean {
+  return /^https?:\/\//i.test(input);
+}
 
 export function isVodTranscodeEnabledServer(): boolean {
   return process.env.STREAM_VOD_TRANSCODE === "1";
@@ -197,7 +215,11 @@ function ffmpegInputArgs(referer: string): string[] {
   return args;
 }
 
-function ffprobeInputArgs(referer: string, fast = false): string[] {
+function ffprobeInputArgs(
+  referer: string,
+  fast = false,
+  localFile = false
+): string[] {
   const args = [
     "-hide_banner",
     "-loglevel",
@@ -206,9 +228,9 @@ function ffprobeInputArgs(referer: string, fast = false): string[] {
     fast ? "1M" : "8M",
     "-analyzeduration",
     fast ? "750K" : "2M",
-    "-user_agent",
-    IPTV_UA_VOD,
   ];
+  if (localFile) return args;
+  args.push("-user_agent", IPTV_UA_VOD);
   if (referer) args.push("-headers", `Referer: ${referer}\r\n`);
   return args;
 }
@@ -233,17 +255,18 @@ type ProbedCodecs = {
 };
 
 /** One ffprobe round-trip — picks the best audio stream index for ffmpeg `-map`. */
-async function probeStreamCodecs(upstream: string): Promise<ProbedCodecs> {
-  const referer = upstreamReferer(upstream);
+async function probeStreamCodecs(input: string): Promise<ProbedCodecs> {
+  const local = !isHttpInput(input);
+  const referer = local ? "" : upstreamReferer(input);
   const args = [
-    ...ffprobeInputArgs(referer, true),
+    ...ffprobeInputArgs(referer, true, local),
     "-select_streams",
     "v:0,a",
     "-show_entries",
     "stream=index,codec_name,codec_type,channels",
     "-of",
     "json",
-    upstream,
+    input,
   ];
 
   return new Promise((resolve) => {
@@ -326,15 +349,16 @@ type JobMeta = {
   audioStreamIndex?: number | null;
 };
 
-async function probeDurationSec(upstream: string): Promise<number | null> {
-  const referer = upstreamReferer(upstream);
+async function probeDurationSec(input: string): Promise<number | null> {
+  const local = !isHttpInput(input);
+  const referer = local ? "" : upstreamReferer(input);
   const args = [
-    ...ffprobeInputArgs(referer),
+    ...ffprobeInputArgs(referer, false, local),
     "-show_entries",
     "format=duration",
     "-of",
     "default=noprint_wrappers=1:nokey=1",
-    upstream,
+    input,
   ];
   return new Promise((resolve) => {
     const proc = spawn(ffprobeBinary(), args, { stdio: ["ignore", "pipe", "pipe"] });
@@ -379,11 +403,40 @@ async function writeJobMeta(dir: string, meta: JobMeta): Promise<void> {
   }
 }
 
+async function resolveProbeInput(job: TranscodeJob): Promise<string> {
+  if (isVodSourceCacheEnabled()) {
+    const st = await getVodSourceStatus(job.upstream);
+    if (st && st.bytes >= Math.min(1_000_000, vodSourceStartBytes())) {
+      return st.path;
+    }
+  }
+  return job.upstream;
+}
+
 async function resolveJobMeta(job: TranscodeJob): Promise<JobMeta> {
   const cached = await readJobMeta(job.dir);
-  if (cached?.durationSec && cached.durationSec > 0) return cached;
+  const probeInput = await resolveProbeInput(job);
+  if (cached?.durationSec && cached.durationSec > 0) {
+    // Refresh audio mapping from local source when prior probe failed on HTTP.
+    if (
+      (cached.audioStreamIndex == null || cached.audioStreamIndex === undefined) &&
+      !isHttpInput(probeInput)
+    ) {
+      const probed = await probeStreamCodecs(probeInput);
+      if (probed.audioStreamIndex != null) {
+        cached.audioStreamIndex = probed.audioStreamIndex;
+        if (probed.video || probed.audio) {
+          cached.plan = planFromProbeCodecs(probed.video, probed.audio, {
+            maxHeight: transcodeMaxHeight(),
+          });
+        }
+        await writeJobMeta(job.dir, cached);
+      }
+    }
+    return cached;
+  }
   if (cached && cached.durationSec == null) {
-    const durationSec = await probeDurationSec(job.upstream);
+    const durationSec = await probeDurationSec(probeInput);
     if (durationSec) {
       cached.durationSec = durationSec;
       job.durationSec = durationSec;
@@ -393,7 +446,7 @@ async function resolveJobMeta(job: TranscodeJob): Promise<JobMeta> {
   }
 
   const { video: videoCodec, audio: audioCodec, audioStreamIndex, audioStreamCount } =
-    await probeStreamCodecs(job.upstream);
+    await probeStreamCodecs(probeInput);
   const plan = planFromProbeCodecs(videoCodec, audioCodec, {
     maxHeight: transcodeMaxHeight(),
   });
@@ -418,7 +471,7 @@ async function resolveJobMeta(job: TranscodeJob): Promise<JobMeta> {
   };
   await writeJobMeta(job.dir, meta);
 
-  void probeDurationSec(job.upstream).then(async (durationSec) => {
+  void probeDurationSec(probeInput).then(async (durationSec) => {
     if (durationSec == null) return;
     job.durationSec = durationSec;
     const latest = (await readJobMeta(job.dir)) ?? meta;
@@ -470,6 +523,7 @@ function touchTranscodeViewerByUpstream(
 
 function noteTranscodeViewer(job: TranscodeJob): void {
   job.lastViewerAt = Date.now();
+  touchVodSource(job.upstream);
   ensureIdleSweepRunning();
 }
 
@@ -518,6 +572,8 @@ export function releaseVodTranscodeJobs(upstream: string): number {
     job.lastViewerAt = 0;
     if (stopTranscodeProcOnly(job)) stopped += 1;
   }
+  // Free the single IPTV connection; keep partial/final files for the next open.
+  releaseVodSourceDownload(upstream);
   return stopped;
 }
 /** One in-flight ensureJob per cache key — prevents duplicate ffmpeg on the same output dir. */
@@ -546,7 +602,7 @@ function drainTranscodeQueue(): void {
 }
 
 /** Bump suffix when transcode output format changes (invalidates stale cache). */
-const CACHE_KEY_SUFFIX = "|v7-smooth";
+const CACHE_KEY_SUFFIX = "|v8-src";
 
 function cacheKeyForUpstream(upstream: string, startOffsetSec = 0): string {
   const off = Math.max(0, Math.floor(startOffsetSec));
@@ -586,6 +642,26 @@ function playlistHasSegments(text: string): boolean {
     const t = line.trim();
     return t && !t.startsWith("#") && SEGMENT_RE.test(t.split("/").pop() || t);
   });
+}
+
+async function vodSourceProgressHeaders(
+  upstream: string
+): Promise<Record<string, string>> {
+  if (!isVodSourceCacheEnabled()) return {};
+  const st = await getVodSourceStatus(upstream);
+  if (!st) return {};
+  return { "x-vod-source-pct": String(st.pct) };
+}
+
+function mergeHeaders(
+  ...parts: Array<Record<string, string> | undefined>
+): Record<string, string> | undefined {
+  const out: Record<string, string> = {};
+  for (const p of parts) {
+    if (!p) continue;
+    Object.assign(out, p);
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
 }
 
 const SEGMENT_CACHE_CONTROL = "public, max-age=86400, immutable";
@@ -636,7 +712,13 @@ async function isPlaylistFullyEncoded(
   if (!raw.includes("#EXT-X-ENDLIST")) return false;
   const encoded = sumExtinfDurationSec(raw);
   if (job.durationSec != null && job.durationSec > 0) {
-    return encoded >= job.durationSec * 0.92;
+    if (encoded < job.durationSec * 0.92) return false;
+  } else if (encoded < 90) {
+    // Unknown duration + short ENDLIST is almost always an early upstream EOF.
+    return false;
+  }
+  if (isVodSourceCacheEnabled() && !(await isVodSourceComplete(job.upstream))) {
+    return false;
   }
   return true;
 }
@@ -754,6 +836,15 @@ async function resumeTranscodeJob(job: TranscodeJob): Promise<void> {
     return;
   }
   try {
+    if (isVodSourceCacheEnabled()) {
+      const st = await getVodSourceStatus(job.upstream);
+      if (st && !st.complete) {
+        ensureVodSource(job.upstream);
+        await waitForVodSourceGrowth(job.upstream, st.bytes, {
+          timeoutMs: 90_000,
+        });
+      }
+    }
     const prefixCount = await ensureTranscodeJobContiguous(job);
     if (prefixCount === 0) {
       void beginTranscodeJob(job);
@@ -765,8 +856,18 @@ async function resumeTranscodeJob(job: TranscodeJob): Promise<void> {
     const onDisk = await listSegmentFiles(job.dir);
     const trimmed = prepareManifestForPlayback(raw, false, onDisk);
     const encoded = sumExtinfDurationSec(trimmed);
+    const seekInSourceSec = job.startOffsetSec + encoded;
+    if (isVodSourceCacheEnabled() && seekInSourceSec > 0) {
+      await waitForVodSourceForSeek(job.upstream, seekInSourceSec, {
+        durationSec: job.durationSec ?? meta.durationSec,
+        timeoutMs: Math.min(
+          600_000,
+          Math.max(waitForPlaylistMs(), Math.floor(seekInSourceSec) * 2_500 + 120_000)
+        ),
+      });
+    }
     await spawnFfmpeg(job, meta.plan, {
-      seekInSourceSec: job.startOffsetSec + encoded,
+      seekInSourceSec,
       startSegmentNumber: prefixCount,
     }, meta.audioStreamIndex);
   } catch (err) {
@@ -932,6 +1033,18 @@ async function spawnFfmpegLocked(
     job.state = "queued";
     return;
   }
+
+  let inputPath = job.upstream;
+  let useLocalSource = false;
+  if (isVodSourceCacheEnabled()) {
+    const st = await getVodSourceStatus(job.upstream);
+    if (st && st.bytes > 0) {
+      inputPath = st.path;
+      useLocalSource = true;
+      ensureVodSource(job.upstream);
+    }
+  }
+
   const upstreamUrl = job.upstream;
   const refererHost = upstreamReferer(upstreamUrl);
   const segSec = hlsSegmentSeconds();
@@ -946,10 +1059,10 @@ async function spawnFfmpegLocked(
     "-hide_banner",
     "-loglevel",
     "warning",
-    ...ffmpegInputArgs(refererHost),
+    ...(useLocalSource ? [] : ffmpegInputArgs(refererHost)),
     ...(seekSec > 0 ? ["-ss", String(seekSec)] : []),
     "-i",
-    upstreamUrl,
+    inputPath,
     "-map",
     "0:v:0?",
     "-map",
@@ -1074,6 +1187,21 @@ async function spawnFfmpegLocked(
       job.state = "ready";
       notifyWaiters(job, true);
       if (jobViewerActive(job)) {
+        if (isVodSourceCacheEnabled()) {
+          const encoded = sumExtinfDurationSec(raw);
+          await reopenVodSourceIfTruncated(
+            job.upstream,
+            job.startOffsetSec + encoded,
+            job.durationSec
+          );
+          const st = await getVodSourceStatus(job.upstream);
+          if (st && !st.complete) {
+            ensureVodSource(job.upstream);
+            await waitForVodSourceGrowth(job.upstream, st.bytes, {
+              timeoutMs: 90_000,
+            }).catch(() => {});
+          }
+        }
         await ensureTranscodeJobContiguous(job);
         void ensureEncodingContinues(job);
       }
@@ -1120,13 +1248,22 @@ async function cancelOtherUpstreamTranscodeJobs(
   upstream: string,
   keepKey: string
 ): Promise<void> {
-  const victims: Array<{ key: string; dir: string }> = [];
+  const victims: Array<{ key: string; dir: string; upstream: string }> = [];
   for (const [key, job] of jobs.entries()) {
     if (key === keepKey || job.upstream === upstream) continue;
-    victims.push({ key, dir: job.dir });
+    victims.push({ key, dir: job.dir, upstream: job.upstream });
   }
+  const otherUpstreams = [
+    ...new Set(victims.map((v) => v.upstream)),
+  ];
   await Promise.all(
     victims.map(({ key, dir }) => wipeTranscodeJobDir(dir, key))
+  );
+  await Promise.all(
+    otherUpstreams.map(async (u) => {
+      releaseVodSourceDownload(u);
+      await wipeVodSource(u);
+    })
   );
 }
 
@@ -1147,6 +1284,7 @@ async function ensureJobLocked(
   // ensureJob() serializes concurrent callers via ensureJobInflight — do not await
   // that map here or tc_reset deadlocks waiting on the in-flight promise itself.
   if (opts?.resetCache) {
+    // Wipe HLS segments only — keep the downloaded source so Try again is fast.
     await wipeTranscodeJobDir(dir, key);
   }
 
@@ -1236,16 +1374,59 @@ async function beginTranscodeJob(job: TranscodeJob): Promise<void> {
 
   beginTranscodeInflight.add(job.key);
   try {
-    const [upstreamErr, meta] = await Promise.all([
-      validateVodUpstreamReadable(job.upstream),
-      resolveJobMeta(job),
-    ]);
+    const upstreamErr = await validateVodUpstreamReadable(job.upstream);
     if (upstreamErr) {
       job.state = "failed";
       job.error = upstreamErr;
       notifyWaiters(job, false);
       drainTranscodeQueue();
       return;
+    }
+
+    if (isVodSourceCacheEnabled()) {
+      try {
+        await waitForVodSourceBytes(job.upstream, vodSourceStartBytes(), {
+          timeoutMs: Math.min(waitForPlaylistMs(), 180_000),
+        });
+        // Keep downloading ahead of ffmpeg (disk read — frees the IPTV connection).
+        ensureVodSource(job.upstream);
+      } catch (err) {
+        job.state = "failed";
+        job.error =
+          err instanceof Error
+            ? err.message
+            : "Could not download this episode for playback.";
+        notifyWaiters(job, false);
+        drainTranscodeQueue();
+        return;
+      }
+    }
+
+    const meta = await resolveJobMeta(job);
+
+    if (isVodSourceCacheEnabled() && job.startOffsetSec > 0) {
+      try {
+        await waitForVodSourceForSeek(job.upstream, job.startOffsetSec, {
+          durationSec: meta.durationSec ?? job.durationSec,
+          timeoutMs: Math.min(
+            600_000,
+            Math.max(
+              waitForPlaylistMs(),
+              Math.floor(job.startOffsetSec) * 2_500 + 120_000
+            )
+          ),
+        });
+        ensureVodSource(job.upstream);
+      } catch (err) {
+        job.state = "failed";
+        job.error =
+          err instanceof Error
+            ? err.message
+            : "Still downloading this episode to the seek point…";
+        notifyWaiters(job, false);
+        drainTranscodeQueue();
+        return;
+      }
     }
 
     const slotWaitMs = Math.min(waitForPlaylistMs(), 180_000);
@@ -1328,6 +1509,8 @@ export async function handleVodTranscodeRequest(opts: {
       opts.upstream,
       Math.max(0, Math.floor(opts.seekSec ?? 0))
     );
+    touchVodSource(opts.upstream);
+    if (isVodSourceCacheEnabled()) ensureVodSource(opts.upstream);
   }
 
   const job = await ensureJob(opts.upstream, {
@@ -1351,10 +1534,14 @@ export async function handleVodTranscodeRequest(opts: {
     void ensureEncodingContinues(job);
     /** Warm requests (HEAD) must not block — kick ffmpeg and return immediately. */
     if (opts.head) {
+      if (isVodSourceCacheEnabled()) ensureVodSource(opts.upstream);
       return {
         status: 202,
         contentType: "application/vnd.apple.mpegurl",
-        extraHeaders: { "retry-after": "1" },
+        extraHeaders: mergeHeaders(
+          { "retry-after": "1" },
+          await vodSourceProgressHeaders(opts.upstream)
+        ),
       };
     }
     const manifestWait = transcodeManifestWaitMs(opts.seekSec ?? 0, {
@@ -1365,6 +1552,7 @@ export async function handleVodTranscodeRequest(opts: {
       failJobOnTimeout: false,
     });
     if (!ready) {
+      const sourceHdrs = await vodSourceProgressHeaders(opts.upstream);
       const stillStarting =
         job.state === "starting" ||
         job.state === "running" ||
@@ -1380,7 +1568,10 @@ export async function handleVodTranscodeRequest(opts: {
             ? job.error ||
               "Server is busy preparing other videos. Try again in a moment."
             : "First video segment is still being prepared. Retry in a few seconds.",
-          extraHeaders: { "retry-after": busy ? "3" : "2" },
+          extraHeaders: mergeHeaders(
+            { "retry-after": busy ? "3" : "2" },
+            sourceHdrs
+          ),
         };
       }
       // Transient provider/ffmpeg blips — soft 503 so mid-play clients retry.
@@ -1391,19 +1582,35 @@ export async function handleVodTranscodeRequest(opts: {
           errorText:
             job.error ||
             "Could not prepare transcoded stream. Retrying encode…",
-          extraHeaders: { "retry-after": "2" },
+          extraHeaders: mergeHeaders({ "retry-after": "2" }, sourceHdrs),
         };
       }
       return {
         status: 502,
         errorText: job.error || "Could not prepare transcoded stream.",
+        extraHeaders: sourceHdrs,
       };
     }
-    const raw = await fsp.readFile(path.join(job.dir, MANIFEST_NAME), "utf8");
+    let raw: string;
+    try {
+      raw = await fsp.readFile(path.join(job.dir, MANIFEST_NAME), "utf8");
+    } catch {
+      void ensureEncodingContinues(job);
+      return {
+        status: 503,
+        errorText:
+          "First video segment is still being prepared. Retry in a few seconds.",
+        extraHeaders: mergeHeaders(
+          { "retry-after": "2" },
+          await vodSourceProgressHeaders(opts.upstream)
+        ),
+      };
+    }
     const durationSec =
       job.durationSec ?? (await readJobMeta(job.dir))?.durationSec ?? null;
     if (!durationSec || durationSec <= 0) {
-      void probeDurationSec(opts.upstream).then(async (probed) => {
+      const probeInput = await resolveProbeInput(job);
+      void probeDurationSec(probeInput).then(async (probed) => {
         if (!probed) return;
         job.durationSec = probed;
         const meta = (await readJobMeta(job.dir)) ?? {
@@ -1420,13 +1627,18 @@ export async function handleVodTranscodeRequest(opts: {
     const diskPrefix = contiguousSegmentCount(onDisk);
     await maybeRecoverStalledFfmpeg(job, diskPrefix);
     const encodedDurationSec = sumExtinfDurationSec(raw);
+    const sourceComplete =
+      !isVodSourceCacheEnabled() ||
+      (await isVodSourceComplete(opts.upstream));
+    const durationKnown = job.durationSec != null && job.durationSec > 0;
     const playlistComplete =
       job.state === "ready" &&
       job.proc == null &&
       raw.includes("#EXT-X-ENDLIST") &&
-      (job.durationSec == null ||
-        job.durationSec <= 0 ||
-        encodedDurationSec >= job.durationSec * 0.92);
+      sourceComplete &&
+      (durationKnown
+        ? encodedDurationSec >= job.durationSec! * 0.92
+        : encodedDurationSec >= 90);
     const trimmed = manifestTextForPlayback(raw, playlistComplete, onDisk);
     if (
       !playlistComplete &&
@@ -1435,6 +1647,7 @@ export async function handleVodTranscodeRequest(opts: {
       return {
         status: 503,
         errorText: "First video segment is still being prepared. Retry in a few seconds.",
+        extraHeaders: await vodSourceProgressHeaders(opts.upstream),
       };
     }
     const trimmedEncodedSec = sumExtinfDurationSec(trimmed);
@@ -1452,7 +1665,9 @@ export async function handleVodTranscodeRequest(opts: {
         proxyOrigin: opts.proxyOrigin,
       }
     );
-    const durationHeader: Record<string, string> = {};
+    const durationHeader: Record<string, string> = {
+      ...(await vodSourceProgressHeaders(opts.upstream)),
+    };
     if (durationSec && durationSec > 0) {
       durationHeader["x-vod-duration-sec"] = String(durationSec);
     }

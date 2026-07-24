@@ -1066,6 +1066,7 @@ export function PlayerOverlay() {
     vodTotalSec,
     vodDurationHintRef,
     vodStartOffsetRef,
+    vodEncodedSecRef,
     vodScrubbingRef,
     mobileLikeViewport,
     chromiumDesktopClient,

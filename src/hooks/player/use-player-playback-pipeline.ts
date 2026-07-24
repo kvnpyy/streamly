@@ -577,7 +577,14 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
               // 503 = still encoding. Mid-play 502 is often a brief overload /
               // provider blip — hard-failing here kills an episode at ~10m.
               if (xhr.status === 503 || (midPlayback && xhr.status === 502)) {
-                setVodPrepProgress((p) => Math.min(92, Math.max(p, 20) + 3));
+                const srcPctHdr = xhr.getResponseHeader("x-vod-source-pct");
+                const srcPct = srcPctHdr ? parseFloat(srcPctHdr) : NaN;
+                if (Number.isFinite(srcPct) && srcPct > 0) {
+                  const mapped = Math.min(88, Math.round(8 + srcPct * 0.7));
+                  setVodPrepProgress((p) => Math.max(p, mapped));
+                } else {
+                  setVodPrepProgress((p) => Math.min(92, Math.max(p, 20) + 3));
+                }
                 return;
               }
               surfacePlaybackError(body);
@@ -587,6 +594,13 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
               setVodPrepProgress((p) => Math.max(p, 34));
             }
             if (!vodTranscodeHls) return;
+            const srcPctHdr = xhr.getResponseHeader("x-vod-source-pct");
+            const srcPct = srcPctHdr ? parseFloat(srcPctHdr) : NaN;
+            if (Number.isFinite(srcPct) && srcPct > 0) {
+              // Map download progress into the lower prep band so "Preparing…" moves.
+              const mapped = Math.min(88, Math.round(8 + srcPct * 0.7));
+              setVodPrepProgress((p) => Math.max(p, mapped));
+            }
             const durHdr = xhr.getResponseHeader("x-vod-duration-sec");
             const hint = durHdr ? parseFloat(durHdr) : NaN;
             if (Number.isFinite(hint) && hint > 1) {
@@ -600,6 +614,9 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
               startOffset: Number.isFinite(off) && off >= 0 ? off : undefined,
               encoded: Number.isFinite(enc) && enc > 0 ? enc : undefined,
             });
+            if (Number.isFinite(enc) && enc > 2) {
+              setVodPrepProgress((p) => Math.max(p, 90));
+            }
           });
         },
       };

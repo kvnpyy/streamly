@@ -24,6 +24,13 @@ ssh ubuntu@YOUR_VPS 'sudo bash /tmp/streamly-tuning/vps-apply-tuning.sh'
 | Updates | `unattended-upgrades` enabled |
 | Brute force | `fail2ban` sshd jail + UFW |
 
+## VOD source cache (series / MKV)
+
+When `STREAM_VOD_TRANSCODE=1`, the app **downloads** the episode to disk (`STREAM_VOD_SOURCE_DIR`, default `/var/lib/streamly/vod-source` or `.cache/vod-source`) and runs ffmpeg against that local file. This avoids mid-episode stalls when the provider HTTP connection drops mid-encode. Single-connection IPTV panels get one download at a time (not download + live HTTP ffmpeg).
+
+- Disk: HLS segments under `STREAM_TRANSCODE_CACHE_DIR` **plus** source files under `STREAM_VOD_SOURCE_DIR`. Idle TTL reclaims both; cap with `STREAM_VOD_SOURCE_MAX_BYTES`.
+- Emergency rollback: `STREAM_VOD_SOURCE_CACHE=0` (ffmpeg reads the provider URL again).
+
 ## Cloudflare (DNS proxy ON)
 
 Do in the Cloudflare dashboard — not on the VPS:
