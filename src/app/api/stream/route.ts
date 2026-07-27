@@ -1,4 +1,5 @@
 import { rewriteHlsManifest } from "@/lib/hls-manifest-rewrite";
+import { coerceHttpResponseStatus } from "@/lib/http-response-status";
 import { sanitizeTvMasterPlaylistIfNeeded } from "@/lib/hls-manifest-tv-sanitize";
 import {
   getCachedManifest,
@@ -261,9 +262,10 @@ async function handle(req: NextRequest, head: boolean) {
       },
       requestId
     );
+    const tcStatus = coerceHttpResponseStatus(tc.status);
     if (tc.errorText) {
       return respondShort(
-        new Response(tc.errorText, { status: tc.status, headers: tcHeaders })
+        new Response(tc.errorText, { status: tcStatus, headers: tcHeaders })
       );
     }
     if (tc.body instanceof ReadableStream) {
@@ -271,10 +273,10 @@ async function handle(req: NextRequest, head: boolean) {
         passthroughStreamWithGracefulClose(tc.body, req.signal),
         finishStreamSlot
       );
-      return new Response(tracked, { status: tc.status, headers: tcHeaders });
+      return new Response(tracked, { status: tcStatus, headers: tcHeaders });
     }
     return respondShort(
-      new Response(tc.body ?? null, { status: tc.status, headers: tcHeaders })
+      new Response(tc.body ?? null, { status: tcStatus, headers: tcHeaders })
     );
   }
 
@@ -439,6 +441,7 @@ async function handle(req: NextRequest, head: boolean) {
       recordCastMetric("cast_stream_5xx");
     }
   }
+  const upstreamResponseStatus = coerceHttpResponseStatus(upstream.status);
 
   const contentType = upstream.headers.get("content-type");
   const responseHeaders = corsHeaders({}, requestId);
@@ -463,7 +466,7 @@ async function handle(req: NextRequest, head: boolean) {
     if (head) {
       return respondShort(
         new Response(null, {
-          status: upstream.status,
+          status: upstreamResponseStatus,
           headers: responseHeaders,
         })
       );
@@ -483,7 +486,7 @@ async function handle(req: NextRequest, head: boolean) {
       recordStreamProxyBytes(cached.length);
       return respondShort(
         new Response(cached, {
-          status: upstream.status,
+          status: upstreamResponseStatus,
           headers: responseHeaders,
         })
       );
@@ -515,7 +518,7 @@ async function handle(req: NextRequest, head: boolean) {
     recordStreamProxyBytes(rewritten.length);
     return respondShort(
       new Response(rewritten, {
-        status: upstream.status,
+        status: upstreamResponseStatus,
         headers: responseHeaders,
       })
     );
@@ -523,14 +526,17 @@ async function handle(req: NextRequest, head: boolean) {
 
   if (head || !upstream.body) {
     return respondShort(
-      new Response(null, { status: upstream.status, headers: responseHeaders })
+      new Response(null, {
+        status: upstreamResponseStatus,
+        headers: responseHeaders,
+      })
     );
   }
 
   const body = passthroughStreamWithGracefulClose(upstream.body, req.signal);
   const tracked = trackStreamBodyBytes(body, finishStreamSlot);
   return new Response(tracked, {
-    status: upstream.status,
+    status: upstreamResponseStatus,
     headers: responseHeaders,
   });
 }

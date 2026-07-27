@@ -166,23 +166,19 @@ export function AppShell({ children }: { children: ReactNode }) {
     );
 
     return (
-      <div className="min-h-screen flex flex-col bg-(--bg-0)">
-        {tvSimple ? (
-          !isTvHub ? <TvSubNav /> : null
-        ) : (
-          <TvTopNav />
-        )}
-        <CatalogBrowseSearchProvider>
-          {isLivePage ? (
-            <LiveSearchProvider>{mainInner}</LiveSearchProvider>
+      <LiveSearchProvider>
+        <div className="min-h-screen flex flex-col bg-(--bg-0)">
+          {tvSimple ? (
+            !isTvHub ? <TvSubNav /> : null
           ) : (
-            mainInner
+            <TvTopNav />
           )}
-        </CatalogBrowseSearchProvider>
-        <PlayerOverlay />
-        {isLivePage ? <LiveCategoryOverlayHost /> : null}
-        <AppVersionBadge />
-      </div>
+          <CatalogBrowseSearchProvider>{mainInner}</CatalogBrowseSearchProvider>
+          <PlayerOverlay />
+          {isLivePage ? <LiveCategoryOverlayHost /> : null}
+          <AppVersionBadge />
+        </div>
+      </LiveSearchProvider>
     );
   }
 
@@ -214,19 +210,15 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   /* ── Desktop / mobile layout ── */
   return (
-    <div className="flex min-h-screen">
-      <Sidebar />
-      <CatalogBrowseSearchProvider>
-        {isLivePage ? (
-          <LiveSearchProvider>{mainColumn}</LiveSearchProvider>
-        ) : (
-          mainColumn
-        )}
-      </CatalogBrowseSearchProvider>
-      <MobileBottomNav />
-      <PlayerOverlay />
-      {isLivePage ? <LiveCategoryOverlayHost /> : null}
-      <AppVersionBadge />
-    </div>
+    <LiveSearchProvider>
+      <div className="flex min-h-screen">
+        <Sidebar />
+        <CatalogBrowseSearchProvider>{mainColumn}</CatalogBrowseSearchProvider>
+        <MobileBottomNav />
+        <PlayerOverlay />
+        {isLivePage ? <LiveCategoryOverlayHost /> : null}
+        <AppVersionBadge />
+      </div>
+    </LiveSearchProvider>
   );
 }
