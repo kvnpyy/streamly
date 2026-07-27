@@ -233,7 +233,7 @@ export function releaseVodTranscodePlayback(proxyUrl: string): void {
 /** Start server transcode before Play (focus / hover) so first segment is ready sooner. */
 export function warmVodTranscodePlay(
   proxyUrl: string,
-  opts?: { compatMse?: boolean }
+  opts?: { compatMse?: boolean; seekSec?: number }
 ): void {
   if (!isVodTranscodeEnabledClient()) return;
   if (!canVodTranscodeProxyUrl(proxyUrl)) return;
@@ -242,7 +242,7 @@ export function warmVodTranscodePlay(
 
   const now = Date.now();
   if (warmInFlight.has(url)) return;
-  if (now - (warmLastAt.get(url) ?? 0) < 20_000) return;
+  if (now - (warmLastAt.get(url) ?? 0) < 45_000) return;
 
   warmInFlight.add(url);
   void fetch(url, { method: "HEAD", credentials: "same-origin" })
