@@ -10,6 +10,7 @@ import {
   vodResumeStorageKey,
 } from "@/lib/player-vod-resume";
 import { playbackUrlUsesVodTranscode } from "@/lib/vod-transcode-url";
+import { transcodeSeekNeedsServerRestart } from "@/lib/vod-transcode-seek-policy";
 import type { PlayerSource } from "@/store/player";
 import { browseAccountKey, usePrefs } from "@/store/preferences";
 
@@ -105,23 +106,28 @@ export function usePlayerVodResume(p: UsePlayerVodResumeParams) {
       if (hls && usesTranscode) {
         const encoded = vodEncodedSecRef.current;
         if (encoded < 2) return;
+        const needsRestart = transcodeSeekNeedsServerRestart({
+          absoluteSec: absolute,
+          startOffsetSec: off,
+          encodedSec: encoded,
+        });
+        if (needsRestart) {
+          restartTranscodeAtSeek(absolute);
+          return;
+        }
         const rel = vodRelativeSec(absolute, {
           usesTranscode: true,
           startOffsetSec: off,
         });
-        if (rel >= 0 && encoded >= 2 && rel < encoded - 1) {
-          try {
-            hls.startLoad(Math.max(0, rel));
-          } catch {
-            /* noop */
-          }
-          try {
-            video.currentTime = Math.max(0, rel);
-          } catch {
-            /* noop */
-          }
-        } else {
-          restartTranscodeAtSeek(absolute);
+        try {
+          hls.startLoad(Math.max(0, rel));
+        } catch {
+          /* noop */
+        }
+        try {
+          video.currentTime = Math.max(0, rel);
+        } catch {
+          /* noop */
         }
         return;
       }

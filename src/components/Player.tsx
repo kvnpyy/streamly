@@ -26,6 +26,7 @@ import {
   vodNeedsServerTranscodePrep,
   warmVodTranscodePlay,
 } from "@/lib/vod-transcode-url";
+import { transcodeSeekNeedsServerRestart as transcodeSeekNeedsServerRestartPolicy } from "@/lib/vod-transcode-seek-policy";
 import { humanizePlaybackErrorResponse } from "@/lib/playback-error-message";
 import { TvPlayerRemoteHints } from "@/components/TvPlayerRemoteHints";
 import { VodPrepareOverlay } from "@/components/VodPrepareOverlay";
@@ -654,12 +655,11 @@ export function PlayerOverlay() {
   );
 
   const transcodeSeekNeedsServerRestart = useCallback((absoluteSec: number) => {
-    const off = vodStartOffsetRef.current;
-    const encoded = vodEncodedSecRef.current;
-    const relative = absoluteSec - off;
-    if (relative < -1) return true;
-    if (encoded < 2) return absoluteSec > 2;
-    return relative >= encoded - 2;
+    return transcodeSeekNeedsServerRestartPolicy({
+      absoluteSec,
+      startOffsetSec: vodStartOffsetRef.current,
+      encodedSec: vodEncodedSecRef.current,
+    });
   }, []);
 
   const restartTranscodeAtSeek = useCallback(

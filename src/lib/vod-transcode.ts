@@ -41,9 +41,14 @@ import {
   waitForVodSourceGrowth,
   wipeVodSource,
 } from "@/lib/vod-source-cache";
+import {
+  quantizeTranscodeSeekSec,
+  shouldReuseTranscodeJobForSeek,
+} from "@/lib/vod-transcode-seek-policy";
 
 const IPTV_UA_VOD = "VLC/3.0.20 LibVLC/3.0.20";
 const MANIFEST_NAME = "index.m3u8";
+const FFMPEG_PID_FILE = ".ffmpeg.pid";
 
 function isHttpInput(input: string): boolean {
   return /^https?:\/\//i.test(input);
@@ -145,6 +150,106 @@ function transcodeIdleSweepMs(): number {
   return Number.isFinite(n) && n >= 5000 && n <= 120_000 ? n : 15_000;
 }
 
+function isOsPidAlive(pid: number): boolean {
+  if (!Number.isFinite(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function waitForChildExit(
+  proc: ChildProcess,
+  timeoutMs: number
+): Promise<boolean> {
+  if (proc.exitCode != null) return Promise.resolve(true);
+  return new Promise((resolve) => {
+    let settled = false;
+    const done = (ok: boolean) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(ok);
+    };
+    const timer = setTimeout(() => done(false), timeoutMs);
+    timer.unref?.();
+    proc.once("exit", () => done(true));
+    proc.once("close", () => done(true));
+  });
+}
+
+/**
+ * Stop ffmpeg and wait until it is gone before clearing `job.proc`.
+ * Prevents dual writers on the same index.m3u8 after stall recovery.
+ */
+async function stopJobProc(
+  job: TranscodeJob,
+  opts?: { waitMs?: number }
+): Promise<boolean> {
+  const proc = job.proc;
+  const waitMs = opts?.waitMs ?? 4_000;
+  const pidFromProc = proc?.pid;
+  let pidFromFile: number | null = null;
+  try {
+    const raw = await fsp.readFile(path.join(job.dir, FFMPEG_PID_FILE), "utf8");
+    const n = parseInt(raw.trim(), 10);
+    if (Number.isFinite(n) && n > 0) pidFromFile = n;
+  } catch {
+    /* no lock file */
+  }
+
+  const hadProc = !!(proc && proc.exitCode == null);
+  if (hadProc && proc) {
+    try {
+      proc.kill("SIGTERM");
+    } catch {
+      /* noop */
+    }
+    const exited = await waitForChildExit(proc, waitMs);
+    if (!exited && pidFromProc && isOsPidAlive(pidFromProc)) {
+      try {
+        process.kill(pidFromProc, "SIGKILL");
+      } catch {
+        /* noop */
+      }
+      await waitForChildExit(proc, 1_000);
+    }
+  }
+
+  const orphanPid =
+    pidFromFile &&
+    pidFromFile !== pidFromProc &&
+    isOsPidAlive(pidFromFile)
+      ? pidFromFile
+      : null;
+  if (orphanPid) {
+    try {
+      process.kill(orphanPid, "SIGTERM");
+    } catch {
+      /* noop */
+    }
+    await new Promise((r) => setTimeout(r, 400));
+    if (isOsPidAlive(orphanPid)) {
+      try {
+        process.kill(orphanPid, "SIGKILL");
+      } catch {
+        /* noop */
+      }
+      await new Promise((r) => setTimeout(r, 200));
+    }
+  }
+
+  job.proc = null;
+  try {
+    await fsp.rm(path.join(job.dir, FFMPEG_PID_FILE), { force: true });
+  } catch {
+    /* noop */
+  }
+  return hadProc || orphanPid != null;
+}
+
 /** Kill ffmpeg when upstream read stalls but the process stays alive (frozen encode). */
 async function maybeRecoverStalledFfmpeg(
   job: TranscodeJob,
@@ -158,12 +263,7 @@ async function maybeRecoverStalledFfmpeg(
   }
   if (!job.proc || job.proc.exitCode != null) return;
   if (now - job.lastSegmentGrowthAt < transcodeStallKillMs()) return;
-  try {
-    job.proc.kill("SIGTERM");
-  } catch {
-    /* noop */
-  }
-  job.proc = null;
+  await stopJobProc(job);
   job.lastSegmentGrowthAt = now;
 }
 
@@ -415,7 +515,27 @@ async function resolveProbeInput(job: TranscodeJob): Promise<string> {
 
 async function resolveJobMeta(job: TranscodeJob): Promise<JobMeta> {
   const cached = await readJobMeta(job.dir);
-  const probeInput = await resolveProbeInput(job);
+  let probeInput = await resolveProbeInput(job);
+
+  // Early HTTP probes of a tiny .partial often report "no audio". Wait for a
+  // bit more local source before locking audioStreamIndex: null into meta.
+  if (
+    isVodSourceCacheEnabled() &&
+    (cached?.audioStreamIndex == null || !cached) &&
+    isHttpInput(probeInput)
+  ) {
+    try {
+      await waitForVodSourceBytes(
+        job.upstream,
+        Math.max(vodSourceStartBytes(), 2_000_000),
+        { timeoutMs: 45_000 }
+      );
+      probeInput = await resolveProbeInput(job);
+    } catch {
+      /* continue with whatever we have */
+    }
+  }
+
   if (cached?.durationSec && cached.durationSec > 0) {
     // Refresh audio mapping from local source when prior probe failed on HTTP.
     if (
@@ -441,6 +561,17 @@ async function resolveJobMeta(job: TranscodeJob): Promise<JobMeta> {
       cached.durationSec = durationSec;
       job.durationSec = durationSec;
       await writeJobMeta(job.dir, cached);
+    }
+    // Still try to fill a missing audio index from local bytes.
+    if (
+      (cached.audioStreamIndex == null || cached.audioStreamIndex === undefined) &&
+      !isHttpInput(probeInput)
+    ) {
+      const probed = await probeStreamCodecs(probeInput);
+      if (probed.audioStreamIndex != null) {
+        cached.audioStreamIndex = probed.audioStreamIndex;
+        await writeJobMeta(job.dir, cached);
+      }
     }
     return cached;
   }
@@ -515,9 +646,17 @@ function touchTranscodeViewerByUpstream(
   upstream: string,
   startOffsetSec: number
 ): void {
-  const key = cacheKeyForUpstream(upstream, startOffsetSec);
+  const key = cacheKeyForUpstream(
+    upstream,
+    quantizeTranscodeSeekSec(startOffsetSec)
+  );
   const job = jobs.get(key);
   if (job) job.lastViewerAt = Date.now();
+  // Tip seeks often reuse the from-0 job — keep that viewer warm too.
+  if (startOffsetSec > 0) {
+    const base = jobs.get(cacheKeyForUpstream(upstream, 0));
+    if (base) base.lastViewerAt = Date.now();
+  }
   ensureIdleSweepRunning();
 }
 
@@ -537,16 +676,13 @@ function ensureIdleSweepRunning(): void {
 
 function stopTranscodeProcOnly(job: TranscodeJob): boolean {
   if (!job.proc || job.proc.exitCode != null) return false;
-  try {
-    job.proc.kill("SIGTERM");
-  } catch {
-    /* noop */
-  }
-  job.proc = null;
-  if (job.state === "running" || job.state === "starting") {
-    job.state = "ready";
-  }
-  drainTranscodeQueue();
+  // Fire-and-forget wait — callers that need a hard single-writer barrier use stopJobProc.
+  void stopJobProc(job).then(() => {
+    if (job.state === "running" || job.state === "starting") {
+      job.state = "ready";
+    }
+    drainTranscodeQueue();
+  });
   return true;
 }
 
@@ -572,8 +708,15 @@ export function releaseVodTranscodeJobs(upstream: string): number {
     job.lastViewerAt = 0;
     if (stopTranscodeProcOnly(job)) stopped += 1;
   }
-  // Free the single IPTV connection; keep partial/final files for the next open.
-  releaseVodSourceDownload(upstream);
+  // Keep the source download while any writer for this upstream is still exiting.
+  const stillWriting = [...jobs.values()].some(
+    (j) =>
+      j.upstream === upstream &&
+      ((j.proc && j.proc.exitCode == null) || spawnFfmpegInflight.has(j.key))
+  );
+  if (!stillWriting) {
+    releaseVodSourceDownload(upstream);
+  }
   return stopped;
 }
 /** One in-flight ensureJob per cache key — prevents duplicate ffmpeg on the same output dir. */
@@ -831,6 +974,9 @@ const resumeInflight = new Map<string, Promise<void>>();
 
 async function resumeTranscodeJob(job: TranscodeJob): Promise<void> {
   if (job.proc && job.proc.exitCode == null) return;
+  // Stall recovery used to SIGTERM and clear job.proc without waiting — orphans
+  // kept writing while a resume ffmpeg started on the same index.m3u8.
+  await stopJobProc(job);
   if (activeTranscodeCount() >= maxConcurrentJobs()) {
     job.state = "queued";
     return;
@@ -866,6 +1012,8 @@ async function resumeTranscodeJob(job: TranscodeJob): Promise<void> {
         ),
       });
     }
+    // Re-check after awaits — another path may have started encoding.
+    if (job.proc && job.proc.exitCode == null) return;
     await spawnFfmpeg(job, meta.plan, {
       seekInSourceSec,
       startSegmentNumber: prefixCount,
@@ -1022,6 +1170,8 @@ async function spawnFfmpegLocked(
   audioStreamIndex?: number | null
 ): Promise<void> {
   if (job.proc && job.proc.exitCode == null) return;
+  // Kill orphan writers left after a prior SIGTERM-without-wait.
+  await stopJobProc(job);
   if (activeTranscodeCount() >= maxConcurrentJobs()) {
     job.state = "queued";
     return;
@@ -1044,6 +1194,9 @@ async function spawnFfmpegLocked(
       ensureVodSource(job.upstream);
     }
   }
+
+  // Final barrier after source awaits.
+  if (job.proc && job.proc.exitCode == null) return;
 
   const upstreamUrl = job.upstream;
   const refererHost = upstreamReferer(upstreamUrl);
@@ -1155,6 +1308,17 @@ async function spawnFfmpegLocked(
   });
   job.proc = proc;
   job.state = "running";
+  if (proc.pid) {
+    try {
+      await fsp.writeFile(
+        path.join(job.dir, FFMPEG_PID_FILE),
+        String(proc.pid),
+        "utf8"
+      );
+    } catch {
+      /* best-effort lock file */
+    }
+  }
 
   let stderr = "";
   proc.stderr?.on("data", (chunk: Buffer) => {
@@ -1168,6 +1332,11 @@ async function spawnFfmpegLocked(
   proc.on("close", (code) => {
     void (async () => {
       job.proc = null;
+      try {
+        await fsp.rm(path.join(job.dir, FFMPEG_PID_FILE), { force: true });
+      } catch {
+        /* noop */
+      }
       const raw = await readManifestIfReady(job.dir);
       if (!raw) {
         finishJob(
@@ -1212,13 +1381,8 @@ async function spawnFfmpegLocked(
 
 async function wipeTranscodeJobDir(dir: string, key: string): Promise<void> {
   const job = jobs.get(key);
-  if (job?.proc) {
-    try {
-      job.proc.kill("SIGTERM");
-    } catch {
-      /* noop */
-    }
-    job.proc = null;
+  if (job) {
+    await stopJobProc(job);
   }
   jobs.delete(key);
   try {
@@ -1267,11 +1431,59 @@ async function cancelOtherUpstreamTranscodeJobs(
   );
 }
 
+async function encodedDurationForJob(job: TranscodeJob): Promise<number> {
+  try {
+    const raw = await fsp.readFile(path.join(job.dir, MANIFEST_NAME), "utf8");
+    return sumExtinfDurationSec(raw);
+  } catch {
+    return 0;
+  }
+}
+
+/** Reuse a covering/growing encode instead of forking a parallel seek job. */
+async function findReusableTranscodeJob(
+  upstream: string,
+  seekSec: number
+): Promise<TranscodeJob | null> {
+  if (seekSec <= 0) return null;
+  for (const job of jobs.values()) {
+    if (job.upstream !== upstream) continue;
+    if (job.state === "failed") {
+      const hasManifest = await readManifestIfReady(job.dir);
+      if (!hasManifest) continue;
+    }
+    const encoded = await encodedDurationForJob(job);
+    const procAlive = !!(job.proc && job.proc.exitCode == null);
+    if (
+      shouldReuseTranscodeJobForSeek({
+        jobStartOffsetSec: job.startOffsetSec,
+        encodedSec: encoded,
+        seekSec,
+        procAlive,
+      })
+    ) {
+      return job;
+    }
+  }
+  return null;
+}
+
 async function ensureJobLocked(
   upstream: string,
   opts?: { resetCache?: boolean; seekSec?: number }
 ): Promise<TranscodeJob> {
-  const startOffsetSec = Math.max(0, Math.floor(opts?.seekSec ?? 0));
+  const requestedSeek = Math.max(0, Math.floor(opts?.seekSec ?? 0));
+
+  if (!opts?.resetCache && requestedSeek > 0) {
+    const reusable = await findReusableTranscodeJob(upstream, requestedSeek);
+    if (reusable) {
+      noteTranscodeViewer(reusable);
+      void ensureEncodingContinues(reusable);
+      return reusable;
+    }
+  }
+
+  const startOffsetSec = quantizeTranscodeSeekSec(requestedSeek);
   const key = cacheKeyForUpstream(upstream, startOffsetSec);
   const dir = jobDir(key);
 
@@ -1341,18 +1553,20 @@ async function ensureJob(
   upstream: string,
   opts?: { resetCache?: boolean; seekSec?: number }
 ): Promise<TranscodeJob> {
-  const startOffsetSec = Math.max(0, Math.floor(opts?.seekSec ?? 0));
-  const key = cacheKeyForUpstream(upstream, startOffsetSec);
-  const inflight = ensureJobInflight.get(key);
-  if (inflight) return inflight;
-
-  const promise = ensureJobLocked(upstream, opts);
-  ensureJobInflight.set(key, promise);
+  // One flight chain per upstream — tip seeks cannot race a from-0 create and
+  // fork a second ffmpeg job before reuse logic sees the first.
+  // get→chain→set must stay synchronous so concurrent callers serialize.
+  const gateKey = `up:${cacheKeyForUpstream(upstream, 0)}`;
+  const prev = ensureJobInflight.get(gateKey);
+  const promise = (
+    prev ? prev.catch(() => null) : Promise.resolve()
+  ).then(() => ensureJobLocked(upstream, opts));
+  ensureJobInflight.set(gateKey, promise);
   try {
     return await promise;
   } finally {
-    if (ensureJobInflight.get(key) === promise) {
-      ensureJobInflight.delete(key);
+    if (ensureJobInflight.get(gateKey) === promise) {
+      ensureJobInflight.delete(gateKey);
     }
   }
 }
