@@ -11,6 +11,8 @@ import {
   prepareManifestForPlayback,
   rewriteTranscodeManifest,
   trimContiguousSegmentsFromStart,
+  manifestNeedsContiguityHeal,
+  resumeSeekSecForDiskPrefix,
 } from "./vod-transcode-manifest";
 
 describe("rewriteTranscodeManifest", () => {
@@ -143,6 +145,43 @@ describe("rewriteTranscodeManifest", () => {
     const rebuilt = buildManifestFromContiguousDisk(onDisk, new Map(), 4);
     expect(countManifestSegments(rebuilt)).toBe(12);
     expect(rebuilt).toContain("seg_00011.ts");
+  });
+
+  it("resumeSeekSecForDiskPrefix avoids empty-m3u8 tip freeze (ss=start + start_number=N)", () => {
+    // Odyssey-style: job starts at 180s, 163 segs on disk, empty playlist after deploy.
+    expect(
+      resumeSeekSecForDiskPrefix({
+        startOffsetSec: 180,
+        prefixCount: 163,
+        segmentSec: 4,
+        manifestEncodedSec: 0,
+      })
+    ).toBe(180 + 163 * 4);
+    expect(
+      resumeSeekSecForDiskPrefix({
+        startOffsetSec: 180,
+        prefixCount: 163,
+        segmentSec: 4,
+        manifestEncodedSec: 652,
+      })
+    ).toBe(180 + 652);
+    // Tail-only playlist shorter than disk prefix still floors to disk.
+    expect(
+      resumeSeekSecForDiskPrefix({
+        startOffsetSec: 180,
+        prefixCount: 163,
+        segmentSec: 4,
+        manifestEncodedSec: 40,
+      })
+    ).toBe(180 + 163 * 4);
+  });
+
+  it("manifestNeedsContiguityHeal detects empty or non-media playlists", () => {
+    expect(manifestNeedsContiguityHeal("")).toBe(true);
+    expect(manifestNeedsContiguityHeal("#EXTM3U\n")).toBe(true);
+    expect(
+      manifestNeedsContiguityHeal("#EXTM3U\n#EXTINF:4,\nseg_00000.ts\n")
+    ).toBe(false);
   });
 
   it("only lists segments that exist on disk", () => {

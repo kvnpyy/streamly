@@ -3,6 +3,8 @@ import "server-only";
 import {
   buildManifestFromContiguousDisk,
   contiguousSegmentCount,
+  manifestNeedsContiguityHeal,
+  resumeSeekSecForDiskPrefix,
   countManifestSegments,
   hasOrphanSegmentsBeyondPrefix,
   manifestReferencesMissingOrGappedSegments,
@@ -842,7 +844,21 @@ async function waitForSegmentFile(
 async function listSegmentFiles(dir: string): Promise<Set<string>> {
   try {
     const files = await fsp.readdir(dir);
-    return new Set(files.filter((f) => SEGMENT_RE.test(f)));
+    const out = new Set<string>();
+    // Skip empty/partial tips (0-byte seg after SIGTERM) so resume prefix is playable.
+    await Promise.all(
+      files
+        .filter((f) => SEGMENT_RE.test(f))
+        .map(async (f) => {
+          try {
+            const st = await fsp.stat(path.join(dir, f));
+            if (st.size >= 800) out.add(f);
+          } catch {
+            /* raced with delete */
+          }
+        })
+    );
+    return out;
   } catch {
     return new Set();
   }
@@ -941,15 +957,21 @@ async function ensureTranscodeJobContiguous(job: TranscodeJob): Promise<number> 
   if (prefix === 0) return 0;
 
   let manifestDiskGap = false;
+  let manifestEmpty = false;
   try {
     const raw = await fsp.readFile(path.join(job.dir, MANIFEST_NAME), "utf8");
-    manifestDiskGap = manifestReferencesMissingOrGappedSegments(raw, onDisk);
+    manifestEmpty = manifestNeedsContiguityHeal(raw);
+    manifestDiskGap =
+      !manifestEmpty &&
+      manifestReferencesMissingOrGappedSegments(raw, onDisk);
   } catch {
-    /* no manifest yet */
+    manifestEmpty = true;
   }
 
   const needsHeal =
-    hasOrphanSegmentsBeyondPrefix(onDisk) || manifestDiskGap;
+    hasOrphanSegmentsBeyondPrefix(onDisk) ||
+    manifestDiskGap ||
+    manifestEmpty;
   if (!needsHeal) return prefix;
 
   if (job.proc && job.proc.exitCode == null) {
@@ -1001,8 +1023,12 @@ async function resumeTranscodeJob(job: TranscodeJob): Promise<void> {
     const raw = await fsp.readFile(path.join(job.dir, MANIFEST_NAME), "utf8");
     const onDisk = await listSegmentFiles(job.dir);
     const trimmed = prepareManifestForPlayback(raw, false, onDisk);
-    const encoded = sumExtinfDurationSec(trimmed);
-    const seekInSourceSec = job.startOffsetSec + encoded;
+    const seekInSourceSec = resumeSeekSecForDiskPrefix({
+      startOffsetSec: job.startOffsetSec,
+      prefixCount,
+      segmentSec: hlsSegmentSeconds(),
+      manifestEncodedSec: sumExtinfDurationSec(trimmed),
+    });
     if (isVodSourceCacheEnabled() && seekInSourceSec > 0) {
       await waitForVodSourceForSeek(job.upstream, seekInSourceSec, {
         durationSec: job.durationSec ?? meta.durationSec,
@@ -1290,9 +1316,7 @@ async function spawnFfmpegLocked(
     "-hls_list_size",
     "0",
     "-hls_flags",
-    resume && resume.startSegmentNumber > 0
-      ? "independent_segments+temp_file"
-      : "independent_segments+temp_file+append_list",
+    "independent_segments+temp_file+append_list",
     "-hls_segment_type",
     "mpegts",
     "-hls_segment_filename",

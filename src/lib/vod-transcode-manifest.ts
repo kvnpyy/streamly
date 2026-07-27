@@ -104,6 +104,36 @@ export function contiguousSegmentCount(
   return expect;
 }
 
+/**
+ * Resume ffmpeg input offset after a contiguous disk prefix.
+ * Empty/corrupt m3u8 must not yield seek=startOffset with start_number=N — that
+ * re-encodes from the job start into segment N and freezes the tip (~14 min here).
+ */
+export function resumeSeekSecForDiskPrefix(opts: {
+  startOffsetSec: number;
+  prefixCount: number;
+  segmentSec: number;
+  /** Duration from a usable playlist; ignored when below the disk floor. */
+  manifestEncodedSec?: number;
+}): number {
+  const start = Math.max(0, Math.floor(opts.startOffsetSec));
+  const prefix = Math.max(0, Math.floor(opts.prefixCount));
+  const seg = opts.segmentSec > 0 ? opts.segmentSec : 4;
+  const diskEncoded = prefix * seg;
+  const fromManifest = Math.max(0, opts.manifestEncodedSec ?? 0);
+  // Prefer disk floor when the playlist is empty, truncated, or only lists a
+  // restarted tail (MEDIA-SEQUENCE jumped while segs 0..N-1 still exist).
+  const encoded = fromManifest + 1 >= diskEncoded ? fromManifest : diskEncoded;
+  return start + encoded;
+}
+
+/** True when the m3u8 is missing, empty, or has no #EXTINF media entries. */
+export function manifestNeedsContiguityHeal(manifestText: string): boolean {
+  const text = manifestText.trim();
+  if (!text || !text.includes("#EXTM3U")) return true;
+  return !/#EXTINF:/i.test(text);
+}
+
 /** Drop gaps (e.g. from crashed duplicate ffmpeg) so hls.js never 404s mid-playlist. */
 /** Parse #EXTINF durations keyed by segment filename from an ffmpeg m3u8. */
 export function parseExtinfDurationsBySegment(
