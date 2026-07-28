@@ -1315,8 +1315,13 @@ async function spawnFfmpegLocked(
     String(segSec),
     "-hls_list_size",
     "0",
+    // Resume with start_number must NOT use append_list — ffmpeg then rewrites
+    // MEDIA-SEQUENCE while keeping seg_00000 URIs and can jump the next index
+    // (e.g. 408 → 816), freezing playback at the tip.
     "-hls_flags",
-    "independent_segments+temp_file+append_list",
+    resume && resume.startSegmentNumber > 0
+      ? "independent_segments+temp_file"
+      : "independent_segments+temp_file+append_list",
     "-hls_segment_type",
     "mpegts",
     "-hls_segment_filename",
@@ -1416,7 +1421,7 @@ async function wipeTranscodeJobDir(dir: string, key: string): Promise<void> {
   }
 }
 
-/** Free ffmpeg slots and provider bandwidth when the user jumps to a new offset. */
+/** Free ffmpeg slots when jumping offsets — never wipe a covering from-0 encode. */
 async function cancelSiblingTranscodeJobs(
   upstream: string,
   keepKey: string
@@ -1424,6 +1429,12 @@ async function cancelSiblingTranscodeJobs(
   const victims: Array<{ key: string; dir: string }> = [];
   for (const [key, job] of jobs.entries()) {
     if (key === keepKey || job.upstream !== upstream) continue;
+    // Keep a from-0 job that already has playable media — scrub jobs must not
+    // delete a finished movie encode just because the client sent tc_seek.
+    if (job.startOffsetSec === 0) {
+      const encoded = await encodedDurationForJob(job);
+      if (encoded > 30) continue;
+    }
     victims.push({ key, dir: job.dir });
   }
   await Promise.all(
@@ -1457,11 +1468,61 @@ async function cancelOtherUpstreamTranscodeJobs(
 
 async function encodedDurationForJob(job: TranscodeJob): Promise<number> {
   try {
-    const raw = await fsp.readFile(path.join(job.dir, MANIFEST_NAME), "utf8");
-    return sumExtinfDurationSec(raw);
+    const onDisk = await listSegmentFiles(job.dir);
+    const prefix = contiguousSegmentCount(onDisk);
+    const diskFloor = prefix * hlsSegmentSeconds();
+    let fromManifest = 0;
+    try {
+      const raw = await fsp.readFile(path.join(job.dir, MANIFEST_NAME), "utf8");
+      fromManifest = sumExtinfDurationSec(
+        prepareManifestForPlayback(raw, false, onDisk)
+      );
+    } catch {
+      /* empty / missing */
+    }
+    return Math.max(fromManifest, diskFloor);
   } catch {
     return 0;
   }
+}
+
+/** Load a job dir from disk into memory after process restart (deploy). */
+async function hydrateTranscodeJobFromDisk(
+  upstream: string,
+  startOffsetSec: number
+): Promise<TranscodeJob | null> {
+  const off = Math.max(0, Math.floor(startOffsetSec));
+  const key = cacheKeyForUpstream(upstream, off);
+  const existing = jobs.get(key);
+  if (existing) return existing;
+
+  const dir = jobDir(key);
+  const cachedMeta = await readJobMeta(dir);
+  if (!cachedMeta) return null;
+  const metaOff = Math.max(0, Math.floor(cachedMeta.startOffsetSec ?? 0));
+  if (metaOff !== off) return null;
+
+  const manifest = await readManifestIfReady(dir);
+  if (!manifest) {
+    const onDisk = await listSegmentFiles(dir);
+    if (contiguousSegmentCount(onDisk) <= 0) return null;
+  }
+
+  const job: TranscodeJob = {
+    key,
+    upstream,
+    dir,
+    proc: null,
+    state: manifest ? "ready" : "starting",
+    durationSec: cachedMeta.durationSec ?? null,
+    startOffsetSec: off,
+    waiters: [],
+    lastSegmentCount: 0,
+    lastSegmentGrowthAt: Date.now(),
+    lastViewerAt: Date.now(),
+  };
+  jobs.set(key, job);
+  return job;
 }
 
 /** Reuse a covering/growing encode instead of forking a parallel seek job. */
@@ -1470,6 +1531,19 @@ async function findReusableTranscodeJob(
   seekSec: number
 ): Promise<TranscodeJob | null> {
   if (seekSec <= 0) return null;
+
+  // After deploy, in-memory jobs are empty — hydrate the from-0 encode and the
+  // quantized seek bucket from disk before deciding to fork a new writer.
+  const hydrateOffsets = new Set<number>([
+    0,
+    quantizeTranscodeSeekSec(seekSec),
+  ]);
+  for (const off of hydrateOffsets) {
+    await hydrateTranscodeJobFromDisk(upstream, off);
+  }
+
+  let best: TranscodeJob | null = null;
+  let bestEncoded = -1;
   for (const job of jobs.values()) {
     if (job.upstream !== upstream) continue;
     if (job.state === "failed") {
@@ -1479,17 +1553,23 @@ async function findReusableTranscodeJob(
     const encoded = await encodedDurationForJob(job);
     const procAlive = !!(job.proc && job.proc.exitCode == null);
     if (
-      shouldReuseTranscodeJobForSeek({
+      !shouldReuseTranscodeJobForSeek({
         jobStartOffsetSec: job.startOffsetSec,
         encodedSec: encoded,
         seekSec,
         procAlive,
       })
     ) {
-      return job;
+      continue;
+    }
+    // Prefer earlier start offsets (especially a complete from-0 movie).
+    const rank = encoded + (job.startOffsetSec === 0 ? 1e9 : 0);
+    if (rank > bestEncoded) {
+      bestEncoded = rank;
+      best = job;
     }
   }
-  return null;
+  return best;
 }
 
 async function ensureJobLocked(
@@ -1909,9 +1989,11 @@ export async function handleVodTranscodeRequest(opts: {
     if (durationSec && durationSec > 0) {
       durationHeader["x-vod-duration-sec"] = String(durationSec);
     }
-    if (job.startOffsetSec > 0) {
-      durationHeader["x-vod-start-offset-sec"] = String(job.startOffsetSec);
-    }
+    // Always publish offset (including 0) so clients drop a stale tc_seek window
+    // when we reuse a complete from-0 encode.
+    durationHeader["x-vod-start-offset-sec"] = String(
+      Math.max(0, Math.floor(job.startOffsetSec))
+    );
     if (trimmedEncodedSec > 0) {
       durationHeader["x-vod-encoded-sec"] = String(
         trimmedEncodedSec.toFixed(3)

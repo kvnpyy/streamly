@@ -5,6 +5,19 @@ import {
   transcodeSeekNeedsServerRestart,
 } from "@/lib/vod-transcode-seek-policy";
 
+describe("shouldReuseTranscodeJobForSeek covers full from-0 movie", () => {
+  it("reuses a finished from-0 encode for a mid-film scrub", () => {
+    expect(
+      shouldReuseTranscodeJobForSeek({
+        jobStartOffsetSec: 0,
+        encodedSec: 9935,
+        seekSec: 2400,
+        procAlive: false,
+      })
+    ).toBe(true);
+  });
+});
+
 describe("quantizeTranscodeSeekSec", () => {
   it("keeps zero exact", () => {
     expect(quantizeTranscodeSeekSec(0)).toBe(0);
