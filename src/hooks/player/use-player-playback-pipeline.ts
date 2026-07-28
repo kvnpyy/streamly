@@ -182,13 +182,8 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
 
     const timelineHold = vodTimelineHoldRef.current;
     const pendingAbsoluteSeekSec = timelineHold?.absoluteTimeSec ?? null;
-    if (
-      pendingAbsoluteSeekSec != null &&
-      pendingAbsoluteSeekSec >= 15 &&
-      vodResumeLockedRef
-    ) {
-      vodResumeLockedRef.current = true;
-    }
+    // Do not lock resume here — MANIFEST_PARSED / resume hook must keep
+    // retrying until the playhead actually lands near the target.
 
     setError(null);
     streamSupportRequestIdRef.current = null;
@@ -568,6 +563,18 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
       const hlsConfig = {
         ...baseHlsConfig,
         ...(vodTranscodeHls ? buildVodTranscodeHlsJsConfig() : {}),
+        // Hard startPosition:0 fights mid-film resume on EVENT playlists.
+        ...(vodTranscodeHls &&
+        pendingAbsoluteSeekSec != null &&
+        pendingAbsoluteSeekSec >= 15
+          ? {
+              startPosition: Math.max(
+                0,
+                pendingAbsoluteSeekSec -
+                  Math.max(0, timelineHold?.startOffsetSec ?? 0)
+              ),
+            }
+          : {}),
         xhrSetup(xhr: XMLHttpRequest, reqUrl: string) {
           if (!reqUrl.includes("/api/stream")) return;
           xhr.addEventListener("load", function onLoad() {
@@ -692,6 +699,16 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
               }
             }
             void tryAutoplay();
+            // Keep resume unlocked until the playhead is near the target so
+            // use-player-vod-resume can retry if the first seek is clamped.
+            if (
+              absolute != null &&
+              absolute >= 15 &&
+              vodResumeLockedRef &&
+              Math.abs((video.currentTime || 0) + off - absolute) < 20
+            ) {
+              vodResumeLockedRef.current = true;
+            }
           }
           return;
         }

@@ -134,6 +134,55 @@ export function manifestNeedsContiguityHeal(manifestText: string): boolean {
   return !/#EXTINF:/i.test(text);
 }
 
+/**
+ * ffmpeg resume without append_list can rewrite MEDIA-SEQUENCE to the tip while
+ * seg_00000… still exist on disk. Contiguous tip-only playlists look "valid" to
+ * gap checks but hide the full encode — clients then get EVENT+900 windows and
+ * mid-film seeks snap to a few minutes.
+ */
+export function manifestIsTipOnlyTail(
+  manifestText: string,
+  onDisk: ReadonlySet<string>
+): boolean {
+  if (!onDisk.has("seg_00000.ts")) return false;
+  let firstSeq: number | null = null;
+  let pendingInf = false;
+  for (const line of manifestText.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (trimmed.startsWith("#EXTINF")) {
+      pendingInf = true;
+      continue;
+    }
+    if (!pendingInf || !trimmed || trimmed.startsWith("#")) {
+      pendingInf = false;
+      continue;
+    }
+    pendingInf = false;
+    const name = segmentNameFromPlaylistLine(trimmed);
+    if (!name) continue;
+    const seq = segmentSequence(name);
+    if (seq == null) continue;
+    firstSeq = seq;
+    break;
+  }
+  return firstSeq != null && firstSeq > 0;
+}
+
+/** Encoded coverage from playlist text and/or contiguous disk prefix. */
+export function encodedCoverageSec(opts: {
+  manifestText?: string | null;
+  onDisk?: ReadonlySet<string> | null;
+  segmentSec: number;
+}): number {
+  const seg = opts.segmentSec > 0 ? opts.segmentSec : 4;
+  const fromManifest = opts.manifestText
+    ? sumExtinfDurationSec(opts.manifestText)
+    : 0;
+  const prefix = opts.onDisk ? contiguousSegmentCount(opts.onDisk) : 0;
+  const diskFloor = prefix * seg;
+  return Math.max(fromManifest, diskFloor);
+}
+
 /** Drop gaps (e.g. from crashed duplicate ffmpeg) so hls.js never 404s mid-playlist. */
 /** Parse #EXTINF durations keyed by segment filename from an ffmpeg m3u8. */
 export function parseExtinfDurationsBySegment(
@@ -173,7 +222,8 @@ export function countManifestSegments(manifestText: string): number {
 export function buildManifestFromContiguousDisk(
   onDisk: ReadonlySet<string>,
   durationBySegment: ReadonlyMap<string, number>,
-  defaultSegSec: number
+  defaultSegSec: number,
+  opts?: { playlistComplete?: boolean }
 ): string {
   const prefix = contiguousSegmentCount(onDisk);
   if (prefix <= 0) return "#EXTM3U\n";
@@ -191,6 +241,7 @@ export function buildManifestFromContiguousDisk(
     const dur = durationBySegment.get(name) ?? defaultSegSec;
     lines.push(`#EXTINF:${dur.toFixed(6)},`, name);
   }
+  if (opts?.playlistComplete) lines.push("#EXT-X-ENDLIST");
   return lines.join("\n");
 }
 

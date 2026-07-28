@@ -10,7 +10,6 @@ import {
   vodResumeStorageKey,
 } from "@/lib/player-vod-resume";
 import { playbackUrlUsesVodTranscode } from "@/lib/vod-transcode-url";
-import { transcodeSeekNeedsServerRestart } from "@/lib/vod-transcode-seek-policy";
 import type { PlayerSource } from "@/store/player";
 import { browseAccountKey, usePrefs } from "@/store/preferences";
 
@@ -44,7 +43,7 @@ export function usePlayerVodResume(p: UsePlayerVodResumeParams) {
     vodStartOffsetRef,
     vodEncodedSecRef,
     vodResumeLockedRef,
-    restartTranscodeAtSeek,
+    restartTranscodeAtSeek: _restartTranscodeAtSeek,
   } = p;
 
   /** One-shot resume when the player opens — never re-run on transcode URL swaps. */
@@ -99,21 +98,22 @@ export function usePlayerVodResume(p: UsePlayerVodResumeParams) {
         // Duration often arrives in the same XHR before encodedSec is written —
         // locking here left resume stuck at 0:00 with a seek overlay.
         if (encoded < 2) return;
-        const needsRestart = transcodeSeekNeedsServerRestart({
-          absoluteSec: absolute,
-          startOffsetSec: off,
-          encodedSec: encoded,
-        });
-        if (needsRestart) {
+
+        // Already landed (e.g. MANIFEST_PARSED hold seek succeeded).
+        const nowAbs = off + (Number.isFinite(video.currentTime) ? video.currentTime : 0);
+        if (Math.abs(nowAbs - absolute) < 20 && nowAbs > 5) {
           vodResumeLockedRef.current = true;
-          restartTranscodeAtSeek(absolute);
           return;
         }
+
+        // Target still beyond encoded tip — wait for more segments; do not fork
+        // a seek job from resume (that created the tip-only / ~6min snap bugs).
+        if (absolute > off + encoded + 15) return;
+
         const rel = vodRelativeSec(absolute, {
           usesTranscode: true,
           startOffsetSec: off,
         });
-        vodResumeLockedRef.current = true;
         try {
           hls.startLoad(Math.max(0, rel));
         } catch {
@@ -128,6 +128,11 @@ export function usePlayerVodResume(p: UsePlayerVodResumeParams) {
           void video.play();
         } catch {
           /* autoplay policy — tap-to-play UI handles it */
+        }
+        // Lock only once the element time reflects the resume target.
+        const landed = off + (Number.isFinite(video.currentTime) ? video.currentTime : 0);
+        if (Math.abs(landed - absolute) < 20) {
+          vodResumeLockedRef.current = true;
         }
         return;
       }
@@ -148,7 +153,7 @@ export function usePlayerVodResume(p: UsePlayerVodResumeParams) {
     const raf = requestAnimationFrame(() => trySeek());
     // Encoded coverage arrives via XHR headers (no media event) — poll briefly.
     const poll = window.setInterval(() => trySeek(), 250);
-    const pollStop = window.setTimeout(() => window.clearInterval(poll), 20_000);
+    const pollStop = window.setTimeout(() => window.clearInterval(poll), 45_000);
     return () => {
       disposed = true;
       cancelAnimationFrame(raf);
@@ -162,7 +167,6 @@ export function usePlayerVodResume(p: UsePlayerVodResumeParams) {
     current,
     isLive,
     creds,
-    restartTranscodeAtSeek,
     videoRef,
     hlsRef,
     vodDurationHintRef,

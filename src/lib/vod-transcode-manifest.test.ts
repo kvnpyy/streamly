@@ -3,7 +3,9 @@ import {
   buildManifestFromContiguousDisk,
   contiguousSegmentCount,
   countManifestSegments,
+  encodedCoverageSec,
   hasOrphanSegmentsBeyondPrefix,
+  manifestIsTipOnlyTail,
   manifestReferencesMissingOrGappedSegments,
   MAX_IN_PROGRESS_PLAYLIST_SEGMENTS,
   parseStreamlyDurationSec,
@@ -13,7 +15,9 @@ import {
   trimContiguousSegmentsFromStart,
   manifestNeedsContiguityHeal,
   resumeSeekSecForDiskPrefix,
+  sumExtinfDurationSec,
 } from "./vod-transcode-manifest";
+import { shouldReuseTranscodeJobForSeek } from "./vod-transcode-seek-policy";
 
 describe("rewriteTranscodeManifest", () => {
   it("rewrites segment lines to proxied transcode URLs", () => {
@@ -267,5 +271,132 @@ describe("manifestReferencesMissingOrGappedSegments", () => {
       "seg_00003.ts",
     ].join("\n");
     expect(manifestReferencesMissingOrGappedSegments(raw, onDisk)).toBe(true);
+  });
+});
+
+/**
+ * Odyssey regression: ffmpeg tip-only MEDIA-SEQUENCE jump while full prefix
+ * remains on disk. Scrubbing to 45:00 must not land at ~6:00 via a seek job.
+ */
+describe("tip-only MEDIA-SEQUENCE corruption (Odyssey)", () => {
+  function tipOnlyManifest(first: number, last: number): string {
+    const lines = [
+      "#EXTM3U",
+      "#EXT-X-VERSION:6",
+      "#EXT-X-TARGETDURATION:4",
+      `#EXT-X-MEDIA-SEQUENCE:${first}`,
+      "#EXT-X-INDEPENDENT-SEGMENTS",
+    ];
+    for (let i = first; i <= last; i++) {
+      lines.push("#EXTINF:4.000000,", `seg_${String(i).padStart(5, "0")}.ts`);
+    }
+    lines.push("#EXT-X-ENDLIST");
+    return lines.join("\n");
+  }
+
+  function diskPrefix(n: number): Set<string> {
+    return new Set(
+      Array.from({ length: n }, (_, i) => `seg_${String(i).padStart(5, "0")}.ts`)
+    );
+  }
+
+  it("detects tip-only tails when seg_00000 still exists on disk", () => {
+    const onDisk = diskPrefix(1149);
+    const tip = tipOnlyManifest(1128, 1148);
+    expect(manifestIsTipOnlyTail(tip, onDisk)).toBe(true);
+    expect(manifestReferencesMissingOrGappedSegments(tip, onDisk)).toBe(false);
+    expect(manifestNeedsContiguityHeal(tip)).toBe(false);
+  });
+
+  it("does not flag a healthy from-0 playlist as tip-only", () => {
+    const onDisk = diskPrefix(100);
+    const raw = tipOnlyManifest(0, 99);
+    expect(manifestIsTipOnlyTail(raw, onDisk)).toBe(false);
+  });
+
+  it("uses disk floor for coverage when tip playlist lies about ENDLIST", () => {
+    const onDisk = diskPrefix(1149);
+    const tip = tipOnlyManifest(1128, 1148);
+    expect(sumExtinfDurationSec(tip)).toBeLessThan(100);
+    expect(
+      encodedCoverageSec({
+        manifestText: tip,
+        onDisk,
+        segmentSec: 4,
+      })
+    ).toBe(1149 * 4);
+  });
+
+  it("healed from-disk playlist starts at seg_00000 and covers resume/scrub", () => {
+    const onDisk = diskPrefix(1149);
+    const tip = tipOnlyManifest(1128, 1148);
+    const durationSec = 9934.997;
+    const coverage = encodedCoverageSec({
+      manifestText: tip,
+      onDisk,
+      segmentSec: 4,
+    });
+    // Incomplete movie on disk — not fully complete, but far past 45:00.
+    expect(coverage).toBeGreaterThan(2700);
+    expect(coverage).toBeLessThan(durationSec * 0.92);
+
+    const healed = buildManifestFromContiguousDisk(
+      onDisk,
+      new Map(),
+      4,
+      { playlistComplete: false }
+    );
+    expect(healed).toContain("MEDIA-SEQUENCE:0");
+    expect(healed).toContain("seg_00000.ts");
+    expect(healed).not.toContain("MEDIA-SEQUENCE:1128");
+    expect(healed).not.toContain("#EXT-X-ENDLIST");
+
+    const prepared = prepareManifestForPlayback(healed, false, onDisk);
+    const preparedSec = sumExtinfDurationSec(prepared);
+    // EVENT trim keeps ~60 min — enough for resume@40 and scrub@45.
+    expect(preparedSec).toBeGreaterThanOrEqual(2400);
+    expect(preparedSec).toBeGreaterThanOrEqual(2700);
+    expect(countManifestSegments(prepared)).toBeLessThanOrEqual(
+      MAX_IN_PROGRESS_PLAYLIST_SEGMENTS
+    );
+  });
+
+  it("prefers covering from-0 encode over a mid-film seek job", () => {
+    expect(
+      shouldReuseTranscodeJobForSeek({
+        jobStartOffsetSec: 0,
+        encodedSec: 1149 * 4,
+        seekSec: 2700,
+        procAlive: false,
+      })
+    ).toBe(true);
+
+    // Seek job at 2340 with tip-only-looking short encoded must NOT win just
+    // because quantize buckets match — relative 2700-2340=360 is the 6min snap.
+    expect(
+      shouldReuseTranscodeJobForSeek({
+        jobStartOffsetSec: 2340,
+        encodedSec: 84,
+        seekSec: 2700,
+        procAlive: false,
+      })
+    ).toBe(false);
+
+    // Even if seek job has deep disk coverage, from-0 still covers — ranking
+    // in findReusableTranscodeJob prefers startOffset 0 (+1e9).
+    expect(
+      shouldReuseTranscodeJobForSeek({
+        jobStartOffsetSec: 2340,
+        encodedSec: 1113 * 4,
+        seekSec: 2700,
+        procAlive: false,
+      })
+    ).toBe(true);
+  });
+
+  it("relative scrub into seek@2340 would be 6:00 — document the failure math", () => {
+    const seekJobOffset = 2340;
+    const scrubAbsolute = 2700;
+    expect(scrubAbsolute - seekJobOffset).toBe(360);
   });
 });

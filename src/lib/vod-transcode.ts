@@ -3,6 +3,8 @@ import "server-only";
 import {
   buildManifestFromContiguousDisk,
   contiguousSegmentCount,
+  encodedCoverageSec,
+  manifestIsTipOnlyTail,
   manifestNeedsContiguityHeal,
   resumeSeekSecForDiskPrefix,
   countManifestSegments,
@@ -274,16 +276,18 @@ function manifestTextForPlayback(
   playlistComplete: boolean,
   onDisk: ReadonlySet<string>
 ): string {
-  const trimmedFromRaw = prepareManifestForPlayback(raw, playlistComplete, onDisk);
-  const diskPrefix = contiguousSegmentCount(onDisk);
-  const rawSegs = countManifestSegments(trimmedFromRaw);
-  if (diskPrefix <= rawSegs) return trimmedFromRaw;
-  const synthesized = buildManifestFromContiguousDisk(
-    onDisk,
-    parseExtinfDurationsBySegment(raw),
-    hlsSegmentSeconds()
-  );
-  return prepareManifestForPlayback(synthesized, playlistComplete, onDisk);
+  // Tip-only MEDIA-SEQUENCE jumps must never be served as-is — rebuild from disk.
+  const source =
+    manifestIsTipOnlyTail(raw, onDisk) ||
+    contiguousSegmentCount(onDisk) > countManifestSegments(raw)
+      ? buildManifestFromContiguousDisk(
+          onDisk,
+          parseExtinfDurationsBySegment(raw),
+          hlsSegmentSeconds(),
+          { playlistComplete }
+        )
+      : raw;
+  return prepareManifestForPlayback(source, playlistComplete, onDisk);
 }
 
 function transcodeMaxHeight(): number {
@@ -868,8 +872,14 @@ async function isPlaylistFullyEncoded(
   job: TranscodeJob,
   raw: string
 ): Promise<boolean> {
-  if (!raw.includes("#EXT-X-ENDLIST")) return false;
-  const encoded = sumExtinfDurationSec(raw);
+  const onDisk = await listSegmentFiles(job.dir);
+  const encoded = encodedCoverageSec({
+    manifestText: raw,
+    onDisk,
+    segmentSec: hlsSegmentSeconds(),
+  });
+  // Tip-only ENDLIST is never "complete" while earlier segments exist on disk.
+  if (manifestIsTipOnlyTail(raw, onDisk)) return false;
   if (job.durationSec != null && job.durationSec > 0) {
     if (encoded < job.durationSec * 0.92) return false;
   } else if (encoded < 90) {
@@ -934,10 +944,18 @@ async function healTranscodeJobContiguity(job: TranscodeJob): Promise<number> {
     } catch {
       /* fresh dir */
     }
+    const durationSec =
+      job.durationSec ?? (await readJobMeta(job.dir))?.durationSec ?? null;
+    const diskEncoded = prefixCount * hlsSegmentSeconds();
+    const playlistComplete =
+      durationSec != null &&
+      durationSec > 0 &&
+      diskEncoded >= durationSec * 0.92;
     const healed = buildManifestFromContiguousDisk(
       healedDisk,
       durationBySegment,
-      hlsSegmentSeconds()
+      hlsSegmentSeconds(),
+      { playlistComplete }
     );
     await fsp.writeFile(path.join(dir, MANIFEST_NAME), healed, "utf8");
   } catch {
@@ -958,11 +976,14 @@ async function ensureTranscodeJobContiguous(job: TranscodeJob): Promise<number> 
 
   let manifestDiskGap = false;
   let manifestEmpty = false;
+  let tipOnlyTail = false;
   try {
     const raw = await fsp.readFile(path.join(job.dir, MANIFEST_NAME), "utf8");
     manifestEmpty = manifestNeedsContiguityHeal(raw);
+    tipOnlyTail = !manifestEmpty && manifestIsTipOnlyTail(raw, onDisk);
     manifestDiskGap =
       !manifestEmpty &&
+      !tipOnlyTail &&
       manifestReferencesMissingOrGappedSegments(raw, onDisk);
   } catch {
     manifestEmpty = true;
@@ -971,8 +992,16 @@ async function ensureTranscodeJobContiguous(job: TranscodeJob): Promise<number> 
   const needsHeal =
     hasOrphanSegmentsBeyondPrefix(onDisk) ||
     manifestDiskGap ||
-    manifestEmpty;
+    manifestEmpty ||
+    tipOnlyTail;
   if (!needsHeal) return prefix;
+
+  // Tip-only tails while ffmpeg is still writing: do NOT kill the encoder or
+  // rewrite its live m3u8 — serve-time synthesis rebuilds from disk. Heal the
+  // on-disk playlist only once the process has exited.
+  if (tipOnlyTail && job.proc && job.proc.exitCode == null) {
+    return prefix;
+  }
 
   if (job.proc && job.proc.exitCode == null) {
     const proc = job.proc;
@@ -1944,7 +1973,20 @@ export async function handleVodTranscodeRequest(opts: {
     const onDisk = await listSegmentFiles(job.dir);
     const diskPrefix = contiguousSegmentCount(onDisk);
     await maybeRecoverStalledFfmpeg(job, diskPrefix);
-    const encodedDurationSec = sumExtinfDurationSec(raw);
+    // Heal tip-only MEDIA-SEQUENCE jumps before deciding completeness / serving.
+    await ensureTranscodeJobContiguous(job);
+    let rawAfterHeal = raw;
+    try {
+      rawAfterHeal = await fsp.readFile(path.join(job.dir, MANIFEST_NAME), "utf8");
+    } catch {
+      /* keep prior raw */
+    }
+    const onDiskAfter = await listSegmentFiles(job.dir);
+    const coverageSec = encodedCoverageSec({
+      manifestText: rawAfterHeal,
+      onDisk: onDiskAfter,
+      segmentSec: hlsSegmentSeconds(),
+    });
     const sourceComplete =
       !isVodSourceCacheEnabled() ||
       (await isVodSourceComplete(opts.upstream));
@@ -1952,12 +1994,16 @@ export async function handleVodTranscodeRequest(opts: {
     const playlistComplete =
       job.state === "ready" &&
       job.proc == null &&
-      raw.includes("#EXT-X-ENDLIST") &&
       sourceComplete &&
+      !manifestIsTipOnlyTail(rawAfterHeal, onDiskAfter) &&
       (durationKnown
-        ? encodedDurationSec >= job.durationSec! * 0.92
-        : encodedDurationSec >= 90);
-    const trimmed = manifestTextForPlayback(raw, playlistComplete, onDisk);
+        ? coverageSec >= job.durationSec! * 0.92
+        : coverageSec >= 90);
+    const trimmed = manifestTextForPlayback(
+      rawAfterHeal,
+      playlistComplete,
+      onDiskAfter
+    );
     if (
       !playlistComplete &&
       !trimmed.split(/\r?\n/).some((l) => SEGMENT_RE.test(l.trim()))
