@@ -72,10 +72,17 @@ describe("transcodeSeekNeedsServerRestart", () => {
     ).toBe(true);
   });
 
-  it("ignores tip noise while encode is barely started", () => {
+  it("does not restart while encoded coverage is unknown", () => {
     expect(
       transcodeSeekNeedsServerRestart({
         absoluteSec: 10,
+        startOffsetSec: 0,
+        encodedSec: 0,
+      })
+    ).toBe(false);
+    expect(
+      transcodeSeekNeedsServerRestart({
+        absoluteSec: 2400,
         startOffsetSec: 0,
         encodedSec: 0,
       })
@@ -86,7 +93,7 @@ describe("transcodeSeekNeedsServerRestart", () => {
         startOffsetSec: 0,
         encodedSec: 1,
       })
-    ).toBe(true);
+    ).toBe(false);
   });
 });
 

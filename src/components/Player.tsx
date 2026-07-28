@@ -729,14 +729,20 @@ export function PlayerOverlay() {
       });
       return;
     }
-    if (videoHasFrame) {
+    const target = vodSeekTargetSec;
+    const nearTarget =
+      target != null &&
+      Number.isFinite(time) &&
+      Math.abs(time - target) < 3 &&
+      time > 1;
+    if (videoHasFrame || nearTarget) {
       queueMicrotask(() => {
         setVodSeekInFlight(false);
         setVodSeekTargetSec(null);
         setLoading(false);
       });
     }
-  }, [vodSeekInFlight, videoHasFrame, error]);
+  }, [vodSeekInFlight, videoHasFrame, error, time, vodSeekTargetSec]);
 
   const retryPlayback = useCallback(() => {
     setError(null);
@@ -877,8 +883,9 @@ export function PlayerOverlay() {
         warmVodTranscodePlay(current.url, {
           compatMse: tvBrowser || silkLikeClient,
         });
+        // Resume seeks in-playlist once encoded coverage is known — do not
+        // show the "encoding" pill here (that is only for server restarts).
         if (resumeSec != null) {
-          setVodSeekInFlight(true);
           setVodSeekTargetSec(resumeSec);
         }
       } else {

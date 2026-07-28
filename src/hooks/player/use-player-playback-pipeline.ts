@@ -603,19 +603,21 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
               const mapped = Math.min(88, Math.round(8 + srcPct * 0.7));
               setVodPrepProgress((p) => Math.max(p, mapped));
             }
+            const offHdr = xhr.getResponseHeader("x-vod-start-offset-sec");
+            const encHdr = xhr.getResponseHeader("x-vod-encoded-sec");
+            const off = offHdr ? parseFloat(offHdr) : NaN;
+            const enc = encHdr ? parseFloat(encHdr) : NaN;
+            // Apply timeline hints before duration so resume can see encodedSec
+            // when durationchange fires from applyVodDurationHint.
+            applyVodTranscodeTimelineHints({
+              startOffset: Number.isFinite(off) && off >= 0 ? off : undefined,
+              encoded: Number.isFinite(enc) && enc > 0 ? enc : undefined,
+            });
             const durHdr = xhr.getResponseHeader("x-vod-duration-sec");
             const hint = durHdr ? parseFloat(durHdr) : NaN;
             if (Number.isFinite(hint) && hint > 1) {
               applyVodDurationHint(hint);
             }
-            const offHdr = xhr.getResponseHeader("x-vod-start-offset-sec");
-            const encHdr = xhr.getResponseHeader("x-vod-encoded-sec");
-            const off = offHdr ? parseFloat(offHdr) : NaN;
-            const enc = encHdr ? parseFloat(encHdr) : NaN;
-            applyVodTranscodeTimelineHints({
-              startOffset: Number.isFinite(off) && off >= 0 ? off : undefined,
-              encoded: Number.isFinite(enc) && enc > 0 ? enc : undefined,
-            });
             if (Number.isFinite(enc) && enc > 2) {
               setVodPrepProgress((p) => Math.max(p, 90));
             }

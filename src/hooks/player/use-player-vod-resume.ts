@@ -85,12 +85,16 @@ export function usePlayerVodResume(p: UsePlayerVodResumeParams) {
 
       const off = vodStartOffsetRef.current;
       const absolute = resolveStoredVodResumeSec(stored, off);
-      vodResumeLockedRef.current = true;
-      if (absolute >= d - 25) return;
+      if (absolute >= d - 25) {
+        vodResumeLockedRef.current = true;
+        return;
+      }
 
       const hls = hlsRef.current;
       if (hls && usesTranscode) {
         const encoded = vodEncodedSecRef.current;
+        // Duration often arrives in the same XHR before encodedSec is written —
+        // locking here left resume stuck at 0:00 with a seek overlay.
         if (encoded < 2) return;
         const needsRestart = transcodeSeekNeedsServerRestart({
           absoluteSec: absolute,
@@ -98,6 +102,7 @@ export function usePlayerVodResume(p: UsePlayerVodResumeParams) {
           encodedSec: encoded,
         });
         if (needsRestart) {
+          vodResumeLockedRef.current = true;
           restartTranscodeAtSeek(absolute);
           return;
         }
@@ -105,6 +110,7 @@ export function usePlayerVodResume(p: UsePlayerVodResumeParams) {
           usesTranscode: true,
           startOffsetSec: off,
         });
+        vodResumeLockedRef.current = true;
         try {
           hls.startLoad(Math.max(0, rel));
         } catch {
@@ -118,6 +124,7 @@ export function usePlayerVodResume(p: UsePlayerVodResumeParams) {
         return;
       }
 
+      vodResumeLockedRef.current = true;
       try {
         video.currentTime = absolute;
       } catch {
@@ -131,9 +138,14 @@ export function usePlayerVodResume(p: UsePlayerVodResumeParams) {
     video.addEventListener("loadedmetadata", onMeta);
     video.addEventListener("durationchange", onDurationChange);
     const raf = requestAnimationFrame(() => trySeek());
+    // Encoded coverage arrives via XHR headers (no media event) — poll briefly.
+    const poll = window.setInterval(() => trySeek(), 250);
+    const pollStop = window.setTimeout(() => window.clearInterval(poll), 20_000);
     return () => {
       disposed = true;
       cancelAnimationFrame(raf);
+      window.clearInterval(poll);
+      window.clearTimeout(pollStop);
       video.removeEventListener("loadedmetadata", onMeta);
       video.removeEventListener("durationchange", onDurationChange);
     };

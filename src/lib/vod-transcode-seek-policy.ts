@@ -36,8 +36,9 @@ export function transcodeSeekNeedsServerRestart(opts: {
   if (relative < -1) return true;
 
   if (encoded < 2) {
-    // Encode barely started: ignore tip noise; a real scrub still restarts.
-    return absolute > off + 30;
+    // Encoded coverage unknown / barely started (client starts at 0 until
+    // headers arrive). Never fork a new job from this — wait for a real tip.
+    return false;
   }
 
   const pastEdge = relative - encoded;
