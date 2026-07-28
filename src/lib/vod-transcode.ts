@@ -7,7 +7,6 @@ import {
   manifestIsTipOnlyTail,
   manifestNeedsContiguityHeal,
   resumeSeekSecForDiskPrefix,
-  countManifestSegments,
   hasOrphanSegmentsBeyondPrefix,
   manifestReferencesMissingOrGappedSegments,
   parseExtinfDurationsBySegment,
@@ -1344,12 +1343,16 @@ async function spawnFfmpegLocked(
     String(segSec),
     "-hls_list_size",
     "0",
-    // Always append_list. Before resume we rewrite a contiguous MEDIA-SEQUENCE:0
-    // playlist from disk — without that heal, append_list can jump MEDIA-SEQUENCE
-    // while keeping early URIs; without append_list, ffmpeg replaces the file
-    // with a tip-only playlist and scrub-back dies.
+    // Resume must NOT use append_list. With start_number, append_list can jump
+    // MEDIA-SEQUENCE (e.g. 2178→4356) and write orphan tip files while leaving
+    // early segments intact — or keep early URIs under a tip MEDIA-SEQUENCE.
+    // Without append_list, ffmpeg rewrites a tip-only on-disk m3u8; that is fine
+    // because clients never see it — manifestTextForPlayback always rebuilds a
+    // contiguous MEDIA-SEQUENCE:0 playlist from disk segments.
     "-hls_flags",
-    "independent_segments+temp_file+append_list",
+    resume && resume.startSegmentNumber > 0
+      ? "independent_segments+temp_file"
+      : "independent_segments+temp_file+append_list",
     "-hls_segment_type",
     "mpegts",
     "-hls_segment_filename",
