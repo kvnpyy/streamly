@@ -353,9 +353,10 @@ describe("tip-only MEDIA-SEQUENCE corruption (Odyssey)", () => {
 
     const prepared = prepareManifestForPlayback(healed, false, onDisk);
     const preparedSec = sumExtinfDurationSec(prepared);
-    // EVENT trim keeps ~60 min — enough for resume@40 and scrub@45.
+    // Cap must cover well past a 60m tip so long movies don't freeze mid-watch.
     expect(preparedSec).toBeGreaterThanOrEqual(2400);
     expect(preparedSec).toBeGreaterThanOrEqual(2700);
+    expect(preparedSec).toBeGreaterThanOrEqual(4500);
     expect(countManifestSegments(prepared)).toBeLessThanOrEqual(
       MAX_IN_PROGRESS_PLAYLIST_SEGMENTS
     );
@@ -398,5 +399,11 @@ describe("tip-only MEDIA-SEQUENCE corruption (Odyssey)", () => {
     const seekJobOffset = 2340;
     const scrubAbsolute = 2700;
     expect(scrubAbsolute - seekJobOffset).toBe(360);
+  });
+
+  it("in-progress cap is large enough for multi-hour movies", () => {
+    // 900 segs ≈ 60m — the tip that froze Odyssey. Cap must be well above that.
+    expect(MAX_IN_PROGRESS_PLAYLIST_SEGMENTS).toBeGreaterThan(2000);
+    expect(MAX_IN_PROGRESS_PLAYLIST_SEGMENTS * 4).toBeGreaterThan(3 * 3600);
   });
 });

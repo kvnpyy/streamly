@@ -6,8 +6,11 @@ const ENCODED_DURATION_TAG_RE =
   /^#EXT-X-STREAMLY-ENCODED-DURATION-SEC:([\d.]+)/im;
 
 /** While ffmpeg is still running, cap playlist size so Safari/hls.js don't choke on huge m3u8. */
-/** ~60 min @ 4s segments — avoids truncating hour-long episodes while ffmpeg is still running. */
-export const MAX_IN_PROGRESS_PLAYLIST_SEGMENTS = 900;
+/**
+ * ~5h @ 4s segments. The old 900 (~60m) cap froze long movies at the EVENT tip
+ * even when disk had more segments — playhead stalled, Try again wiped the encode.
+ */
+export const MAX_IN_PROGRESS_PLAYLIST_SEGMENTS = 4500;
 
 /**
  * Hide the freshest N segments while ffmpeg is still writing. Clients that race the

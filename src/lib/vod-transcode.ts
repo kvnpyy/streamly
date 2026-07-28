@@ -43,7 +43,6 @@ import {
   waitForVodSourceBytes,
   waitForVodSourceForSeek,
   waitForVodSourceGrowth,
-  wipeVodSource,
 } from "@/lib/vod-source-cache";
 import {
   quantizeTranscodeSeekSec,
@@ -1413,9 +1412,30 @@ async function spawnFfmpegLocked(
       }
       job.state = "ready";
       notifyWaiters(job, true);
+      // ffmpeg often writes ENDLIST on early EOF even when the movie is far
+      // from done — strip it so the next resume/open continues encoding.
+      try {
+        const live = await fsp.readFile(path.join(job.dir, MANIFEST_NAME), "utf8");
+        if (/#EXT-X-ENDLIST/i.test(live)) {
+          await fsp.writeFile(
+            path.join(job.dir, MANIFEST_NAME),
+            live
+              .split(/\r?\n/)
+              .filter((l) => !/^#EXT-X-ENDLIST/i.test(l.trim()))
+              .join("\n"),
+            "utf8"
+          );
+        }
+      } catch {
+        /* noop */
+      }
       if (jobViewerActive(job)) {
         if (isVodSourceCacheEnabled()) {
-          const encoded = sumExtinfDurationSec(raw);
+          const encoded = encodedCoverageSec({
+            manifestText: raw,
+            onDisk: await listSegmentFiles(job.dir),
+            segmentSec: hlsSegmentSeconds(),
+          });
           await reopenVodSourceIfTruncated(
             job.upstream,
             job.startOffsetSec + encoded,
@@ -1471,26 +1491,25 @@ async function cancelSiblingTranscodeJobs(
   );
 }
 
-/** One-connection IPTV accounts: only one upstream pull can succeed at a time. */
+/**
+ * One-connection IPTV accounts: only one upstream *download* can succeed at a
+ * time. Stop other writers and release their source downloads — but keep HLS
+ * segment caches on disk so returning to a half-encoded movie is instant.
+ */
 async function cancelOtherUpstreamTranscodeJobs(
   upstream: string,
   keepKey: string
 ): Promise<void> {
-  const victims: Array<{ key: string; dir: string; upstream: string }> = [];
+  const otherUpstreams = new Set<string>();
   for (const [key, job] of jobs.entries()) {
     if (key === keepKey || job.upstream === upstream) continue;
-    victims.push({ key, dir: job.dir, upstream: job.upstream });
+    otherUpstreams.add(job.upstream);
+    job.lastViewerAt = 0;
+    stopTranscodeProcOnly(job);
   }
-  const otherUpstreams = [
-    ...new Set(victims.map((v) => v.upstream)),
-  ];
   await Promise.all(
-    victims.map(({ key, dir }) => wipeTranscodeJobDir(dir, key))
-  );
-  await Promise.all(
-    otherUpstreams.map(async (u) => {
+    [...otherUpstreams].map(async (u) => {
       releaseVodSourceDownload(u);
-      await wipeVodSource(u);
     })
   );
 }
@@ -1629,6 +1648,49 @@ async function ensureJobLocked(
   // ensureJob() serializes concurrent callers via ensureJobInflight — do not await
   // that map here or tc_reset deadlocks waiting on the in-flight promise itself.
   if (opts?.resetCache) {
+    // Soft reset when we already have real progress — wiping a 1h+ encode on
+    // "Try again" is what killed Odyssey mid-watch after the 60m playlist tip.
+    const diskBefore = await listSegmentFiles(dir);
+    const prefixBefore = contiguousSegmentCount(diskBefore);
+    if (prefixBefore * hlsSegmentSeconds() >= 120) {
+      let existingSoft = jobs.get(key);
+      if (!existingSoft) {
+        existingSoft =
+          (await hydrateTranscodeJobFromDisk(upstream, startOffsetSec)) ??
+          undefined;
+      }
+      if (existingSoft) {
+        await stopJobProc(existingSoft);
+        existingSoft.state = "ready";
+        existingSoft.error = undefined;
+        existingSoft.lastViewerAt = Date.now();
+        await ensureTranscodeJobContiguous(existingSoft);
+        // Drop premature ENDLIST so encoding can continue.
+        try {
+          const rawSoft = await fsp.readFile(
+            path.join(existingSoft.dir, MANIFEST_NAME),
+            "utf8"
+          );
+          if (
+            rawSoft.includes("#EXT-X-ENDLIST") &&
+            !(await isPlaylistFullyEncoded(existingSoft, rawSoft))
+          ) {
+            await fsp.writeFile(
+              path.join(existingSoft.dir, MANIFEST_NAME),
+              rawSoft
+                .split(/\r?\n/)
+                .filter((l) => !/^#EXT-X-ENDLIST/i.test(l.trim()))
+                .join("\n"),
+              "utf8"
+            );
+          }
+        } catch {
+          /* heal/rebuild on continue */
+        }
+        void ensureEncodingContinues(existingSoft);
+        return existingSoft;
+      }
+    }
     // Wipe HLS segments only — keep the downloaded source so Try again is fast.
     await wipeTranscodeJobDir(dir, key);
   }
