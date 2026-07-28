@@ -557,17 +557,39 @@ export function PlayerOverlay() {
     }
     if (episodeIdentityRef.current === episodeIdentity) return;
     episodeIdentityRef.current = episodeIdentity;
-    vodTimelineHoldRef.current = null;
     vodResumeLockedRef.current = false;
     vodStartOffsetRef.current = 0;
     vodEncodedSecRef.current = 0;
+
+    // Seed resume hold synchronously before the playback pipeline effect runs.
+    let resumeHold: VodTimelineHold | null = null;
+    if (
+      current &&
+      current.kind !== "live" &&
+      isVodTranscodeEnabledClient() &&
+      vodNeedsServerTranscodePrep(current.containerExt, current.url) &&
+      canVodTranscodeProxyUrl(current.url)
+    ) {
+      const accountKey = creds ? browseAccountKey(creds) : undefined;
+      const resumeKey = vodResumeStorageKey(accountKey, current);
+      const stored =
+        resumeKey != null ? usePrefs.getState().getVodResume(resumeKey) : null;
+      if (stored != null && stored >= 15) {
+        resumeHold = {
+          absoluteTimeSec: Math.floor(stored),
+          startOffsetSec: 0,
+        };
+      }
+    }
+    vodTimelineHoldRef.current = resumeHold;
 
     queueMicrotask(() => {
       setVideoHasFrame(false);
       setVodPrepProgress(8);
       setVodPrepStartedAt(Date.now());
+      if (resumeHold) setVodSeekTargetSec(resumeHold.absoluteTimeSec);
     });
-  }, [episodeIdentity]);
+  }, [episodeIdentity, current, creds]);
 
   /** Slow server encode — nudge bar; hard fail only if decode never starts. */
   useEffect(() => {
@@ -575,10 +597,17 @@ export function PlayerOverlay() {
     const slowId = window.setTimeout(() => {
       setVodPrepProgress((p) => Math.max(p, 22));
     }, 12_000);
+    // Mid-film resume into a finished encode needs longer than a cold start —
+    // hls.js must parse a long VOD playlist then seek before the first frame.
+    const encodedReady = vodEncodedSecRef.current > 60;
+    const resumeTarget =
+      vodSeekTargetSec != null && vodSeekTargetSec >= 15;
+    const failMs = encodedReady || resumeTarget ? 90_000 : 28_000;
     const failId = window.setTimeout(() => {
       void (async () => {
         const v = videoRef.current;
         if (v && v.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) return;
+        if (v && v.buffered.length > 0) return;
         const manifestUrl = vodPlaybackUrl ?? current?.url ?? "";
         if (playbackUrlUsesVodTranscode(manifestUrl)) {
           try {
@@ -612,12 +641,18 @@ export function PlayerOverlay() {
           "This episode is taking unusually long to prepare. Check your connection, then try Play again — or use a native IPTV app for MKV files."
         );
       })();
-    }, 28_000);
+    }, failMs);
     return () => {
       window.clearTimeout(slowId);
       window.clearTimeout(failId);
     };
-  }, [showVodPrepare, vodPrepStartedAt, current?.url, vodPlaybackUrl]);
+  }, [
+    showVodPrepare,
+    vodPrepStartedAt,
+    current?.url,
+    vodPlaybackUrl,
+    vodSeekTargetSec,
+  ]);
 
   /** After Try again: surface a clear error instead of an endless prep/spinner loop. */
   useEffect(() => {
@@ -883,8 +918,6 @@ export function PlayerOverlay() {
         warmVodTranscodePlay(current.url, {
           compatMse: tvBrowser || silkLikeClient,
         });
-        // Resume seeks in-playlist once encoded coverage is known — do not
-        // show the "encoding" pill here (that is only for server restarts).
         if (resumeSec != null) {
           setVodSeekTargetSec(resumeSec);
         }
@@ -958,6 +991,7 @@ export function PlayerOverlay() {
     applyVodDurationHint,
     applyVodTranscodeTimelineHints,
     vodTimelineHoldRef,
+    vodResumeLockedRef,
   });
 
   usePlayerVodResume({

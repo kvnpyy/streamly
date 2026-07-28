@@ -112,6 +112,8 @@ export type UsePlayerPlaybackPipelineParams = {
     encoded?: number;
   }) => void;
   vodTimelineHoldRef: RefObject<VodTimelineHold | null>;
+  /** Locks one-shot resume when the pipeline already applied a hold seek. */
+  vodResumeLockedRef?: RefObject<boolean>;
 };
 
 export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
@@ -167,6 +169,7 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
     applyVodDurationHint,
     applyVodTranscodeTimelineHints,
     vodTimelineHoldRef,
+    vodResumeLockedRef,
   } = p;
 
   useEffect(() => {
@@ -179,6 +182,13 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
 
     const timelineHold = vodTimelineHoldRef.current;
     const pendingAbsoluteSeekSec = timelineHold?.absoluteTimeSec ?? null;
+    if (
+      pendingAbsoluteSeekSec != null &&
+      pendingAbsoluteSeekSec >= 15 &&
+      vodResumeLockedRef
+    ) {
+      vodResumeLockedRef.current = true;
+    }
 
     setError(null);
     streamSupportRequestIdRef.current = null;
@@ -269,8 +279,16 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
 
     const tryAutoplay = async () => {
       if (cancelled) return;
-      // Respect an explicit user pause — never resume on fragment/manifest events.
-      if (video.paused && video.currentTime > 0.25) return;
+      // Respect an explicit user pause after media is actually playing — but do
+      // NOT treat a resume seek (currentTime=40:00 on an empty buffer) as pause.
+      // That skipped play() entirely and left prepare stuck until the 28s timeout.
+      if (
+        video.paused &&
+        video.currentTime > 0.25 &&
+        video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA
+      ) {
+        return;
+      }
       try {
         await safeVideoPlay(video);
       } catch {
@@ -1221,6 +1239,7 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
     applyVodDurationHint,
     applyVodTranscodeTimelineHints,
     vodTimelineHoldRef,
+    vodResumeLockedRef,
     playbackRetryKey,
     chromiumDesktopClient,
     tvBrowser,

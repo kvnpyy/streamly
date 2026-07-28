@@ -90,8 +90,11 @@ export function usePlayerVodResume(p: UsePlayerVodResumeParams) {
         return;
       }
 
-      const hls = hlsRef.current;
-      if (hls && usesTranscode) {
+      if (usesTranscode) {
+        const hls = hlsRef.current;
+        // Wait for hls.js — locking + native currentTime here permanently
+        // skipped in-playlist resume and raced autoplay.
+        if (!hls) return;
         const encoded = vodEncodedSecRef.current;
         // Duration often arrives in the same XHR before encodedSec is written —
         // locking here left resume stuck at 0:00 with a seek overlay.
@@ -120,6 +123,11 @@ export function usePlayerVodResume(p: UsePlayerVodResumeParams) {
           video.currentTime = Math.max(0, rel);
         } catch {
           /* noop */
+        }
+        try {
+          void video.play();
+        } catch {
+          /* autoplay policy — tap-to-play UI handles it */
         }
         return;
       }
