@@ -267,6 +267,11 @@ export function prepareManifestForPlayback(
   }
 
   let kept = trimContiguousSegmentsFromStart(pairs);
+  // Leading discontinuity before seg_00000 breaks hls.js resume seeks (playhead
+  // never advances). Drop it — real mid-stream discontinuities stay.
+  if (kept.length > 0) {
+    kept[0] = { ...kept[0]!, discontinuity: false };
+  }
   if (!playlistComplete && kept.length > MAX_IN_PROGRESS_PLAYLIST_SEGMENTS) {
     /** Keep from the start — VOD transcode always plays forward from seg_00000. */
     kept = kept.slice(0, MAX_IN_PROGRESS_PLAYLIST_SEGMENTS);

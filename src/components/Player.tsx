@@ -677,16 +677,18 @@ export function PlayerOverlay() {
           : vodTotalSec > 1
             ? vodTotalSec
             : undefined;
+      // Hold absolute time only — startOffset comes from the server playlist
+      // (often 0 when reusing a finished from-0 encode). Never set offset=absolute.
       vodTimelineHoldRef.current = {
         absoluteTimeSec: Math.max(0, absoluteSec),
-        startOffsetSec: Math.max(0, Math.floor(absoluteSec)),
+        startOffsetSec: 0,
         durationSec,
       };
       vodResumeLockedRef.current = true;
 
       vodTriedTranscodeRef.current = true;
       setVodTranscodeBoost(true);
-      vodStartOffsetRef.current = Math.max(0, Math.floor(absoluteSec));
+      vodStartOffsetRef.current = 0;
       vodEncodedSecRef.current = 0;
       setVodSeekTargetSec(Math.max(0, absoluteSec));
       setVodSeekInFlight(true);

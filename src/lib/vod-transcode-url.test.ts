@@ -90,14 +90,14 @@ describe("vod-transcode-url", () => {
     vi.unstubAllEnvs();
   });
 
-  it("buildInitialVodPlaybackUrl bakes resume seek into first transcode load", () => {
+  it("buildInitialVodPlaybackUrl uses transcode without baking resume into tc_seek", () => {
     vi.stubEnv("NEXT_PUBLIC_VOD_TRANSCODE", "1");
     const out = buildInitialVodPlaybackUrl(base, {
       containerExt: "mkv",
       resumeSec: 612,
     });
     expect(out).toContain("transcode=hls");
-    expect(out).toContain("tc_seek=612");
+    expect(out).not.toContain("tc_seek=");
     vi.unstubAllEnvs();
   });
 });

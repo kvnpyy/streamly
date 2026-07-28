@@ -178,6 +178,7 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
     deferredTeardownCancelRef.current = null;
 
     const timelineHold = vodTimelineHoldRef.current;
+    const pendingAbsoluteSeekSec = timelineHold?.absoluteTimeSec ?? null;
 
     setError(null);
     streamSupportRequestIdRef.current = null;
@@ -238,10 +239,11 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
         const tcSeek = Number(
           new URL(url, origin).searchParams.get("tc_seek") ?? "0"
         );
+        // tc_seek is a server hint only. Do not treat it as startOffset — the
+        // playlist may be a reused from-0 encode (offset 0) with resume applied
+        // after MANIFEST_PARSED / client resume hooks.
         if (Number.isFinite(tcSeek) && tcSeek >= 15) {
-          const seek = Math.floor(tcSeek);
-          setTime(seek);
-          vodStartOffsetRef.current = seek;
+          setTime(Math.floor(tcSeek));
         }
       } catch {
         /* noop */
@@ -649,10 +651,25 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
           setCurrentLevel(-1);
           if (!transcodeManifestBootstrapped) {
             transcodeManifestBootstrapped = true;
+            const off = Math.max(0, vodStartOffsetRef.current);
+            const absolute =
+              pendingAbsoluteSeekSec != null &&
+              Number.isFinite(pendingAbsoluteSeekSec)
+                ? pendingAbsoluteSeekSec
+                : null;
+            const rel =
+              absolute != null ? Math.max(0, absolute - off) : 0;
             try {
-              hls.startLoad(0);
+              hls.startLoad(rel);
             } catch {
               /* noop */
+            }
+            if (rel > 0.5) {
+              try {
+                video.currentTime = rel;
+              } catch {
+                /* noop */
+              }
             }
             void tryAutoplay();
           }

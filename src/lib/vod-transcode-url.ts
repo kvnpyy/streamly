@@ -254,8 +254,10 @@ export function warmVodTranscodePlay(
 }
 
 /**
- * First playback URL for MKV/AVI — applies server transcode and optional resume seek
- * so the pipeline does not start at 0s and restart after resume logic runs.
+ * First playback URL for MKV/AVI — applies server transcode.
+ * Do NOT bake resume into `tc_seek`: that skips client resume seeking and
+ * assumes the playlist window starts at resume time. After deploys we often
+ * reuse a complete from-0 encode, so resume must seek inside that playlist.
  */
 export function buildInitialVodPlaybackUrl(
   proxyUrl: string,
@@ -269,16 +271,6 @@ export function buildInitialVodPlaybackUrl(
   if (!canVodTranscodeProxyUrl(proxyUrl)) return proxyUrl;
   if (!vodNeedsServerTranscodePrep(opts.containerExt, proxyUrl)) return proxyUrl;
 
-  const resume =
-    opts.resumeSec != null && Number.isFinite(opts.resumeSec) && opts.resumeSec >= 15
-      ? Math.floor(opts.resumeSec)
-      : null;
-  if (resume != null) {
-    const seekUrl = buildVodTranscodeSeekUrl(proxyUrl, proxyUrl, resume, {
-      compatMse: opts.compatMse,
-    });
-    if (seekUrl) return seekUrl;
-  }
   return appendVodTranscodeHls(proxyUrl, { compatMse: opts.compatMse });
 }
 
