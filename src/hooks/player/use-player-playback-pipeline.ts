@@ -856,13 +856,9 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
       if (vodTranscodeHls) {
         hls.on(Hls.Events.FRAG_LOADED, () => {
           if (cancelled) return;
-          const vv = videoRef.current;
-          if (vv) {
-            vodEncodedSecRef.current = Math.max(
-              vodEncodedSecRef.current,
-              vv.currentTime + 6
-            );
-          }
+          // Do not invent encoded coverage from currentTime — tip-only playlists
+          // can report a high playhead while earlier segments are missing from
+          // the published playlist. Trust x-vod-encoded-sec from the server.
           setVodPrepProgress((p) => Math.max(p, 72));
           markTranscodePlaybackStarted();
         });

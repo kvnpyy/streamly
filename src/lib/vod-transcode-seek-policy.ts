@@ -21,6 +21,10 @@ export function quantizeTranscodeSeekSec(seekSec: number): number {
 /**
  * Whether a scrub should restart the server encode (`tc_seek`) vs seeking in the
  * already-growing playlist.
+ *
+ * Strategy: one from-0 encode is the source of truth. Only fork a seek job for
+ * large *forward* jumps past the encoded tip. Backward scrub into covered
+ * segments is always an in-playlist seek.
  */
 export function transcodeSeekNeedsServerRestart(opts: {
   absoluteSec: number;
@@ -32,20 +36,18 @@ export function transcodeSeekNeedsServerRestart(opts: {
   const encoded = Math.max(0, opts.encodedSec);
   const relative = absolute - off;
 
-  // Before the current encode window — need a new job from earlier.
+  // Before the current encode window — reload from-0 / earlier job.
   if (relative < -1) return true;
 
   if (encoded < 2) {
-    // Encoded coverage unknown / barely started (client starts at 0 until
-    // headers arrive). Never fork a new job from this — wait for a real tip.
+    // Encoded coverage unknown until headers arrive — never fork yet.
     return false;
   }
 
-  const pastEdge = relative - encoded;
-  // At/near the growing tip — wait for more segments; do not fork ffmpeg.
-  if (pastEdge <= TRANSCODE_SEEK_PAST_EDGE_SEC) return false;
+  // Still inside (or at) what is already encoded — normal scrub, including back.
+  if (relative <= encoded + TRANSCODE_SEEK_PAST_EDGE_SEC) return false;
 
-  // User scrubbed well beyond what is encoded.
+  // Large forward jump past the tip — temporary seek-fork accelerator.
   return true;
 }
 

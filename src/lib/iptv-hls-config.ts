@@ -182,7 +182,7 @@ export function buildVodTranscodeHlsJsConfig() {
   return {
     maxBufferLength: 36,
     maxMaxBufferLength: 84,
-    backBufferLength: 32,
+    backBufferLength: 600,
     maxBufferHole: 0.3,
     maxFragLookUpTolerance: 0.35,
     stretchShortVideoTrack: false,

@@ -275,17 +275,15 @@ function manifestTextForPlayback(
   playlistComplete: boolean,
   onDisk: ReadonlySet<string>
 ): string {
-  // Tip-only MEDIA-SEQUENCE jumps must never be served as-is — rebuild from disk.
-  const source =
-    manifestIsTipOnlyTail(raw, onDisk) ||
-    contiguousSegmentCount(onDisk) > countManifestSegments(raw)
-      ? buildManifestFromContiguousDisk(
-          onDisk,
-          parseExtinfDurationsBySegment(raw),
-          hlsSegmentSeconds(),
-          { playlistComplete }
-        )
-      : raw;
+  // Always rebuild from contiguous disk segments. ffmpeg's on-disk m3u8 is not
+  // the playback contract — resume without append_list rewrites MEDIA-SEQUENCE
+  // to the tip and clients then cannot scrub backward into earlier segments.
+  const source = buildManifestFromContiguousDisk(
+    onDisk,
+    parseExtinfDurationsBySegment(raw),
+    hlsSegmentSeconds(),
+    { playlistComplete }
+  );
   return prepareManifestForPlayback(source, playlistComplete, onDisk);
 }
 
@@ -1046,6 +1044,8 @@ async function resumeTranscodeJob(job: TranscodeJob): Promise<void> {
       void beginTranscodeJob(job);
       return;
     }
+    // Force a contiguous MEDIA-SEQUENCE:0 playlist before append_list resume.
+    await healTranscodeJobContiguity(job);
     const meta = await resolveJobMeta(job);
     job.durationSec = meta.durationSec ?? job.durationSec;
     const raw = await fsp.readFile(path.join(job.dir, MANIFEST_NAME), "utf8");
@@ -1053,7 +1053,7 @@ async function resumeTranscodeJob(job: TranscodeJob): Promise<void> {
     const trimmed = prepareManifestForPlayback(raw, false, onDisk);
     const seekInSourceSec = resumeSeekSecForDiskPrefix({
       startOffsetSec: job.startOffsetSec,
-      prefixCount,
+      prefixCount: contiguousSegmentCount(onDisk),
       segmentSec: hlsSegmentSeconds(),
       manifestEncodedSec: sumExtinfDurationSec(trimmed),
     });
@@ -1068,9 +1068,10 @@ async function resumeTranscodeJob(job: TranscodeJob): Promise<void> {
     }
     // Re-check after awaits — another path may have started encoding.
     if (job.proc && job.proc.exitCode == null) return;
+    const prefixNow = contiguousSegmentCount(await listSegmentFiles(job.dir));
     await spawnFfmpeg(job, meta.plan, {
       seekInSourceSec,
-      startSegmentNumber: prefixCount,
+      startSegmentNumber: prefixNow,
     }, meta.audioStreamIndex);
   } catch (err) {
     job.state = "failed";
@@ -1343,13 +1344,12 @@ async function spawnFfmpegLocked(
     String(segSec),
     "-hls_list_size",
     "0",
-    // Resume with start_number must NOT use append_list — ffmpeg then rewrites
-    // MEDIA-SEQUENCE while keeping seg_00000 URIs and can jump the next index
-    // (e.g. 408 → 816), freezing playback at the tip.
+    // Always append_list. Before resume we rewrite a contiguous MEDIA-SEQUENCE:0
+    // playlist from disk — without that heal, append_list can jump MEDIA-SEQUENCE
+    // while keeping early URIs; without append_list, ffmpeg replaces the file
+    // with a tip-only playlist and scrub-back dies.
     "-hls_flags",
-    resume && resume.startSegmentNumber > 0
-      ? "independent_segments+temp_file"
-      : "independent_segments+temp_file+append_list",
+    "independent_segments+temp_file+append_list",
     "-hls_segment_type",
     "mpegts",
     "-hls_segment_filename",

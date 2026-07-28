@@ -406,4 +406,26 @@ describe("tip-only MEDIA-SEQUENCE corruption (Odyssey)", () => {
     expect(MAX_IN_PROGRESS_PLAYLIST_SEGMENTS).toBeGreaterThan(2000);
     expect(MAX_IN_PROGRESS_PLAYLIST_SEGMENTS * 4).toBeGreaterThan(3 * 3600);
   });
+
+  it("always rebuilds playback playlist from disk so scrub-back works", () => {
+    const onDisk = diskPrefix(2114);
+    const tip = tipOnlyManifest(2100, 2113);
+    // Simulate serve-time rebuild (authoritative path).
+    const rebuilt = buildManifestFromContiguousDisk(
+      onDisk,
+      new Map(),
+      4,
+      { playlistComplete: false }
+    );
+    const prepared = prepareManifestForPlayback(rebuilt, false, onDisk);
+    expect(prepared).toContain("MEDIA-SEQUENCE:0");
+    expect(prepared).toContain("seg_00000.ts");
+    expect(prepared).toContain("seg_01000.ts");
+    // ~40 min and ~1h33 must both be inside the published playlist.
+    expect(sumExtinfDurationSec(prepared)).toBeGreaterThan(40 * 60);
+    expect(sumExtinfDurationSec(prepared)).toBeGreaterThan(93 * 60);
+    // Tip-only raw must never be what clients seek against.
+    expect(manifestIsTipOnlyTail(tip, onDisk)).toBe(true);
+    expect(manifestIsTipOnlyTail(prepared, onDisk)).toBe(false);
+  });
 });
