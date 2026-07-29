@@ -34,6 +34,7 @@ import { useTvBrowser } from "@/components/TvBrowserProvider";
 import { useAuth } from "@/store/auth";
 import { usePlayer, type PlayerSource } from "@/store/player";
 import {
+  shouldClearVodResume,
   shouldPersistVodResume,
   type VodTimelineHold,
   vodResumeStorageKey,
@@ -1214,6 +1215,15 @@ export function PlayerOverlay() {
     return duration > 1 && Number.isFinite(duration) ? duration : 0;
   }, [isLive, vodTotalSec, duration]);
 
+  const getPlaybackTimeNow = useCallback(() => {
+    const v = videoRef.current;
+    if (v && Number.isFinite(v.currentTime)) {
+      const off = usesTranscodePlayback ? vodStartOffsetRef.current : 0;
+      return Math.max(0, off + v.currentTime);
+    }
+    return playbackTimeRef.current;
+  }, [usesTranscodePlayback]);
+
   const seekVideoTo = useCallback(
     (absoluteSeconds: number) => {
       const v = videoRef.current;
@@ -1236,7 +1246,12 @@ export function PlayerOverlay() {
           : null;
       const persistIfLanded = () => {
         if (landGen !== vodSeekLandGenRef.current) return;
-        if (resumeKey && shouldPersistVodResume(absolute, dur)) {
+        if (!resumeKey) return;
+        if (shouldClearVodResume(absolute)) {
+          usePrefs.getState().clearVodResume(resumeKey);
+          return;
+        }
+        if (shouldPersistVodResume(absolute, dur)) {
           usePrefs.getState().saveVodResume(resumeKey, absolute);
         }
       };
@@ -1245,7 +1260,18 @@ export function PlayerOverlay() {
         vodScrubbingRef.current = false;
       };
 
-      if (usesTranscodePlayback && transcodeSeekNeedsServerRestart(absolute)) {
+      // Large backward jumps (e.g. 1h45 → start) often fail stopLoad/startLoad land
+      // while MSE still holds the tip — rebuild the pipeline at the target instead.
+      const nowAbs = getPlaybackTimeNow();
+      const largeBackwardScrub =
+        usesTranscodePlayback &&
+        Number.isFinite(nowAbs) &&
+        nowAbs - absolute >= 90;
+
+      if (
+        usesTranscodePlayback &&
+        (transcodeSeekNeedsServerRestart(absolute) || largeBackwardScrub)
+      ) {
         if (vodSeekRestartTimerRef.current) {
           clearTimeout(vodSeekRestartTimerRef.current);
           vodSeekRestartTimerRef.current = null;
@@ -1367,6 +1393,7 @@ export function PlayerOverlay() {
     [
       isLive,
       getPlaybackDuration,
+      getPlaybackTimeNow,
       usesTranscodePlayback,
       transcodeSeekNeedsServerRestart,
       restartTranscodeAtSeek,
@@ -1374,15 +1401,6 @@ export function PlayerOverlay() {
       current,
     ]
   );
-
-  const getPlaybackTimeNow = useCallback(() => {
-    const v = videoRef.current;
-    if (v && Number.isFinite(v.currentTime)) {
-      const off = usesTranscodePlayback ? vodStartOffsetRef.current : 0;
-      return Math.max(0, off + v.currentTime);
-    }
-    return playbackTimeRef.current;
-  }, [usesTranscodePlayback]);
 
   const seek = useCallback(
     (delta: number) => {

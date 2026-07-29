@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   resolveStoredVodResumeSec,
+  shouldClearVodResume,
   shouldPersistVodResume,
   vodAbsoluteSec,
   vodRelativeSec,
@@ -52,6 +53,14 @@ describe("shouldPersistVodResume", () => {
 
   it("persists mid-playback positions", () => {
     expect(shouldPersistVodResume(600, 3600)).toBe(true);
+  });
+});
+
+describe("shouldClearVodResume", () => {
+  it("clears continue-watching when scrubbing to the start", () => {
+    expect(shouldClearVodResume(0)).toBe(true);
+    expect(shouldClearVodResume(8)).toBe(true);
+    expect(shouldClearVodResume(13)).toBe(false);
   });
 });
 

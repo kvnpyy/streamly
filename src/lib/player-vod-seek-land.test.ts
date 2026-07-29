@@ -18,6 +18,12 @@ describe("vodSeekPlayheadLanded", () => {
     expect(vodSeekPlayheadLanded(6296, 2400)).toBe(false);
   });
 
+  it("accepts opening PTS when scrubbing to the start", () => {
+    expect(vodSeekPlayheadLanded(1.47, 0)).toBe(true);
+    expect(vodSeekPlayheadLanded(3.8, 0)).toBe(true);
+    expect(vodSeekPlayheadLanded(12, 0)).toBe(false);
+  });
+
   it("rejects non-finite times", () => {
     expect(vodSeekPlayheadLanded(Number.NaN, 2400)).toBe(false);
   });

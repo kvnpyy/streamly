@@ -65,3 +65,8 @@ export function shouldPersistVodResume(
     absoluteSec < durationSec - 45
   );
 }
+
+/** Scrub/resume near the title start should drop continue-watching, not keep an old tip. */
+export function shouldClearVodResume(absoluteSec: number): boolean {
+  return Number.isFinite(absoluteSec) && absoluteSec <= 12;
+}
