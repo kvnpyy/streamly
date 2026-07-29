@@ -316,7 +316,11 @@ export function prepareManifestForPlayback(
     }
 
     pendingExtinf = null;
-    if (!playlistComplete && /^#EXT-X-ENDLIST/i.test(trimmed)) continue;
+    // Never keep ENDLIST in the header bucket — source playlists (and
+    // buildManifestFromContiguousDisk) put it after segments, so naively
+    // pushing # tags into `header` moves ENDLIST *before* media. hls.js then
+    // treats the VOD as empty (0 segments before ENDLIST) and scrub/resume die.
+    if (/^#EXT-X-ENDLIST/i.test(trimmed)) continue;
     if (trimmed.startsWith("#")) header.push(line);
   }
 

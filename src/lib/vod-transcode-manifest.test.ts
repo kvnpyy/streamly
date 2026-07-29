@@ -441,6 +441,10 @@ describe("tip-only MEDIA-SEQUENCE corruption (Odyssey)", () => {
     expect(prepared).toContain("#EXT-X-ENDLIST");
     expect(prepared).toContain("MEDIA-SEQUENCE:0");
     expect(prepared).toContain("seg_00000.ts");
+    const prepLines = prepared.split(/\r?\n/);
+    expect(prepLines.findIndex((l) => /ENDLIST/i.test(l))).toBeGreaterThan(
+      prepLines.findIndex((l) => /seg_00000\.ts/i.test(l))
+    );
     const rewritten = rewriteTranscodeManifest(prepared, "http://x/odyssey.mkv", false, {
       durationSec: 9935,
       playlistComplete: true,
@@ -450,5 +454,37 @@ describe("tip-only MEDIA-SEQUENCE corruption (Odyssey)", () => {
     expect(rewritten).toContain("#EXT-X-PLAYLIST-TYPE:VOD");
     expect(rewritten).toContain("#EXT-X-ENDLIST");
     expect(rewritten).not.toContain("tc_seek=");
+    const lines = rewritten.split(/\r?\n/);
+    const endIdx = lines.findIndex((l) => /ENDLIST/i.test(l));
+    const firstSeg = lines.findIndex((l) => /seg_00000\.ts/i.test(l));
+    expect(endIdx).toBeGreaterThan(firstSeg);
+  });
+
+  it("never emits ENDLIST before media segments (Odyssey empty-VOD bug)", () => {
+    const onDisk = diskPrefix(20);
+    // Source already has ENDLIST after segs — prepare must not hoist it into header.
+    const source = [
+      "#EXTM3U",
+      "#EXT-X-VERSION:6",
+      "#EXT-X-TARGETDURATION:4",
+      "#EXT-X-MEDIA-SEQUENCE:0",
+      "#EXT-X-INDEPENDENT-SEGMENTS",
+      ...Array.from({ length: 20 }, (_, i) => [
+        "#EXTINF:4.000000,",
+        `seg_${String(i).padStart(5, "0")}.ts`,
+      ]).flat(),
+      "#EXT-X-ENDLIST",
+    ].join("\n");
+    const prepared = prepareManifestForPlayback(source, true, onDisk);
+    const lines = prepared.split(/\r?\n/);
+    const endIdx = lines.findIndex((l) => /#EXT-X-ENDLIST/i.test(l));
+    const firstSeg = lines.findIndex((l) => /seg_\d+\.ts/i.test(l));
+    expect(firstSeg).toBeGreaterThan(0);
+    expect(endIdx).toBeGreaterThan(firstSeg);
+    expect(lines.filter((l) => /#EXT-X-ENDLIST/i.test(l))).toHaveLength(1);
+    // Nothing after a premature ENDLIST should be required — segs must precede it.
+    expect(
+      lines.slice(0, endIdx).some((l) => /seg_\d+\.ts/i.test(l))
+    ).toBe(true);
   });
 });
