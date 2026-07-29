@@ -7,7 +7,6 @@ describe("buildVodTranscodeHlsJsConfig", () => {
     expect(cfg.stretchShortVideoTrack).toBe(false);
     expect(cfg.maxLiveSyncPlaybackRate).toBe(1);
     expect(cfg.liveSyncDurationCount).toBeGreaterThanOrEqual(3);
-    expect(cfg.liveMaxLatencyDurationCount).toBeGreaterThanOrEqual(6);
     expect(cfg.maxBufferHole).toBeLessThanOrEqual(0.35);
     expect(cfg.liveSyncMode).toBe("buffered");
     expect(cfg.maxBufferLength).toBeGreaterThanOrEqual(32);
@@ -16,5 +15,12 @@ describe("buildVodTranscodeHlsJsConfig", () => {
     // hls.js throws if count- and duration-based live sync are mixed.
     expect(cfg.liveSyncDuration).toBeUndefined();
     expect(cfg.liveMaxLatencyDuration).toBeUndefined();
+  });
+
+  it("disables max-latency live snap so scrub-back is not yanked to the tip", () => {
+    const cfg = buildVodTranscodeHlsJsConfig();
+    // Finite caps (historically 6 ≈ 24s) force synchronizeToLiveEdge to reset
+    // currentTime toward the encode tip after every mid-film scrub.
+    expect(cfg.liveMaxLatencyDurationCount).toBe(Infinity);
   });
 });

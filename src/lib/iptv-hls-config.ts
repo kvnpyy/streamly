@@ -178,6 +178,10 @@ export function buildVodTranscodeHlsJsConfig() {
    * EVENT transcode playlists look "live" to hls.js. Stay a few segments behind the
    * growing edge (server also holdbacks trailing segs). Prefer brief stalls over
    * jumping buffer holes when a segment is still encoding (503).
+   *
+   * Critical: liveMaxLatencyDurationCount must be Infinity. A finite cap (e.g. 6)
+   * makes synchronizeToLiveEdge yank mid-title scrub-back to the encode tip —
+   * Netflix-broken scrub UX even when the playlist lists every segment.
    */
   return {
     maxBufferLength: 36,
@@ -188,7 +192,7 @@ export function buildVodTranscodeHlsJsConfig() {
     stretchShortVideoTrack: false,
     startFragPrefetch: true,
     liveSyncDurationCount: 3,
-    liveMaxLatencyDurationCount: 6,
+    liveMaxLatencyDurationCount: Infinity,
     liveSyncMode: "buffered" as const,
     maxLiveSyncPlaybackRate: 1,
     liveSyncOnStallIncrease: 0,

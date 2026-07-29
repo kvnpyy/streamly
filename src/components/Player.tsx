@@ -683,7 +683,11 @@ export function PlayerOverlay() {
         vodStartOffsetRef.current = hints.startOffset;
       }
       if (hints.encoded != null && hints.encoded > 0) {
-        vodEncodedSecRef.current = hints.encoded;
+        // Monotonic — never shrink on a reload/tip poll or false tc_seek forks.
+        vodEncodedSecRef.current = Math.max(
+          vodEncodedSecRef.current,
+          hints.encoded
+        );
       }
     },
     []
@@ -1069,14 +1073,38 @@ export function PlayerOverlay() {
           usesTranscodePlayback ||
           playbackUrlUsesVodTranscode(vodPlaybackUrl ?? current.url);
         if (onTranscode) {
-          restartTranscodeAtSeek(absolute);
-          return;
+          // Only fork a seek job when jumping past encoded coverage. Wake into
+          // an already-covered from-0 encode must not zero encodedSec / tc_seek.
+          if (
+            transcodeSeekNeedsServerRestartPolicy({
+              absoluteSec: absolute,
+              startOffsetSec: vodStartOffsetRef.current,
+              encodedSec: vodEncodedSecRef.current,
+            })
+          ) {
+            restartTranscodeAtSeek(absolute);
+            return;
+          }
+          vodTimelineHoldRef.current = {
+            absoluteTimeSec: absolute,
+            startOffsetSec: vodStartOffsetRef.current,
+            durationSec,
+          };
+          vodResumeLockedRef.current = true;
+          const active = vodPlaybackUrl ?? current.url;
+          const clean = buildVodTranscodeSeekUrl(active, current.url, 0, {
+            compatMse: tvBrowser || silkLikeClient,
+          });
+          if (clean && clean !== active) {
+            setVodPlaybackOverride(clean);
+          }
+        } else {
+          vodTimelineHoldRef.current = {
+            absoluteTimeSec: absolute,
+            startOffsetSec: 0,
+            durationSec,
+          };
         }
-        vodTimelineHoldRef.current = {
-          absoluteTimeSec: absolute,
-          startOffsetSec: 0,
-          durationSec,
-        };
       }
     }
 
@@ -1088,6 +1116,8 @@ export function PlayerOverlay() {
     vodPlaybackUrl,
     vodTotalSec,
     restartTranscodeAtSeek,
+    tvBrowser,
+    silkLikeClient,
   ]);
 
   usePlayerPageLifecycle({
@@ -1164,12 +1194,11 @@ export function PlayerOverlay() {
     if (vodTotalSec > 1) return vodTotalSec;
     const hint = vodDurationHintRef.current;
     if (hint > 1) return hint;
-    if (usesTranscodePlayback) return 0;
     const v = videoRef.current;
     const vd = v?.duration;
     if (Number.isFinite(vd) && vd && vd > 1 && vd < 86400) return vd;
     return duration > 1 && Number.isFinite(duration) ? duration : 0;
-  }, [isLive, vodTotalSec, duration, usesTranscodePlayback]);
+  }, [isLive, vodTotalSec, duration]);
 
   const seekVideoTo = useCallback(
     (absoluteSeconds: number) => {

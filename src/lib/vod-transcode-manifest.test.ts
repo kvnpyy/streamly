@@ -428,4 +428,27 @@ describe("tip-only MEDIA-SEQUENCE corruption (Odyssey)", () => {
     expect(manifestIsTipOnlyTail(tip, onDisk)).toBe(true);
     expect(manifestIsTipOnlyTail(prepared, onDisk)).toBe(false);
   });
+
+  it("complete playlists keep ENDLIST and VOD type for scrub-stable reopen", () => {
+    const onDisk = diskPrefix(2485);
+    const rebuilt = buildManifestFromContiguousDisk(
+      onDisk,
+      new Map(),
+      4,
+      { playlistComplete: true }
+    );
+    const prepared = prepareManifestForPlayback(rebuilt, true, onDisk);
+    expect(prepared).toContain("#EXT-X-ENDLIST");
+    expect(prepared).toContain("MEDIA-SEQUENCE:0");
+    expect(prepared).toContain("seg_00000.ts");
+    const rewritten = rewriteTranscodeManifest(prepared, "http://x/odyssey.mkv", false, {
+      durationSec: 9935,
+      playlistComplete: true,
+      startOffsetSec: 0,
+      encodedDurationSec: sumExtinfDurationSec(prepared),
+    });
+    expect(rewritten).toContain("#EXT-X-PLAYLIST-TYPE:VOD");
+    expect(rewritten).toContain("#EXT-X-ENDLIST");
+    expect(rewritten).not.toContain("tc_seek=");
+  });
 });

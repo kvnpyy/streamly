@@ -1668,7 +1668,8 @@ async function ensureJobLocked(
         existingSoft.error = undefined;
         existingSoft.lastViewerAt = Date.now();
         await ensureTranscodeJobContiguous(existingSoft);
-        // Drop premature ENDLIST so encoding can continue.
+        // Drop premature ENDLIST so encoding can continue — never strip ENDLIST
+        // from a fully-encoded from-0 title (that re-arms EVENT live-sync).
         try {
           const rawSoft = await fsp.readFile(
             path.join(existingSoft.dir, MANIFEST_NAME),
@@ -2047,23 +2048,15 @@ export async function handleVodTranscodeRequest(opts: {
       /* keep prior raw */
     }
     const onDiskAfter = await listSegmentFiles(job.dir);
-    const coverageSec = encodedCoverageSec({
-      manifestText: rawAfterHeal,
-      onDisk: onDiskAfter,
-      segmentSec: hlsSegmentSeconds(),
-    });
-    const sourceComplete =
-      !isVodSourceCacheEnabled() ||
-      (await isVodSourceComplete(opts.upstream));
-    const durationKnown = job.durationSec != null && job.durationSec > 0;
+    // Completeness is disk + duration + source — not fragile in-memory job.state.
+    // A finished from-0 encode after deploy hydrate must still serve VOD+ENDLIST
+    // so hls.js does not treat the full movie as a live EVENT tip.
     const playlistComplete =
-      job.state === "ready" &&
       job.proc == null &&
-      sourceComplete &&
-      !manifestIsTipOnlyTail(rawAfterHeal, onDiskAfter) &&
-      (durationKnown
-        ? coverageSec >= job.durationSec! * 0.92
-        : coverageSec >= 90);
+      (await isPlaylistFullyEncoded(job, rawAfterHeal));
+    if (playlistComplete && job.state !== "ready") {
+      job.state = "ready";
+    }
     const trimmed = manifestTextForPlayback(
       rawAfterHeal,
       playlistComplete,
