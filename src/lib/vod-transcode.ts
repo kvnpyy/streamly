@@ -10,6 +10,7 @@ import {
   hasOrphanSegmentsBeyondPrefix,
   manifestReferencesMissingOrGappedSegments,
   parseExtinfDurationsBySegment,
+  encodedLooksFullyComplete,
   prepareManifestForPlayback,
   rewriteTranscodeManifest,
   sumExtinfDurationSec,
@@ -876,16 +877,27 @@ async function isPlaylistFullyEncoded(
   });
   // Tip-only ENDLIST is never "complete" while earlier segments exist on disk.
   if (manifestIsTipOnlyTail(raw, onDisk)) return false;
-  if (job.durationSec != null && job.durationSec > 0) {
-    if (encoded < job.durationSec * 0.92) return false;
-  } else if (encoded < 90) {
-    // Unknown duration + short ENDLIST is almost always an early upstream EOF.
-    return false;
-  }
+  if (!encodedLooksFullyComplete(encoded, job.durationSec)) return false;
   if (isVodSourceCacheEnabled() && !(await isVodSourceComplete(job.upstream))) {
     return false;
   }
   return true;
+}
+
+/** Drop premature ENDLIST so append_list resume can continue encoding. */
+async function stripEndlistFromDiskManifest(dir: string): Promise<void> {
+  const manifestPath = path.join(dir, MANIFEST_NAME);
+  try {
+    const raw = await fsp.readFile(manifestPath, "utf8");
+    if (!/#EXT-X-ENDLIST/i.test(raw)) return;
+    const next = raw
+      .split(/\r?\n/)
+      .filter((l) => !/^#EXT-X-ENDLIST/i.test(l.trim()))
+      .join("\n");
+    await fsp.writeFile(manifestPath, next.endsWith("\n") ? next : `${next}\n`, "utf8");
+  } catch {
+    /* missing / racing */
+  }
 }
 
 /**
@@ -943,10 +955,14 @@ async function healTranscodeJobContiguity(job: TranscodeJob): Promise<number> {
     const durationSec =
       job.durationSec ?? (await readJobMeta(job.dir))?.durationSec ?? null;
     const diskEncoded = prefixCount * hlsSegmentSeconds();
-    const playlistComplete =
-      durationSec != null &&
-      durationSec > 0 &&
-      diskEncoded >= durationSec * 0.92;
+    let playlistComplete = encodedLooksFullyComplete(diskEncoded, durationSec);
+    if (
+      playlistComplete &&
+      isVodSourceCacheEnabled() &&
+      !(await isVodSourceComplete(job.upstream))
+    ) {
+      playlistComplete = false;
+    }
     const healed = buildManifestFromContiguousDisk(
       healedDisk,
       durationBySegment,
@@ -1000,14 +1016,8 @@ async function ensureTranscodeJobContiguous(job: TranscodeJob): Promise<number> 
   }
 
   if (job.proc && job.proc.exitCode == null) {
-    const proc = job.proc;
-    try {
-      proc.kill("SIGTERM");
-    } catch {
-      /* noop */
-    }
-    await waitForProcExit(proc);
-    job.proc = null;
+    // PID-file aware stop — raw SIGTERM left orphans writing during heal.
+    await stopJobProc(job);
     if (job.state === "running" || job.state === "starting") {
       job.state = "ready";
     }
@@ -1045,6 +1055,8 @@ async function resumeTranscodeJob(job: TranscodeJob): Promise<void> {
     }
     // Force a contiguous MEDIA-SEQUENCE:0 playlist before append_list resume.
     await healTranscodeJobContiguity(job);
+    // Heal may write ENDLIST at the 92% floor — strip before append_list spawn.
+    await stripEndlistFromDiskManifest(job.dir);
     const meta = await resolveJobMeta(job);
     job.durationSec = meta.durationSec ?? job.durationSec;
     const raw = await fsp.readFile(path.join(job.dir, MANIFEST_NAME), "utf8");
@@ -1067,6 +1079,7 @@ async function resumeTranscodeJob(job: TranscodeJob): Promise<void> {
     }
     // Re-check after awaits — another path may have started encoding.
     if (job.proc && job.proc.exitCode == null) return;
+    await stripEndlistFromDiskManifest(job.dir);
     const prefixNow = contiguousSegmentCount(await listSegmentFiles(job.dir));
     await spawnFfmpeg(job, meta.plan, {
       seekInSourceSec,
@@ -1297,7 +1310,8 @@ async function spawnFfmpegLocked(
       "-ac",
       "2",
       "-af",
-      "aresample=async=1:first_pts=0"
+      // Tip resume: first_pts=0 fights output_ts_offset and desyncs A/V at the join.
+      seekSec > 0 ? "aresample=async=1" : "aresample=async=1:first_pts=0"
     );
   } else {
     const vfScale = `scale='min(${plan.maxHeight},iw)':-2`;
@@ -1329,7 +1343,7 @@ async function spawnFfmpegLocked(
       "-ac",
       "2",
       "-af",
-      "aresample=async=1:first_pts=0"
+      seekSec > 0 ? "aresample=async=1" : "aresample=async=1:first_pts=0"
     );
   }
 
@@ -1941,7 +1955,8 @@ export async function handleVodTranscodeRequest(opts: {
   }
 
   if (media === MANIFEST_NAME) {
-    void ensureTranscodeJobContiguous(job);
+    // Contiguity heal is awaited below before serve — do not fire-and-forget
+    // a parallel heal that races stop/rewrite with ffmpeg append_list.
     void ensureEncodingContinues(job);
     /** Warm requests (HEAD) must not block — kick ffmpeg and return immediately. */
     if (opts.head) {

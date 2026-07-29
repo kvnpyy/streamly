@@ -4,6 +4,7 @@ import {
   contiguousSegmentCount,
   countManifestSegments,
   encodedCoverageSec,
+  encodedLooksFullyComplete,
   hasOrphanSegmentsBeyondPrefix,
   manifestIsTipOnlyTail,
   manifestReferencesMissingOrGappedSegments,
@@ -486,5 +487,18 @@ describe("tip-only MEDIA-SEQUENCE corruption (Odyssey)", () => {
     expect(
       lines.slice(0, endIdx).some((l) => /seg_\d+\.ts/i.test(l))
     ).toBe(true);
+  });
+});
+
+describe("encodedLooksFullyComplete", () => {
+  it("never completes when duration is unknown", () => {
+    expect(encodedLooksFullyComplete(900, null)).toBe(false);
+    expect(encodedLooksFullyComplete(900, undefined)).toBe(false);
+    expect(encodedLooksFullyComplete(900, 0)).toBe(false);
+  });
+
+  it("requires ~92% of known duration", () => {
+    expect(encodedLooksFullyComplete(9100, 9935)).toBe(false);
+    expect(encodedLooksFullyComplete(9200, 9935)).toBe(true);
   });
 });

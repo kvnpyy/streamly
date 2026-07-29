@@ -114,6 +114,8 @@ export type UsePlayerPlaybackPipelineParams = {
   vodTimelineHoldRef: RefObject<VodTimelineHold | null>;
   /** Locks one-shot resume when the pipeline already applied a hold seek. */
   vodResumeLockedRef?: RefObject<boolean>;
+  /** While scrubbing/landing, do not tip-reinforce via frag-error startLoad. */
+  vodScrubbingRef?: RefObject<boolean>;
 };
 
 export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
@@ -170,6 +172,7 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
     applyVodTranscodeTimelineHints,
     vodTimelineHoldRef,
     vodResumeLockedRef,
+    vodScrubbingRef,
   } = p;
 
   useEffect(() => {
@@ -928,6 +931,8 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
           if (!isLive && fragish) {
             const vv = videoRef.current;
             if (vv?.paused) return;
+            // Intentional scrub in flight — tip startLoad fights land verification.
+            if (vodTranscodeHls && vodScrubbingRef?.current) return;
             if (vodTranscodeHls) {
               const httpCode =
                 typeof data.response?.code === "number"
@@ -1253,6 +1258,7 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
     applyVodTranscodeTimelineHints,
     vodTimelineHoldRef,
     vodResumeLockedRef,
+    vodScrubbingRef,
     playbackRetryKey,
     chromiumDesktopClient,
     tvBrowser,

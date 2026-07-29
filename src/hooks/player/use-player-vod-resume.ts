@@ -9,6 +9,7 @@ import {
   vodRelativeSec,
   vodResumeStorageKey,
 } from "@/lib/player-vod-resume";
+import { shouldSuppressVodTipPersist } from "@/lib/player-vod-seek-land";
 import { playbackUrlUsesVodTranscode } from "@/lib/vod-transcode-url";
 import type { PlayerSource } from "@/store/player";
 import { browseAccountKey, usePrefs } from "@/store/preferences";
@@ -26,6 +27,8 @@ export type UsePlayerVodResumeParams = {
   vodEncodedSecRef: RefObject<number>;
   /** Once true, initial resume must not run again this player session. */
   vodResumeLockedRef: RefObject<boolean>;
+  vodScrubbingRef: RefObject<boolean>;
+  vodSeekSuppressTipPersistUntilRef: RefObject<number>;
   restartTranscodeAtSeek: (absoluteSec: number) => void;
 };
 
@@ -43,6 +46,8 @@ export function usePlayerVodResume(p: UsePlayerVodResumeParams) {
     vodStartOffsetRef,
     vodEncodedSecRef,
     vodResumeLockedRef,
+    vodScrubbingRef,
+    vodSeekSuppressTipPersistUntilRef,
     restartTranscodeAtSeek: _restartTranscodeAtSeek,
   } = p;
 
@@ -198,6 +203,15 @@ export function usePlayerVodResume(p: UsePlayerVodResumeParams) {
 
     const onEnded = () => usePrefs.getState().clearVodResume(key);
     const onTime = () => {
+      if (vodScrubbingRef.current) return;
+      if (
+        shouldSuppressVodTipPersist(
+          Date.now(),
+          vodSeekSuppressTipPersistUntilRef.current
+        )
+      ) {
+        return;
+      }
       const off = vodStartOffsetRef.current;
       const absolute = vodAbsoluteSec(video.currentTime, {
         usesTranscode,
@@ -225,6 +239,8 @@ export function usePlayerVodResume(p: UsePlayerVodResumeParams) {
     videoRef,
     vodDurationHintRef,
     vodStartOffsetRef,
+    vodScrubbingRef,
+    vodSeekSuppressTipPersistUntilRef,
   ]);
 
   useEffect(() => {

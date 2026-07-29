@@ -31,6 +31,19 @@ export function sumExtinfDurationSec(manifestText: string): number {
   return sum;
 }
 
+/**
+ * Completeness requires a known probe duration. Never treat unknown-duration
+ * encodes as finished (old ≥90s floor stopped tip resume mid-title).
+ */
+export function encodedLooksFullyComplete(
+  encodedSec: number,
+  durationSec: number | null | undefined
+): boolean {
+  if (durationSec == null || !(durationSec > 0)) return false;
+  if (!Number.isFinite(encodedSec) || encodedSec <= 0) return false;
+  return encodedSec >= durationSec * 0.92;
+}
+
 export function segmentNameFromPlaylistLine(line: string): string | null {
   const trimmed = line.trim();
   if (!trimmed || trimmed.startsWith("#")) return null;

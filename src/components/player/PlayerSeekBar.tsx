@@ -18,6 +18,8 @@ type PlayerSeekBarProps = {
   onScrubStart?: () => void;
   onScrubPreview: (targetSec: number) => void;
   onSeekCommit: (targetSec: number) => void;
+  /** Pointer cancelled mid-scrub — clear parent gate and restore clock. */
+  onScrubCancel?: () => void;
 };
 
 export function PlayerSeekBar({
@@ -30,6 +32,7 @@ export function PlayerSeekBar({
   onScrubStart,
   onScrubPreview,
   onSeekCommit,
+  onScrubCancel,
 }: PlayerSeekBarProps) {
   const trackRef = useRef<HTMLDivElement>(null);
   const pointerActiveRef = useRef(false);
@@ -189,6 +192,7 @@ export function PlayerSeekBar({
           pointerActiveRef.current = false;
           setScrubbing(false);
           setScrubProgress(null);
+          onScrubCancel?.();
         }}
         aria-label="Seek"
         className="relative w-full appearance-none bg-transparent h-5 cursor-pointer

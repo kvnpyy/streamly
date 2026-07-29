@@ -38,6 +38,12 @@ import {
   type VodTimelineHold,
   vodResumeStorageKey,
 } from "@/lib/player-vod-resume";
+import {
+  vodSeekPlayheadLanded,
+  VOD_SEEK_LAND_MAX_TRIES,
+  VOD_SEEK_LAND_RETRY_MS,
+  VOD_SEEK_SUPPRESS_TIP_PERSIST_MS,
+} from "@/lib/player-vod-seek-land";
 import { browseAccountKey, usePrefs } from "@/store/preferences";
 import {
   buildSortedEpgRows,
@@ -294,6 +300,10 @@ export function PlayerOverlay() {
   const vodResumeLockedRef = useRef(false);
   /** While true, ignore video timeupdate → UI time (prevents seek-bar snap-back). */
   const vodScrubbingRef = useRef(false);
+  /** Until this timestamp, tip timeupdate must not overwrite resume after a scrub. */
+  const vodSeekSuppressTipPersistUntilRef = useRef(0);
+  /** Cancels in-flight scrub land verification when a newer seek starts. */
+  const vodSeekLandGenRef = useRef(0);
   const playbackTimeRef = useRef(0);
   const [vodTotalSec, setVodTotalSec] = useState(0);
   /** Throttles automatic `startLoad(-1)` storms on live HLS (see `tryHlsLiveEdgeRestart`). */
@@ -996,6 +1006,7 @@ export function PlayerOverlay() {
     applyVodTranscodeTimelineHints,
     vodTimelineHoldRef,
     vodResumeLockedRef,
+    vodScrubbingRef,
   });
 
   usePlayerVodResume({
@@ -1010,6 +1021,8 @@ export function PlayerOverlay() {
     vodStartOffsetRef,
     vodEncodedSecRef,
     vodResumeLockedRef,
+    vodScrubbingRef,
+    vodSeekSuppressTipPersistUntilRef,
     restartTranscodeAtSeek,
   });
 
@@ -1204,10 +1217,32 @@ export function PlayerOverlay() {
     (absoluteSeconds: number) => {
       const v = videoRef.current;
       if (!v || isLive) return;
-      vodResumeLockedRef.current = true;
       const dur = getPlaybackDuration();
+      // Early return must stay inert — locking resume here permanently skipped
+      // the one-shot resume apply when duration headers had not arrived yet.
       if (!dur || !Number.isFinite(dur)) return;
+
       const absolute = Math.max(0, Math.min(dur - 0.25, absoluteSeconds));
+      vodResumeLockedRef.current = true;
+      vodScrubbingRef.current = true;
+      vodSeekSuppressTipPersistUntilRef.current =
+        Date.now() + VOD_SEEK_SUPPRESS_TIP_PERSIST_MS;
+      const landGen = ++vodSeekLandGenRef.current;
+
+      const resumeKey =
+        creds && current
+          ? vodResumeStorageKey(browseAccountKey(creds), current)
+          : null;
+      const persistIfLanded = () => {
+        if (landGen !== vodSeekLandGenRef.current) return;
+        if (resumeKey && shouldPersistVodResume(absolute, dur)) {
+          usePrefs.getState().saveVodResume(resumeKey, absolute);
+        }
+      };
+      const clearScrubGate = () => {
+        if (landGen !== vodSeekLandGenRef.current) return;
+        vodScrubbingRef.current = false;
+      };
 
       if (usesTranscodePlayback && transcodeSeekNeedsServerRestart(absolute)) {
         if (vodSeekRestartTimerRef.current) {
@@ -1216,13 +1251,9 @@ export function PlayerOverlay() {
         }
         setTime(absolute);
         restartTranscodeAtSeek(absolute);
-        const resumeKey =
-          creds && current
-            ? vodResumeStorageKey(browseAccountKey(creds), current)
-            : null;
-        if (resumeKey && shouldPersistVodResume(absolute, dur)) {
-          usePrefs.getState().saveVodResume(resumeKey, absolute);
-        }
+        // Server restart rebuilds the pipeline at the target — safe to bookmark.
+        persistIfLanded();
+        clearScrubGate();
         return;
       }
 
@@ -1231,64 +1262,106 @@ export function PlayerOverlay() {
         ? Math.max(0, absolute - off)
         : absolute;
       const hls = hlsRef.current;
+      setTime(absolute);
+
+      const finishLanded = () => {
+        if (landGen !== vodSeekLandGenRef.current) return;
+        setTime(absolute);
+        persistIfLanded();
+        clearScrubGate();
+      };
+
       // Large backward scrubs on growing/finished transcode HLS need a clean
       // reload at the target — startLoad alone often leaves the playhead stuck.
       if (hls && usesTranscodePlayback) {
-        try {
-          hls.stopLoad();
-        } catch {
-          /* noop */
-        }
-        try {
-          v.currentTime = relative;
-        } catch {
-          /* noop */
-        }
-        try {
-          hls.startLoad(relative);
-        } catch {
-          /* noop */
-        }
-        let tries = 0;
-        const verifyLanded = () => {
-          tries += 1;
-          if (!videoRef.current) return;
-          if (Math.abs(videoRef.current.currentTime - relative) <= 1.25) return;
+        const kickLoad = () => {
+          const h = hlsRef.current;
+          const el = videoRef.current;
+          if (!h || !el || landGen !== vodSeekLandGenRef.current) return;
           try {
-            videoRef.current.currentTime = relative;
+            h.stopLoad();
           } catch {
             /* noop */
           }
-          if (tries < 10) {
-            window.setTimeout(verifyLanded, 200);
+          try {
+            el.currentTime = relative;
+          } catch {
+            /* noop */
+          }
+          try {
+            h.startLoad(relative);
+          } catch {
+            /* noop */
           }
         };
-        window.setTimeout(verifyLanded, 200);
-      } else {
+        kickLoad();
+
+        const onSeeked = () => {
+          const el = videoRef.current;
+          if (!el || landGen !== vodSeekLandGenRef.current) return;
+          if (vodSeekPlayheadLanded(el.currentTime, relative)) {
+            el.removeEventListener("seeked", onSeeked);
+            finishLanded();
+          }
+        };
+        v.addEventListener("seeked", onSeeked);
+
+        let tries = 0;
+        const verifyLanded = () => {
+          if (landGen !== vodSeekLandGenRef.current) {
+            v.removeEventListener("seeked", onSeeked);
+            return;
+          }
+          const el = videoRef.current;
+          if (!el) {
+            v.removeEventListener("seeked", onSeeked);
+            return;
+          }
+          if (vodSeekPlayheadLanded(el.currentTime, relative)) {
+            v.removeEventListener("seeked", onSeeked);
+            finishLanded();
+            return;
+          }
+          tries += 1;
+          if (tries % 3 === 0) {
+            kickLoad();
+          } else {
+            try {
+              el.currentTime = relative;
+            } catch {
+              /* noop */
+            }
+          }
+          if (tries < VOD_SEEK_LAND_MAX_TRIES) {
+            window.setTimeout(verifyLanded, VOD_SEEK_LAND_RETRY_MS);
+            return;
+          }
+          // Give up quietly — keep tip-persist suppressed; do not bookmark tip.
+          v.removeEventListener("seeked", onSeeked);
+          clearScrubGate();
+        };
+        window.setTimeout(verifyLanded, VOD_SEEK_LAND_RETRY_MS);
+        voidSafeVideoPlay(v);
+        return;
+      }
+
+      try {
+        v.currentTime = relative;
+      } catch {
+        /* noop */
+      }
+      requestAnimationFrame(() => {
+        if (landGen !== vodSeekLandGenRef.current) return;
         try {
-          v.currentTime = relative;
+          if (!vodSeekPlayheadLanded(v.currentTime, relative, 0.5)) {
+            v.currentTime = relative;
+          }
         } catch {
           /* noop */
         }
-        requestAnimationFrame(() => {
-          try {
-            if (Math.abs(v.currentTime - relative) > 0.5) {
-              v.currentTime = relative;
-            }
-          } catch {
-            /* noop */
-          }
-        });
-      }
-      setTime(absolute);
+        finishLanded();
+      });
       voidSafeVideoPlay(v);
-      const resumeKey =
-        creds && current
-          ? vodResumeStorageKey(browseAccountKey(creds), current)
-          : null;
-      if (resumeKey && shouldPersistVodResume(absolute, dur)) {
-        usePrefs.getState().saveVodResume(resumeKey, absolute);
-      }
     },
     [
       isLive,
@@ -1346,11 +1419,22 @@ export function PlayerOverlay() {
   const onSeekCommit = useCallback(
     (targetSec: number) => {
       if (isLive) return;
-      vodScrubbingRef.current = false;
+      // Keep scrubbing gate through async land — clearing here lets timeupdate
+      // snap the UI back to the tip before MSE finishes seeking.
+      vodScrubbingRef.current = true;
       seekVideoTo(targetSec);
     },
     [isLive, seekVideoTo]
   );
+
+  const onScrubCancel = useCallback(() => {
+    vodSeekLandGenRef.current += 1;
+    vodScrubbingRef.current = false;
+    const v = videoRef.current;
+    if (!v || !Number.isFinite(v.currentTime)) return;
+    const off = usesTranscodePlayback ? vodStartOffsetRef.current : 0;
+    setTime(Math.max(0, off + v.currentTime));
+  }, [usesTranscodePlayback]);
 
   /**
    * Chrome / Brave / Edge / Arc (Chromium) on macOS & Windows: ties the player to the OS media overlay,
@@ -1849,14 +1933,17 @@ export function PlayerOverlay() {
           const strip = vodGestureStripRef.current;
           const w = strip?.getBoundingClientRect().width || 1;
           const frac = (e.clientX - s.startX) / w;
+          // seekVideoTo owns the scrubbing gate until land.
           seekVideoTo(
             Math.max(0, Math.min(dur - 0.25, s.startTime + frac * dur))
           );
+        } else {
+          vodScrubbingRef.current = false;
         }
       } else {
+        vodScrubbingRef.current = false;
         togglePlay();
       }
-      vodScrubbingRef.current = false;
       vodScrubPointerRef.current = null;
       wakeControls();
     },
@@ -1867,11 +1954,11 @@ export function PlayerOverlay() {
     (e: React.PointerEvent<HTMLDivElement>) => {
       const s = vodScrubPointerRef.current;
       if (!s || s.pointerId !== e.pointerId) return;
-      vodScrubbingRef.current = false;
+      onScrubCancel();
       vodScrubPointerRef.current = null;
       wakeControls();
     },
-    [wakeControls]
+    [wakeControls, onScrubCancel]
   );
 
   useEffect(() => {
@@ -2851,6 +2938,7 @@ export function PlayerOverlay() {
                       onScrubStart={onScrubStart}
                       onScrubPreview={onScrubPreview}
                       onSeekCommit={onSeekCommit}
+                      onScrubCancel={onScrubCancel}
                     />
                   )}
 
