@@ -1296,9 +1296,14 @@ async function spawnFfmpegLocked(
       "-ac",
       "2",
       "-af",
-      "aresample=async=1:first_pts=0"
+      // Tip resume must continue the media timeline — first_pts=0 resets PTS and
+      // makes mid-film scrub/seek across the join unusable in MSE.
+      seekSec > 0
+        ? `aresample=async=1,asetpts=PTS-STARTPTS+${seekSec}/TB`
+        : "aresample=async=1:first_pts=0"
     );
   } else {
+    const vfScale = `scale='min(${plan.maxHeight},iw)':-2`;
     args.push(
       "-c:v",
       "libx264",
@@ -1319,7 +1324,9 @@ async function spawnFfmpegLocked(
       "-force_key_frames",
       `expr:gte(t,n_forced*${segSec})`,
       "-vf",
-      `scale='min(${plan.maxHeight},iw)':-2`,
+      seekSec > 0
+        ? `${vfScale},setpts=PTS-STARTPTS+${seekSec}/TB`
+        : vfScale,
       "-c:a",
       "aac",
       "-b:a",
@@ -1327,14 +1334,16 @@ async function spawnFfmpegLocked(
       "-ac",
       "2",
       "-af",
-      "aresample=async=1:first_pts=0"
+      seekSec > 0
+        ? `aresample=async=1,asetpts=PTS-STARTPTS+${seekSec}/TB`
+        : "aresample=async=1:first_pts=0"
     );
   }
 
   args.push(
     "-sn",
     "-avoid_negative_ts",
-    "make_zero",
+    seekSec > 0 ? "make_non_negative" : "make_zero",
     "-max_muxing_queue_size",
     "4096",
     "-f",
@@ -1343,16 +1352,12 @@ async function spawnFfmpegLocked(
     String(segSec),
     "-hls_list_size",
     "0",
-    // Resume must NOT use append_list. With start_number, append_list can jump
-    // MEDIA-SEQUENCE (e.g. 2178→4356) and write orphan tip files while leaving
-    // early segments intact — or keep early URIs under a tip MEDIA-SEQUENCE.
-    // Without append_list, ffmpeg rewrites a tip-only on-disk m3u8; that is fine
-    // because clients never see it — manifestTextForPlayback always rebuilds a
-    // contiguous MEDIA-SEQUENCE:0 playlist from disk segments.
+    // Always append_list. resumeTranscodeJob heals a contiguous MEDIA-SEQUENCE:0
+    // playlist first. Clients never trust on-disk MEDIA-SEQUENCE anyway (serve
+    // rebuilds from disk). Tip resume without append_list rewrote tip-only m3u8
+    // and, worse, emitted PTS-reset segments that broke MSE scrub.
     "-hls_flags",
-    resume && resume.startSegmentNumber > 0
-      ? "independent_segments+temp_file"
-      : "independent_segments+temp_file+append_list",
+    "independent_segments+temp_file+append_list",
     "-hls_segment_type",
     "mpegts",
     "-hls_segment_filename",

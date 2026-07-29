@@ -1231,27 +1231,55 @@ export function PlayerOverlay() {
         ? Math.max(0, absolute - off)
         : absolute;
       const hls = hlsRef.current;
+      // Large backward scrubs on growing/finished transcode HLS need a clean
+      // reload at the target — startLoad alone often leaves the playhead stuck.
       if (hls && usesTranscodePlayback) {
+        try {
+          hls.stopLoad();
+        } catch {
+          /* noop */
+        }
+        try {
+          v.currentTime = relative;
+        } catch {
+          /* noop */
+        }
         try {
           hls.startLoad(relative);
         } catch {
           /* noop */
         }
-      }
-      try {
-        v.currentTime = relative;
-      } catch {
-        /* noop */
-      }
-      requestAnimationFrame(() => {
-        try {
-          if (Math.abs(v.currentTime - relative) > 0.5) {
-            v.currentTime = relative;
+        let tries = 0;
+        const verifyLanded = () => {
+          tries += 1;
+          if (!videoRef.current) return;
+          if (Math.abs(videoRef.current.currentTime - relative) <= 1.25) return;
+          try {
+            videoRef.current.currentTime = relative;
+          } catch {
+            /* noop */
           }
+          if (tries < 10) {
+            window.setTimeout(verifyLanded, 200);
+          }
+        };
+        window.setTimeout(verifyLanded, 200);
+      } else {
+        try {
+          v.currentTime = relative;
         } catch {
           /* noop */
         }
-      });
+        requestAnimationFrame(() => {
+          try {
+            if (Math.abs(v.currentTime - relative) > 0.5) {
+              v.currentTime = relative;
+            }
+          } catch {
+            /* noop */
+          }
+        });
+      }
       setTime(absolute);
       voidSafeVideoPlay(v);
       const resumeKey =
