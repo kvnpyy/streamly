@@ -1263,6 +1263,7 @@ async function spawnFfmpegLocked(
   const segPattern = path.join(job.dir, "seg_%05d.ts");
   const outManifest = path.join(job.dir, MANIFEST_NAME);
   const args = [
+    "-nostdin",
     "-hide_banner",
     "-loglevel",
     "warning",
@@ -1296,11 +1297,7 @@ async function spawnFfmpegLocked(
       "-ac",
       "2",
       "-af",
-      // Tip resume must continue the media timeline — first_pts=0 resets PTS and
-      // makes mid-film scrub/seek across the join unusable in MSE.
-      seekSec > 0
-        ? `aresample=async=1,asetpts=PTS-STARTPTS+${seekSec}/TB`
-        : "aresample=async=1:first_pts=0"
+      "aresample=async=1:first_pts=0"
     );
   } else {
     const vfScale = `scale='min(${plan.maxHeight},iw)':-2`;
@@ -1324,9 +1321,7 @@ async function spawnFfmpegLocked(
       "-force_key_frames",
       `expr:gte(t,n_forced*${segSec})`,
       "-vf",
-      seekSec > 0
-        ? `${vfScale},setpts=PTS-STARTPTS+${seekSec}/TB`
-        : vfScale,
+      vfScale,
       "-c:a",
       "aac",
       "-b:a",
@@ -1334,14 +1329,15 @@ async function spawnFfmpegLocked(
       "-ac",
       "2",
       "-af",
-      seekSec > 0
-        ? `aresample=async=1,asetpts=PTS-STARTPTS+${seekSec}/TB`
-        : "aresample=async=1:first_pts=0"
+      "aresample=async=1:first_pts=0"
     );
   }
 
   args.push(
     "-sn",
+    // Tip resume: keep MPEG-TS timeline continuous with earlier segments.
+    // setpts alone is ignored by the HLS/mpegts path; output_ts_offset works.
+    ...(seekSec > 0 ? ["-output_ts_offset", String(seekSec)] : []),
     "-avoid_negative_ts",
     seekSec > 0 ? "make_non_negative" : "make_zero",
     "-max_muxing_queue_size",
@@ -1353,9 +1349,9 @@ async function spawnFfmpegLocked(
     "-hls_list_size",
     "0",
     // Always append_list. resumeTranscodeJob heals a contiguous MEDIA-SEQUENCE:0
-    // playlist first. Clients never trust on-disk MEDIA-SEQUENCE anyway (serve
-    // rebuilds from disk). Tip resume without append_list rewrote tip-only m3u8
-    // and, worse, emitted PTS-reset segments that broke MSE scrub.
+    // playlist first. Do NOT also pass -start_number: ffmpeg treats it as an
+    // offset on append and jumps (e.g. 2078 → seg_04156), leaving a hole that
+    // freezes mid-film scrub.
     "-hls_flags",
     "independent_segments+temp_file+append_list",
     "-hls_segment_type",
@@ -1363,9 +1359,6 @@ async function spawnFfmpegLocked(
     "-hls_segment_filename",
     segPattern,
   );
-  if (resume && resume.startSegmentNumber > 0) {
-    args.push("-start_number", String(resume.startSegmentNumber));
-  }
   args.push(outManifest);
 
   const proc = spawn(ffmpegPath(), args, {
