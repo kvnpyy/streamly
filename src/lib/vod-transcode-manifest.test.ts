@@ -8,7 +8,9 @@ import {
   hasOrphanSegmentsBeyondPrefix,
   manifestIsTipOnlyTail,
   manifestReferencesMissingOrGappedSegments,
+  MAX_IN_PROGRESS_PLAYLIST_DURATION_SEC,
   MAX_IN_PROGRESS_PLAYLIST_SEGMENTS,
+  maxInProgressPlaylistSegments,
   parseStreamlyDurationSec,
   IN_PROGRESS_ENCODE_EDGE_HOLDBACK,
   prepareManifestForPlayback,
@@ -41,10 +43,16 @@ describe("rewriteTranscodeManifest", () => {
   });
 
   it("trims in-progress playlists and preserves discontinuity markers", () => {
-    const total = MAX_IN_PROGRESS_PLAYLIST_SEGMENTS + 40;
+    const segSec = 1;
+    const maxSegs = maxInProgressPlaylistSegments(segSec);
+    const total = maxSegs + 40;
     const segs: string[] = ["#EXTM3U", "#EXT-X-VERSION:3"];
     for (let i = 0; i < total; i++) {
-      segs.push("#EXT-X-DISCONTINUITY", "#EXTINF:1,", `seg_${String(i).padStart(5, "0")}.ts`);
+      segs.push(
+        "#EXT-X-DISCONTINUITY",
+        `#EXTINF:${segSec},`,
+        `seg_${String(i).padStart(5, "0")}.ts`
+      );
     }
     const raw = segs.join("\n");
     const existing = new Set(
@@ -53,8 +61,9 @@ describe("rewriteTranscodeManifest", () => {
     const out = prepareManifestForPlayback(raw, false, existing);
     expect(out).toContain("#EXT-X-DISCONTINUITY");
     const uriCount = out.split("\n").filter((l) => /seg_\d+\.ts/i.test(l)).length;
-    expect(uriCount).toBe(
-      MAX_IN_PROGRESS_PLAYLIST_SEGMENTS - IN_PROGRESS_ENCODE_EDGE_HOLDBACK
+    expect(uriCount).toBe(maxSegs - IN_PROGRESS_ENCODE_EDGE_HOLDBACK);
+    expect(sumExtinfDurationSec(out)).toBeLessThanOrEqual(
+      MAX_IN_PROGRESS_PLAYLIST_DURATION_SEC
     );
     expect(out).toContain("seg_00000.ts");
     expect(out).not.toContain(`seg_${String(total - 1).padStart(5, "0")}.ts`);
@@ -404,9 +413,13 @@ describe("tip-only MEDIA-SEQUENCE corruption (Odyssey)", () => {
   });
 
   it("in-progress cap is large enough for multi-hour movies", () => {
-    // 900 segs ≈ 60m — the tip that froze Odyssey. Cap must be well above that.
-    expect(MAX_IN_PROGRESS_PLAYLIST_SEGMENTS).toBeGreaterThan(2000);
-    expect(MAX_IN_PROGRESS_PLAYLIST_SEGMENTS * 4).toBeGreaterThan(3 * 3600);
+    // Duration budget (~5h) must cover long titles at both 2s (code default) and 4s.
+    expect(MAX_IN_PROGRESS_PLAYLIST_DURATION_SEC).toBeGreaterThanOrEqual(5 * 3600);
+    expect(maxInProgressPlaylistSegments(2) * 2).toBeGreaterThanOrEqual(5 * 3600);
+    expect(maxInProgressPlaylistSegments(4) * 4).toBeGreaterThanOrEqual(5 * 3600);
+    expect(MAX_IN_PROGRESS_PLAYLIST_SEGMENTS).toBeGreaterThanOrEqual(
+      maxInProgressPlaylistSegments(2)
+    );
   });
 
   it("always rebuilds playback playlist from disk so scrub-back works", () => {

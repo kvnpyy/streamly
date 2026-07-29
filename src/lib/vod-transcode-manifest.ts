@@ -7,10 +7,29 @@ const ENCODED_DURATION_TAG_RE =
 
 /** While ffmpeg is still running, cap playlist size so Safari/hls.js don't choke on huge m3u8. */
 /**
- * ~5h @ 4s segments. The old 900 (~60m) cap froze long movies at the EVENT tip
- * even when disk had more segments — playhead stalled, Try again wiped the encode.
+ * Publish up to ~5h of in-progress media (by EXTINF sum). Count-only caps are unsafe:
+ * default hls_time is 2s → 4500 segs ≈ 2.5h and long movies froze before ENDLIST.
  */
-export const MAX_IN_PROGRESS_PLAYLIST_SEGMENTS = 4500;
+export const MAX_IN_PROGRESS_PLAYLIST_DURATION_SEC = 5 * 3600;
+
+/** Absolute segment ceiling (pathological short EXTINF) — duration cap is primary. */
+export const MAX_IN_PROGRESS_PLAYLIST_SEGMENTS = 20_000;
+
+function extinfDurationSecFromLine(extinfLine: string): number {
+  const m = extinfLine.trim().match(/^#EXTINF:([\d.]+)/i);
+  if (!m) return 0;
+  const n = parseFloat(m[1]!);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+/** Max segment count that still fits the in-progress duration budget. */
+export function maxInProgressPlaylistSegments(segmentSec: number): number {
+  const seg = segmentSec > 0 ? segmentSec : 4;
+  return Math.min(
+    MAX_IN_PROGRESS_PLAYLIST_SEGMENTS,
+    Math.ceil(MAX_IN_PROGRESS_PLAYLIST_DURATION_SEC / seg)
+  );
+}
 
 /**
  * Hide the freshest N segments while ffmpeg is still writing. Clients that race the
@@ -351,9 +370,23 @@ export function prepareManifestForPlayback(
   if (kept.length > 0) {
     kept[0] = { ...kept[0]!, discontinuity: false };
   }
-  if (!playlistComplete && kept.length > MAX_IN_PROGRESS_PLAYLIST_SEGMENTS) {
-    /** Keep from the start — VOD transcode always plays forward from seg_00000. */
-    kept = kept.slice(0, MAX_IN_PROGRESS_PLAYLIST_SEGMENTS);
+  if (!playlistComplete) {
+    // Prefer duration budget so 2s and 4s hls_time both cover multi-hour titles.
+    let acc = 0;
+    const byDuration: typeof kept = [];
+    for (const p of kept) {
+      const d = extinfDurationSecFromLine(p.extinf);
+      if (
+        byDuration.length > 0 &&
+        acc + d > MAX_IN_PROGRESS_PLAYLIST_DURATION_SEC
+      ) {
+        break;
+      }
+      if (byDuration.length >= MAX_IN_PROGRESS_PLAYLIST_SEGMENTS) break;
+      byDuration.push(p);
+      acc += d;
+    }
+    kept = byDuration;
   }
   if (
     !playlistComplete &&

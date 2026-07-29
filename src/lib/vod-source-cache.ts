@@ -481,7 +481,10 @@ export async function reopenVodSourceIfTruncated(
 ): Promise<boolean> {
   if (!isVodSourceCacheEnabled()) return false;
   if (durationSec == null || durationSec < 60) return false;
-  if (encodedSec >= durationSec * 0.85) return false;
+  // Old 85% gate blocked reopen for the entire last ~15% — exactly when a
+  // truncated source + early ffmpeg EOF freezes the finale. Align with encode
+  // completeness: only skip reopen once the tip is within the finale margin.
+  if (encodedSec >= durationSec - 45) return false;
 
   const entry = await ensureEntry(upstream);
   if (!entry.complete) {
