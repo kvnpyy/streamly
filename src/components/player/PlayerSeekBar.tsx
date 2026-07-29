@@ -36,6 +36,8 @@ export function PlayerSeekBar({
 }: PlayerSeekBarProps) {
   const trackRef = useRef<HTMLDivElement>(null);
   const pointerActiveRef = useRef(false);
+  /** Set on pointerup commit — ignore a trailing pointercancel that would abort land. */
+  const scrubCommittedRef = useRef(false);
   const [scrubbing, setScrubbing] = useState(false);
   const [scrubProgress, setScrubProgress] = useState<number | null>(null);
   const [hoverSec, setHoverSec] = useState<number | null>(null);
@@ -167,6 +169,7 @@ export function PlayerSeekBar({
         value={sliderProgress}
         onPointerDown={() => {
           pointerActiveRef.current = true;
+          scrubCommittedRef.current = false;
           setScrubbing(true);
           setScrubProgress(progress);
           onScrubStart?.();
@@ -178,6 +181,7 @@ export function PlayerSeekBar({
           setScrubbing(true);
           applyScrubPercent(pct);
           if (!pointerActiveRef.current) {
+            scrubCommittedRef.current = true;
             commitScrubPercent(pct);
           }
         }}
@@ -186,12 +190,18 @@ export function PlayerSeekBar({
           pointerActiveRef.current = false;
           setScrubbing(false);
           setScrubProgress(null);
-          if (Number.isFinite(pct)) commitScrubPercent(pct);
+          if (Number.isFinite(pct)) {
+            // Mark committed before commit so a same-turn pointercancel cannot
+            // bump landGen and snap the playhead back to the tip.
+            scrubCommittedRef.current = true;
+            commitScrubPercent(pct);
+          }
         }}
         onPointerCancel={() => {
           pointerActiveRef.current = false;
           setScrubbing(false);
           setScrubProgress(null);
+          if (scrubCommittedRef.current) return;
           onScrubCancel?.();
         }}
         aria-label="Seek"

@@ -31,7 +31,7 @@ describe("shouldSuppressVodTipPersist", () => {
     expect(shouldSuppressVodTipPersist(until + 1, until)).toBe(false);
   });
 
-  it("uses an 8s tip-persist hold after intentional scrub", () => {
-    expect(VOD_SEEK_SUPPRESS_TIP_PERSIST_MS).toBe(8_000);
+  it("uses a 20s tip-persist hold after intentional scrub", () => {
+    expect(VOD_SEEK_SUPPRESS_TIP_PERSIST_MS).toBe(20_000);
   });
 });

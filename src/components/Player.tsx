@@ -1007,6 +1007,7 @@ export function PlayerOverlay() {
     vodTimelineHoldRef,
     vodResumeLockedRef,
     vodScrubbingRef,
+    vodSeekSuppressTipPersistUntilRef,
   });
 
   usePlayerVodResume({
@@ -1428,6 +1429,8 @@ export function PlayerOverlay() {
   );
 
   const onScrubCancel = useCallback(() => {
+    // Only abort when no land was started. SeekBar ignores cancel after commit;
+    // gesture-cancel still reaches here before seekVideoTo bumps landGen.
     vodSeekLandGenRef.current += 1;
     vodScrubbingRef.current = false;
     const v = videoRef.current;

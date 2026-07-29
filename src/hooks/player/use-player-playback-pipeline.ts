@@ -51,6 +51,7 @@ import {
   vodAbsoluteSec,
   vodResumeStorageKey,
 } from "@/lib/player-vod-resume";
+import { shouldSuppressVodTipPersist } from "@/lib/player-vod-seek-land";
 import { mapHlsAudioTracks } from "@/lib/player-audio-tracks";
 import { browseAccountKey, usePrefs } from "@/store/preferences";
 import type { PlayerSource } from "@/store/player";
@@ -116,6 +117,8 @@ export type UsePlayerPlaybackPipelineParams = {
   vodResumeLockedRef?: RefObject<boolean>;
   /** While scrubbing/landing, do not tip-reinforce via frag-error startLoad. */
   vodScrubbingRef?: RefObject<boolean>;
+  /** Wall-clock: skip tip resume writes after an intentional scrub. */
+  vodSeekSuppressTipPersistUntilRef?: RefObject<number>;
 };
 
 export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
@@ -173,6 +176,7 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
     vodTimelineHoldRef,
     vodResumeLockedRef,
     vodScrubbingRef,
+    vodSeekSuppressTipPersistUntilRef,
   } = p;
 
   useEffect(() => {
@@ -1221,24 +1225,33 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
       deferredTeardownCancelRef.current = scheduleDeferredPlayerTeardown(() => {
         deferredTeardownCancelRef.current = null;
         if (video && creds && current && current.kind !== "live") {
-          const key = vodResumeStorageKey(browseAccountKey(creds), current);
-          const activeUrl = vodPlaybackUrl ?? current.url;
-          const usesTranscode = playbackUrlUsesVodTranscode(activeUrl);
-          const absolute = vodAbsoluteSec(video.currentTime, {
-            usesTranscode,
-            startOffsetSec: vodStartOffsetRef.current,
-          });
-          const d =
-            vodDurationHintRef.current > 1
-              ? vodDurationHintRef.current
-              : video.duration;
-          if (
-            key &&
-            d &&
-            Number.isFinite(d) &&
-            shouldPersistVodResume(absolute, d)
-          ) {
-            usePrefs.getState().saveVodResume(key, absolute);
+          // Closing mid-scrub / right after a failed land must not re-bookmark the tip.
+          const skipTipPersist =
+            !!vodScrubbingRef?.current ||
+            shouldSuppressVodTipPersist(
+              Date.now(),
+              vodSeekSuppressTipPersistUntilRef?.current ?? 0
+            );
+          if (!skipTipPersist) {
+            const key = vodResumeStorageKey(browseAccountKey(creds), current);
+            const activeUrl = vodPlaybackUrl ?? current.url;
+            const usesTranscode = playbackUrlUsesVodTranscode(activeUrl);
+            const absolute = vodAbsoluteSec(video.currentTime, {
+              usesTranscode,
+              startOffsetSec: vodStartOffsetRef.current,
+            });
+            const d =
+              vodDurationHintRef.current > 1
+                ? vodDurationHintRef.current
+                : video.duration;
+            if (
+              key &&
+              d &&
+              Number.isFinite(d) &&
+              shouldPersistVodResume(absolute, d)
+            ) {
+              usePrefs.getState().saveVodResume(key, absolute);
+            }
           }
         }
         destroyHlsInstance(hlsToDestroy);
