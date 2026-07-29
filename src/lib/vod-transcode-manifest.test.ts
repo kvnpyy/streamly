@@ -70,7 +70,8 @@ describe("rewriteTranscodeManifest", () => {
     );
     const growing = prepareManifestForPlayback(segs.join("\n"), false, existing);
     expect(countManifestSegments(growing)).toBe(8 - IN_PROGRESS_ENCODE_EDGE_HOLDBACK);
-    expect(growing).toContain("seg_00005.ts");
+    const lastKept = 8 - IN_PROGRESS_ENCODE_EDGE_HOLDBACK - 1;
+    expect(growing).toContain(`seg_${String(lastKept).padStart(5, "0")}.ts`);
     expect(growing).not.toContain("seg_00007.ts");
 
     const done = prepareManifestForPlayback(segs.join("\n"), true, existing);
@@ -497,8 +498,11 @@ describe("encodedLooksFullyComplete", () => {
     expect(encodedLooksFullyComplete(900, 0)).toBe(false);
   });
 
-  it("requires ~92% of known duration", () => {
-    expect(encodedLooksFullyComplete(9100, 9935)).toBe(false);
-    expect(encodedLooksFullyComplete(9200, 9935)).toBe(true);
+  it("requires the encode to reach within 45s of known duration", () => {
+    // Old 92% floor (~9139s) falsely completed Odyssey ~8–20 min early.
+    expect(encodedLooksFullyComplete(9200, 9935)).toBe(false);
+    expect(encodedLooksFullyComplete(9459, 9935)).toBe(false);
+    expect(encodedLooksFullyComplete(9890, 9935)).toBe(true);
+    expect(encodedLooksFullyComplete(9935, 9935)).toBe(true);
   });
 });

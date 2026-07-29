@@ -187,8 +187,10 @@ export function buildVodTranscodeHlsJsConfig() {
     maxBufferLength: 36,
     maxMaxBufferLength: 84,
     backBufferLength: 600,
-    maxBufferHole: 0.3,
-    maxFragLookUpTolerance: 0.35,
+    // Tip-resume joins can leave a 2–4s PTS hole (keyframe -ss + output_ts_offset).
+    // 0.3s made hls.js stall/freeze across that join for the rest of the title.
+    maxBufferHole: 3.5,
+    maxFragLookUpTolerance: 0.75,
     stretchShortVideoTrack: false,
     startFragPrefetch: true,
     liveSyncDurationCount: 3,

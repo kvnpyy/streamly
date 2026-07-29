@@ -14,10 +14,11 @@ export const MAX_IN_PROGRESS_PLAYLIST_SEGMENTS = 4500;
 
 /**
  * Hide the freshest N segments while ffmpeg is still writing. Clients that race the
- * encode edge get 503/404 holes; hls.js then jumps ~1s (`maxBufferHole`) and playback
- * "skips". Holdback keeps the published playlist a few seconds behind disk.
+ * encode edge get 503/404 holes; hls.js then jumps buffer holes and freezes near the
+ * tip (especially late in long titles when encode slows). Holdback keeps the
+ * published playlist behind disk — 4 segs ≈ 16s at 4s/seg.
  */
-export const IN_PROGRESS_ENCODE_EDGE_HOLDBACK = 2;
+export const IN_PROGRESS_ENCODE_EDGE_HOLDBACK = 4;
 
 export function sumExtinfDurationSec(manifestText: string): number {
   let sum = 0;
@@ -32,6 +33,13 @@ export function sumExtinfDurationSec(manifestText: string): number {
 }
 
 /**
+ * How close to the probed title duration an encode must reach before we publish
+ * ENDLIST / stop tip-resume. The old 92% floor left ~8–20 minutes unencoded on
+ * long movies — clients froze at a false finale while duration still said more.
+ */
+export const VOD_ENCODE_COMPLETE_REMAINING_SEC = 45;
+
+/**
  * Completeness requires a known probe duration. Never treat unknown-duration
  * encodes as finished (old ≥90s floor stopped tip resume mid-title).
  */
@@ -41,7 +49,7 @@ export function encodedLooksFullyComplete(
 ): boolean {
   if (durationSec == null || !(durationSec > 0)) return false;
   if (!Number.isFinite(encodedSec) || encodedSec <= 0) return false;
-  return encodedSec >= durationSec * 0.92;
+  return encodedSec >= durationSec - VOD_ENCODE_COMPLETE_REMAINING_SEC;
 }
 
 export function segmentNameFromPlaylistLine(line: string): string | null {

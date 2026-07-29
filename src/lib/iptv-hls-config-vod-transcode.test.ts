@@ -7,7 +7,9 @@ describe("buildVodTranscodeHlsJsConfig", () => {
     expect(cfg.stretchShortVideoTrack).toBe(false);
     expect(cfg.maxLiveSyncPlaybackRate).toBe(1);
     expect(cfg.liveSyncDurationCount).toBeGreaterThanOrEqual(3);
-    expect(cfg.maxBufferHole).toBeLessThanOrEqual(0.35);
+    // Must bridge tip-resume PTS holes (~2–4s); keep below a full segment.
+    expect(cfg.maxBufferHole).toBeGreaterThanOrEqual(3);
+    expect(cfg.maxBufferHole).toBeLessThanOrEqual(4);
     expect(cfg.liveSyncMode).toBe("buffered");
     expect(cfg.maxBufferLength).toBeGreaterThanOrEqual(32);
     expect(cfg.startFragPrefetch).toBe(true);

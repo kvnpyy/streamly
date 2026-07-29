@@ -1034,19 +1034,32 @@ async function resumeTranscodeJob(job: TranscodeJob): Promise<void> {
     }
     // Force a contiguous MEDIA-SEQUENCE:0 playlist before append_list resume.
     await healTranscodeJobContiguity(job);
-    // Heal may write ENDLIST at the 92% floor — strip before append_list spawn.
+    // Heal may write ENDLIST at the completeness floor — strip before append_list.
     await stripEndlistFromDiskManifest(job.dir);
     const meta = await resolveJobMeta(job);
     job.durationSec = meta.durationSec ?? job.durationSec;
     const raw = await fsp.readFile(path.join(job.dir, MANIFEST_NAME), "utf8");
     const onDisk = await listSegmentFiles(job.dir);
     const trimmed = prepareManifestForPlayback(raw, false, onDisk);
+    const prefixForSeek = contiguousSegmentCount(onDisk);
     const seekInSourceSec = resumeSeekSecForDiskPrefix({
       startOffsetSec: job.startOffsetSec,
-      prefixCount: contiguousSegmentCount(onDisk),
+      prefixCount: prefixForSeek,
       segmentSec: hlsSegmentSeconds(),
       manifestEncodedSec: sumExtinfDurationSec(trimmed),
     });
+    let outputTsOffsetSec = seekInSourceSec;
+    if (prefixForSeek > 0) {
+      const lastSeg = path.join(
+        job.dir,
+        `seg_${String(prefixForSeek - 1).padStart(5, "0")}.ts`
+      );
+      const lastPts = await probeTsLastVideoPtsSec(lastSeg);
+      // Continue just after the last packet so the join is contiguous.
+      if (lastPts != null && lastPts > 0) {
+        outputTsOffsetSec = lastPts + 1 / 90_000;
+      }
+    }
     if (isVodSourceCacheEnabled() && seekInSourceSec > 0) {
       await waitForVodSourceForSeek(job.upstream, seekInSourceSec, {
         durationSec: job.durationSec ?? meta.durationSec,
@@ -1063,6 +1076,7 @@ async function resumeTranscodeJob(job: TranscodeJob): Promise<void> {
     await spawnFfmpeg(job, meta.plan, {
       seekInSourceSec,
       startSegmentNumber: prefixNow,
+      outputTsOffsetSec,
     }, meta.audioStreamIndex);
   } catch (err) {
     job.state = "failed";
@@ -1189,10 +1203,69 @@ async function waitForReady(
   return false;
 }
 
+/**
+ * Last video packet PTS in a finished .ts — used so tip-resume `output_ts_offset`
+ * continues the MPEG-TS timeline instead of leaving a multi-second hole.
+ */
+async function probeTsLastVideoPtsSec(
+  segmentPath: string
+): Promise<number | null> {
+  return new Promise((resolve) => {
+    const proc = spawn(
+      ffprobeBinary(),
+      [
+        "-v",
+        "error",
+        "-select_streams",
+        "v:0",
+        "-show_entries",
+        "packet=pts_time",
+        "-of",
+        "csv=p=0",
+        segmentPath,
+      ],
+      { stdio: ["ignore", "pipe", "ignore"] }
+    );
+    let out = "";
+    const timer = setTimeout(() => {
+      try {
+        proc.kill("SIGKILL");
+      } catch {
+        /* noop */
+      }
+      resolve(null);
+    }, 8_000);
+    proc.stdout?.on("data", (c: Buffer) => {
+      out += c.toString();
+      if (out.length > 256_000) out = out.slice(-128_000);
+    });
+    proc.on("error", () => {
+      clearTimeout(timer);
+      resolve(null);
+    });
+    proc.on("close", () => {
+      clearTimeout(timer);
+      let last: number | null = null;
+      for (const line of out.split(/\r?\n/)) {
+        const raw = line.trim().split(",")[0];
+        if (!raw) continue;
+        const n = parseFloat(raw);
+        if (Number.isFinite(n)) last = n;
+      }
+      resolve(last);
+    });
+  });
+}
+
 async function spawnFfmpeg(
   job: TranscodeJob,
   plan: VodTranscodePlan,
-  resume?: { seekInSourceSec: number; startSegmentNumber: number },
+  resume?: {
+    seekInSourceSec: number;
+    startSegmentNumber: number;
+    /** Continuity PTS for MPEG-TS (defaults to seekInSourceSec). */
+    outputTsOffsetSec?: number;
+  },
   audioStreamIndex?: number | null
 ): Promise<void> {
   if (job.proc && job.proc.exitCode == null) return;
@@ -1212,7 +1285,11 @@ async function spawnFfmpeg(
 async function spawnFfmpegLocked(
   job: TranscodeJob,
   plan: VodTranscodePlan,
-  resume?: { seekInSourceSec: number; startSegmentNumber: number },
+  resume?: {
+    seekInSourceSec: number;
+    startSegmentNumber: number;
+    outputTsOffsetSec?: number;
+  },
   audioStreamIndex?: number | null
 ): Promise<void> {
   if (job.proc && job.proc.exitCode == null) return;
@@ -1251,6 +1328,12 @@ async function spawnFfmpegLocked(
   const seekSec = resume
     ? Math.max(0, resume.seekInSourceSec)
     : Math.max(0, Math.floor(job.startOffsetSec));
+  // Tip resume: prefer last packet PTS so the join does not leave a 2–4s hole
+  // that freezes hls.js for the remainder of the title.
+  const outputTsOffsetSec =
+    resume && seekSec > 0
+      ? Math.max(0, resume.outputTsOffsetSec ?? seekSec)
+      : seekSec;
 
   const segPattern = path.join(job.dir, "seg_%05d.ts");
   const outManifest = path.join(job.dir, MANIFEST_NAME);
@@ -1330,7 +1413,9 @@ async function spawnFfmpegLocked(
     "-sn",
     // Tip resume: keep MPEG-TS timeline continuous with earlier segments.
     // setpts alone is ignored by the HLS/mpegts path; output_ts_offset works.
-    ...(seekSec > 0 ? ["-output_ts_offset", String(seekSec)] : []),
+    ...(outputTsOffsetSec > 0
+      ? ["-output_ts_offset", String(outputTsOffsetSec)]
+      : []),
     "-avoid_negative_ts",
     seekSec > 0 ? "make_non_negative" : "make_zero",
     "-max_muxing_queue_size",
