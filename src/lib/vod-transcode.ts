@@ -900,27 +900,6 @@ async function stripEndlistFromDiskManifest(dir: string): Promise<void> {
   }
 }
 
-/**
- * Duplicate ffmpeg resumes can leave seg_00027 missing while seg_00054 exists.
- * Playback only sees the contiguous prefix (often ~2 min) then freezes forever.
- */
-function waitForProcExit(
-  proc: ChildProcess,
-  maxWaitMs = 8000
-): Promise<void> {
-  if (proc.exitCode != null) return Promise.resolve();
-  return new Promise((resolve) => {
-    const done = () => {
-      clearTimeout(timer);
-      resolve();
-    };
-    proc.once("close", done);
-    proc.once("error", done);
-    const timer = setTimeout(done, maxWaitMs);
-    timer.unref?.();
-  });
-}
-
 /** Drop orphan seg_00058+ files and rewrite index.m3u8 to a contiguous prefix. */
 async function healTranscodeJobContiguity(job: TranscodeJob): Promise<number> {
   const dir = job.dir;
