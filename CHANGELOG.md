@@ -21,6 +21,9 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ## [Unreleased]
 
+### Fixed
+- **Docker / fresh SQLite** — startup now creates core tables (`users`, `auth_tokens`, provider accounts, etc.) so account signup works without a manual `npm run db:push`.
+
 ---
 
 ## [0.13.8] — 2026-07-24

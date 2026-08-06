@@ -31,7 +31,7 @@ Optional: `NEXT_PUBLIC_LEGAL_CONTACT_EMAIL`, `NEXT_PUBLIC_LEGAL_PROVINCE` (Canad
 
 ### Email verification and existing users
 
-New accounts must **confirm email** before signing in. After deploying a build that adds `email_verified_at` and `auth_tokens`, run **`npm run db:push`** on the host so SQLite gets the new columns/table.
+New accounts must **confirm email** before signing in. App startup creates core tables / appends known columns automatically. After deploying a build with **new** schema beyond that, still run **`npm run db:push`** on the host (or extend `runStartupMigrations` in `src/db/index.ts`).
 
 If you already have rows in `users` from before verification existed, **one-time** mark them verified so they are not locked out (run on the VPS as the app user, path from your install):
 

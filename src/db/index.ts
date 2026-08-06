@@ -24,10 +24,14 @@ function resolveSqliteFilePath(): string {
 type ColumnInfo = { name: string };
 
 /**
- * Add any schema columns that are missing from the live SQLite database.
- * SQLite does not support "ALTER TABLE ADD COLUMN IF NOT EXISTS", so we check
- * via PRAGMA table_info first. Only appends nullable / default-bearing columns
- * (which is all SQLite allows in ALTER TABLE anyway).
+ * Ensure core tables exist and append any missing columns on the live SQLite DB.
+ *
+ * Fresh Docker / self-host volumes previously got an empty `stream.db` (file created
+ * on open) without `users` — signup then 500'd. `CREATE TABLE IF NOT EXISTS` here
+ * matches `src/db/schema.ts` so first boot works without a separate `db:push`.
+ *
+ * SQLite has no "ALTER TABLE ADD COLUMN IF NOT EXISTS"; we check via PRAGMA
+ * table_info. Only nullable / default-bearing columns (all SQLite allows via ALTER).
  */
 function runStartupMigrations(driver: InstanceType<typeof Database>): void {
   const tableExists = (table: string): boolean => {
@@ -48,17 +52,61 @@ function runStartupMigrations(driver: InstanceType<typeof Database>): void {
     }
   };
 
-  // users — marketing + welcome email columns added after initial schema
-  addIfMissing("users", "marketing_opt_in",         "INTEGER NOT NULL DEFAULT 0");
-  addIfMissing("users", "marketing_opt_in_at",       "INTEGER");
-  addIfMissing("users", "marketing_unsubscribed_at", "INTEGER");
-  addIfMissing("users", "welcome_email_sent_at",     "INTEGER");
+  // Core auth / account tables (must exist before signup and provider sync).
+  driver.exec(`
+    CREATE TABLE IF NOT EXISTS users (
+      id TEXT PRIMARY KEY NOT NULL,
+      email TEXT NOT NULL UNIQUE,
+      name TEXT,
+      password_hash TEXT,
+      email_verified_at INTEGER,
+      marketing_opt_in INTEGER NOT NULL DEFAULT 0,
+      marketing_opt_in_at INTEGER,
+      marketing_unsubscribed_at INTEGER,
+      welcome_email_sent_at INTEGER,
+      active_iptv_provider_account_id TEXT,
+      created_at INTEGER NOT NULL
+    );
+  `);
+
+  driver.exec(`
+    CREATE TABLE IF NOT EXISTS auth_tokens (
+      id TEXT PRIMARY KEY NOT NULL,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      purpose TEXT NOT NULL,
+      token_hash TEXT NOT NULL UNIQUE,
+      expires_at INTEGER NOT NULL,
+      created_at INTEGER NOT NULL
+    );
+  `);
+
+  driver.exec(`
+    CREATE TABLE IF NOT EXISTS iptv_provider_accounts (
+      id TEXT PRIMARY KEY NOT NULL,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      label TEXT NOT NULL,
+      payload TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+  `);
 
   driver.exec(`
     CREATE TABLE IF NOT EXISTS user_provider_favorites (
       user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       provider_account_key TEXT NOT NULL,
       favorites_json TEXT NOT NULL,
+      updated_at INTEGER NOT NULL,
+      PRIMARY KEY (user_id, provider_account_key)
+    );
+  `);
+
+  driver.exec(`
+    CREATE TABLE IF NOT EXISTS user_provider_watch_state (
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      provider_account_key TEXT NOT NULL,
+      recents_json TEXT NOT NULL,
+      vod_resume_json TEXT NOT NULL,
       updated_at INTEGER NOT NULL,
       PRIMARY KEY (user_id, provider_account_key)
     );
@@ -99,6 +147,14 @@ function runStartupMigrations(driver: InstanceType<typeof Database>): void {
       reset_at INTEGER NOT NULL
     );
   `);
+
+  // Columns added after the initial users schema (existing DBs).
+  addIfMissing("users", "email_verified_at",              "INTEGER");
+  addIfMissing("users", "marketing_opt_in",               "INTEGER NOT NULL DEFAULT 0");
+  addIfMissing("users", "marketing_opt_in_at",            "INTEGER");
+  addIfMissing("users", "marketing_unsubscribed_at",      "INTEGER");
+  addIfMissing("users", "welcome_email_sent_at",          "INTEGER");
+  addIfMissing("users", "active_iptv_provider_account_id", "TEXT");
 }
 
 /** @internal Vitest only — clears the singleton between test files. */

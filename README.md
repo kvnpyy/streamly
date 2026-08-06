@@ -121,7 +121,10 @@ A scripted Ubuntu bootstrap (installs Node, sets up the service, etc.) is in
 
 ### Option C: Docker / Docker Compose
 
-A `Dockerfile` and `docker-compose.yml` are included.
+A `Dockerfile` and `docker-compose.yml` are included. On first request the app
+creates `stream.db` under the data volume **and** applies the core SQLite schema
+(including the `users` table) — no separate `db:push` step is required for a
+fresh install.
 
 ```bash
 # 1. Copy and fill in required env vars
