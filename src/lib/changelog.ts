@@ -11,6 +11,16 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.13.10",
+    date: "2026-08-07",
+    summary:
+      "Choose which Live/Movies/Series categories appear in pickers, plus Docker SQLite bootstrap fix.",
+    highlights: [
+      "Settings: category visibility filter per Xtream login (Live, Movies, Series).",
+      "Docker: create core SQLite tables on startup so signup works without db:push.",
+    ],
+  },
+  {
     version: "0.13.8",
     date: "2026-07-24",
     summary:

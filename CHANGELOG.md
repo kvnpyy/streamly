@@ -21,6 +21,12 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ## [Unreleased]
 
+---
+
+## [0.13.10] — 2026-08-07
+
+Category visibility settings and Docker SQLite bootstrap fix.
+
 ### Added
 - **Category visibility** — Settings → choose which Live / Movies / Series categories appear in pickers (per Xtream login).
 
