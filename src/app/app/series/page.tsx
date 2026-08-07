@@ -14,6 +14,7 @@ import { MediaCard } from "@/components/MediaCard";
 import { SectionHeader, SkeletonGrid } from "@/components/SectionHeader";
 import { useCatalogBrowseSearch } from "@/lib/catalog-browse-search-context";
 import { useSlashFocusSearch } from "@/lib/use-slash-focus-search";
+import { filterCategoriesByVisibility } from "@/lib/category-visibility";
 import { looksAdult, parsePositiveRouteId } from "@/lib/utils";
 import { slimSeriesCatalogQueryOptions } from "@/lib/slim-series-catalog-query";
 import {
@@ -102,6 +103,9 @@ function SeriesPageInner({
   const savedSeriesCategory = usePrefs(
     (s) => s.browseByAccount[accountKey]?.seriesCategory
   );
+  const seriesVisibleCategoryIds = usePrefs(
+    (s) => s.browseByAccount[accountKey]?.seriesVisibleCategoryIds
+  );
 
   const prefsCategory: string | "all" =
     savedSeriesCategory === undefined
@@ -162,9 +166,12 @@ function SeriesPageInner({
 
   const filteredCats = useMemo(() => {
     const list = cats.data || [];
-    if (!hideAdult || parentalUnlocked) return list;
-    return list.filter((c) => !looksAdult({ category_name: c.category_name }));
-  }, [cats.data, hideAdult, parentalUnlocked]);
+    const safe =
+      !hideAdult || parentalUnlocked
+        ? list
+        : list.filter((c) => !looksAdult({ category_name: c.category_name }));
+    return filterCategoriesByVisibility(safe, seriesVisibleCategoryIds);
+  }, [cats.data, hideAdult, parentalUnlocked, seriesVisibleCategoryIds]);
 
   const allowedCatIds = useMemo(
     () => new Set(filteredCats.map((c) => String(c.category_id))),

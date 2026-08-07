@@ -21,6 +21,9 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ## [Unreleased]
 
+### Added
+- **Category visibility** — Settings → choose which Live / Movies / Series categories appear in pickers (per Xtream login).
+
 ### Fixed
 - **Docker / fresh SQLite** — startup now creates core tables (`users`, `auth_tokens`, provider accounts, etc.) so account signup works without a manual `npm run db:push`.
 

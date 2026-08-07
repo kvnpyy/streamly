@@ -42,6 +42,15 @@ export type BrowsePrefs = {
   liveCategorySortMode?: "provider" | "az" | "manual";
   /** Ordered `category_id` strings when `liveCategorySortMode === "manual"`. */
   liveCategoryManualOrder?: string[];
+  /**
+   * When non-empty, Live pickers/rails only list these `category_id`s.
+   * Empty / omitted → show all (still subject to adult / region filters).
+   */
+  liveVisibleCategoryIds?: string[];
+  /** Same as `liveVisibleCategoryIds` for Movies genres. */
+  moviesVisibleCategoryIds?: string[];
+  /** Same as `liveVisibleCategoryIds` for Series genres. */
+  seriesVisibleCategoryIds?: string[];
 };
 
 /** Stable per-account key; must match whatever login stores on `creds`. */

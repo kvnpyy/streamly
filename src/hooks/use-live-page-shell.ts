@@ -2,6 +2,7 @@
 
 import { slimLiveCatalogQueryOptions } from "@/lib/live-catalog-query";
 import { pickCountByIdForVisibleCategories } from "@/lib/live-category-counts";
+import { filterCategoriesByVisibility } from "@/lib/category-visibility";
 import { orderedLiveCategories } from "@/lib/live-category-sort";
 import { useLiveSearchContext } from "@/lib/live-search-context";
 import { useSlashFocusSearch } from "@/lib/use-slash-focus-search";
@@ -167,9 +168,15 @@ export function useLivePageShell(
 
   const filteredCats = useMemo(() => {
     const list = cats.data || [];
-    if (!hideAdult || parentalUnlocked) return list;
-    return list.filter((c) => !looksAdult({ category_name: c.category_name }));
-  }, [cats.data, hideAdult, parentalUnlocked]);
+    const safe =
+      !hideAdult || parentalUnlocked
+        ? list
+        : list.filter((c) => !looksAdult({ category_name: c.category_name }));
+    return filterCategoriesByVisibility(
+      safe,
+      liveBrowsePrefs?.liveVisibleCategoryIds
+    );
+  }, [cats.data, hideAdult, parentalUnlocked, liveBrowsePrefs?.liveVisibleCategoryIds]);
 
   const sortedFilteredCats = useMemo(
     () => orderedLiveCategories(filteredCats, liveBrowsePrefs),

@@ -16,6 +16,7 @@ import { SectionHeader, SkeletonGrid } from "@/components/SectionHeader";
 import { parsePositiveRouteId } from "@/lib/utils";
 import { useCatalogBrowseSearch } from "@/lib/catalog-browse-search-context";
 import { useSlashFocusSearch } from "@/lib/use-slash-focus-search";
+import { filterCategoriesByVisibility } from "@/lib/category-visibility";
 import { looksAdult } from "@/lib/utils";
 import { slimVodCatalogQueryOptions } from "@/lib/slim-vod-catalog-query";
 import {
@@ -103,6 +104,9 @@ function MoviesPageInner({
   const savedMoviesCategory = usePrefs(
     (s) => s.browseByAccount[accountKey]?.moviesCategory
   );
+  const moviesVisibleCategoryIds = usePrefs(
+    (s) => s.browseByAccount[accountKey]?.moviesVisibleCategoryIds
+  );
 
   const prefsCategory: string | "all" =
     savedMoviesCategory === undefined
@@ -163,9 +167,12 @@ function MoviesPageInner({
 
   const filteredCats = useMemo(() => {
     const list = cats.data || [];
-    if (!hideAdult || parentalUnlocked) return list;
-    return list.filter((c) => !looksAdult({ category_name: c.category_name }));
-  }, [cats.data, hideAdult, parentalUnlocked]);
+    const safe =
+      !hideAdult || parentalUnlocked
+        ? list
+        : list.filter((c) => !looksAdult({ category_name: c.category_name }));
+    return filterCategoriesByVisibility(safe, moviesVisibleCategoryIds);
+  }, [cats.data, hideAdult, parentalUnlocked, moviesVisibleCategoryIds]);
 
   const allowedCatIds = useMemo(
     () => new Set(filteredCats.map((c) => String(c.category_id))),

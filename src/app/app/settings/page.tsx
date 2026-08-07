@@ -1,6 +1,7 @@
 "use client";
 
 import { TvSimpleSettings } from "@/components/tv/TvSimpleSettings";
+import { CategoryVisibilitySection } from "@/components/CategoryVisibilitySection";
 import { LiveCategorySortSection } from "@/components/LiveCategorySortSection";
 import { CommunityDiscordLink } from "@/components/CommunityDiscordLink";
 import { CommunityGitHubFeedbackLink } from "@/components/CommunityGitHubFeedbackLink";
@@ -104,6 +105,8 @@ export default function SettingsPage() {
       <ProviderAccountsPanel />
 
       {!tvSimple && streamSignedIn && <MarketingEmailPreferences />}
+
+      {!tvSimple && <CategoryVisibilitySection />}
 
       {!tvSimple && <LiveCategorySortSection />}
 

@@ -15,6 +15,7 @@ import {
 } from "@/lib/attach-discovery-shelf-items";
 import { DISCOVERY_SHELF_META, isDiscoveryShelvesEnabled } from "@/lib/discovery";
 import { scheduleWhenIdle } from "@/lib/defer-idle";
+import { filterCategoriesByVisibility } from "@/lib/category-visibility";
 import { slimSeriesCatalogQueryOptions } from "@/lib/slim-series-catalog-query";
 import { slimVodCatalogQueryOptions } from "@/lib/slim-vod-catalog-query";
 import { seriesItemsQueryOptions } from "@/lib/series-catalog-items";
@@ -76,8 +77,13 @@ export function TvSimpleVodBrowse({
   const tvSimple = useTvSimpleMode();
 
   const prefKey = kind === "movie" ? "moviesCategory" : "seriesCategory";
+  const visibilityPrefKey =
+    kind === "movie" ? "moviesVisibleCategoryIds" : "seriesVisibleCategoryIds";
   const savedCategory = usePrefs(
     (s) => s.browseByAccount[accountKey]?.[prefKey]
+  );
+  const visibleCategoryIds = usePrefs(
+    (s) => s.browseByAccount[accountKey]?.[visibilityPrefKey]
   );
 
   const [categoryId, setCategoryId] = useState<string | null>(() => {
@@ -99,9 +105,17 @@ export function TvSimpleVodBrowse({
 
   const filteredCats = useMemo(() => {
     const list = slimQuery.data?.categories ?? [];
-    if (!hideAdult || parentalUnlocked) return list;
-    return list.filter((c) => !looksAdult({ category_name: c.category_name }));
-  }, [slimQuery.data?.categories, hideAdult, parentalUnlocked]);
+    const safe =
+      !hideAdult || parentalUnlocked
+        ? list
+        : list.filter((c) => !looksAdult({ category_name: c.category_name }));
+    return filterCategoriesByVisibility(safe, visibleCategoryIds);
+  }, [
+    slimQuery.data?.categories,
+    hideAdult,
+    parentalUnlocked,
+    visibleCategoryIds,
+  ]);
 
   const countById = useMemo(
     () => slimQuery.data?.countByCategoryId ?? {},
