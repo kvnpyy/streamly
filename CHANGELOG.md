@@ -23,6 +23,15 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.13.11] — 2026-08-10
+
+VOD fallback when the browser can't decode AC-3/DTS audio.
+
+### Fixed
+- **VOD AC-3/DTS audio** — when the browser can't decode a single unsupported audio track (or plays video with silence), request server HLS transcode (`copyVideo` → AAC) instead of giving up after `swapAudioCodec()`.
+
+---
+
 ## [0.13.10] — 2026-08-07
 
 Category visibility settings and Docker SQLite bootstrap fix.

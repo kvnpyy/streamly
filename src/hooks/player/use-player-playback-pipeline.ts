@@ -1096,6 +1096,11 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
                 liveSoftRecoverBeforeError = true;
                 break;
               }
+              // Single-track AC-3/DTS (etc.): track switch / swapAudioCodec can't help —
+              // upgrade progressive/proxy VOD to server HLS (copyVideo → AAC) before giving up.
+              if (!isLive && requestVodTranscodeFallbackRef.current()) {
+                break;
+              }
               surfacePlaybackError(
                 isLive
                   ? livePlaybackStoppedMessage(livePlaybackHealthy)

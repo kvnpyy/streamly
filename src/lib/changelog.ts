@@ -11,6 +11,16 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.13.11",
+    date: "2026-08-10",
+    summary:
+      "Fall back to server HLS when VOD has unsupported or silent AC-3/DTS audio.",
+    highlights: [
+      "VOD: after swapAudioCodec / silent progressive play, request transcode=hls (copyVideo → AAC).",
+      "VOD: clearer error when NEXT_PUBLIC_VOD_TRANSCODE is not enabled in the build.",
+    ],
+  },
+  {
     version: "0.13.10",
     date: "2026-08-07",
     summary:

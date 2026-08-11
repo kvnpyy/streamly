@@ -14,6 +14,10 @@ import { playbackUrlIsHls } from "@/lib/playback-url";
 import { withLiveHlsCompatMse } from "@/lib/stream-url";
 import { voidSafeVideoPlay } from "@/lib/video-play";
 import { writePreferredPlayerVolume } from "@/lib/player-volume-pref";
+import { videoLikelyMissingDecodableAudio } from "@/lib/vod-silent-audio";
+import {
+  isVodTranscodeEnabledClient,
+} from "@/lib/vod-transcode-url";
 import type { PlayerSource } from "@/store/player";
 import {
   shouldTreatTranscodeAsEnded,
@@ -118,6 +122,8 @@ export function usePlayerVideoEvents(p: UsePlayerVideoEventsParams) {
     let lastMarkPictureMs = 0;
     /** Sustained audio-without-picture — auto-reload before surfacing the banner. */
     let liveNoPictureSince = 0;
+    /** Progressive VOD: one-shot silent-audio → server transcode upgrade. */
+    let vodSilentAudioResolved = false;
     let liveNoPictureRecoveries = 0;
     let lastNoPictureRecoveryMs = 0;
     let maxTranscodeRelSeen = 0;
@@ -300,6 +306,28 @@ export function usePlayerVideoEvents(p: UsePlayerVideoEventsParams) {
         }
         const buf = v.buffered;
         if (buf.length) setBuffered(off + buf.end(buf.length - 1));
+      }
+
+      // Progressive VOD with picture but no decodable audio (AC-3/DTS in Chromium) —
+      // hard media errors often never fire; boost to server HLS instead.
+      if (
+        !vodSilentAudioResolved &&
+        !isLiveStream &&
+        !usesTranscodePlayback &&
+        !v.paused &&
+        !v.error &&
+        v.videoWidth > 0 &&
+        v.currentTime >= 2.5
+      ) {
+        const missing = videoLikelyMissingDecodableAudio(v);
+        if (missing === true) {
+          vodSilentAudioResolved = true;
+          if (requestVodTranscodeFallbackRef.current()) {
+            return;
+          }
+        } else if (missing === false || v.currentTime >= 8) {
+          vodSilentAudioResolved = true;
+        }
       }
 
       if (usesTranscodePlayback) {
@@ -517,14 +545,18 @@ export function usePlayerVideoEvents(p: UsePlayerVideoEventsParams) {
         3: vodProgressive
           ? braveIosVod
             ? `This movie or episode uses codecs or a container mobile browsers can't play in-page (very common with MKV, or MP4 with HEVC/AC‑3).${braveIosVodHint} Or copy the stream link from Share → open in VLC.`
-            : "This episode or movie uses codecs or a container in-browser players can't decode (common with MKV, HEVC, or DTS from Xtream). Safari and Brave share many of the same limits—try your provider's native app, VLC/TiviMate, or another encode labeled MP4 / H.264 / AAC if available."
+            : !isVodTranscodeEnabledClient()
+              ? "This episode or movie uses codecs the browser can't decode (common with MKV, HEVC, or AC-3/DTS audio). Enable STREAM_VOD_TRANSCODE=1 and NEXT_PUBLIC_VOD_TRANSCODE=1 with ffmpeg, rebuild, and try again — or use VLC / your provider's app."
+              : "This episode or movie uses codecs or a container in-browser players can't decode (common with MKV, HEVC, or DTS from Xtream). Safari and Brave share many of the same limits—try your provider's native app, VLC/TiviMate, or another encode labeled MP4 / H.264 / AAC if available."
           : current?.kind === "live"
             ? liveCodecUserMessage()
             : `The stream is corrupt or in an unsupported codec.${liveMidPlayHint}`,
         4: vodProgressive
           ? braveIosVod
             ? `The file format isn't playable here (often MKV, or MP4 with codecs WebKit won't decode).${braveIosVodHint}`
-            : "The file uses a format or codec this web player can't play (often MKV or HEVC). That usually isn't a bug: desktop browsers often can't handle what IPTV apps stream fine. Use a native IPTV player or VLC, or pick an MP4 release if your provider lists one."
+            : !isVodTranscodeEnabledClient()
+              ? "This file's format or audio codec isn't playable here (often MKV/HEVC, or MP4 with AC-3/DTS). Enable STREAM_VOD_TRANSCODE=1 and NEXT_PUBLIC_VOD_TRANSCODE=1 with ffmpeg, rebuild, and try again — or open it in VLC."
+              : "The file uses a format or codec this web player can't play (often MKV or HEVC). That usually isn't a bug: desktop browsers often can't handle what IPTV apps stream fine. Use a native IPTV player or VLC, or pick an MP4 release if your provider lists one."
           : current?.kind === "live"
             ? liveCodecUserMessage()
             : `This stream uses a format or codec your browser can't play here.${liveMidPlayHint}`,
