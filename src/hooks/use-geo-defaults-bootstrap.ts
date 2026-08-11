@@ -2,8 +2,10 @@
 
 import {
   coerceTvRegion,
+  defaultVodLanguageForCountry,
   defaultVodLanguageForRegion,
   detectRegionFromTimezone,
+  isBrazilianTimezone,
   type TvRegion,
 } from "@/lib/geo-continent";
 import { browseAccountKey, usePrefs } from "@/store/preferences";
@@ -105,8 +107,12 @@ export function useGeoDefaultsBootstrap(opts?: { disabled?: boolean }) {
           coerceTvRegion(tvRegion) ??
           coerceTvRegion(data.region) ??
           detectRegionFromTimezone();
+        // Brazil is LatAm for Live TV but Portuguese for Movies/Series.
         const defaultLang =
-          data.language ?? defaultVodLanguageForRegion(region);
+          data.language ??
+          defaultVodLanguageForCountry(data.country) ??
+          (isBrazilianTimezone() ? "PT" : null) ??
+          defaultVodLanguageForRegion(region);
         if (!defaultLang) {
           languageBootstrappedFor.current = accountKey;
           return;

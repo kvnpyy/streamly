@@ -29,6 +29,9 @@ Practical write-ups on the live site — not just README bullets:
 
 | Guide | Summary |
 |-------|---------|
+| [Best IPTV Web Player for Xtream Codes in 2026](https://iptvwebplayer.org/blog/best-iptv-web-player-xtream-codes-2026) | What “best” means for browser Xtream players — and where Streamly fits. |
+| [How to Use an IPTV Web Player (No App Needed)](https://iptvwebplayer.org/blog/how-to-use-iptv-web-player) | Browser login with Xtream or M3U — no APK, no app store. |
+| [Como usar o Streamly com Xtream Codes ou M3U](https://iptvwebplayer.org/blog/como-usar-streamly-xtream-m3u) | Guia rápido em português (Brasil): login no navegador, Xtream vs M3U, filmes e canais. |
 | [How I Built a Full IPTV Frontend with Next.js 16 + Docker in One Weekend](https://iptvwebplayer.org/blog/nextjs-iptv-weekend-build) | Honest build log — proxy-first playback, Xtream client, HLS player, SQLite, Docker. |
 | [Running Streamly on a $5 VPS (Real Numbers + Tips)](https://iptvwebplayer.org/blog/streamly-five-dollar-vps) | Monthly costs, RAM/bandwidth reality, deploy timings, when cheap hosting works. |
 | [How to Self-Host Streamly: Docker Setup](https://iptvwebplayer.org/blog/how-to-self-host-streamly) | Step-by-step Compose, secrets, volumes, HTTPS, and backups. |

@@ -1,7 +1,19 @@
 import {
+  BestIptvWebPlayerXtreamCodes2026Content,
+  meta as bestPlayerMeta,
+} from "@/content/blog/best-iptv-web-player-xtream-codes-2026";
+import {
+  ComoUsarStreamlyXtreamM3uContent,
+  meta as comoUsarMeta,
+} from "@/content/blog/como-usar-streamly-xtream-m3u";
+import {
   HowToSelfHostStreamlyContent,
   meta as selfHostMeta,
 } from "@/content/blog/how-to-self-host-streamly";
+import {
+  HowToUseIptvWebPlayerContent,
+  meta as howToUseMeta,
+} from "@/content/blog/how-to-use-iptv-web-player";
 import {
   NextjsIptvWeekendBuildContent,
   meta as weekendBuildMeta,
@@ -17,6 +29,9 @@ import {
 import type { BlogPost } from "@/lib/blog/types";
 
 const posts: BlogPost[] = [
+  { ...bestPlayerMeta, Component: BestIptvWebPlayerXtreamCodes2026Content },
+  { ...howToUseMeta, Component: HowToUseIptvWebPlayerContent },
+  { ...comoUsarMeta, Component: ComoUsarStreamlyXtreamM3uContent },
   { ...weekendBuildMeta, Component: NextjsIptvWeekendBuildContent },
   { ...fiveDollarVpsMeta, Component: StreamlyFiveDollarVpsContent },
   { ...selfHostMeta, Component: HowToSelfHostStreamlyContent },

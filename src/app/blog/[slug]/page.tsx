@@ -17,6 +17,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   if (!post) return { title: "Post not found" };
 
   const url = absoluteSiteUrl(`/blog/${slug}`);
+  const locale = post.locale ?? "en";
   return {
     title: post.title,
     description: post.description,
@@ -27,6 +28,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
       title: post.title,
       description: post.description,
       url,
+      locale: locale === "pt-BR" ? "pt_BR" : locale,
       publishedTime: post.publishedAt,
       modifiedTime: post.updatedAt ?? post.publishedAt,
       siteName: SITE_NAME,
@@ -45,6 +47,12 @@ export default async function BlogPostPage({ params }: Props) {
   if (!post) notFound();
 
   const { Component } = post;
+  const locale = post.locale ?? "en";
+  const dateLocale = locale === "pt-BR" ? "pt-BR" : "en-US";
+  const readingLabel =
+    locale === "pt-BR"
+      ? `${post.readingMinutes} min de leitura`
+      : `${post.readingMinutes} min read`;
   const jsonLd = {
     "@context": "https://schema.org",
     "@type": "BlogPosting",
@@ -52,6 +60,7 @@ export default async function BlogPostPage({ params }: Props) {
     description: post.description,
     datePublished: post.publishedAt,
     dateModified: post.updatedAt ?? post.publishedAt,
+    inLanguage: locale,
     author: {
       "@type": "Person",
       name: "Streamly maintainer",
@@ -70,7 +79,10 @@ export default async function BlogPostPage({ params }: Props) {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
       />
-      <header className="space-y-4 mb-10 pb-8 border-b border-white/10">
+      <header
+        className="space-y-4 mb-10 pb-8 border-b border-white/10"
+        lang={locale}
+      >
         <Link
           href="/blog"
           className="text-sm text-(--text-muted) hover:text-(--text)"
@@ -82,17 +94,19 @@ export default async function BlogPostPage({ params }: Props) {
         </h1>
         <p className="text-sm text-(--text-muted)">
           <time dateTime={post.publishedAt}>
-            {new Date(post.publishedAt).toLocaleDateString("en-US", {
+            {new Date(post.publishedAt).toLocaleDateString(dateLocale, {
               year: "numeric",
               month: "long",
               day: "numeric",
             })}
           </time>
           {" · "}
-          {post.readingMinutes} min read
+          {readingLabel}
         </p>
       </header>
-      <Component />
+      <div lang={locale}>
+        <Component />
+      </div>
     </BlogShell>
   );
 }

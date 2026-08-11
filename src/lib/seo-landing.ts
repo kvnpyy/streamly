@@ -6,16 +6,18 @@ import {
 } from "@/lib/site-brand";
 
 export const SITE_SEO_TITLE =
-  "IPTV Web Player | Streamly · Live TV, Movies & Series in Your Browser";
+  "Streamly — Modern IPTV Web Player for Xtream Codes";
 
 export const SITE_SEO_DESCRIPTION =
-  "Streamly is an IPTV web player in your browser. Sign in with Xtream Codes or an M3U playlist from your provider. Live TV, movies, series. No app install. iptvwebplayer.org.";
+  "Streamly is a modern IPTV web player for Xtream Codes and M3U playlists. Watch live TV, movies, and series in your browser — no app install. iptvwebplayer.org.";
 
 export const SITE_SEO_KEYWORDS = [
+  "IPTV Web Player",
   "IPTV web player",
   "iptv web player",
-  "browser IPTV player",
+  "modern IPTV web player",
   "Xtream Codes web player",
+  "browser IPTV player",
   "M3U web player",
   "self-hosted IPTV player",
   "watch IPTV in browser",
@@ -25,12 +27,13 @@ export const SITE_SEO_KEYWORDS = [
 ] as const;
 
 /** Keep H1 keyword-clear for SEO; voice lives in the subhead and sections below. */
-export const LANDING_H1 = "IPTV web player for your browser";
+export const LANDING_H1 =
+  "Streamly — Modern IPTV Web Player for Xtream Codes";
 
 export const LANDING_HERO_KICKER = "I was tired of five different IPTV apps";
 
 export const LANDING_HERO_LEAD =
-  "I wanted one IPTV web player I could open on my laptop, phone, and the TV browser without sideloading another APK. That's Streamly. You sign in with Xtream Codes or paste an M3U playlist from your provider. Live TV, movies, series. Same panel you already pay for, just in Chrome or Safari or whatever you already use.";
+  "Streamly is a modern IPTV web player for Xtream Codes — open it in Chrome, Safari, or your TV browser, sign in with your provider (or paste an M3U playlist), and watch live TV, movies, and series without sideloading another APK. Same panel you already pay for, just in a tab.";
 
 export const LANDING_HERO_ASIDE =
   "We don't sell channels. You need your own subscription. Please follow your provider's terms and the law where you live.";
@@ -195,7 +198,7 @@ export function buildLandingSoftwareJsonLd() {
     applicationCategory: "MultimediaApplication",
     operatingSystem: "Web",
     description:
-      "Streamly is a browser IPTV web player for Xtream Codes and M3U playlists. Live TV, movies, series, and EPG. Bring your own subscription.",
+      "Streamly — modern IPTV web player for Xtream Codes and M3U playlists. Live TV, movies, series, and EPG in your browser. Bring your own subscription.",
     url,
     offers: {
       "@type": "Offer",
@@ -212,15 +215,15 @@ export function buildLandingWebSiteJsonLd() {
   return {
     "@context": "https://schema.org",
     "@type": "WebSite",
-    name: "IPTV Web Player | Streamly",
-    alternateName: SITE_NAME,
+    name: "Streamly — Modern IPTV Web Player for Xtream Codes",
+    alternateName: [SITE_NAME, "IPTV Web Player"],
     url: origin,
     description:
-      "Streamly. IPTV web player for Xtream Codes and M3U playlists in your browser.",
+      "Streamly is a modern IPTV web player for Xtream Codes and M3U playlists in your browser.",
     potentialAction: {
       "@type": "SearchAction",
       target: `${origin}/login`,
-      name: "Open IPTV web player sign in",
+      name: "Open IPTV Web Player sign in",
     },
   };
 }

@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   categoryMatchesRegion,
   coerceTvRegion,
+  defaultVodLanguageForCountry,
+  defaultVodLanguageForRegion,
   extractCountryCode,
   getCategoryCountryIso,
   getCategoryRegion,
@@ -163,5 +165,17 @@ describe("sortLiveCategoriesForBrowse", () => {
       "North America"
     );
     expect(sorted[0]!.category_name).toMatch(/CA|Canada/i);
+  });
+});
+
+describe("default VOD language", () => {
+  it("defaults Latin America region to Spanish", () => {
+    expect(defaultVodLanguageForRegion("Latin America")).toBe("ES");
+  });
+
+  it("overrides Brazil (and Portugal) to Portuguese by country", () => {
+    expect(defaultVodLanguageForCountry("BR")).toBe("PT");
+    expect(defaultVodLanguageForCountry("PT")).toBe("PT");
+    expect(defaultVodLanguageForCountry("MX")).toBeNull();
   });
 });

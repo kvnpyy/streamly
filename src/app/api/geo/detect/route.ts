@@ -1,5 +1,6 @@
 import {
   detectRegionFromCountryCode,
+  defaultVodLanguageForCountry,
   defaultVodLanguageForRegion,
 } from "@/lib/geo-continent";
 import { NextRequest, NextResponse } from "next/server";
@@ -17,7 +18,9 @@ export async function GET(req: NextRequest) {
     null;
 
   const region = detectRegionFromCountryCode(country);
-  const language = region ? defaultVodLanguageForRegion(region) : null;
+  const language =
+    defaultVodLanguageForCountry(country) ??
+    (region ? defaultVodLanguageForRegion(region) : null);
 
   return NextResponse.json({
     country,

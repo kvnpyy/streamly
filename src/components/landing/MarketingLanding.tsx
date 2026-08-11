@@ -16,6 +16,7 @@ import {
   LANDING_FEATURES,
   LANDING_FEATURES_HEADING,
   LANDING_GUIDES_HEADING,
+  LANDING_H1,
   LANDING_HERO_ASIDE,
   LANDING_HERO_KICKER,
   LANDING_HERO_LEAD,
@@ -61,8 +62,11 @@ const NAV_ANCHORS = [
   { href: "#faq", label: "FAQ" },
 ] as const;
 
+const H1_KEYWORD = "IPTV Web Player";
+
 export function MarketingLanding() {
   const posts = getAllBlogPosts().slice(0, 2);
+  const [h1Before, h1After = ""] = LANDING_H1.split(H1_KEYWORD);
 
   return (
     <div className="min-h-screen bg-[#06070b] text-[#eef0f6] selection:bg-[#7c5cff]/35">
@@ -96,7 +100,7 @@ export function MarketingLanding() {
             <div className="leading-tight">
               <span className="font-semibold text-sm block">{SITE_NAME}</span>
               <span className="text-[11px] text-(--text-muted) hidden sm:block">
-                IPTV web player
+                IPTV Web Player
               </span>
             </div>
           </Link>
@@ -144,11 +148,12 @@ export function MarketingLanding() {
                 <span className="landing-live-dot size-1.5 rounded-full bg-(--brand-2) shrink-0" />
                 <span>{LANDING_HERO_KICKER}</span>
               </p>
-              <h1 className="text-[2rem] sm:text-4xl lg:text-[2.85rem] font-bold tracking-tight text-(--text) max-w-xl text-balance leading-[1.08]">
-                IPTV web player{" "}
-                <span className="block sm:inline bg-gradient-to-r from-[#eef0f6] via-[#c4b5fd] to-[#00e0c6] bg-clip-text text-transparent">
-                  for your browser
+              <h1 className="text-[2rem] sm:text-4xl lg:text-[2.75rem] font-bold tracking-tight text-(--text) max-w-2xl text-balance leading-[1.1]">
+                {h1Before}
+                <span className="bg-gradient-to-r from-[#eef0f6] via-[#c4b5fd] to-[#00e0c6] bg-clip-text text-transparent">
+                  {H1_KEYWORD}
                 </span>
+                {h1After}
               </h1>
               <p className="mt-6 text-base sm:text-[1.0625rem] text-(--text-dim) max-w-xl leading-[1.7]">
                 {LANDING_HERO_LEAD}

@@ -67,6 +67,25 @@ const CANADIAN_TIMEZONES = new Set([
   "America/Pangnirtung",
 ]);
 
+/** Brazilian IANA timezones — LatAm region, but VOD should default to Portuguese. */
+const BRAZILIAN_TIMEZONES = new Set([
+  "America/Sao_Paulo",
+  "America/Fortaleza",
+  "America/Recife",
+  "America/Bahia",
+  "America/Belem",
+  "America/Manaus",
+  "America/Cuiaba",
+  "America/Porto_Velho",
+  "America/Boa_Vista",
+  "America/Rio_Branco",
+  "America/Maceio",
+  "America/Araguaina",
+  "America/Santarem",
+  "America/Campo_Grande",
+  "America/Noronha",
+]);
+
 // ---------------------------------------------------------------------------
 // Country-code → region lookup (ISO 3166-1 alpha-2 and common 3-letter codes)
 // ---------------------------------------------------------------------------
@@ -330,9 +349,34 @@ export function defaultVodLanguageForRegion(
     case "Oceania":
       return "EN";
     case "Latin America":
+      // Most LatAm panels are Spanish; Brazil is handled via country/timezone.
       return "ES";
     default:
       return null;
+  }
+}
+
+/**
+ * Country-specific VOD language overrides (ISO 3166-1 alpha-2).
+ * Prefer this over {@link defaultVodLanguageForRegion} when IP geo is available.
+ */
+export function defaultVodLanguageForCountry(
+  countryCode: string | null | undefined
+): string | null {
+  if (!countryCode?.trim()) return null;
+  const iso = countryCode.trim().toUpperCase();
+  if (iso === "BR") return "PT";
+  if (iso === "PT") return "PT";
+  return null;
+}
+
+/** True when the browser timezone is in Brazil (Portuguese VOD default). */
+export function isBrazilianTimezone(): boolean {
+  try {
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    return tz ? BRAZILIAN_TIMEZONES.has(tz) : false;
+  } catch {
+    return false;
   }
 }
 

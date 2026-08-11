@@ -11,6 +11,18 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.13.12",
+    date: "2026-08-10",
+    summary:
+      "Brazil-friendly Portuguese defaults, stronger IPTV Web Player SEO, and new guides.",
+    highlights: [
+      "Geo: Brazil (and Brazilian timezones) default Movies/Series language to Português, not Spanish.",
+      "VOD: BR/BRASIL catalog tags map to Portuguese; PT filter label is Português.",
+      "Landing: title, H1, and hero lead target “Streamly — Modern IPTV Web Player for Xtream Codes.”",
+      "Guides: Best IPTV Web Player for Xtream Codes in 2026; How to Use an IPTV Web Player; pt-BR Como usar o Streamly.",
+    ],
+  },
+  {
     version: "0.13.11",
     date: "2026-08-10",
     summary:

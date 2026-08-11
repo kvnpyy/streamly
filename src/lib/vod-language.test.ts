@@ -26,6 +26,12 @@ describe("extractVodLanguageCode", () => {
     expect(extractVodLanguageCode("ENGLISH MOVIES 4K")).toBe("EN");
     expect(extractVodLanguageCode("French Series")).toBe("FR");
   });
+
+  it("reads Brazilian / Portuguese category wording", () => {
+    expect(extractVodLanguageCode("BR | Filmes")).toBe("PT");
+    expect(extractVodLanguageCode("Filmes em Português")).toBe("PT");
+    expect(extractVodLanguageCode("Séries Brasileiras")).toBe("PT");
+  });
 });
 
 describe("vodItemMatchesLanguage", () => {
@@ -62,12 +68,20 @@ describe("normalizeVodLanguageCode", () => {
   it("maps ENG to EN", () => {
     expect(normalizeVodLanguageCode("ENG")).toBe("EN");
   });
+
+  it("maps Brazilian country tags to Portuguese", () => {
+    expect(normalizeVodLanguageCode("BR")).toBe("PT");
+    expect(normalizeVodLanguageCode("BRA")).toBe("PT");
+    expect(normalizeVodLanguageCode("BRASIL")).toBe("PT");
+    expect(normalizeVodLanguageCode("PORTUGUES")).toBe("PT");
+  });
 });
 
 describe("vodLanguageLabel", () => {
   it("returns friendly labels", () => {
     expect(vodLanguageLabel("EN")).toBe("English");
     expect(vodLanguageLabel("FR")).toBe("French");
+    expect(vodLanguageLabel("PT")).toBe("Português");
   });
 });
 

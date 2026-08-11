@@ -2,7 +2,7 @@ import { BrandMarkImage } from "@/lib/brand-mark-image";
 import { SITE_NAME } from "@/lib/site-brand";
 import { ImageResponse } from "next/og";
 
-export const alt = "IPTV Web Player | Streamly";
+export const alt = "Streamly — Modern IPTV Web Player for Xtream Codes";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
@@ -35,18 +35,18 @@ export default function OpenGraphImage() {
         </div>
         <div
           style={{
-            fontSize: 64,
+            fontSize: 56,
             fontWeight: 800,
-            lineHeight: 1.1,
+            lineHeight: 1.12,
             letterSpacing: -2,
-            maxWidth: 900,
+            maxWidth: 980,
           }}
         >
-          IPTV Web Player
+          Modern IPTV Web Player for Xtream Codes
         </div>
         <div
           style={{
-            fontSize: 30,
+            fontSize: 28,
             color: "#9aa0b3",
             marginTop: 24,
             maxWidth: 820,

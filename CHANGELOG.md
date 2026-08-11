@@ -23,6 +23,20 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.13.12] — 2026-08-10
+
+Brazil-friendly Portuguese defaults, stronger IPTV Web Player SEO, and new guides.
+
+### Added
+- **Guides** — [Best IPTV Web Player for Xtream Codes in 2026](https://iptvwebplayer.org/blog/best-iptv-web-player-xtream-codes-2026), [How to Use an IPTV Web Player (No App Needed)](https://iptvwebplayer.org/blog/how-to-use-iptv-web-player), and pt-BR [Como usar o Streamly](https://iptvwebplayer.org/blog/como-usar-streamly-xtream-m3u).
+- **VOD language** — Brazilian panel tags (`BR`, `BRASIL`, …) map to Portuguese; filter label **Português**.
+
+### Changed
+- **Geo defaults** — Brazil IP / Brazilian timezones default Movies/Series to `PT` instead of LatAm Spanish.
+- **Landing SEO** — title, H1, and hero lead: “Streamly — Modern IPTV Web Player for Xtream Codes.”
+
+---
+
 ## [0.13.11] — 2026-08-10
 
 VOD fallback when the browser can't decode AC-3/DTS audio.

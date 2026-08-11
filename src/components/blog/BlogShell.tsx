@@ -57,11 +57,18 @@ export function BlogShell({
   );
 }
 
-export function BlogProTip({ children }: { children: ReactNode }) {
+export function BlogProTip({
+  children,
+  label = "Pro tip",
+}: {
+  children: ReactNode;
+  /** Localized label (e.g. "Dica" for pt-BR posts). */
+  label?: string;
+}) {
   return (
     <aside className="my-8 rounded-xl border border-(--brand)/35 bg-(--brand)/10 px-5 py-4 text-sm leading-relaxed text-(--text-dim)">
       <p className="text-[11px] font-semibold uppercase tracking-widest text-(--brand-2) mb-2">
-        Pro tip
+        {label}
       </p>
       {children}
     </aside>
