@@ -23,6 +23,15 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.13.13] — 2026-08-14
+
+Stop live TV skip/stall from Chromecast pre-warm hammering `/api/cast/resolve`.
+
+### Fixed
+- **Live Cast pre-warm** — no longer rebuilds on every `timeupdate` or retries resolve in a loop on 422; live background prep only runs when Cast UI is open or already casting, with a failure cooldown so parallel `cast=1` fetches stop fighting provider connection limits.
+
+---
+
 ## [0.13.12] — 2026-08-10
 
 Brazil-friendly Portuguese defaults, stronger IPTV Web Player SEO, and new guides.

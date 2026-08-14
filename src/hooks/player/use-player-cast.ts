@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { CastMediaDescriptor } from "@/lib/cast-media-url";
 import {
   isCastPreparedMediaFresh,
+  isCastPrepFailCoolingDown,
   prepareCastPlayUrl,
   resolveLiveCastUrlViaServer,
   type CastPreparedMedia,
@@ -136,6 +137,8 @@ export function usePlayerCast({
   const castSdkReadyRef = useRef(false);
   const preparedRef = useRef<CastPreparedMedia | null>(null);
   const prepAbortRef = useRef<AbortController | null>(null);
+  /** After a failed pre-warm, do not hammer /api/cast/resolve on the same URL. */
+  const prepFailCooldownRef = useRef<{ url: string; at: number } | null>(null);
   const loadInFlightRef = useRef(false);
   const lastAutoLoadedSourceRef = useRef<string | null>(null);
   const stallTimerRef = useRef<number | null>(null);
@@ -143,6 +146,10 @@ export function usePlayerCast({
   const castMediaRef = useRef(castMedia);
   const currentRef = useRef(current);
   const onCastStartedRef = useRef(onCastStarted);
+
+  const castMediaUrl = castMedia?.url ?? null;
+  const castBlockedReason = castMedia?.blockedReason;
+  const castIsLive = castMedia?.streamType === "live";
 
   useEffect(() => {
     castMediaRef.current = castMedia;
@@ -167,6 +174,7 @@ export function usePlayerCast({
         setCastSessionConnected(false);
       });
       preparedRef.current = null;
+      prepFailCooldownRef.current = null;
       lastAutoLoadedSourceRef.current = null;
       prepAbortRef.current?.abort();
       prepAbortRef.current = null;
@@ -378,19 +386,31 @@ export function usePlayerCast({
     };
   }, [open, shouldInitCastSdk, clearCastWatchdogs]);
 
-  /** Background pre-warm while the user watches in-browser. */
+  /**
+   * Background pre-warm while watching. Live IPTV: only when Cast UI is open or
+   * already casting — parallel cast=1 / resolve fetches fight provider connection
+   * limits and used to storm when castMedia identity churned on timeupdate.
+   */
   useEffect(() => {
-    if (!open || !castMedia) {
+    if (!open || !castMediaUrl) {
       preparedRef.current = null;
       prepAbortRef.current?.abort();
       prepAbortRef.current = null;
       return;
     }
-    if (castMedia.blockedReason) {
+    const media = castMediaRef.current;
+    if (!media) return;
+    if (castBlockedReason) {
       preparedRef.current = null;
       return;
     }
-    if (isCastPreparedMediaFresh(preparedRef.current, castMedia.url)) {
+    if (castIsLive && !showShare && !castSessionConnected) {
+      return;
+    }
+    if (isCastPreparedMediaFresh(preparedRef.current, castMediaUrl)) {
+      return;
+    }
+    if (isCastPrepFailCoolingDown(prepFailCooldownRef.current, castMediaUrl)) {
       return;
     }
 
@@ -398,13 +418,14 @@ export function usePlayerCast({
     const ac = new AbortController();
     prepAbortRef.current = ac;
     preparedRef.current = null;
+    const mediaSnapshot = media;
 
     const timer = window.setTimeout(() => {
       castBreadcrumb("cast_prep_start", {
         kind: currentRef.current?.kind ?? null,
         channelId: currentRef.current?.id ?? null,
       });
-      void prepareCastPlayUrl(castMedia, {
+      void prepareCastPlayUrl(mediaSnapshot, {
         origin: window.location.origin,
         signal: ac.signal,
         resolveLiveViaServer: (manifestUrl) =>
@@ -418,6 +439,7 @@ export function usePlayerCast({
           if (ac.signal.aborted) return;
           if (castMediaRef.current?.url !== prepared.sourceUrl) return;
           preparedRef.current = prepared;
+          prepFailCooldownRef.current = null;
           castBreadcrumb("cast_prep_ok", {
             kind: currentRef.current?.kind ?? null,
             channelId: currentRef.current?.id ?? null,
@@ -426,6 +448,10 @@ export function usePlayerCast({
         })
         .catch((err) => {
           if (ac.signal.aborted) return;
+          prepFailCooldownRef.current = {
+            url: mediaSnapshot.url,
+            at: Date.now(),
+          };
           castBreadcrumb("cast_prep_fail", {
             kind: currentRef.current?.kind ?? null,
             channelId: currentRef.current?.id ?? null,
@@ -439,7 +465,14 @@ export function usePlayerCast({
       window.clearTimeout(timer);
       ac.abort();
     };
-  }, [open, castMedia]);
+  }, [
+    open,
+    castMediaUrl,
+    castBlockedReason,
+    castIsLive,
+    showShare,
+    castSessionConnected,
+  ]);
 
   const loadPreparedOntoSession = useCallback(
     async (opts?: { requestSessionIfNeeded?: boolean; quiet?: boolean }) => {
@@ -513,6 +546,7 @@ export function usePlayerCast({
             timeoutMs: 45_000,
           });
           preparedRef.current = prepared;
+          prepFailCooldownRef.current = null;
           castBreadcrumb("cast_prep_ok", {
             kind: src?.kind ?? null,
             channelId: src?.id ?? null,
@@ -523,6 +557,10 @@ export function usePlayerCast({
             prepErr instanceof Error && prepErr.message
               ? prepErr.message
               : "Could not prepare stream for your TV.";
+          prepFailCooldownRef.current = {
+            url: media.url,
+            at: Date.now(),
+          };
           castBreadcrumb("cast_prep_fail", {
             kind: src?.kind ?? null,
             channelId: src?.id ?? null,

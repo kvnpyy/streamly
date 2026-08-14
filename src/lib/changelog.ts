@@ -11,6 +11,17 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.13.13",
+    date: "2026-08-14",
+    summary:
+      "Stop live TV skip/stall from Chromecast pre-warm hammering /api/cast/resolve.",
+    highlights: [
+      "Live: castMedia no longer rebuilds on every timeupdate (was retriggering cast prep).",
+      "Live: background Cast pre-warm only when Cast UI is open or already casting.",
+      "Cast: 120s cooldown after prep failure so /api/cast/resolve cannot storm on 422.",
+    ],
+  },
+  {
     version: "0.13.12",
     date: "2026-08-10",
     summary:

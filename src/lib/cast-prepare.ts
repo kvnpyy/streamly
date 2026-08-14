@@ -18,6 +18,8 @@ export type CastPreparedMedia = {
 };
 
 export const CAST_PREP_FRESH_MS = 90_000;
+/** After a failed background prep, wait before retrying the same URL. */
+export const CAST_PREP_FAIL_COOLDOWN_MS = 120_000;
 
 export function isCastPreparedMediaFresh(
   prepared: CastPreparedMedia | null | undefined,
@@ -27,6 +29,17 @@ export function isCastPreparedMediaFresh(
   if (!prepared) return false;
   if (prepared.sourceUrl !== sourceUrl) return false;
   return now - prepared.preparedAt < CAST_PREP_FRESH_MS;
+}
+
+/** True when a prior prep failure should block another background attempt. */
+export function isCastPrepFailCoolingDown(
+  fail: { url: string; at: number } | null | undefined,
+  sourceUrl: string,
+  now = Date.now(),
+  cooldownMs = CAST_PREP_FAIL_COOLDOWN_MS
+): boolean {
+  if (!fail || fail.url !== sourceUrl) return false;
+  return now - fail.at < cooldownMs;
 }
 
 /**

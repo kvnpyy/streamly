@@ -509,23 +509,36 @@ export function PlayerOverlay() {
     return `${base}/${current.kind}/${creds.username}/${creds.password}/${streamId}.${ext}`;
   }, [current, creds]);
 
+  /**
+   * Cast seek for VOD transcode only. Bucket to 60s so `timeupdate` does not
+   * rebuild `castMedia` every tick (that used to retrigger cast pre-warm →
+   * /api/cast/resolve storms and parallel provider connections on live TV).
+   */
+  const castSeekSec = useMemo(() => {
+    if (isLive || !current) return undefined;
+    const proxyUrl = vodPlaybackUrl ?? current.url;
+    if (
+      !(
+        playbackUrlUsesVodTranscode(proxyUrl) ||
+        vodNeedsServerTranscodePrep(current.containerExt, current.url)
+      )
+    ) {
+      return undefined;
+    }
+    return Math.max(0, Math.floor(time / 60) * 60);
+  }, [isLive, current, vodPlaybackUrl, time]);
+
   const castMedia = useMemo(() => {
     if (!current || typeof window === "undefined") return null;
     const proxyUrl = vodPlaybackUrl ?? current.url;
-    const seekSec =
-      !isLive &&
-      (playbackUrlUsesVodTranscode(proxyUrl) ||
-        vodNeedsServerTranscodePrep(current.containerExt, current.url))
-        ? Math.max(0, Math.floor(time))
-        : undefined;
     return buildCastMediaDescriptor({
       origin: window.location.origin,
       current,
       isLive,
       proxyPlaybackUrl: proxyUrl,
-      seekSec,
+      seekSec: castSeekSec,
     });
-  }, [current, isLive, vodPlaybackUrl, time]);
+  }, [current, isLive, vodPlaybackUrl, castSeekSec]);
 
   /** Same-origin poster via /api/img — avoids CORS when panel logos are raw http(s) URLs. */
   const posterSrc = useMemo(
