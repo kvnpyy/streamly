@@ -33,7 +33,7 @@ describe("planBackgroundRecovery", () => {
     ).toEqual({ action: "none" });
   });
 
-  it("uses gentle hls for short chromium live background", () => {
+  it("resumes live with play only — no media-recover or live-edge snap", () => {
     expect(
       planBackgroundRecovery({
         hiddenMs: 12_000,
@@ -41,10 +41,7 @@ describe("planBackgroundRecovery", () => {
         hasHls: true,
         contentKind: "live",
       })
-    ).toEqual({ action: "gentle-hls" });
-  });
-
-  it("uses soft hls for long chromium live background", () => {
+    ).toEqual({ action: "play" });
     expect(
       planBackgroundRecovery({
         hiddenMs: PLAYER_LONG_BACKGROUND_MS,
@@ -52,7 +49,7 @@ describe("planBackgroundRecovery", () => {
         hasHls: true,
         contentKind: "live",
       })
-    ).toEqual({ action: "soft-hls" });
+    ).toEqual({ action: "play" });
   });
 
   it("full reinit for chromium live when hls instance is gone", () => {

@@ -58,7 +58,12 @@ export function planBackgroundRecovery(opts: {
 
   if (isLive) {
     if (!hasHls) return { action: "full-reinit" };
-    return { action: longHidden ? "soft-hls" : "gentle-hls" };
+    /**
+     * Live: never recoverMediaError / startLoad(-1) on wake. Those snap the
+     * sliding window and look like the stream is repeating on Tizen/webOS.
+     * startLoad() + play (resumeAfterSuspend) is enough after a real suspend.
+     */
+    return { action: "play" };
   }
 
   if (longHidden) return { action: "full-reinit" };

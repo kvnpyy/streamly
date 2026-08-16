@@ -23,6 +23,16 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.13.16] — 2026-08-16
+
+Stop live TV from repeating on Samsung and other smart TVs.
+
+### Fixed
+- **TV live repeat** — removed the auto freeze watchdog. `recoverMediaError` and `startLoad` were replaying the sliding window.
+- **TV live wake** — after standby, only resume loading at the current position. No `startLoad(-1)` or media-recover.
+
+---
+
 ## [0.13.15] — 2026-08-15
 
 Stop Samsung / TV live from repeating and jumping after the freeze-recovery change.

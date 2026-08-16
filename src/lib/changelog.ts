@@ -11,6 +11,16 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.13.16",
+    date: "2026-08-16",
+    summary:
+      "Stop live TV from repeating on Samsung and other smart TVs.",
+    highlights: [
+      "TV live: remove the auto freeze watchdog (recoverMediaError / startLoad replayed the sliding window).",
+      "TV live: wake and stuck-playhead paths only call play() — no media-recover or live-edge restart.",
+    ],
+  },
+  {
     version: "0.13.15",
     date: "2026-08-15",
     summary:

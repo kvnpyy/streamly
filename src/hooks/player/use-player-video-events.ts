@@ -3,6 +3,7 @@
 import { useEffect, type Dispatch, type RefObject, type SetStateAction } from "react";
 import type Hls from "hls.js";
 import { isAppleMobileWebKitDevice } from "@/lib/browser";
+import { isAmazonSilkUserAgent, isTvClassUserAgent } from "@/lib/tv-user-agent";
 import {
   applyGentleLiveHlsRecovery,
   applySoftLiveHlsRecovery,
@@ -191,6 +192,14 @@ export function usePlayerVideoEvents(p: UsePlayerVideoEventsParams) {
     const recoverLiveNoPicture = () => {
       const vv = videoRef.current;
       if (!vv || vv.paused || current?.kind !== "live") return;
+      const tvLiveClient =
+        typeof navigator !== "undefined" &&
+        (isTvClassUserAgent(navigator.userAgent || "") ||
+          isAmazonSilkUserAgent(navigator.userAgent || ""));
+      if (tvLiveClient) {
+        voidSafeVideoPlay(vv);
+        return;
+      }
       const hls = hlsRef.current;
       if (hls) {
         try {
@@ -469,9 +478,12 @@ export function usePlayerVideoEvents(p: UsePlayerVideoEventsParams) {
       const usingHlsJs = hlsRef.current != null;
       /**
        * hls.js desktop: 32s is conservative so we do not fight live sync.
-       * Tizen/webOS/Silk live freezes stop `timeupdate` entirely — recovery
-       * lives in `usePlayerTvLiveWatchdog` (interval poll + escalation).
+       * TV: do not auto recoverMediaError — it replays the sliding window.
        */
+      const tvLiveClient =
+        typeof navigator !== "undefined" &&
+        (isTvClassUserAgent(navigator.userAgent || "") ||
+          isAmazonSilkUserAgent(navigator.userAgent || ""));
       const stuckThresholdMs = usingHlsJs
         ? 32_000
         : isAppleMobileWebKitDevice()
@@ -481,7 +493,9 @@ export function usePlayerVideoEvents(p: UsePlayerVideoEventsParams) {
         liveProgress.stuckSince = now;
         liveProgress.lastCt = ct;
         nativeStallKicks += 1;
-        if (usingHlsJs) {
+        if (tvLiveClient) {
+          voidSafeVideoPlay(v);
+        } else if (usingHlsJs) {
           const hls = hlsRef.current;
           if (hls) {
             try {
