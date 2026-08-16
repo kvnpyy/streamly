@@ -11,6 +11,17 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.13.14",
+    date: "2026-08-15",
+    summary:
+      "Keep live events playing on Samsung and other smart TVs without flipping channels.",
+    highlights: [
+      "TV live: detect frozen playhead even when timeupdate stops (Tizen decoder stall).",
+      "TV live: auto-recover gentle → reload → rebuild, the same path as flipping the channel.",
+      "TV live: stay further behind the event edge and skip small playlist holes so MSE does not wedge.",
+    ],
+  },
+  {
     version: "0.13.13",
     date: "2026-08-14",
     summary:

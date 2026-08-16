@@ -5,7 +5,10 @@ export type PlaybackBreadcrumbEvent =
   | "try_again_soft"
   | "try_again_full"
   | "playback_error"
-  | "manifest_parsed";
+  | "manifest_parsed"
+  | "tv_live_freeze_gentle"
+  | "tv_live_freeze_soft"
+  | "tv_live_freeze_reinit";
 
 /** Lightweight playback trail for Sentry — no credentials or raw upstream URLs. */
 export function playbackBreadcrumb(

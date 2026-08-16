@@ -25,9 +25,9 @@ export function buildIptvHlsJsConfig(opts: {
   } = opts;
   const tightBuffers = mobileLike;
 
-  const timeouts = silkLike ? 42_000 : 25_000;
-  const manifestRetry = silkLike ? 10 : 8;
-  const fragRetry = silkLike ? 20 : 14;
+  const timeouts = silkLike ? 42_000 : livingRoomLike ? 32_000 : 25_000;
+  const manifestRetry = silkLike || livingRoomLike ? 10 : 8;
+  const fragRetry = silkLike || livingRoomLike ? 20 : 14;
 
   const chromiumDesktopLive =
     isLive &&
@@ -59,11 +59,15 @@ export function buildIptvHlsJsConfig(opts: {
     abrUp = 0.12;
     maxHoleLive = 0.55;
   } else if (tvLivingRoomLive) {
-    maxBuf = 40;
-    maxMaxBuf = 120;
-    backBuf = 72;
-    abrUp = 0.14;
-    maxHoleLive = 0.65;
+    /**
+     * Live events on Tizen/webOS: stay off the unstable edge, tolerate playlist
+     * holes, and keep MSE memory modest so the decoder does not wedge.
+     */
+    maxBuf = 48;
+    maxMaxBuf = 90;
+    backBuf = 36;
+    abrUp = 0.12;
+    maxHoleLive = 1.15;
     maxHoleVod = 0.55;
   } else if (lowLatencyDesktopLive) {
     /** Slightly deeper buffer — ultra-tight sync caused visible forward/back jumps on IPTV. */
@@ -74,7 +78,7 @@ export function buildIptvHlsJsConfig(opts: {
     maxHoleLive = 0.5;
   }
 
-  if (livingRoomLike && tightBuffers) {
+  if (livingRoomLike && tightBuffers && !tvLivingRoomLive) {
     maxBuf = 36;
     maxMaxBuf = 160;
     backBuf = 72;
@@ -83,7 +87,7 @@ export function buildIptvHlsJsConfig(opts: {
     maxHoleVod = 0.52;
   }
 
-  if (silkLike && tightBuffers) {
+  if (silkLike && tightBuffers && !tvLivingRoomLive) {
     maxBuf = Math.min(maxBuf, 28);
     maxMaxBuf = Math.min(maxMaxBuf, 110);
     backBuf = Math.min(backBuf, 52);
@@ -94,7 +98,7 @@ export function buildIptvHlsJsConfig(opts: {
 
   let liveSyncCount = isLive
     ? tvLivingRoomLive
-      ? 7
+      ? 8
       : livingRoomLike
         ? 6
         : chromiumDesktopLive
@@ -109,7 +113,7 @@ export function buildIptvHlsJsConfig(opts: {
 
   const liveMaxLatencyCount = isLive
     ? tvLivingRoomLive
-      ? 14
+      ? 16
       : chromiumDesktopLive
         ? 12
         : lowLatencyDesktopLive
@@ -135,15 +139,21 @@ export function buildIptvHlsJsConfig(opts: {
     maxBufferLength: maxBuf,
     maxMaxBufferLength: maxMaxBuf,
     maxBufferHole: isLive ? maxHoleLive : maxHoleVod,
-    nudgeMaxRetry: silkLike ? 18 : 14,
-    nudgeOffset: silkLike ? 0.14 : 0.12,
-    highBufferWatchdogPeriod: silkLike ? 4.5 : 3,
+    nudgeMaxRetry: tvLivingRoomLive ? 24 : silkLike ? 18 : 14,
+    nudgeOffset: tvLivingRoomLive ? 0.18 : silkLike ? 0.14 : 0.12,
+    highBufferWatchdogPeriod: tvLivingRoomLive ? 2.5 : silkLike ? 4.5 : 3,
     manifestLoadingMaxRetry: manifestRetry,
     levelLoadingMaxRetry: manifestRetry,
     fragLoadingMaxRetry: fragRetry,
     startFragPrefetch: !silkLike && !tvLivingRoomLive,
     liveSyncDurationCount: liveSyncCount,
     ...(silkLike ? { maxFragLookUpTolerance: 0.48 } : {}),
+    ...(tvLivingRoomLive
+      ? {
+          liveSyncMode: "buffered" as const,
+          maxFragLookUpTolerance: 0.5,
+        }
+      : {}),
     ...(isLive
       ? {
           liveDurationInfinity: true,

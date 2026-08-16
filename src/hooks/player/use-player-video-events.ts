@@ -467,6 +467,11 @@ export function usePlayerVideoEvents(p: UsePlayerVideoEventsParams) {
         return;
       }
       const usingHlsJs = hlsRef.current != null;
+      /**
+       * hls.js desktop: 32s is conservative so we do not fight live sync.
+       * Tizen/webOS/Silk live freezes stop `timeupdate` entirely — recovery
+       * lives in `usePlayerTvLiveWatchdog` (interval poll + escalation).
+       */
       const stuckThresholdMs = usingHlsJs
         ? 32_000
         : isAppleMobileWebKitDevice()

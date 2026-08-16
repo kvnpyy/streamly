@@ -57,6 +57,7 @@ import { usePlayerLiveSupplements } from "@/hooks/player/use-player-live-supplem
 import { usePlayerPageLifecycle } from "@/hooks/player/use-player-page-lifecycle";
 import { usePlayerPlaybackPipeline } from "@/hooks/player/use-player-playback-pipeline";
 import { usePlayerStallEscalation } from "@/hooks/player/use-player-stall-escalation";
+import { usePlayerTvLiveWatchdog } from "@/hooks/player/use-player-tv-live-watchdog";
 import { usePlayerVideoEvents } from "@/hooks/player/use-player-video-events";
 import { usePlayerVodResume } from "@/hooks/player/use-player-vod-resume";
 import { usePlayerAutoplayNext } from "@/hooks/player/use-player-autoplay-next";
@@ -1155,6 +1156,16 @@ export function PlayerOverlay() {
     hlsRef,
     hlsLiveEdgeRestartGateRef,
     onWakeFullReinit: wakeReinitPlayback,
+  });
+
+  usePlayerTvLiveWatchdog({
+    open,
+    current,
+    playbackRetryKey,
+    videoRef,
+    hlsRef,
+    hlsLiveEdgeRestartGateRef,
+    onFullReinit: wakeReinitPlayback,
   });
 
   usePlayerVideoEvents({

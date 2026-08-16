@@ -23,6 +23,16 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.13.14] — 2026-08-15
+
+Keep live events playing on Samsung and other smart TVs without flipping channels.
+
+### Fixed
+- **TV live freeze** — Tizen/webOS/Silk decoder stalls stop `timeupdate`, so the old 32s stuck check never ran. A 1s poll now recovers automatically: gentle media recover, then live reload, then a full rebuild (same as flipping the channel).
+- **TV live events** — stay further behind the unstable edge, tolerate playlist holes, and keep MSE memory modest so the picture is less likely to freeze mid-event.
+
+---
+
 ## [0.13.13] — 2026-08-14
 
 Stop live TV skip/stall from Chromecast pre-warm hammering `/api/cast/resolve`.
