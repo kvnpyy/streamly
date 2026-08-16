@@ -55,6 +55,15 @@ export function isTvClassUserAgent(ua: string): boolean {
   return false;
 }
 
+/** Tizen / webOS / Fire TV Silk — living-room MSE clients. */
+export function isTvOrSilkUserAgent(ua?: string): boolean {
+  const u =
+    ua ??
+    (typeof navigator !== "undefined" ? navigator.userAgent || "" : "");
+  if (!u) return false;
+  return isTvClassUserAgent(u) || isAmazonSilkUserAgent(u);
+}
+
 /** Samsung Smart TV (Tizen) — browser zoom is typically 125%. */
 export function isSamsungTvUserAgent(ua: string): boolean {
   if (!ua) return false;

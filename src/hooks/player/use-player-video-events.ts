@@ -3,7 +3,7 @@
 import { useEffect, type Dispatch, type RefObject, type SetStateAction } from "react";
 import type Hls from "hls.js";
 import { isAppleMobileWebKitDevice } from "@/lib/browser";
-import { isAmazonSilkUserAgent, isTvClassUserAgent } from "@/lib/tv-user-agent";
+import { isTvOrSilkUserAgent } from "@/lib/tv-user-agent";
 import {
   applyGentleLiveHlsRecovery,
   applySoftLiveHlsRecovery,
@@ -192,11 +192,7 @@ export function usePlayerVideoEvents(p: UsePlayerVideoEventsParams) {
     const recoverLiveNoPicture = () => {
       const vv = videoRef.current;
       if (!vv || vv.paused || current?.kind !== "live") return;
-      const tvLiveClient =
-        typeof navigator !== "undefined" &&
-        (isTvClassUserAgent(navigator.userAgent || "") ||
-          isAmazonSilkUserAgent(navigator.userAgent || ""));
-      if (tvLiveClient) {
+      if (isTvOrSilkUserAgent()) {
         voidSafeVideoPlay(vv);
         return;
       }
@@ -480,10 +476,7 @@ export function usePlayerVideoEvents(p: UsePlayerVideoEventsParams) {
        * hls.js desktop: 32s is conservative so we do not fight live sync.
        * TV: do not auto recoverMediaError — it replays the sliding window.
        */
-      const tvLiveClient =
-        typeof navigator !== "undefined" &&
-        (isTvClassUserAgent(navigator.userAgent || "") ||
-          isAmazonSilkUserAgent(navigator.userAgent || ""));
+      const tvLiveClient = isTvOrSilkUserAgent();
       const stuckThresholdMs = usingHlsJs
         ? 32_000
         : isAppleMobileWebKitDevice()
@@ -598,7 +591,11 @@ export function usePlayerVideoEvents(p: UsePlayerVideoEventsParams) {
           if (!vv || !hls) return;
           recoveryPasses += 1;
           try {
-            applyGentleLiveHlsRecovery(hls, vv);
+            if (isTvOrSilkUserAgent()) {
+              voidSafeVideoPlay(vv);
+            } else {
+              applyGentleLiveHlsRecovery(hls, vv);
+            }
           } catch {
             voidSafeVideoPlay(vv);
           }

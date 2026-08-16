@@ -90,7 +90,7 @@ import { playbackBreadcrumb } from "@/lib/playback-telemetry";
 import { withLiveHlsCompatMse } from "@/lib/stream-url";
 import { detachVideoElement, resetVideoElement, safeVideoPlay, voidSafeVideoPlay } from "@/lib/video-play";
 import { pauseVideoElement } from "@/lib/player-teardown";
-import { isAmazonSilkUserAgent } from "@/lib/tv-user-agent";
+import { isAmazonSilkUserAgent, isTvOrSilkUserAgent } from "@/lib/tv-user-agent";
 import {
   isPlayPauseShortcutKey,
   isPlayerControlKeyboardTarget,
@@ -2414,7 +2414,7 @@ export function PlayerOverlay() {
     livePlaybackErrorSuppressUntilRef.current = performance.now() + 8_000;
     setStalled(false);
     const hls = hlsRef.current;
-    if (hls) {
+    if (hls && !isTvOrSilkUserAgent()) {
       try {
         applyGentleLiveHlsRecovery(hls, el);
       } catch {

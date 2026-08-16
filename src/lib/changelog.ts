@@ -11,6 +11,17 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.13.17",
+    date: "2026-08-16",
+    summary:
+      "Stop Samsung / TV live from skipping: no live-edge catch-up seeks or hole nudges.",
+    highlights: [
+      "TV live HLS: never seek to catch the live edge (max latency Infinity) and never nudge over playlist holes.",
+      "TV live: no recoverMediaError / startLoad(-1) on stalls, wake, or video errors — play() only.",
+      "Live network retries use startLoad() at the current position, not the playlist edge.",
+    ],
+  },
+  {
     version: "0.13.16",
     date: "2026-08-16",
     summary:

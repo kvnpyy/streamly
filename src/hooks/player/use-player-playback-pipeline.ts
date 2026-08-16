@@ -33,14 +33,14 @@ import {
   readPreferredPlayerVolume,
 } from "@/lib/player-volume-pref";
 import { withLiveHlsCompatMse } from "@/lib/stream-url";
-import { isAmazonSilkUserAgent, isTvClassUserAgent } from "@/lib/tv-user-agent";
+import { isAmazonSilkUserAgent, isTvClassUserAgent, isTvOrSilkUserAgent } from "@/lib/tv-user-agent";
 import { humanizePlaybackErrorResponse } from "@/lib/playback-error-message";
 import {
   destroyHlsInstance,
   pauseVideoElement,
   scheduleDeferredPlayerTeardown,
 } from "@/lib/player-teardown";
-import { detachVideoElement, safeVideoPlay } from "@/lib/video-play";
+import { detachVideoElement, safeVideoPlay, voidSafeVideoPlay } from "@/lib/video-play";
 import {
   playbackUrlUsesVodTranscode,
   releaseVodTranscodePlayback,
@@ -498,6 +498,12 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
         try {
           livePlaybackErrorSuppressUntilRef.current =
             performance.now() + 10_000;
+          /** TV: recoverMediaError / startLoad(-1) seeks the sliding window (skip/repeat). */
+          if (isTvOrSilkUserAgent()) {
+            hls.startLoad();
+            voidSafeVideoPlay(el);
+            return true;
+          }
           applyGentleLiveHlsRecovery(hls, el);
           return true;
         } catch {
@@ -903,14 +909,16 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
                   }
                 }
               }
-              if (audioAppendRecoveryAttempts >= 2) {
+              if (audioAppendRecoveryAttempts >= 2 && !isTvOrSilkUserAgent()) {
                 tryCapAbrLower(hls);
                 runStabilizeBrowserFriendlyCodecs();
               }
-              try {
-                hls.recoverMediaError();
-              } catch {
-                /* noop */
+              if (!isTvOrSilkUserAgent()) {
+                try {
+                  hls.recoverMediaError();
+                } catch {
+                  /* noop */
+                }
               }
             }
             return;
@@ -1046,11 +1054,17 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
               } else {
                 try {
                   const vv = videoRef.current;
-                  const pos =
-                    vodTranscodeHls && vv && Number.isFinite(vv.currentTime)
-                      ? Math.max(0, vv.currentTime)
-                      : -1;
-                  hls.startLoad(pos);
+                  if (isLive) {
+                    hls.startLoad();
+                  } else if (
+                    vodTranscodeHls &&
+                    vv &&
+                    Number.isFinite(vv.currentTime)
+                  ) {
+                    hls.startLoad(Math.max(0, vv.currentTime));
+                  } else {
+                    hls.startLoad(-1);
+                  }
                 } catch {
                   hls.startLoad();
                 }
@@ -1197,7 +1211,7 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
           return;
         }
         const hls = hlsRef.current;
-        if (!liveStallRecoveryTried && hls) {
+        if (!liveStallRecoveryTried && hls && !isTvOrSilkUserAgent()) {
           liveStallRecoveryTried = true;
           try {
             applyGentleLiveHlsRecovery(hls, v);

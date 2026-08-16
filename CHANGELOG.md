@@ -23,6 +23,17 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.13.17] — 2026-08-16
+
+Stop Samsung / TV live from skipping: no live-edge catch-up seeks or hole nudges.
+
+### Fixed
+- **TV live skip** — hls.js was seeking forward when the TV fell behind (`liveMaxLatencyDurationCount: 14`) and nudging `currentTime` over playlist holes. TV live now never catch-up seeks and never hole-nudges.
+- **TV live recovery** — stalls, video errors, and audio-append hiccups no longer call `recoverMediaError` / `startLoad(-1)`.
+- **Live network retry** — `startLoad()` at the current position instead of the playlist edge.
+
+---
+
 ## [0.13.16] — 2026-08-16
 
 Stop live TV from repeating on Samsung and other smart TVs.
