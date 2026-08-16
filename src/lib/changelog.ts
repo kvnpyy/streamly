@@ -11,6 +11,17 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.13.15",
+    date: "2026-08-15",
+    summary:
+      "Stop Samsung / TV live from repeating and jumping after the freeze-recovery change.",
+    highlights: [
+      "TV live: no automatic live-edge restart or player rebuild (those snapped playback backward).",
+      "TV live: only nudge a true freeze; ignore normal rebuffers that still have buffer elsewhere.",
+      "TV live: restore the pre-0.13.14 HLS sync settings that did not skip or bounce.",
+    ],
+  },
+  {
     version: "0.13.14",
     date: "2026-08-15",
     summary:

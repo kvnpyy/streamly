@@ -1,21 +1,22 @@
 /**
  * Samsung Tizen / webOS / Silk live freezes often look like a wedged MSE decoder:
- * currentTime stops, `timeupdate` stops firing, and hls.js `waiting` is ignored.
- * Channel-flip works because it tears down the pipeline. This policy auto-escalates
- * that same recovery without the user leaving the event.
+ * currentTime stops and `timeupdate` stops firing.
+ *
+ * Auto `startLoad(-1)` / pipeline rebuild snaps the live edge (repeat + jump).
+ * This policy only nudges playback, and only after a long true freeze — not a
+ * normal IPTV rebuffer.
  */
 
-export const TV_LIVE_FREEZE_STUCK_MS = 7_000;
-export const TV_LIVE_DECODER_STALL_MS = 4_000;
-export const TV_LIVE_RECOVERY_COOLDOWN_MS = 8_000;
-export const TV_LIVE_MIN_PLAYHEAD_SEC = 2;
-export const TV_LIVE_MAX_AUTO_REINITS = 3;
-export const TV_LIVE_BUFFER_AHEAD_MIN_SEC = 0.75;
-export const TV_LIVE_PLAYHEAD_EPS_SEC = 0.2;
+export const TV_LIVE_FREEZE_STUCK_MS = 16_000;
+export const TV_LIVE_DECODER_STALL_MS = 10_000;
+export const TV_LIVE_RECOVERY_COOLDOWN_MS = 20_000;
+export const TV_LIVE_MIN_PLAYHEAD_SEC = 3;
+export const TV_LIVE_BUFFER_AHEAD_MIN_SEC = 1.5;
+export const TV_LIVE_PLAYHEAD_EPS_SEC = 0.25;
 
-export type TvLiveFreezeAction = "none" | "gentle" | "soft" | "reinit";
+export type TvLiveFreezeAction = "none" | "play" | "media" | "reload";
 
-/** 0 = next is gentle, 1 = next is soft, 2 = next is reinit. */
+/** 0 = next is play(), 1 = recoverMediaError, 2 = startLoad() (not live-edge). */
 export type TvLiveFreezeStep = 0 | 1 | 2;
 
 export type TvLiveFreezeInputs = {
@@ -28,23 +29,30 @@ export type TvLiveFreezeInputs = {
   sawProgress: boolean;
   stuckMs: number;
   waitingMs: number;
+  /** Buffered time immediately after currentTime, not the farthest range. */
   bufferAheadSec: number;
   readyState: number;
   recoveryStep: TvLiveFreezeStep;
   lastRecoveryAtMs: number;
-  reinitCount: number;
 };
 
-export function bufferAheadSec(
-  buffered: { length: number; end: (i: number) => number },
+export function bufferAheadAtPlayhead(
+  buffered: {
+    length: number;
+    start: (i: number) => number;
+    end: (i: number) => number;
+  },
   currentTime: number
 ): number {
   if (!buffered.length) return 0;
-  let end = 0;
   for (let i = 0; i < buffered.length; i++) {
-    end = Math.max(end, buffered.end(i));
+    const start = buffered.start(i);
+    const end = buffered.end(i);
+    if (currentTime >= start - 0.2 && currentTime <= end + 0.05) {
+      return Math.max(0, end - currentTime);
+    }
   }
-  return end - currentTime;
+  return 0;
 }
 
 export function playheadLooksStuck(
@@ -95,16 +103,16 @@ export function nextTvLiveFreezeAction(
   const frozen = decoderStall || input.stuckMs >= TV_LIVE_FREEZE_STUCK_MS;
   if (!frozen) return "none";
 
-  if (input.recoveryStep === 0) return "gentle";
-  if (input.recoveryStep === 1) return "soft";
-  if (input.reinitCount >= TV_LIVE_MAX_AUTO_REINITS) return "none";
-  return "reinit";
+  if (input.recoveryStep === 0) return "play";
+  if (input.recoveryStep === 1) return "media";
+  if (input.recoveryStep === 2) return "reload";
+  return "none";
 }
 
 export function stepAfterTvLiveFreezeAction(
   action: TvLiveFreezeAction
 ): TvLiveFreezeStep {
-  if (action === "gentle") return 1;
-  if (action === "soft") return 2;
-  return 0;
+  if (action === "play") return 1;
+  if (action === "media") return 2;
+  return 2;
 }

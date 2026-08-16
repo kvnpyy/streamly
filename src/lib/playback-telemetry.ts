@@ -8,7 +8,10 @@ export type PlaybackBreadcrumbEvent =
   | "manifest_parsed"
   | "tv_live_freeze_gentle"
   | "tv_live_freeze_soft"
-  | "tv_live_freeze_reinit";
+  | "tv_live_freeze_reinit"
+  | "tv_live_freeze_play"
+  | "tv_live_freeze_media"
+  | "tv_live_freeze_reload";
 
 /** Lightweight playback trail for Sentry — no credentials or raw upstream URLs. */
 export function playbackBreadcrumb(

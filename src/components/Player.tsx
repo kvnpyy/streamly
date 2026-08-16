@@ -1164,8 +1164,6 @@ export function PlayerOverlay() {
     playbackRetryKey,
     videoRef,
     hlsRef,
-    hlsLiveEdgeRestartGateRef,
-    onFullReinit: wakeReinitPlayback,
   });
 
   usePlayerVideoEvents({

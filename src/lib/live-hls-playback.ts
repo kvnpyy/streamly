@@ -45,6 +45,19 @@ export function tryHlsLiveEdgeRestart(
   }
 }
 
+/** Unstick a wedged TV decoder without stripping rungs or jumping to the live edge. */
+export function recoverTvLiveMedia(
+  hls: Hls,
+  video: HTMLVideoElement
+): void {
+  try {
+    hls.recoverMediaError();
+  } catch {
+    /* noop */
+  }
+  voidSafeVideoPlay(video);
+}
+
 /**
  * Codec/ABR tune + media recover without `stopLoad` / live-edge `startLoad(-1)`.
  * Use for automatic recovery while the user is watching — avoids snap-back loops.

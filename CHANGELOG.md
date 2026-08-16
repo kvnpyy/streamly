@@ -23,6 +23,16 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.13.15] — 2026-08-15
+
+Stop Samsung / TV live from repeating and jumping after the freeze-recovery change.
+
+### Fixed
+- **TV live jump/repeat** — automatic `startLoad(-1)` and pipeline rebuilds were snapping the live edge. Recovery now only `play()` / media-recover / `startLoad()` after a long true freeze.
+- **TV live HLS** — restored the calmer pre-0.13.14 sync (no buffered-edge mode, no 1s+ hole skips).
+
+---
+
 ## [0.13.14] — 2026-08-15
 
 Keep live events playing on Samsung and other smart TVs without flipping channels.

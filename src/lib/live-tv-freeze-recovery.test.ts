@@ -2,10 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   TV_LIVE_DECODER_STALL_MS,
   TV_LIVE_FREEZE_STUCK_MS,
-  TV_LIVE_MAX_AUTO_REINITS,
   TV_LIVE_MIN_PLAYHEAD_SEC,
   TV_LIVE_RECOVERY_COOLDOWN_MS,
-  bufferAheadSec,
+  bufferAheadAtPlayhead,
   nextTvLiveFreezeAction,
   playheadLooksStuck,
   stepAfterTvLiveFreezeAction,
@@ -14,7 +13,7 @@ import {
 
 function base(over: Partial<TvLiveFreezeInputs> = {}): TvLiveFreezeInputs {
   return {
-    nowMs: 20_000,
+    nowMs: 40_000,
     currentTime: 45,
     lastCurrentTime: 45,
     paused: false,
@@ -26,22 +25,25 @@ function base(over: Partial<TvLiveFreezeInputs> = {}): TvLiveFreezeInputs {
     readyState: 3,
     recoveryStep: 0,
     lastRecoveryAtMs: 0,
-    reinitCount: 0,
     ...over,
   };
 }
 
-describe("bufferAheadSec", () => {
-  it("uses the farthest buffered end", () => {
+describe("bufferAheadAtPlayhead", () => {
+  it("only counts the range that contains the playhead", () => {
     const buffered = {
       length: 2,
-      end: (i: number) => (i === 0 ? 10 : 40),
+      start: (i: number) => (i === 0 ? 0 : 80),
+      end: (i: number) => (i === 0 ? 12 : 120),
     };
-    expect(bufferAheadSec(buffered, 38)).toBeCloseTo(2);
+    expect(bufferAheadAtPlayhead(buffered, 10)).toBeCloseTo(2);
+    expect(bufferAheadAtPlayhead(buffered, 40)).toBe(0);
   });
 
   it("is zero with an empty buffer", () => {
-    expect(bufferAheadSec({ length: 0, end: () => 0 }, 12)).toBe(0);
+    expect(
+      bufferAheadAtPlayhead({ length: 0, start: () => 0, end: () => 0 }, 12)
+    ).toBe(0);
   });
 });
 
@@ -50,7 +52,7 @@ describe("playheadLooksStuck", () => {
     expect(playheadLooksStuck(12, -1)).toBe(false);
   });
 
-  it("treats sub-0.2s motion as stuck", () => {
+  it("treats sub-0.25s motion as stuck", () => {
     expect(playheadLooksStuck(12.05, 12)).toBe(true);
     expect(playheadLooksStuck(12.4, 12)).toBe(false);
   });
@@ -81,20 +83,33 @@ describe("nextTvLiveFreezeAction", () => {
     expect(
       nextTvLiveFreezeAction(
         base({
-          nowMs: 12_000,
-          lastRecoveryAtMs: 12_000 - (TV_LIVE_RECOVERY_COOLDOWN_MS - 200),
+          nowMs: 30_000,
+          lastRecoveryAtMs: 30_000 - (TV_LIVE_RECOVERY_COOLDOWN_MS - 200),
         })
       )
     ).toBe("none");
   });
 
-  it("escalates gentle → soft → reinit on a frozen playhead", () => {
-    expect(nextTvLiveFreezeAction(base({ recoveryStep: 0 }))).toBe("gentle");
-    expect(nextTvLiveFreezeAction(base({ recoveryStep: 1 }))).toBe("soft");
-    expect(nextTvLiveFreezeAction(base({ recoveryStep: 2 }))).toBe("reinit");
+  it("escalates play → media → reload, never a live-edge snap", () => {
+    expect(nextTvLiveFreezeAction(base({ recoveryStep: 0 }))).toBe("play");
+    expect(nextTvLiveFreezeAction(base({ recoveryStep: 1 }))).toBe("media");
+    expect(nextTvLiveFreezeAction(base({ recoveryStep: 2 }))).toBe("reload");
   });
 
-  it("treats a waiting decoder with buffer ahead as a faster stall", () => {
+  it("does not treat a short wait with distant buffer as a decoder stall", () => {
+    expect(
+      nextTvLiveFreezeAction(
+        base({
+          stuckMs: 1_000,
+          waitingMs: 4_000,
+          bufferAheadSec: 40,
+          readyState: 3,
+        })
+      )
+    ).toBe("none");
+  });
+
+  it("treats a long wait with data at the playhead as a decoder stall", () => {
     expect(
       nextTvLiveFreezeAction(
         base({
@@ -104,7 +119,7 @@ describe("nextTvLiveFreezeAction", () => {
           readyState: 3,
         })
       )
-    ).toBe("gentle");
+    ).toBe("play");
   });
 
   it("does not treat empty-buffer waiting as a decoder stall", () => {
@@ -120,21 +135,10 @@ describe("nextTvLiveFreezeAction", () => {
     ).toBe("none");
   });
 
-  it("stops auto-reinit after the cap so a dead feed can surface an error", () => {
-    expect(
-      nextTvLiveFreezeAction(
-        base({
-          recoveryStep: 2,
-          reinitCount: TV_LIVE_MAX_AUTO_REINITS,
-        })
-      )
-    ).toBe("none");
-  });
-
-  it("advances the step after each recovery", () => {
-    expect(stepAfterTvLiveFreezeAction("gentle")).toBe(1);
-    expect(stepAfterTvLiveFreezeAction("soft")).toBe(2);
-    expect(stepAfterTvLiveFreezeAction("reinit")).toBe(0);
-    expect(stepAfterTvLiveFreezeAction("none")).toBe(0);
+  it("advances the step without resetting to a snap path", () => {
+    expect(stepAfterTvLiveFreezeAction("play")).toBe(1);
+    expect(stepAfterTvLiveFreezeAction("media")).toBe(2);
+    expect(stepAfterTvLiveFreezeAction("reload")).toBe(2);
+    expect(stepAfterTvLiveFreezeAction("none")).toBe(2);
   });
 });

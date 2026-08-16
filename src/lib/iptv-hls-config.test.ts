@@ -26,16 +26,15 @@ describe("buildIptvHlsJsConfig live IPTV smoothness", () => {
     expect(cfg.liveSyncOnStallIncrease).toBe(0);
   });
 
-  it("TV live stays in the buffered window and tolerates event playlist holes", () => {
+  it("TV live does not skip large holes or chase a buffered live edge", () => {
     const cfg = buildIptvHlsJsConfig({
       isLive: true,
       mobileLike: true,
       livingRoomLike: true,
     });
-    expect(cfg.liveSyncMode).toBe("buffered");
-    expect(cfg.maxBufferHole).toBeGreaterThanOrEqual(1);
-    expect(cfg.liveSyncDurationCount).toBeGreaterThanOrEqual(8);
-    expect(cfg.backBufferLength).toBeLessThanOrEqual(40);
-    expect(cfg.nudgeMaxRetry).toBeGreaterThanOrEqual(20);
+    expect(cfg.liveSyncMode).toBeUndefined();
+    expect(cfg.maxBufferHole).toBeLessThan(1);
+    expect(cfg.maxLiveSyncPlaybackRate).toBe(1);
+    expect(cfg.liveSyncOnStallIncrease).toBe(0);
   });
 });
