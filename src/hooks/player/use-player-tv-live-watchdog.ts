@@ -51,7 +51,10 @@ export function usePlayerTvLiveWatchdog(p: UsePlayerTvLiveWatchdogParams) {
 
   const reinitByUrlRef = useRef({ url: "", n: 0 });
   const onFullReinitRef = useRef(onFullReinit);
-  onFullReinitRef.current = onFullReinit;
+
+  useEffect(() => {
+    onFullReinitRef.current = onFullReinit;
+  }, [onFullReinit]);
 
   useEffect(() => {
     if (!open || current?.kind !== "live") return;
