@@ -1,5 +1,6 @@
 "use client";
 
+import { clientErrorMessage } from "@/lib/client-network-error";
 import { cn } from "@/lib/utils";
 import { SITE_NAME } from "@/lib/site-brand";
 import { signOutFully } from "@/lib/sign-out-client";
@@ -110,6 +111,8 @@ export function StreamIdentityCard() {
         setMode("signin");
         return;
       }
+    } catch (err) {
+      setMsg(clientErrorMessage(err, "Registration failed. Please try again."));
     } finally {
       setBusy(false);
     }
@@ -135,6 +138,8 @@ export function StreamIdentityCard() {
         return;
       }
       setInfo(data.message ?? "If that address has an unverified account, check your inbox.");
+    } catch (err) {
+      setMsg(clientErrorMessage(err, "Could not resend right now."));
     } finally {
       setResendBusy(false);
     }
@@ -161,6 +166,8 @@ export function StreamIdentityCard() {
         return;
       }
       setPassword("");
+    } catch (err) {
+      setMsg(clientErrorMessage(err, "Sign-in failed. Please try again."));
     } finally {
       setBusy(false);
     }
