@@ -2,7 +2,7 @@
 
 import { scheduleWhenIdle } from "@/lib/defer-idle";
 import { isLibraryHomePath } from "@/lib/home-route";
-import { usePrefs } from "@/store/preferences";
+import { prefsHasHydrated, rehydratePrefs } from "@/lib/prefs-persist-api";
 import { usePathname } from "next/navigation";
 import { useEffect, type ReactNode } from "react";
 
@@ -15,14 +15,14 @@ export function PrefsRehydrateBootstrap({ children }: { children: ReactNode }) {
   const onLibraryHome = isLibraryHomePath(pathname);
 
   useEffect(() => {
-    if (usePrefs.persist.hasHydrated()) return;
+    if (prefsHasHydrated()) return;
     const idleMs = onLibraryHome ? 2_400 : 280;
     const cancel = scheduleWhenIdle(() => {
-      void usePrefs.persist.rehydrate();
+      rehydratePrefs();
     }, idleMs);
     const force = window.setTimeout(() => {
-      if (!usePrefs.persist.hasHydrated()) {
-        void usePrefs.persist.rehydrate();
+      if (!prefsHasHydrated()) {
+        rehydratePrefs();
       }
     }, onLibraryHome ? 8_000 : 4_000);
     return () => {

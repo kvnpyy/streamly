@@ -23,6 +23,20 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.13.18] — 2026-08-22
+
+Stop Live TV from hanging in a React update loop, and stop /api/stream from crashing on HTTP 304.
+
+### Fixed
+- **Live TV render loop** — idle programme-search used a fresh `[]` every render (`Maximum update depth exceeded`).
+- **Stream proxy 304** — `/api/stream` no longer forwards `If-None-Match` / `If-Modified-Since`; 304 cannot be a Fetch Response.
+- **Prefs hydrate** — guard a missing zustand persist API (`hasHydrated`).
+
+### Changed
+- Sentry drops RSC client-manifest mismatches after rolling deploys, browser-extension `removeChild` races, and Safari `Load failed`.
+
+---
+
 ## [0.13.17] — 2026-08-16
 
 Stop Samsung / TV live from skipping: no live-edge catch-up seeks or hole nudges.

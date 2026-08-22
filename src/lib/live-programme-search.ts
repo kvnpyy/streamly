@@ -12,6 +12,9 @@ import type { LiveStream, XtreamCredentials } from "@/lib/xtream-types";
 /** Rows per channel for on-air title lookup during live search. */
 export const LIVE_SEARCH_EPG_LIMIT = 2;
 
+/** Stable empty list for effect deps — `?? []` allocates a new array every render. */
+export const EMPTY_PROGRAMME_SCAN_IDS: number[] = [];
+
 export type LiveSearchScanPlan = {
   candidateIds: number[];
   truncated: boolean;

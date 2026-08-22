@@ -11,6 +11,18 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.13.18",
+    date: "2026-08-22",
+    summary:
+      "Stop Live TV from hanging in a React update loop, and stop /api/stream from crashing on HTTP 304.",
+    highlights: [
+      "Live TV: stable empty scan-id list so idle programme-search cannot infinite-loop setState.",
+      "Stream proxy: do not forward conditional cache headers; coerce 304 instead of throwing.",
+      "Prefs: guard zustand persist.hasHydrated when the persist API is missing.",
+      "Sentry: drop RSC client-manifest deploy races, extension removeChild, and Safari Load failed.",
+    ],
+  },
+  {
     version: "0.13.17",
     date: "2026-08-16",
     summary:

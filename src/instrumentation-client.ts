@@ -20,6 +20,10 @@ Sentry.init({
     /^AbortError:/,
     /requestPictureInPicture.*Metadata for the video element are not loaded yet/i,
     /Failed to execute 'requestPictureInPicture'/i,
+    /Failed to execute 'removeChild' on 'Node'/i,
+    /^Load failed/i,
+    /^Failed to fetch/i,
+    /NetworkError when attempting to fetch resource/i,
   ],
   beforeSend(event) {
     if (shouldDropSentryClientEvent(event)) return null;

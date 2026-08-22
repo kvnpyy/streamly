@@ -37,6 +37,7 @@ import { SHORT_EPG_NOW_PLAYING_LIMIT } from "@/lib/epg-constants";
 import { shortEpgQueryOptions } from "@/lib/epg-query-options";
 import { setCachedEpgTitlesBatch } from "@/lib/epg-local-cache";
 import {
+  EMPTY_PROGRAMME_SCAN_IDS,
   mergeLiveSearchResults,
   planLiveProgrammeSearch,
   seedProgrammeSearchFromCache,
@@ -313,7 +314,7 @@ export function LiveGridPageInner({ shell }: { shell: LivePageShell }) {
     );
   }, [categoryChannelIndex, programmeSearchQLower, liveSearchLimits]);
 
-  const scanCandidateIds = scanPlan?.candidateIds ?? [];
+  const scanCandidateIds = scanPlan?.candidateIds ?? EMPTY_PROGRAMME_SCAN_IDS;
   const programLookupTruncated = scanPlan?.truncated ?? false;
 
   const queryClient = useQueryClient();

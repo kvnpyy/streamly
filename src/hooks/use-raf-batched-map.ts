@@ -1,5 +1,6 @@
 "use client";
 
+import { mapsShallowEqual } from "@/lib/maps-shallow-equal";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 /**
@@ -20,7 +21,7 @@ export function useRafBatchedMap<K, V>(
     const next = pendingRef.current;
     if (!next) return;
     pendingRef.current = null;
-    setState(new Map(next));
+    setState((prev) => (mapsShallowEqual(prev, next) ? prev : new Map(next)));
   }, []);
 
   const setMap = useCallback(

@@ -7,6 +7,7 @@ import {
 describe("http response status helpers", () => {
   it("accepts statuses that can be used to construct a Response", () => {
     expect(isValidHttpResponseStatus(200)).toBe(true);
+    expect(isValidHttpResponseStatus(204)).toBe(true);
     expect(isValidHttpResponseStatus(206)).toBe(true);
     expect(isValidHttpResponseStatus(599)).toBe(true);
   });
@@ -14,6 +15,7 @@ describe("http response status helpers", () => {
   it("rejects statuses outside the Response constructor range", () => {
     expect(isValidHttpResponseStatus(0)).toBe(false);
     expect(isValidHttpResponseStatus(199)).toBe(false);
+    expect(isValidHttpResponseStatus(304)).toBe(false);
     expect(isValidHttpResponseStatus(600)).toBe(false);
     expect(isValidHttpResponseStatus(Number.NaN)).toBe(false);
     expect(isValidHttpResponseStatus(Number.POSITIVE_INFINITY)).toBe(false);
@@ -22,6 +24,7 @@ describe("http response status helpers", () => {
 
   it("coerces invalid statuses to a valid fallback", () => {
     expect(coerceHttpResponseStatus(0)).toBe(502);
+    expect(coerceHttpResponseStatus(304)).toBe(502);
     expect(coerceHttpResponseStatus(600, 503)).toBe(503);
     expect(coerceHttpResponseStatus(0, 0)).toBe(500);
   });

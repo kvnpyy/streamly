@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { buildLiveChannelIndex } from "@/lib/live-channel-index";
 import {
+  EMPTY_PROGRAMME_SCAN_IDS,
   filterStreamsByLiveQuery,
   mergeLiveSearchResults,
   planLiveProgrammeSearch,
@@ -38,6 +39,11 @@ describe("live-programme-search", () => {
     );
     expect(plan.candidateIds).toEqual([1, 2]);
     expect(plan.truncated).toBe(false);
+  });
+
+  it("keeps a stable empty candidate list for effect deps", () => {
+    expect(EMPTY_PROGRAMME_SCAN_IDS).toEqual([]);
+    expect(EMPTY_PROGRAMME_SCAN_IDS).toBe(EMPTY_PROGRAMME_SCAN_IDS);
   });
 
   it("merges name and programme matches without duplicates", () => {

@@ -6,6 +6,11 @@ const THIRD_PARTY_FRAME_RE =
 
 const THIRD_PARTY_FILENAME_RE = /\.user\.js$/i;
 
+const RSC_MANIFEST_RE = /React Client Manifest/i;
+
+const NETWORK_LOAD_RE =
+  /^(Load failed|Failed to fetch|NetworkError when attempting to fetch resource)/i;
+
 function framePath(frame: { filename?: string; abs_path?: string }): string {
   return (frame.filename ?? frame.abs_path ?? "").trim();
 }
@@ -15,10 +20,41 @@ export function isThirdPartyScriptFrame(path: string): boolean {
   return THIRD_PARTY_FRAME_RE.test(path) || THIRD_PARTY_FILENAME_RE.test(path);
 }
 
+export function shouldDropSentryException(type: string, value: string): boolean {
+  if (RSC_MANIFEST_RE.test(value)) return true;
+  if (type === "NotFoundError" && /removeChild/i.test(value)) return true;
+  if (type === "TypeError" && NETWORK_LOAD_RE.test(value)) return true;
+  return false;
+}
+
+type SentryExceptionLike = {
+  type?: string;
+  value?: string;
+  stacktrace?: {
+    frames?: Array<{
+      filename?: string;
+      abs_path?: string;
+      in_app?: boolean;
+    }>;
+  };
+};
+
 /** Drop extension/userscript errors before they reach Sentry. */
 export function shouldDropSentryClientEvent(event: ErrorEvent): boolean {
-  const frames =
-    event.exception?.values?.flatMap((v) => v.stacktrace?.frames ?? []) ?? [];
+  return shouldDropSentryEvent(event);
+}
+
+export function shouldDropSentryEvent(event: {
+  exception?: { values?: SentryExceptionLike[] };
+}): boolean {
+  const values = event.exception?.values ?? [];
+  for (const value of values) {
+    if (shouldDropSentryException(value.type ?? "", value.value ?? "")) {
+      return true;
+    }
+  }
+
+  const frames = values.flatMap((v) => v.stacktrace?.frames ?? []);
   if (frames.length === 0) return false;
 
   const hasInAppFrame = frames.some((f) => f.in_app === true);

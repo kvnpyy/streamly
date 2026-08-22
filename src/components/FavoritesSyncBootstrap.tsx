@@ -2,6 +2,10 @@
 
 import { mergeFavorites } from "@/lib/favorites-sync";
 import {
+  onPrefsFinishHydration,
+  prefsHasHydrated,
+} from "@/lib/prefs-persist-api";
+import {
   mergeRecents,
   mergeVodResumeSec,
   sanitizeRecents,
@@ -31,14 +35,14 @@ import {
 const PUSH_DEBOUNCE_MS = 1200;
 
 function subscribePrefsHydrated(onStoreChange: () => void): () => void {
-  if (usePrefs.persist.hasHydrated()) {
+  if (prefsHasHydrated()) {
     return () => {};
   }
-  return usePrefs.persist.onFinishHydration(onStoreChange);
+  return onPrefsFinishHydration(onStoreChange);
 }
 
 function getPrefsHydratedSnapshot(): boolean {
-  return usePrefs.persist.hasHydrated();
+  return prefsHasHydrated();
 }
 
 async function fetchRemoteFavorites(

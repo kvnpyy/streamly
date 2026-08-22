@@ -43,7 +43,7 @@ export function useGlobalProgrammeSearch(
   useEffect(() => {
     if (!enabled || !creds || !queryLower || !plan?.candidateIds.length) {
       queueMicrotask(() => {
-        setProgrammeTitles(new Map());
+        setProgrammeTitles((prev) => (prev.size === 0 ? prev : new Map()));
         setScanning(false);
       });
       return;

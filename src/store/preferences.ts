@@ -1,5 +1,6 @@
 "use client";
 
+import { browsePrefPatchIsNoop } from "@/lib/browse-pref-patch";
 import { dispatchMyListToggle } from "@/lib/my-list";
 import { mergePersistedPrefs } from "@/lib/prefs-persist-merge";
 import { sanitizeRecents } from "@/lib/watch-state-sync";
@@ -137,14 +138,18 @@ export const usePrefs = create<PrefsState>()(
       recents: [],
       browseByAccount: {},
       setBrowsePref: (accountKey, patch) =>
-        set({
-          browseByAccount: {
-            ...get().browseByAccount,
-            [accountKey]: {
-              ...get().browseByAccount[accountKey],
-              ...patch,
+        set((state) => {
+          const prev = state.browseByAccount[accountKey];
+          if (browsePrefPatchIsNoop(prev, patch)) return state;
+          return {
+            browseByAccount: {
+              ...state.browseByAccount,
+              [accountKey]: {
+                ...prev,
+                ...patch,
+              },
             },
-          },
+          };
         }),
       activeSavedProviderAccountId: null,
       setActiveSavedProviderAccountId: (id) =>

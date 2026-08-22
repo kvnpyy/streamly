@@ -14,6 +14,7 @@ import {
   vodCatalogSearchQueryOptions,
 } from "@/lib/catalog-items-search";
 import { liveChannelSearchQueryOptions } from "@/lib/live-catalog-search";
+import { EMPTY_LIVE_STREAMS } from "@/lib/live-browse-streams";
 import { buildLiveChannelIndex } from "@/lib/live-channel-index";
 import { isLiveProgrammeSearchEnabled } from "@/lib/live-epg-policy";
 import { MIN_SEARCH_QUERY_LEN } from "@/lib/search-normalize";
@@ -65,7 +66,8 @@ function SearchInner() {
     seriesCatalogSearchQueryOptions(creds, f, searchEnabled)
   );
 
-  const liveScanPool = liveSearch.data?.scanPool ?? liveSearch.data?.matches ?? [];
+  const liveScanPool =
+    liveSearch.data?.scanPool ?? liveSearch.data?.matches ?? EMPTY_LIVE_STREAMS;
 
   const liveChannelIndex = useMemo(() => {
     if (!searchEnabled || !liveScanPool.length) return null;

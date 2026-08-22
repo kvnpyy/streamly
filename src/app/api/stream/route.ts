@@ -57,8 +57,8 @@ const FORWARD_REQUEST_HEADERS = [
   "accept",
   "accept-language",
   "if-range",
-  "if-modified-since",
-  "if-none-match",
+  // Do not forward If-None-Match / If-Modified-Since: upstream 304 cannot be
+  // turned into a Fetch Response in the App Router (undici throws).
 ];
 
 // Known-good UAs used by IPTV apps. Many providers allowlist these.

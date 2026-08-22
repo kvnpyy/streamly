@@ -212,9 +212,20 @@ export function useLivePageShell(
 
   useEffect(() => {
     if (selectedBase === selected) return;
-    setBrowsePref(accountKey, { liveCategory: "all" });
-    queueMicrotask(() => setCategoryOverride(null));
-  }, [selectedBase, selected, accountKey, setBrowsePref]);
+    if (prefsCategory !== "all") {
+      setBrowsePref(accountKey, { liveCategory: "all" });
+    }
+    if (categoryOverride !== null) {
+      queueMicrotask(() => setCategoryOverride(null));
+    }
+  }, [
+    selectedBase,
+    selected,
+    prefsCategory,
+    categoryOverride,
+    accountKey,
+    setBrowsePref,
+  ]);
 
   const categoryNameById = useMemo(() => {
     const map: Record<string, string> = {};
