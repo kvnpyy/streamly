@@ -34,6 +34,13 @@ import {
   browserFriendlyVodSnippet,
   looksLikeHtmlContentType,
 } from "@/lib/vod-stream-probe-server";
+import {
+  MAX_HLS_MANIFEST_BYTES,
+  MAX_VOD_PROBE_BYTES,
+  ResponseBodyTooLargeError,
+  readResponseBytesLimited,
+  readResponseTextLimited,
+} from "@/lib/read-response-text-limited";
 import { NextRequest } from "next/server";
 
 export const runtime = "nodejs";
@@ -351,7 +358,10 @@ async function handle(req: NextRequest, head: boolean) {
           })
         );
       }
-      const buf = new Uint8Array(await upstream.arrayBuffer());
+      const buf = await readResponseBytesLimited(
+        upstream,
+        MAX_VOD_PROBE_BYTES
+      );
       const playable = browserFriendlyVodSnippet(buf);
       return respondShort(
         new Response(null, {
@@ -359,7 +369,15 @@ async function handle(req: NextRequest, head: boolean) {
           headers: corsHeaders({}, requestId),
         })
       );
-    } catch {
+    } catch (err) {
+      if (err instanceof ResponseBodyTooLargeError) {
+        return respondShort(
+          new Response(null, {
+            status: 404,
+            headers: corsHeaders({}, requestId),
+          })
+        );
+      }
       return respondShort(
         new Response(null, {
           status: 502,
@@ -492,7 +510,25 @@ async function handle(req: NextRequest, head: boolean) {
       );
     }
 
-    let text = await upstream.text();
+    let text: string;
+    try {
+      text = await readResponseTextLimited(upstream, MAX_HLS_MANIFEST_BYTES);
+    } catch (err) {
+      const oversized =
+        err instanceof ResponseBodyTooLargeError ||
+        (err instanceof RangeError &&
+          /invalid string length/i.test(err.message));
+      if (oversized) {
+        recordIptvApiError("stream_upstream_5xx");
+        return respondShort(
+          new Response("Upstream manifest too large.", {
+            status: 502,
+            headers: corsHeaders({ "content-type": "text/plain" }, requestId),
+          })
+        );
+      }
+      throw err;
+    }
     let finalManifestUrl: URL;
     try {
       finalManifestUrl = new URL(upstream.url);
