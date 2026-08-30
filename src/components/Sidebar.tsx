@@ -115,11 +115,11 @@ export function Sidebar() {
             </div>
             <div className="px-3 pb-3">
               <div className="text-sm text-(--text) truncate">
-                {account?.user_info.username || "Signed in"}
+                {account?.user_info?.username || "Signed in"}
               </div>
               <div className="text-[11px] text-(--text-muted) capitalize">
-                {account?.user_info.status?.toLowerCase() || "active"} ·{" "}
-                {account?.user_info.max_connections
+                {account?.user_info?.status?.toLowerCase() || "active"} ·{" "}
+                {account?.user_info?.max_connections
                   ? `${account.user_info.max_connections} conn`
                   : "unlimited"}
               </div>

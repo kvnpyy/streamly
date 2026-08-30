@@ -308,12 +308,12 @@ export function TvSimpleSettings() {
             </div>
             <div>
               <dt>Status</dt>
-              <dd>{account?.user_info.status || "—"}</dd>
+              <dd>{account?.user_info?.status || "—"}</dd>
             </div>
             <div>
               <dt>Expires</dt>
               <dd>
-                {account?.user_info.exp_date
+                {account?.user_info?.exp_date
                   ? formatDate(account.user_info.exp_date)
                   : "Unknown"}
               </dd>

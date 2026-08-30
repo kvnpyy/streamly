@@ -75,27 +75,27 @@ export default function SettingsPage() {
         <dl className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm">
           <Row label="Server" value={creds?.server || "—"} />
           <Row label="Username" value={creds?.username || "—"} />
-          <Row label="Status" value={account?.user_info.status || "—"} />
+          <Row label="Status" value={account?.user_info?.status || "—"} />
           <Row
             label="Max connections"
-            value={account?.user_info.max_connections || "—"}
+            value={account?.user_info?.max_connections || "—"}
           />
           <Row
             label="Trial"
-            value={account?.user_info.is_trial === "1" ? "Yes" : "No"}
+            value={account?.user_info?.is_trial === "1" ? "Yes" : "No"}
           />
           <Row
             label="Expires"
             value={
-              account?.user_info.exp_date
+              account?.user_info?.exp_date
                 ? formatDate(account.user_info.exp_date)
                 : "Never / Unknown"
             }
           />
-          <Row label="Server time" value={account?.server_info.time_now || "—"} />
+          <Row label="Server time" value={account?.server_info?.time_now || "—"} />
           <Row
             label="Allowed formats"
-            value={account?.user_info.allowed_output_formats?.join(", ") || "—"}
+            value={account?.user_info?.allowed_output_formats?.join(", ") || "—"}
           />
         </dl>
       </section>

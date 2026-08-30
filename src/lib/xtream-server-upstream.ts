@@ -10,7 +10,7 @@ import { tryHandleReviewPanelRequest } from "@/lib/review-panel/handler";
 import { normalizeServer } from "@/lib/utils";
 import { fetchXtreamPanelWithRetry } from "@/lib/xtream-upstream-fetch";
 
-const UPSTREAM_TIMEOUT_MS = 18_000;
+const UPSTREAM_TIMEOUT_MS = 30_000;
 
 export type XtreamServerCreds = {
   server: string;
@@ -64,7 +64,10 @@ export async function fetchXtreamUpstreamJson(
 
   const text = await res.text();
   if (!res.ok) {
+    console.warn(`[upstream ${action || "auth"}] upstream error status ${res.status}`);
     if (isXtreamEpgAction(action)) return EMPTY_XTREAM_EPG;
+    if (action === "get_series_categories" || action === "get_series") return [];
+    if (action === "get_vod_categories" || action === "get_vod_streams") return [];
     throw new Error(`upstream ${res.status}`);
   }
 
@@ -75,7 +78,10 @@ export async function fetchXtreamUpstreamJson(
   try {
     return JSON.parse(text) as unknown;
   } catch {
+    console.warn(`[upstream ${action || "auth"}] failed to parse response JSON:`, text.slice(0, 100));
     if (isXtreamEpgAction(action)) return EMPTY_XTREAM_EPG;
+    if (action === "get_series_categories" || action === "get_series") return [];
+    if (action === "get_vod_categories" || action === "get_vod_streams") return [];
     throw new Error("upstream json parse failed");
   }
 }

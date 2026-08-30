@@ -283,6 +283,12 @@ async function handle(req: NextRequest, head: boolean) {
   let upstreamUrl: URL;
   try {
     upstreamUrl = new URL(target);
+    if (
+      upstreamUrl.hostname === "localhost" ||
+      upstreamUrl.hostname === "127.0.0.1"
+    ) {
+      upstreamUrl.port = process.env.PORT || "3000";
+    }
   } catch {
     return respondShort(
       new Response("Invalid upstream URL", {
@@ -308,13 +314,33 @@ async function handle(req: NextRequest, head: boolean) {
     probeHeaders.set("connection", "close");
 
     try {
-      const upstream = await fetchUpstream(upstreamUrl.toString(), {
+      let upstream = await fetchUpstream(upstreamUrl.toString(), {
         method: "GET",
         headers: probeHeaders,
         redirect: "follow",
         cache: "no-store",
         signal: req.signal,
       });
+
+      if (!upstream.ok && upstream.status !== 206) {
+        const fallbackHeaders = new Headers(probeHeaders);
+        fallbackHeaders.set("user-agent", IPTV_UA_HLS);
+        try {
+          const retryUpstream = await fetchUpstream(upstreamUrl.toString(), {
+            method: "GET",
+            headers: fallbackHeaders,
+            redirect: "follow",
+            cache: "no-store",
+            signal: req.signal,
+          });
+          if (retryUpstream.ok || retryUpstream.status === 206) {
+            upstream = retryUpstream;
+          }
+        } catch {
+          /* keep initial */
+        }
+      }
+
       const status = upstream.status;
       if (status === 404 || status === 410 || status === 403) {
         return respondShort(
@@ -325,7 +351,8 @@ async function handle(req: NextRequest, head: boolean) {
         status === 551 ||
         status === 503 ||
         status === 429 ||
-        status === 502
+        status === 502 ||
+        status === 469
       ) {
         return respondShort(
           new Response(null, {
@@ -381,14 +408,14 @@ async function handle(req: NextRequest, head: boolean) {
   const useHlsUa =
     type === "hls" || (forCast && url.searchParams.get("transcode") !== "hls");
   fwdHeaders.set("user-agent", useHlsUa ? IPTV_UA_HLS : IPTV_UA_VOD);
-  // Some providers also check Referer / Origin. Spoof it as the upstream.
-  fwdHeaders.set(
-    "referer",
-    `${upstreamUrl.protocol}//${upstreamUrl.host}/`
-  );
-  fwdHeaders.set("origin", `${upstreamUrl.protocol}//${upstreamUrl.host}`);
+  if (!fwdHeaders.has("referer")) {
+    fwdHeaders.set(
+      "referer",
+      `${upstreamUrl.protocol}//${upstreamUrl.host}/`
+    );
+  }
 
-  let upstream: Response;
+  let upstream: Response | undefined;
   const upstreamT0 = Date.now();
   try {
     upstream = await fetchUpstream(upstreamUrl.toString(), {
@@ -398,28 +425,92 @@ async function handle(req: NextRequest, head: boolean) {
       cache: "no-store",
       signal: req.signal,
     });
+
+    if (head && (!upstream.ok || upstream.status === 405 || upstream.status === 403 || upstream.status === 469)) {
+      const getHeaders = new Headers(fwdHeaders);
+      getHeaders.set("user-agent", IPTV_UA_HLS);
+      getHeaders.set("range", "bytes=0-0");
+      try {
+        const getRes = await fetchUpstream(upstreamUrl.toString(), {
+          method: "GET",
+          headers: getHeaders,
+          redirect: "follow",
+          cache: "no-store",
+          signal: req.signal,
+        });
+        if (getRes.ok || getRes.status === 206) {
+          upstream = getRes;
+        }
+      } catch {
+        /* keep original */
+      }
+    }
+
+    if (
+      !useHlsUa &&
+      upstream &&
+      (upstream.status === 403 ||
+        upstream.status === 469 ||
+        upstream.status === 500 ||
+        upstream.status === 502 ||
+        upstream.status === 503)
+    ) {
+      const fallbackHeaders = new Headers(fwdHeaders);
+      fallbackHeaders.set("user-agent", IPTV_UA_HLS);
+      try {
+        const retryUpstream = await fetchUpstream(upstreamUrl.toString(), {
+          method: head ? "HEAD" : "GET",
+          headers: fallbackHeaders,
+          redirect: "follow",
+          cache: "no-store",
+          signal: req.signal,
+        });
+        if (retryUpstream.ok || retryUpstream.status === 206) {
+          upstream = retryUpstream;
+        }
+      } catch {
+        /* keep original */
+      }
+    }
   } catch (err) {
-    const durationMs = Date.now() - upstreamT0;
-    maybeLogStreamUpstreamSlow({
-      requestId,
-      durationMs,
-      streamType: type,
-      upstreamHost: upstreamUrl.hostname,
-      upstreamStatus: null,
-    });
-    /** Never forward raw Error.message in production — may contain URLs or upstream hints. */
-    const detail =
-      process.env.NODE_ENV !== "production" && err instanceof Error
-        ? err.message
-        : null;
-    const body =
-      detail != null ? `Upstream fetch failed: ${detail}` : "Upstream fetch failed.";
-    return respondShort(
-      new Response(body, {
-        status: 502,
-        headers: corsHeaders({ "content-type": "text/plain" }, requestId),
-      })
-    );
+    if (!useHlsUa) {
+      try {
+        const fallbackHeaders = new Headers(fwdHeaders);
+        fallbackHeaders.set("user-agent", IPTV_UA_HLS);
+        upstream = await fetchUpstream(upstreamUrl.toString(), {
+          method: head ? "HEAD" : "GET",
+          headers: fallbackHeaders,
+          redirect: "follow",
+          cache: "no-store",
+          signal: req.signal,
+        });
+      } catch {
+        /* proceed to error response */
+      }
+    }
+    if (!upstream) {
+      const durationMs = Date.now() - upstreamT0;
+      maybeLogStreamUpstreamSlow({
+        requestId,
+        durationMs,
+        streamType: type,
+        upstreamHost: upstreamUrl.hostname,
+        upstreamStatus: null,
+      });
+      /** Never forward raw Error.message in production — may contain URLs or upstream hints. */
+      const detail =
+        process.env.NODE_ENV !== "production" && err instanceof Error
+          ? err.message
+          : null;
+      const body =
+        detail != null ? `Upstream fetch failed: ${detail}` : "Upstream fetch failed.";
+      return respondShort(
+        new Response(body, {
+          status: 502,
+          headers: corsHeaders({ "content-type": "text/plain" }, requestId),
+        })
+      );
+    }
   }
 
   maybeLogStreamUpstreamSlow({

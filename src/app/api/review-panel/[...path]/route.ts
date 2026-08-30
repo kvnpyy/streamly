@@ -39,10 +39,13 @@ function redirectTo(target: string) {
   return NextResponse.redirect(target, { status: 302 });
 }
 
-/**
- * Xtream-style stream paths for the review panel, e.g.
- * /api/review-panel/live/samsung_review/StreamlyReview2026/101.m3u8
- */
+export async function HEAD(
+  req: NextRequest,
+  ctx: { params: Promise<{ path: string[] }> }
+) {
+  return GET(req, ctx);
+}
+
 export async function GET(
   req: NextRequest,
   ctx: { params: Promise<{ path: string[] }> }

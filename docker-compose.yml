@@ -6,7 +6,7 @@ services:
     container_name: streamly
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "${STREAMLY_PORT:-3005}:3000"
     volumes:
       # Persist the SQLite database and backups across container restarts.
       - streamly_data:/app/data
@@ -23,6 +23,7 @@ services:
 
       # SQLite file inside the mounted volume.
       DATABASE_URL: file:/app/data/stream.db
+      NODE_TLS_REJECT_UNAUTHORIZED: "0"
 
       # ── Email (required in production for sign-up + password reset) ──────────
       # RESEND_API_KEY: ${RESEND_API_KEY}

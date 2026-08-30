@@ -57,26 +57,57 @@ export async function fetchVodCatalogOnServer(
   opts?: { signal?: AbortSignal }
 ): Promise<VodCatalogBundle> {
   const signal = opts?.signal;
-  const categories = normalizeCategoriesPayload(
-    await fetchXtreamUpstreamJson(
+  let categories: Category[] = [];
+  try {
+    const rawCategories = await fetchXtreamUpstreamJson(
       creds,
       { action: "get_vod_categories" },
       { signal }
-    )
-  );
+    );
+    categories = normalizeCategoriesPayload(rawCategories);
+  } catch (err) {
+    console.warn("[vod-catalog] get_vod_categories failed:", err);
+  }
 
-  if (!categories.length) {
+  console.log(`[vod-catalog] Found ${categories.length} VOD categories from upstream`);
+
+  let direct: VodStream[] = [];
+  try {
+    const rawDirect = await fetchXtreamUpstreamJson(creds, { action: "get_vod_streams" }, { signal });
+    direct = asVodArray(rawDirect);
+  } catch (err) {
+    console.warn("[vod-catalog] get_vod_streams failed:", err);
+  }
+
+  console.log(`[vod-catalog] Direct VOD stream count: ${direct.length}`);
+
+  if (categories.length === 0 && direct.length === 0) {
     return bundleVodWithIndex([], []);
   }
 
-  const direct = asVodArray(
-    await fetchXtreamUpstreamJson(creds, { action: "get_vod_streams" }, { signal })
-  );
+  if (categories.length === 0 && direct.length > 0) {
+    const catMap = new Map<string, string>();
+    for (const item of direct) {
+      if (item.category_id) {
+        const catName =
+          (item as unknown as { category_name?: string }).category_name ||
+          `Category ${item.category_id}`;
+        catMap.set(String(item.category_id), catName);
+      }
+    }
+    categories = Array.from(catMap.entries()).map(([category_id, category_name]) => ({
+      category_id,
+      category_name,
+      parent_id: 0,
+    }));
+  }
 
   const streams =
     direct.length > 0
       ? direct.slice(0, MAX_VOD_CATALOG_STREAMS)
       : await mergeVodByCategory(creds, categories, signal);
+
+  console.log(`[vod-catalog] Final merged VOD stream count: ${streams.length}`);
 
   return bundleVodWithIndex(categories, streams);
 }

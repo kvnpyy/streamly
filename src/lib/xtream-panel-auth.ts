@@ -23,6 +23,9 @@ export async function authenticateXtreamPanel(
 
   const server = normalizeServer(creds.server);
   const upstream = new URL(`${server}/player_api.php`);
+  if (upstream.hostname === "localhost" || upstream.hostname === "127.0.0.1") {
+    upstream.port = process.env.PORT || "3000";
+  }
   upstream.searchParams.set("username", creds.username);
   upstream.searchParams.set("password", creds.password);
 
@@ -35,7 +38,7 @@ export async function authenticateXtreamPanel(
         Accept: "application/json,text/plain,*/*",
       },
       cache: "no-store",
-      signal: signal ?? AbortSignal.timeout(18_000),
+      signal: signal ?? AbortSignal.timeout(35_000),
     }
   );
 
