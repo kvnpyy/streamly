@@ -63,7 +63,7 @@ export function HomePageRich() {
   const greetingName = welcomeDisplayName({
     streamName: streamSession?.user?.name,
     streamEmail: streamSession?.user?.email,
-    iptvUsername: account?.user_info.username || creds.username,
+    iptvUsername: account?.user_info?.username || creds.username,
   });
 
   const [catalogFetchReady, setCatalogFetchReady] = useState(false);

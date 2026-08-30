@@ -20,9 +20,10 @@ import {
 } from "@/lib/xtream-upstream-cache";
 import { fetchXtreamPanelWithRetry } from "@/lib/xtream-upstream-fetch";
 import { requireIptvCredsFromRequest } from "@/lib/iptv-request-creds";
+import { normalizeServer } from "@/lib/utils";
 import { NextRequest, NextResponse } from "next/server";
 
-const UPSTREAM_TIMEOUT_MS = 18_000;
+const UPSTREAM_TIMEOUT_MS = 35_000;
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -77,7 +78,11 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(review, { headers });
   }
 
-  const upstream = new URL(`${creds.server}/player_api.php`);
+  const server = normalizeServer(creds.server);
+  const upstream = new URL(`${server}/player_api.php`);
+  if (upstream.hostname === "localhost" || upstream.hostname === "127.0.0.1") {
+    upstream.port = process.env.PORT || "3000";
+  }
   upstream.searchParams.set("username", creds.username);
   upstream.searchParams.set("password", creds.password);
   for (const [k, v] of url.searchParams.entries()) {

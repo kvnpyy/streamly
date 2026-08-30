@@ -61,21 +61,46 @@ export async function fetchSeriesCatalogOnServer(
   opts?: { signal?: AbortSignal }
 ): Promise<SeriesCatalogBundle> {
   const signal = opts?.signal;
-  const categories = normalizeCategoriesPayload(
-    await fetchXtreamUpstreamJson(
+  let categories: Category[] = [];
+  try {
+    const rawCategories = await fetchXtreamUpstreamJson(
       creds,
       { action: "get_series_categories" },
       { signal }
-    )
-  );
+    );
+    categories = normalizeCategoriesPayload(rawCategories);
+  } catch (err) {
+    console.warn("[series-catalog] get_series_categories failed:", err);
+  }
 
-  if (!categories.length) {
+  let direct: SeriesItem[] = [];
+  try {
+    const rawDirect = await fetchXtreamUpstreamJson(creds, { action: "get_series" }, { signal });
+    direct = asSeriesArray(rawDirect);
+  } catch (err) {
+    console.warn("[series-catalog] get_series failed:", err);
+  }
+
+  if (categories.length === 0 && direct.length === 0) {
     return bundleSeriesWithIndex([], []);
   }
 
-  const direct = asSeriesArray(
-    await fetchXtreamUpstreamJson(creds, { action: "get_series" }, { signal })
-  );
+  if (categories.length === 0 && direct.length > 0) {
+    const catMap = new Map<string, string>();
+    for (const item of direct) {
+      if (item.category_id) {
+        const catName =
+          (item as unknown as { category_name?: string }).category_name ||
+          `Category ${item.category_id}`;
+        catMap.set(String(item.category_id), catName);
+      }
+    }
+    categories = Array.from(catMap.entries()).map(([category_id, category_name]) => ({
+      category_id,
+      category_name,
+      parent_id: 0,
+    }));
+  }
 
   const streams =
     direct.length > 0

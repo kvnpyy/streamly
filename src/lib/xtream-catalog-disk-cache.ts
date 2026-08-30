@@ -20,7 +20,7 @@ type DiskEnvelope = {
 function cacheRoot(): string {
   const root =
     process.env.XTREAM_CACHE_DIR?.trim() ||
-    path.join(process.cwd(), ".cache", "xtream-catalog");
+    path.join(process.cwd(), "data", "cache", "xtream-catalog");
   return root;
 }
 
