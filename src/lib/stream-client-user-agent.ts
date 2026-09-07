@@ -6,6 +6,39 @@
 
 import { isChromecastReceiverUserAgent } from "@/lib/chromecast-ua";
 
+/**
+ * Players the share menu tells people to paste into. Their UAs are not
+ * `Mozilla/…`, so they used to get 403 on the TV-safe `/api/stream` URL.
+ */
+const MEDIA_PLAYER_UA_MARKERS = [
+  "vlc",
+  "libvlc",
+  "infuse",
+  "kodi",
+  "xbmc",
+  "mpv",
+  "lavf",
+  "ffmpeg",
+  "exoplayer",
+  "ijkplayer",
+  "applecoremedia",
+  "tivimate",
+  "smarters",
+  "gstreamer",
+  "nplayer",
+  "justplayer",
+  "roku",
+  "tizen",
+  "webos",
+  "web0s",
+] as const;
+
+export function isMediaPlayerStreamUserAgent(userAgent: string): boolean {
+  const lower = userAgent.trim().toLowerCase();
+  if (!lower) return false;
+  return MEDIA_PLAYER_UA_MARKERS.some((m) => lower.includes(m));
+}
+
 export function isAllowedStreamProxyUserAgent(
   userAgent: string,
   extraSubstrings: readonly string[]
@@ -13,6 +46,7 @@ export function isAllowedStreamProxyUserAgent(
   const ua = userAgent.trim();
   if (!ua) return false;
   if (isChromecastReceiverUserAgent(ua)) return true;
+  if (isMediaPlayerStreamUserAgent(ua)) return true;
   if (/^Mozilla\//i.test(ua)) return true;
   const lower = ua.toLowerCase();
   for (const sub of extraSubstrings) {

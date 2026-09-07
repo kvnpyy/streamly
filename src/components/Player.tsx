@@ -15,6 +15,7 @@ import {
   buildCastMediaDescriptor,
   buildTvSafeStreamCopyUrl,
 } from "@/lib/cast-media-url";
+import { extractStreamProxyUpstream } from "@/lib/stream-url";
 import {
   appendVodTranscodeHls,
   buildInitialVodPlaybackUrl,
@@ -499,15 +500,21 @@ export function PlayerOverlay() {
 
   /** Provider URL for copy/open-in-VLC (not used for Chromecast). */
   const directUrl = useMemo(() => {
+    const fromProxy = extractStreamProxyUpstream(
+      vodPlaybackUrl ?? current?.url
+    );
+    if (fromProxy) return fromProxy;
     if (!current || !creds) return null;
     const base = creds.server.replace(/\/+$/, "");
+    const user = encodeURIComponent(creds.username);
+    const pass = encodeURIComponent(creds.password);
     if (current.kind === "live") {
-      return `${base}/live/${creds.username}/${creds.password}/${current.id}.m3u8`;
+      return `${base}/live/${user}/${pass}/${current.id}.m3u8`;
     }
     const ext = current.containerExt || "mp4";
     const streamId = current.streamId ?? current.id;
-    return `${base}/${current.kind}/${creds.username}/${creds.password}/${streamId}.${ext}`;
-  }, [current, creds]);
+    return `${base}/${current.kind}/${user}/${pass}/${streamId}.${ext}`;
+  }, [current, creds, vodPlaybackUrl]);
 
   /**
    * Cast seek for VOD transcode only. Bucket to 60s so `timeupdate` does not
@@ -3100,6 +3107,7 @@ export function PlayerOverlay() {
                           onAirPlay={showAirPlayPicker}
                           copied={copied}
                           onCopyTvSafeUrl={() => void copyTvSafeUrl()}
+                          onCopyDirectUrl={() => void copyDirectUrl()}
                           tvSafeUrl={tvSafeUrl}
                           directUrl={directUrl}
                         />

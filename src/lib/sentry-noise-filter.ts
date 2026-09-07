@@ -20,9 +20,22 @@ export function isThirdPartyScriptFrame(path: string): boolean {
   return THIRD_PARTY_FRAME_RE.test(path) || THIRD_PARTY_FILENAME_RE.test(path);
 }
 
+const CLIENT_DISCONNECT_RE =
+  /failed to pipe response|other side closed|ResponseAborted|ECONNRESET|EPIPE|ERR_STREAM_PREMATURE_CLOSE/i;
+
+const SAFARI_NOT_FOUND_RE =
+  /removeChild|object can not be found here|The node to be removed/i;
+
 export function shouldDropSentryException(type: string, value: string): boolean {
   if (RSC_MANIFEST_RE.test(value)) return true;
-  if (type === "NotFoundError" && /removeChild/i.test(value)) return true;
+  if (type === "ResponseAborted") return true;
+  if (type === "AbortError") return true;
+  if (type === "SocketError") return true;
+  if (type === "TypeError" && /^terminated$/i.test(value.trim())) return true;
+  if (CLIENT_DISCONNECT_RE.test(type) || CLIENT_DISCONNECT_RE.test(value)) {
+    return true;
+  }
+  if (type === "NotFoundError" && SAFARI_NOT_FOUND_RE.test(value)) return true;
   if (type === "TypeError" && NETWORK_LOAD_RE.test(value)) return true;
   return false;
 }

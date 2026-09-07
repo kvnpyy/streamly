@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { rewriteHlsManifest } from "./hls-manifest-rewrite";
+import {
+  MAX_HLS_MANIFEST_REWRITE_CHARS,
+  rewriteHlsManifest,
+} from "./hls-manifest-rewrite";
 
 describe("rewriteHlsManifest", () => {
   const base = new URL("http://192.168.0.2:25461/live/user/pass/100.m3u8");
@@ -42,5 +45,12 @@ describe("rewriteHlsManifest", () => {
     expect(out).toContain("type=hls");
     expect(out).toContain("cast=1");
     expect(out).not.toContain("type=vod");
+  });
+
+  it("passthroughs oversized playlists instead of throwing", () => {
+    const raw = `${"#EXTM3U\n"}${"x".repeat(MAX_HLS_MANIFEST_REWRITE_CHARS)}`;
+    expect(
+      rewriteHlsManifest(raw, base, { compatMse: false })
+    ).toBe(raw);
   });
 });

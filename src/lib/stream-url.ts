@@ -21,6 +21,31 @@ export function appendStreamCompatMse(proxyUrl: string): string {
   }
 }
 
+/** Upstream provider URL embedded in `/api/stream?u=…`. */
+export function extractStreamProxyUpstream(
+  proxyUrl: string | null | undefined
+): string | null {
+  if (!proxyUrl) return null;
+  try {
+    const base =
+      typeof window !== "undefined"
+        ? window.location.origin
+        : "https://localhost";
+    const parsed = new URL(proxyUrl, base);
+    if (
+      parsed.pathname !== "/api/stream" &&
+      !parsed.pathname.startsWith("/api/stream/")
+    ) {
+      return null;
+    }
+    const upstream = parsed.searchParams.get("u")?.trim();
+    if (!upstream || !/^https?:\/\//i.test(upstream)) return null;
+    return upstream;
+  } catch {
+    return null;
+  }
+}
+
 export function streamProxyTypeIsHls(proxyUrl: string): boolean {
   if (!proxyUrl.includes("/api/stream")) return false;
   try {

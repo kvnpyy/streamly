@@ -14,19 +14,6 @@ Sentry.init({
   tracesSampleRate: process.env.NODE_ENV === "development" ? 1.0 : 0.05,
   beforeSend(event) {
     if (shouldDropSentryEvent(event)) return null;
-    const tx = event.transaction;
-    if (!tx?.includes("/api/stream")) return event;
-    const err = event.exception?.values?.[0];
-    const value = err?.value ?? "";
-    const type = err?.type ?? "";
-    if (
-      value.includes("failed to pipe response") ||
-      value.includes("other side closed") ||
-      value === "terminated" ||
-      type === "SocketError"
-    ) {
-      return null;
-    }
     return event;
   },
 });

@@ -23,6 +23,24 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.13.19] — 2026-09-06
+
+TV-safe share links play without login, and production Sentry errors from stream/xtream/img are fixed.
+
+### Fixed
+- **TV-safe URL in a browser** — opening `/api/stream` in a new tab or incognito now redirects to a standalone `/play` page (hls.js) instead of dumping the raw playlist.
+- **VLC / Infuse 403** — the stream proxy now allows well-known media-player user agents, not only `Mozilla/…` browsers.
+- **Provider URL** — copy uses the real upstream from the proxy (`direct_source` included) instead of a reconstructed Xtream path.
+- **Sentry `ResponseAborted` / failed-to-pipe** — treat client disconnects on `/api/stream` and `/api/img` as normal close, not crashes (`JAVASCRIPT-NEXTJS-17`, `JAVASCRIPT-NEXTJS-1H`).
+- **Sentry `Invalid string length`** — do not rewrite huge HLS playlists in memory (`JAVASCRIPT-NEXTJS-1F`).
+- **Sentry `Invalid URL` on `/api/xtream`** — reject unparseable panel URLs with HTTP 400 instead of throwing (`JAVASCRIPT-NEXTJS-W`).
+- **Sentry Safari `NotFoundError` on `/login`** — drop WebKit “object can not be found here” removeChild races (`JAVASCRIPT-NEXTJS-1G`).
+
+### Changed
+- Share menu opens the TV-safe stream in a new tab. Raw provider URLs are copied, because panels reject Chrome.
+
+---
+
 ## [0.13.18] — 2026-08-22
 
 Stop Live TV from hanging in a React update loop, and stop /api/stream from crashing on HTTP 304.

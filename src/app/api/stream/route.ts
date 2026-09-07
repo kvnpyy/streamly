@@ -1,4 +1,7 @@
-import { rewriteHlsManifest } from "@/lib/hls-manifest-rewrite";
+import {
+  MAX_HLS_MANIFEST_REWRITE_CHARS,
+  rewriteHlsManifest,
+} from "@/lib/hls-manifest-rewrite";
 import { coerceHttpResponseStatus } from "@/lib/http-response-status";
 import { sanitizeTvMasterPlaylistIfNeeded } from "@/lib/hls-manifest-tv-sanitize";
 import {
@@ -34,7 +37,8 @@ import {
   browserFriendlyVodSnippet,
   looksLikeHtmlContentType,
 } from "@/lib/vod-stream-probe-server";
-import { NextRequest } from "next/server";
+import { isBrowserDocumentNavigation } from "@/lib/stream-proxy-navigation";
+import { NextRequest, NextResponse } from "next/server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -44,7 +48,8 @@ export const dynamic = "force-dynamic";
  * Upstream URLs may embed provider tokens or Xtream path segments — never log raw `u`
  * or forward opaque errors to clients in production (see fetchUpstream catch).
  *
- * Inbound clients must send a browser-class UA (`Mozilla/…`) or match
+ * Inbound clients must send a browser-class UA (`Mozilla/…`), a known
+ * media-player UA (VLC, Infuse, …), Chromecast, or match
  * `STREAM_PROXY_UA_ALLOW_EXTRA`; see `stream-client-user-agent.ts`.
  *
  * Every response sets `x-request-id`; slow upstream completes log via `stream-proxy-slow-log.ts`.
@@ -190,6 +195,21 @@ async function handle(req: NextRequest, head: boolean) {
       status: 400,
       headers: corsHeaders({ "content-type": "text/plain" }, requestId),
     });
+  }
+
+  /**
+   * Address-bar / new-tab opens used to dump the raw m3u8 (Chrome won't play it).
+   * Send humans to `/play`, which uses hls.js. VLC / Cast / XHR stay on this route.
+   */
+  if (
+    !head &&
+    req.method === "GET" &&
+    url.searchParams.get("probe") !== "1" &&
+    url.searchParams.get("transcode") !== "release" &&
+    isBrowserDocumentNavigation(req.headers)
+  ) {
+    const play = new URL(`/play${url.search}`, req.url);
+    return NextResponse.redirect(play, 302);
   }
 
   const releaseStreamSlot = acquireStreamProxySlot();
@@ -490,6 +510,27 @@ async function handle(req: NextRequest, head: boolean) {
           headers: responseHeaders,
         })
       );
+    }
+
+    const declaredLen = parseInt(contentLength ?? "", 10);
+    if (
+      Number.isFinite(declaredLen) &&
+      declaredLen > MAX_HLS_MANIFEST_REWRITE_CHARS
+    ) {
+      if (head || !upstream.body) {
+        return respondShort(
+          new Response(null, {
+            status: upstreamResponseStatus,
+            headers: responseHeaders,
+          })
+        );
+      }
+      const body = passthroughStreamWithGracefulClose(upstream.body, req.signal);
+      const tracked = trackStreamBodyBytes(body, finishStreamSlot);
+      return new Response(tracked, {
+        status: upstreamResponseStatus,
+        headers: responseHeaders,
+      });
     }
 
     let text = await upstream.text();

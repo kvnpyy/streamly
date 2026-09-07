@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { readIptvCredsFromRequest } from "@/lib/iptv-request-creds";
-import { normalizeServer } from "@/lib/utils";
+import { normalizeServer, tryParseHttpUrl } from "@/lib/utils";
 
 function mockRequest(headers: Record<string, string>) {
   return {
@@ -22,6 +22,15 @@ describe("normalizeServer", () => {
 
   it("strips get.php suffix", () => {
     expect(normalizeServer("https://host/get.php")).toBe("https://host");
+  });
+
+  it("tryParseHttpUrl rejects junk that would throw Invalid URL", () => {
+    expect(tryParseHttpUrl("http://panel.example.com").href).toBe(
+      "http://panel.example.com/"
+    );
+    expect(tryParseHttpUrl("not a url")).toBeNull();
+    expect(tryParseHttpUrl("http://")).toBeNull();
+    expect(tryParseHttpUrl("")).toBeNull();
   });
 });
 

@@ -30,6 +30,7 @@ import {
   Settings2,
   Share2,
 } from "lucide-react";
+import { useState } from "react";
 
 export type PlayerSubtitleTrack = {
   id: number;
@@ -68,6 +69,7 @@ export type PlayerControlMenusProps = {
   onAirPlay: () => void;
   copied: boolean;
   onCopyTvSafeUrl: () => void;
+  onCopyDirectUrl: () => void;
   tvSafeUrl: string | null;
   directUrl: string | null;
 };
@@ -103,9 +105,11 @@ export function PlayerControlMenus({
   onAirPlay,
   copied,
   onCopyTvSafeUrl,
+  onCopyDirectUrl,
   tvSafeUrl,
   directUrl,
 }: PlayerControlMenusProps) {
+  const [providerCopied, setProviderCopied] = useState(false);
   const closeOtherPanels = (except: "subs" | "settings" | "share") => {
     if (except !== "subs") setShowSubs(false);
     if (except !== "settings") setShowSettings(false);
@@ -525,21 +529,39 @@ export function PlayerControlMenus({
                 )}
                 {copied ? "Copied!" : "Copy TV-safe stream URL"}
               </button>
-              {directUrl && (
+              {tvSafeUrl && (
                 <a
-                  href={directUrl}
+                  href={tvSafeUrl}
                   target="_blank"
                   rel="noreferrer"
                   onClick={() => setShowShare(false)}
                   className="w-full text-left px-3 py-2 rounded-lg text-sm hover:bg-white/10 flex items-center gap-2"
                 >
                   <ExternalLink className="size-4" />
-                  Open provider URL in external player
+                  Open stream in new tab
                 </a>
               )}
+              {directUrl && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onCopyDirectUrl();
+                    setProviderCopied(true);
+                    window.setTimeout(() => setProviderCopied(false), 1500);
+                  }}
+                  className="w-full text-left px-3 py-2 rounded-lg text-sm hover:bg-white/10 flex items-center gap-2"
+                >
+                  {providerCopied ? (
+                    <Check className="size-4 text-(--brand-2)" />
+                  ) : (
+                    <Copy className="size-4" />
+                  )}
+                  {providerCopied ? "Copied!" : "Copy provider URL"}
+                </button>
+              )}
               <div className="px-3 pt-1 pb-2 text-[10px] text-white/40">
-                Paste the TV-safe URL into VLC, Infuse, or your TV app. The
-                provider URL may not work on Apple TV or Chromecast.
+                The TV-safe URL plays in VLC, Infuse, or a browser (no login).
+                Raw provider URLs are rejected by most panels in Chrome.
               </div>
             </motion.div>
           )}

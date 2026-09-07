@@ -20,6 +20,7 @@ import {
 } from "@/lib/xtream-upstream-cache";
 import { fetchXtreamPanelWithRetry } from "@/lib/xtream-upstream-fetch";
 import { requireIptvCredsFromRequest } from "@/lib/iptv-request-creds";
+import { tryParseHttpUrl } from "@/lib/utils";
 import { NextRequest, NextResponse } from "next/server";
 
 const UPSTREAM_TIMEOUT_MS = 18_000;
@@ -77,7 +78,14 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(review, { headers });
   }
 
-  const upstream = new URL(`${creds.server}/player_api.php`);
+  const serverUrl = tryParseHttpUrl(creds.server);
+  if (!serverUrl) {
+    return NextResponse.json(
+      { error: "Invalid IPTV server URL." },
+      { status: 400 }
+    );
+  }
+  const upstream = new URL("player_api.php", serverUrl);
   upstream.searchParams.set("username", creds.username);
   upstream.searchParams.set("password", creds.password);
   for (const [k, v] of url.searchParams.entries()) {

@@ -3,6 +3,9 @@
  * (prevents mixed content and provider CORS blocks on HTTPS pages).
  */
 
+/** Skip rewrite (and avoid RangeError: Invalid string length) on huge playlists. */
+export const MAX_HLS_MANIFEST_REWRITE_CHARS = 2_000_000;
+
 export function rewriteHlsManifest(
   text: string,
   manifestUrl: URL,
@@ -33,13 +36,15 @@ export function rewriteHlsManifest(
     return proxyLine(abs);
   };
 
+  if (text.length > MAX_HLS_MANIFEST_REWRITE_CHARS) {
+    return text;
+  }
+
   const quotedUriRe = /URI="([^"]+)"/gi;
   const tagAttrUriRe = /\bURI=([^,\s"#]+)/gi;
   const bareHttpRe = /https?:\/\/[^\s"',]+/gi;
 
-  return text
-    .split(/\r?\n/)
-    .map((line) => {
+  const lines = text.split(/\r?\n/).map((line) => {
       const trimmed = line.trim();
       if (!trimmed) return line;
 
@@ -82,6 +87,10 @@ export function rewriteHlsManifest(
       }
 
       return out;
-    })
-    .join("\n");
+    });
+  try {
+    return lines.join("\n");
+  } catch {
+    return text;
+  }
 }

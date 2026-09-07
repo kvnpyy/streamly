@@ -135,6 +135,7 @@ const nextConfig: NextConfig = {
     { source: "/login", headers: [...noStoreDocument] },
     { source: "/app", headers: [...noStoreDocument] },
     { source: "/app/:path*", headers: [...noStoreDocument] },
+    { source: "/play", headers: [...noStoreDocument] },
   ],
 };
 

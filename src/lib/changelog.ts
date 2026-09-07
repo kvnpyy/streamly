@@ -11,6 +11,18 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.13.19",
+    date: "2026-09-06",
+    summary:
+      "TV-safe share links play without login, and production Sentry errors from stream/xtream/img are fixed.",
+    highlights: [
+      "Pasting a TV-safe /api/stream URL in Chrome (including incognito) opens a standalone player instead of a raw playlist.",
+      "VLC, Infuse, Kodi, and other TV players are allowed through the stream proxy UA gate.",
+      "Share menu opens the proxied stream in a new tab; provider URLs are copied instead of opened in Chrome.",
+      "Sentry: client-abort / pipe-reset noise, invalid Xtream server URLs, oversized HLS rewrite, Safari login NotFoundError.",
+    ],
+  },
+  {
     version: "0.13.18",
     date: "2026-08-22",
     summary:

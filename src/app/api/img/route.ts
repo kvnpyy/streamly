@@ -1,3 +1,4 @@
+import { passthroughStreamWithGracefulClose } from "@/lib/stream-proxy-passthrough";
 import { NextRequest } from "next/server";
 
 export const runtime = "nodejs";
@@ -103,7 +104,10 @@ export async function GET(req: NextRequest) {
       "cache-control",
       "public, max-age=86400, stale-while-revalidate=604800"
     );
-    return new Response(upstream.body, { status: 200, headers });
+    return new Response(
+      passthroughStreamWithGracefulClose(upstream.body, req.signal),
+      { status: 200, headers }
+    );
   } catch {
     return fallbackPngResponse("fetch-exception");
   }

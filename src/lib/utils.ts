@@ -140,3 +140,17 @@ export function normalizeServer(url: string): string {
   u = u.replace(/\/get\.php$/i, "");
   return u.replace(/\/+$/, "");
 }
+
+/** Absolute http(s) URL after {@link normalizeServer}, or null if `new URL` would throw. */
+export function tryParseHttpUrl(raw: string): URL | null {
+  const normalized = normalizeServer(raw);
+  if (!normalized) return null;
+  try {
+    const parsed = new URL(normalized);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
+    if (!parsed.hostname) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   appendStreamCompatMse,
+  extractStreamProxyUpstream,
   streamProxyTypeIsHls,
   withLiveHlsCompatMse,
 } from "./stream-url";
@@ -24,5 +25,16 @@ describe("stream-url", () => {
   it("detects hls proxy type", () => {
     expect(streamProxyTypeIsHls("/api/stream?u=x&type=hls")).toBe(true);
     expect(streamProxyTypeIsHls("/api/stream?u=x&type=vod")).toBe(false);
+  });
+
+  it("extracts the upstream URL from a proxy playback URL", () => {
+    const upstream = "http://panel.example/live/u/p/1.m3u8";
+    expect(
+      extractStreamProxyUpstream(
+        `/api/stream?u=${encodeURIComponent(upstream)}&type=hls`
+      )
+    ).toBe(upstream);
+    expect(extractStreamProxyUpstream("https://cdn.example/1.m3u8")).toBeNull();
+    expect(extractStreamProxyUpstream("/api/stream?type=hls")).toBeNull();
   });
 });

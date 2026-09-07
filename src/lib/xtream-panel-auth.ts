@@ -2,7 +2,7 @@ import "server-only";
 
 import { tryHandleReviewPanelRequest } from "@/lib/review-panel/handler";
 import type { AuthResponse, XtreamCredentials } from "@/lib/xtream-types";
-import { normalizeServer } from "@/lib/utils";
+import { tryParseHttpUrl } from "@/lib/utils";
 import { fetchXtreamPanelWithRetry } from "@/lib/xtream-upstream-fetch";
 
 const XTREAM_UA =
@@ -21,8 +21,11 @@ export async function authenticateXtreamPanel(
     return review as AuthResponse;
   }
 
-  const server = normalizeServer(creds.server);
-  const upstream = new URL(`${server}/player_api.php`);
+  const serverUrl = tryParseHttpUrl(creds.server);
+  if (!serverUrl) {
+    throw new Error("invalid xtream server url");
+  }
+  const upstream = new URL("player_api.php", serverUrl);
   upstream.searchParams.set("username", creds.username);
   upstream.searchParams.set("password", creds.password);
 

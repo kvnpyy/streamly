@@ -93,8 +93,28 @@ describe("shouldDropSentryClientEvent", () => {
       )
     ).toBe(true);
     expect(
+      shouldDropSentryException(
+        "NotFoundError",
+        "The object can not be found here."
+      )
+    ).toBe(true);
+    expect(
       shouldDropSentryException("TypeError", "Load failed (iptvwebplayer.org)")
     ).toBe(true);
+  });
+
+  it("drops client-disconnect noise from stream and image proxies", () => {
+    expect(shouldDropSentryException("ResponseAborted", "")).toBe(true);
+    expect(shouldDropSentryException("AbortError", "The operation was aborted.")).toBe(
+      true
+    );
+    expect(shouldDropSentryException("Error", "failed to pipe response")).toBe(
+      true
+    );
+    expect(shouldDropSentryException("TypeError", "terminated")).toBe(true);
+    expect(shouldDropSentryException("SocketError", "other side closed")).toBe(
+      true
+    );
   });
 
   it("keeps application errors", () => {
