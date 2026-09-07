@@ -20,6 +20,7 @@ export const CHANGELOG: readonly ChangelogEntry[] = [
       "VLC, Infuse, Kodi, and other TV players are allowed through the stream proxy UA gate.",
       "Share menu opens the proxied stream in a new tab; provider URLs are copied instead of opened in Chrome.",
       "Sentry: client-abort / pipe-reset noise, invalid Xtream server URLs, oversized HLS rewrite, Safari login NotFoundError.",
+      "TV-safe /api/stream browser redirect uses a relative /play Location so production is not localhost.",
     ],
   },
   {

@@ -35,6 +35,7 @@ TV-safe share links play without login, and production Sentry errors from stream
 - **Sentry `Invalid string length`** — do not rewrite huge HLS playlists in memory (`JAVASCRIPT-NEXTJS-1F`).
 - **Sentry `Invalid URL` on `/api/xtream`** — reject unparseable panel URLs with HTTP 400 instead of throwing (`JAVASCRIPT-NEXTJS-W`).
 - **Sentry Safari `NotFoundError` on `/login`** — drop WebKit “object can not be found here” removeChild races (`JAVASCRIPT-NEXTJS-1G`).
+- **TV-safe redirect origin** — `/api/stream` browser navigation uses a relative `/play` Location so production is not rewritten to localhost.
 
 ### Changed
 - Share menu opens the TV-safe stream in a new tab. Raw provider URLs are copied, because panels reject Chrome.

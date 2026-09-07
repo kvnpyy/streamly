@@ -38,7 +38,7 @@ import {
   looksLikeHtmlContentType,
 } from "@/lib/vod-stream-probe-server";
 import { isBrowserDocumentNavigation } from "@/lib/stream-proxy-navigation";
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -208,8 +208,11 @@ async function handle(req: NextRequest, head: boolean) {
     url.searchParams.get("transcode") !== "release" &&
     isBrowserDocumentNavigation(req.headers)
   ) {
-    const play = new URL(`/play${url.search}`, req.url);
-    return NextResponse.redirect(play, 302);
+    // Relative Location — req.url is http://127.0.0.1:3000 behind Caddy.
+    return new Response(null, {
+      status: 302,
+      headers: { Location: `/play${url.search}` },
+    });
   }
 
   const releaseStreamSlot = acquireStreamProxySlot();
