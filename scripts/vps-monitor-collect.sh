@@ -74,28 +74,38 @@ read_net() {
   echo "$iface $rx $tx"
 }
 
+write_net_state() {
+  {
+    echo "prev_iface=$1"
+    echo "prev_tx=$2"
+    echo "prev_ts=$3"
+  } >"$STATE_FILE"
+}
+
 calc_egress_mbps() {
   local iface="$1" tx="$2" now
+  local prev_iface="" prev_tx="" prev_ts=""
   now=$(date +%s)
   if [ -f "$STATE_FILE" ]; then
     # shellcheck disable=SC1090
     source "$STATE_FILE"
-    if [ "${prev_iface:-}" = "$iface" ] && [ -n "${prev_tx:-}" ] && [ -n "${prev_ts:-}" ]; then
+    # Older collectors wrote iface= (and sourcing that clobbered $iface).
+    if [ -z "${prev_iface:-}" ]; then
+      prev_iface="${iface:-}"
+    fi
+    iface="$1"
+    if [ -n "$prev_iface" ] && [ "$prev_iface" = "$iface" ] && [ -n "${prev_tx:-}" ] && [ -n "${prev_ts:-}" ]; then
       local dt dtx
       dt=$((now - prev_ts))
       dtx=$((tx - prev_tx))
       if [ "$dt" -gt 0 ] && [ "$dtx" -ge 0 ]; then
         awk -v bytes="$dtx" -v sec="$dt" 'BEGIN { printf "%.2f", (bytes * 8) / (sec * 1000000) }'
-        echo "iface=$iface" >"$STATE_FILE"
-        echo "prev_tx=$tx" >>"$STATE_FILE"
-        echo "prev_ts=$now" >>"$STATE_FILE"
+        write_net_state "$iface" "$tx" "$now"
         return
       fi
     fi
   fi
-  echo "iface=$iface" >"$STATE_FILE"
-  echo "prev_tx=$tx" >>"$STATE_FILE"
-  echo "prev_ts=$now" >>"$STATE_FILE"
+  write_net_state "$iface" "$tx" "$now"
   echo "0"
 }
 

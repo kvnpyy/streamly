@@ -21,6 +21,9 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ## [Unreleased]
 
+### Fixed
+- **VPS capacity egress Mbps** — collector now persists `prev_iface` so 5-minute bandwidth samples are real rates instead of always `0`.
+
 ---
 
 ## [0.13.19] — 2026-09-06
