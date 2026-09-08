@@ -151,9 +151,9 @@ export function PlayerSeekBar({
         </div>
       )}
 
-      <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 h-1.5 bg-white/15 rounded-full overflow-hidden">
+      <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 h-2 bg-white/30 rounded-full overflow-hidden">
         <div
-          className="absolute inset-y-0 left-0 bg-white/25"
+          className="absolute inset-y-0 left-0 bg-white/40"
           style={{ width: `${bufferedProgress}%` }}
         />
         <div
@@ -205,15 +205,21 @@ export function PlayerSeekBar({
           onScrubCancel?.();
         }}
         aria-label="Seek"
-        className="relative w-full appearance-none bg-transparent h-5 cursor-pointer
+        className="relative w-full appearance-none bg-transparent h-6 cursor-pointer
+                  [&::-webkit-slider-runnable-track]:appearance-none
+                  [&::-webkit-slider-runnable-track]:bg-transparent
                   [&::-webkit-slider-thumb]:appearance-none
-                  [&::-webkit-slider-thumb]:size-3.5
+                  [&::-webkit-slider-thumb]:size-4
                   [&::-webkit-slider-thumb]:rounded-full
                   [&::-webkit-slider-thumb]:bg-white
                   [&::-webkit-slider-thumb]:shadow-lg
-                  [&::-webkit-slider-thumb]:opacity-0
-                  group-hover/scrub:[&::-webkit-slider-thumb]:opacity-100
-                  [&::-webkit-slider-thumb]:transition-opacity"
+                  [&::-moz-range-track]:bg-transparent
+                  [&::-moz-range-track]:border-0
+                  [&::-moz-range-thumb]:appearance-none
+                  [&::-moz-range-thumb]:border-0
+                  [&::-moz-range-thumb]:size-4
+                  [&::-moz-range-thumb]:rounded-full
+                  [&::-moz-range-thumb]:bg-white"
       />
     </div>
   );

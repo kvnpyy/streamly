@@ -23,6 +23,17 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.13.21] — 2026-09-08
+
+The VOD seek bar stays visible even when title duration is still probing.
+
+### Fixed
+- **Seek bar missing after last update** — Movies and episodes always show the bar. A late or missing duration probe no longer unmounts it.
+- **Transcode duration** — Playlists now include `#EXT-X-STREAMLY-DURATION-SEC`; the player reads the tag if the duration header never arrives.
+- **Seek bar hard to see** — Track contrast is higher and the thumb stays visible on phones and TVs (no hover-only fade).
+
+---
+
 ## [0.13.20] — 2026-09-07
 
 Desktop playback keeps going when you leave the tab, and GitHub plus Ko-fi are visible in the app chrome.

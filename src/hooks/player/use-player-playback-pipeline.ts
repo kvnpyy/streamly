@@ -42,6 +42,10 @@ import {
 } from "@/lib/player-teardown";
 import { detachVideoElement, safeVideoPlay, voidSafeVideoPlay } from "@/lib/video-play";
 import {
+  durationHintFromTranscodePlaylistResponse,
+  parseStreamlyDurationSec,
+} from "@/lib/vod-transcode-manifest";
+import {
   playbackUrlUsesVodTranscode,
   releaseVodTranscodePlayback,
 } from "@/lib/vod-transcode-url";
@@ -651,9 +655,11 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
               startOffset: Number.isFinite(off) && off >= 0 ? off : undefined,
               encoded: Number.isFinite(enc) && enc > 0 ? enc : undefined,
             });
-            const durHdr = xhr.getResponseHeader("x-vod-duration-sec");
-            const hint = durHdr ? parseFloat(durHdr) : NaN;
-            if (Number.isFinite(hint) && hint > 1) {
+            const hint = durationHintFromTranscodePlaylistResponse(
+              xhr.getResponseHeader("x-vod-duration-sec"),
+              xhr.responseText || ""
+            );
+            if (hint != null && hint > 1) {
               applyVodDurationHint(hint);
             }
             if (Number.isFinite(enc) && enc > 2) {
@@ -844,7 +850,17 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
       });
 
       hls.on(Hls.Events.FRAG_LOADED, resetNetErrStreak);
-      hls.on(Hls.Events.LEVEL_LOADED, resetNetErrStreak);
+      hls.on(Hls.Events.LEVEL_LOADED, (_evt, data) => {
+        resetNetErrStreak();
+        if (cancelled || !vodTranscodeHls) return;
+        if (vodDurationHintRef.current > 1) return;
+        const fromTag = parseStreamlyDurationSec(
+          typeof data.details?.m3u8 === "string" ? data.details.m3u8 : ""
+        );
+        if (fromTag != null && fromTag > 1) {
+          applyVodDurationHint(fromTag);
+        }
+      });
 
       if (isLive) {
         hls.on(Hls.Events.FRAG_BUFFERED, () => {

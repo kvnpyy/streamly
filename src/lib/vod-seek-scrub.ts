@@ -1,3 +1,27 @@
+/** Finite media duration usable for the VOD seek bar (rejects Infinity / NaN). */
+export function usableVodDurationSec(sec: number | null | undefined): number {
+  if (sec == null || !Number.isFinite(sec) || sec <= 1 || sec >= 86_400) {
+    return 0;
+  }
+  return sec;
+}
+
+/**
+ * Seek-bar scale for VOD. Prefer the probed title length; fall back to the
+ * media clock so the bar still mounts when transcode headers are late.
+ */
+export function resolveEffectiveVodDuration(opts: {
+  isLive: boolean;
+  titleDurationSec: number;
+  mediaDurationSec: number;
+}): number {
+  if (opts.isLive) return 0;
+  return (
+    usableVodDurationSec(opts.titleDurationSec) ||
+    usableVodDurationSec(opts.mediaDurationSec)
+  );
+}
+
 /** Map seek-bar percent (0–100) to absolute seconds on the full title timeline. */
 export function scrubPercentToAbsoluteSec(
   progressPercent: number,

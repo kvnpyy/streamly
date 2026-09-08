@@ -11,6 +11,17 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.13.21",
+    date: "2026-09-08",
+    summary:
+      "The VOD seek bar stays visible even when title duration is still probing.",
+    highlights: [
+      "Player: movies and episodes always show the seek bar — a late duration probe no longer hides it.",
+      "Transcode playlists publish #EXT-X-STREAMLY-DURATION-SEC and the client reads the tag if the duration header is missing.",
+      "Seek track and thumb stay visible on phones and TVs (no hover-only fade).",
+    ],
+  },
+  {
     version: "0.13.20",
     date: "2026-09-07",
     summary:

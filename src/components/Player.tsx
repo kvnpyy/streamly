@@ -28,6 +28,7 @@ import {
   warmVodTranscodePlay,
 } from "@/lib/vod-transcode-url";
 import { transcodeSeekNeedsServerRestart as transcodeSeekNeedsServerRestartPolicy } from "@/lib/vod-transcode-seek-policy";
+import { resolveEffectiveVodDuration } from "@/lib/vod-seek-scrub";
 import { humanizePlaybackErrorResponse } from "@/lib/playback-error-message";
 import { TvPlayerRemoteHints } from "@/components/TvPlayerRemoteHints";
 import { VodPrepareOverlay } from "@/components/VodPrepareOverlay";
@@ -2191,17 +2192,11 @@ export function PlayerOverlay() {
     };
   }, [open, requestClose, cleanupPlayerHistorySentinel]);
 
-  const effectiveVodDuration = isLive
-    ? 0
-    : usesTranscodePlayback
-      ? vodTotalSec > 1
-        ? vodTotalSec
-        : 0
-      : vodTotalSec > 1
-        ? vodTotalSec
-        : duration > 1 && Number.isFinite(duration)
-          ? duration
-          : 0;
+  const effectiveVodDuration = resolveEffectiveVodDuration({
+    isLive,
+    titleDurationSec: vodTotalSec,
+    mediaDurationSec: duration,
+  });
 
   const playNextEpisode = useCallback(() => {
     doFlip(1, true);
@@ -2967,8 +2962,8 @@ export function PlayerOverlay() {
                       isLive={isLive}
                     />
                   )}
-                  {/* Seek bar */}
-                  {!isLive && effectiveVodDuration > 0 && (
+                  {/* Seek bar — always for VOD so a late duration probe cannot hide it. */}
+                  {!isLive && (
                     <PlayerSeekBar
                       duration={effectiveVodDuration}
                       time={time}
@@ -3056,8 +3051,10 @@ export function PlayerOverlay() {
                           <span className="size-1.5 rounded-full bg-red-500 animate-pulse" />
                           LIVE
                         </span>
-                      ) : (
+                      ) : effectiveVodDuration > 0 ? (
                         `${formatTime(time)} / ${formatTime(effectiveVodDuration)}`
+                      ) : (
+                        formatTime(time)
                       )}
                     </div>
 

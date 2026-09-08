@@ -529,6 +529,14 @@ export function usePlayerVideoEvents(p: UsePlayerVideoEventsParams) {
       if (v.videoWidth > 0) setLiveAudioNoPicture(false);
     };
 
+    const onDurationChange = () => {
+      if (isLiveStream || usesTranscodePlayback) return;
+      const vd = v.duration;
+      if (Number.isFinite(vd) && vd > 1 && vd < 86400) {
+        applyVodDurationHint(vd);
+      }
+    };
+
     const onLoadedData = () => {
       markPictureReady();
       if (v.videoWidth > 0) setLiveAudioNoPicture(false);
@@ -660,6 +668,7 @@ export function usePlayerVideoEvents(p: UsePlayerVideoEventsParams) {
     v.addEventListener("playing", onPlaying);
     v.addEventListener("timeupdate", onTime);
     v.addEventListener("loadedmetadata", onMeta);
+    v.addEventListener("durationchange", onDurationChange);
     v.addEventListener("loadeddata", onLoadedData);
     v.addEventListener("volumechange", onVol);
     v.addEventListener("error", onErr);
@@ -676,6 +685,7 @@ export function usePlayerVideoEvents(p: UsePlayerVideoEventsParams) {
       v.removeEventListener("playing", onPlaying);
       v.removeEventListener("timeupdate", onTime);
       v.removeEventListener("loadedmetadata", onMeta);
+      v.removeEventListener("durationchange", onDurationChange);
       v.removeEventListener("loadeddata", onLoadedData);
       v.removeEventListener("volumechange", onVol);
       v.removeEventListener("error", onErr);

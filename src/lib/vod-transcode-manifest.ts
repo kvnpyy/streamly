@@ -430,6 +430,19 @@ export function parseStreamlyEncodedDurationSec(
   return n != null && n > 0 ? n : null;
 }
 
+/**
+ * Title duration for the VOD seek bar. Prefer the proxy header; fall back to
+ * the playlist tag so a stripped Access-Control-Expose-Headers still works.
+ */
+export function durationHintFromTranscodePlaylistResponse(
+  durationHeader: string | null | undefined,
+  playlistText: string
+): number | null {
+  const hdr = durationHeader ? parseFloat(durationHeader) : NaN;
+  if (Number.isFinite(hdr) && hdr > 1) return hdr;
+  return parseStreamlyDurationSec(playlistText);
+}
+
 export function rewriteTranscodeManifest(
   text: string,
   upstream: string,
@@ -456,6 +469,10 @@ export function rewriteTranscodeManifest(
     streamlyTags.push("#EXT-X-PLAYLIST-TYPE:VOD");
   } else {
     streamlyTags.push("#EXT-X-PLAYLIST-TYPE:EVENT");
+  }
+  const titleDur = opts?.durationSec;
+  if (titleDur != null && titleDur > 1) {
+    streamlyTags.push(`#EXT-X-STREAMLY-DURATION-SEC:${titleDur}`);
   }
   const off = opts?.startOffsetSec ?? 0;
   if (off > 0) streamlyTags.push(`#EXT-X-STREAMLY-START-OFFSET-SEC:${off}`);

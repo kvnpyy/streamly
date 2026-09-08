@@ -11,6 +11,7 @@ import {
   MAX_IN_PROGRESS_PLAYLIST_DURATION_SEC,
   MAX_IN_PROGRESS_PLAYLIST_SEGMENTS,
   maxInProgressPlaylistSegments,
+  durationHintFromTranscodePlaylistResponse,
   parseStreamlyDurationSec,
   IN_PROGRESS_ENCODE_EDGE_HOLDBACK,
   prepareManifestForPlayback,
@@ -225,15 +226,34 @@ describe("rewriteTranscodeManifest", () => {
     expect(out).toContain("#EXT-X-PLAYLIST-TYPE:VOD");
     expect(out).toContain("#EXT-X-STREAMLY-START-OFFSET-SEC:120");
     expect(out).toContain("#EXT-X-STREAMLY-ENCODED-DURATION-SEC:");
+    expect(out).toContain("#EXT-X-STREAMLY-DURATION-SEC:7200.5");
     expect(out).toContain("tc_seek=120");
-    expect(parseStreamlyDurationSec(out)).toBeNull();
+    expect(parseStreamlyDurationSec(out)).toBe(7200.5);
     const inProgress = rewriteTranscodeManifest(raw, "http://x/m.mkv", false, {
       durationSec: 7200.5,
       playlistComplete: false,
     });
     expect(inProgress).toContain("#EXT-X-PLAYLIST-TYPE:EVENT");
     expect(inProgress).not.toContain("#EXT-X-PLAYLIST-TYPE:VOD");
-    expect(parseStreamlyDurationSec(inProgress)).toBeNull();
+    expect(parseStreamlyDurationSec(inProgress)).toBe(7200.5);
+  });
+
+  it("reads title duration from the header or the playlist tag", () => {
+    const tagged = rewriteTranscodeManifest(
+      "#EXTM3U\n#EXTINF:6,\nseg_00000.ts\n",
+      "http://x/m.mkv",
+      false,
+      { durationSec: 5400, playlistComplete: true }
+    );
+    expect(
+      durationHintFromTranscodePlaylistResponse("7200", tagged)
+    ).toBe(7200);
+    expect(
+      durationHintFromTranscodePlaylistResponse(null, tagged)
+    ).toBe(5400);
+    expect(
+      durationHintFromTranscodePlaylistResponse(null, "#EXTM3U\n#EXTINF:6,\nseg.ts\n")
+    ).toBeNull();
   });
 });
 
