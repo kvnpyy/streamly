@@ -3,6 +3,7 @@
 import { StreamIdentityCard } from "@/components/StreamIdentityCard";
 import { BrandMark } from "@/components/BrandMark";
 import { CommunityDiscordLink } from "@/components/CommunityDiscordLink";
+import { CommunityGitHubLink } from "@/components/CommunityGitHubLink";
 import { UserContentDisclaimer } from "@/components/UserContentDisclaimer";
 import { useAuthBootstrapReady } from "@/components/AuthSessionBootstrap";
 import { useTvBrowser } from "@/components/TvBrowserProvider";
@@ -464,6 +465,10 @@ function LoginPageInner() {
             >
               Blog
             </Link>
+            <CommunityGitHubLink
+              label="GitHub"
+              className="min-h-11 underline underline-offset-2 hover:text-(--text)"
+            />
             <CommunityDiscordLink
               label="Discord"
               className="min-h-11 underline underline-offset-2 hover:text-(--text)"

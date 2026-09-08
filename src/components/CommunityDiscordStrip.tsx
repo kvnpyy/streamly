@@ -1,6 +1,7 @@
 "use client";
 
 import { CommunityDiscordLink } from "@/components/CommunityDiscordLink";
+import { CommunityGitHubLink } from "@/components/CommunityGitHubLink";
 import { scheduleWhenIdle } from "@/lib/defer-idle";
 import { notifyChromeLayoutShift } from "@/lib/shell-layout";
 import { discordInviteUrl, SITE_NAME } from "@/lib/site-brand";
@@ -32,7 +33,7 @@ function persistDismiss() {
 
 /** Slim community CTA below the app top bar — dismissible per browser. */
 export function CommunityDiscordStrip({ className }: { className?: string }) {
-  const href = discordInviteUrl();
+  const discordHref = discordInviteUrl();
   const closeCategory = useLiveBrowseUi((s) => s.closeCategory);
   const [phase, setPhase] = useState<StripPhase>("pending");
   const dismissingRef = useRef(false);
@@ -76,7 +77,7 @@ export function CommunityDiscordStrip({ className }: { className?: string }) {
     };
   }, [phase]);
 
-  if (!href || phase === "pending" || phase === "gone") return null;
+  if (phase === "pending" || phase === "gone") return null;
 
   return (
     <div
@@ -90,20 +91,29 @@ export function CommunityDiscordStrip({ className }: { className?: string }) {
       aria-hidden={phase === "closing"}
     >
       <p className="text-sm text-(--text-dim) leading-snug min-w-0">
-        <span className="text-(--text) font-medium">Join the {SITE_NAME} Discord</span>
+        <span className="text-(--text) font-medium">
+          {SITE_NAME} is open source
+        </span>
         {" — "}
-        setup help, release notes, and chat with other users.
+        star the GitHub repo
+        {discordHref ? ", or join Discord for setup help and chat" : ""}.
       </p>
       <div className="flex items-center gap-2 shrink-0">
-        <CommunityDiscordLink
-          label="Join Discord"
-          className="min-h-9 px-3.5 rounded-lg bg-[#5865F2]/20 border border-[#5865F2]/40 hover:border-[#5865F2]/60 text-sm font-medium text-[#dce0ff]"
+        <CommunityGitHubLink
+          label="GitHub"
+          className="min-h-9 px-3.5 rounded-lg border border-white/12 bg-white/[0.04] hover:border-white/20 text-sm font-medium text-(--text)"
         />
+        {discordHref ? (
+          <CommunityDiscordLink
+            label="Join Discord"
+            className="min-h-9 px-3.5 rounded-lg bg-[#5865F2]/20 border border-[#5865F2]/40 hover:border-[#5865F2]/60 text-sm font-medium text-[#dce0ff]"
+          />
+        ) : null}
         <button
           type="button"
           onClick={(e) => dismiss(e)}
           className="size-9 rounded-lg text-(--text-muted) hover:text-(--text) hover:bg-white/5 transition-colors inline-flex items-center justify-center touch-manipulation"
-          aria-label="Dismiss Discord community notice"
+          aria-label="Dismiss community notice"
         >
           <X className="size-4 pointer-events-none" />
         </button>

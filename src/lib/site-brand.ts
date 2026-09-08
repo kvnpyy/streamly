@@ -15,6 +15,9 @@ export const FEEDBACK_FORM_URL =
 
 export const GITHUB_REPO_URL = "https://github.com/kvnpyy/streamly";
 
+/** Ko-fi tip jar — optional support for the open-source project. */
+export const KOFI_SUPPORT_URL = "https://ko-fi.com/freeforall";
+
 /** Pinned "Feedback & Ideas" thread — low-friction ideas without opening an issue. */
 export const GITHUB_DISCUSSIONS_FEEDBACK_URL =
   process.env.NEXT_PUBLIC_GITHUB_DISCUSSIONS_FEEDBACK_URL?.trim() ||

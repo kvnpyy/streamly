@@ -1,6 +1,8 @@
 "use client";
 
 import { CommunityDiscordSidebarLink } from "@/components/CommunityDiscordSidebarLink";
+import { CommunityGitHubLink } from "@/components/CommunityGitHubLink";
+import { CommunityKofiSidebarLink } from "@/components/CommunityKofiSidebarLink";
 import { useTvBrowser } from "@/components/TvBrowserProvider";
 import { MOBILE_NAV_MORE, MOBILE_NAV_PRIMARY } from "@/lib/nav-config";
 import { feedbackFormUrlWithContext } from "@/lib/feedback-url";
@@ -259,6 +261,15 @@ export function MobileBottomNav() {
                 <ListMusic className="size-[18px] text-(--brand)" />
                 Playlists
               </Link>
+              <CommunityGitHubLink
+                label="GitHub"
+                onNavigate={closeSheet}
+                className="w-full rounded-xl px-3 py-3 text-sm text-(--text-dim) active:bg-(--bg-2)"
+              />
+              <CommunityKofiSidebarLink
+                onNavigate={closeSheet}
+                className="rounded-xl px-3 py-3 text-sm text-(--text-dim) active:bg-(--bg-2)"
+              />
               <CommunityDiscordSidebarLink
                 className="rounded-xl px-3 py-3 text-sm text-(--text-dim) active:bg-(--bg-2)"
                 onNavigate={closeSheet}

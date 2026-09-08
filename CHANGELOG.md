@@ -21,8 +21,16 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ## [Unreleased]
 
-### Fixed
-- **VPS capacity egress Mbps** — collector now persists `prev_iface` so 5-minute bandwidth samples are real rates instead of always `0`.
+---
+
+## [0.13.20] — 2026-09-07
+
+Desktop playback keeps going when you leave the tab, and GitHub plus Ko-fi are visible in the app chrome.
+
+### Changed
+- **Player keeps playing on desktop tab hide** — YouTube/Netflix-style background audio. Living-room TVs still suspend after 5s. Picture-in-Picture is never paused.
+- **Home page GitHub link** — header and footer now sit GitHub next to Discord (repo, not only Discussions feedback).
+- **Sidebar Support** — Ko-fi tip link (`ko-fi.com/freeforall`) in the logged-in left menu and mobile More sheet.
 
 ---
 

@@ -16,6 +16,41 @@ export function shouldDeferBackgroundSuspend(
   return hiddenMs < minSuspendMs;
 }
 
+/** Why the page reported background — visibility hide is not the same as teardown. */
+export type BackgroundLifecycleReason = "visibility" | "pagehide" | "freeze";
+
+/**
+ * Desktop/laptop (and phone browsers) should keep playing on a normal tab hide —
+ * same as YouTube / Netflix / Twitch. Living-room TVs still suspend so overnight
+ * Silk/Tizen/webOS sleep cannot leave a stale MSE session.
+ *
+ * `pagehide` / `freeze` mean the OS is discarding or freezing the page: always
+ * schedule suspend unless Picture-in-Picture is active (user opted into
+ * multitasking).
+ */
+export function shouldScheduleBackgroundSuspend(opts: {
+  reason: BackgroundLifecycleReason;
+  isTvOrSilk: boolean;
+  isPictureInPicture: boolean;
+}): boolean {
+  if (opts.isPictureInPicture) return false;
+  if (opts.reason === "visibility") return opts.isTvOrSilk;
+  return true;
+}
+
+/**
+ * iOS / Memory Saver may pause the element without our `stopLoad`. Resume only
+ * when we never suspended and playback was running at hide time.
+ */
+export function shouldSoftResumeUnsuspendedPlayback(opts: {
+  wasPlayingWhenHidden: boolean;
+  isVideoPaused: boolean;
+  didSuspend: boolean;
+}): boolean {
+  if (opts.didSuspend) return false;
+  return opts.wasPlayingWhenHidden && opts.isVideoPaused;
+}
+
 export type BackgroundContentKind = "live" | "vod" | "series";
 
 export type BackgroundRecoveryPlan =

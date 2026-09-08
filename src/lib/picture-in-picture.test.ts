@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   isBenignPictureInPictureError,
   isPictureInPictureSupported,
+  isVideoInPictureInPicture,
 } from "./picture-in-picture";
 
 describe("picture-in-picture", () => {
@@ -29,5 +30,20 @@ describe("picture-in-picture", () => {
     } as unknown as HTMLVideoElement;
     expect(isPictureInPictureSupported(video)).toBe(true);
     vi.unstubAllGlobals();
+  });
+
+  it("isVideoInPictureInPicture is true for the active PiP element", () => {
+    const video = {} as HTMLVideoElement;
+    vi.stubGlobal("document", { pictureInPictureElement: video });
+    expect(isVideoInPictureInPicture(video)).toBe(true);
+    expect(isVideoInPictureInPicture({} as HTMLVideoElement)).toBe(false);
+    vi.unstubAllGlobals();
+  });
+
+  it("isVideoInPictureInPicture detects Safari webkitPresentationMode", () => {
+    const video = {
+      webkitPresentationMode: "picture-in-picture",
+    } as HTMLVideoElement;
+    expect(isVideoInPictureInPicture(video)).toBe(true);
   });
 });

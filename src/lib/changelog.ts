@@ -11,6 +11,17 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.13.20",
+    date: "2026-09-07",
+    summary:
+      "Desktop playback keeps going when you leave the tab, and GitHub plus Ko-fi are visible in the app chrome.",
+    highlights: [
+      "Player: desktop and phone tabs keep playing on hide; Tizen/webOS/Silk still suspend after 5s; Picture-in-Picture is never paused.",
+      "Home, login, blog, and the logged-in banner now link the GitHub repo next to Discord.",
+      "Sidebar and mobile More: Support opens ko-fi.com/freeforall.",
+    ],
+  },
+  {
     version: "0.13.19",
     date: "2026-09-06",
     summary:

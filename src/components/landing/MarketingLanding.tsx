@@ -1,6 +1,7 @@
 import { BrandMark } from "@/components/BrandMark";
 import { CommunityDiscordLink } from "@/components/CommunityDiscordLink";
 import { CommunityGitHubFeedbackLink } from "@/components/CommunityGitHubFeedbackLink";
+import { CommunityGitHubLink } from "@/components/CommunityGitHubLink";
 import { LandingHeroPreview } from "@/components/landing/LandingHeroPreview";
 import { LandingSectionEyebrow } from "@/components/landing/LandingSectionEyebrow";
 import { UserContentDisclaimer } from "@/components/UserContentDisclaimer";
@@ -125,6 +126,10 @@ export function MarketingLanding() {
             >
               Blog
             </Link>
+            <CommunityGitHubLink
+              label="GitHub"
+              className="hidden sm:inline-flex text-(--text-muted) hover:text-(--text) transition-colors min-h-10 px-2.5 sm:px-3 rounded-lg hover:bg-white/[0.04] landing-focus-ring"
+            />
             <CommunityDiscordLink
               label="Discord"
               className="hidden sm:inline-flex text-(--text-muted) hover:text-(--text) transition-colors min-h-10 px-2.5 sm:px-3 rounded-lg hover:bg-white/[0.04] landing-focus-ring"
@@ -486,6 +491,10 @@ export function MarketingLanding() {
               >
                 Changelog
               </Link>
+              <CommunityGitHubLink
+                label="GitHub"
+                className="min-h-10 hover:text-(--text) landing-focus-ring rounded px-0.5 text-(--text-muted)"
+              />
               <CommunityGitHubFeedbackLink
                 label="Feedback"
                 className="min-h-10 hover:text-(--text) landing-focus-ring rounded px-0.5 text-(--text-muted)"
@@ -522,6 +531,10 @@ export function MarketingLanding() {
             >
               Changelog
             </Link>
+            <CommunityGitHubLink
+              label="GitHub"
+              className="min-h-10 underline underline-offset-2 hover:text-(--text) landing-focus-ring text-(--text-muted)"
+            />
             <CommunityGitHubFeedbackLink
               label="Feedback"
               className="min-h-10 underline underline-offset-2 hover:text-(--text) landing-focus-ring text-(--text-muted)"

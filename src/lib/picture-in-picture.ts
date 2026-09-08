@@ -50,6 +50,24 @@ export function isPictureInPictureSupported(
   return Boolean(video?.requestPictureInPicture);
 }
 
+type WebKitPiPVideo = HTMLVideoElement & {
+  webkitPresentationMode?: string;
+};
+
+/** True when this video is the active standard or Safari WebKit PiP window. */
+export function isVideoInPictureInPicture(
+  video?: HTMLVideoElement | null
+): boolean {
+  if (!video) return false;
+  if (
+    typeof document !== "undefined" &&
+    document.pictureInPictureElement === video
+  ) {
+    return true;
+  }
+  return (video as WebKitPiPVideo).webkitPresentationMode === "picture-in-picture";
+}
+
 /**
  * Enter PiP only after the video has metadata (avoids InvalidStateError in production).
  * Never throws — returns false when PiP could not be entered.

@@ -4,7 +4,111 @@ import {
   PLAYER_LONG_BACKGROUND_MS,
   planBackgroundRecovery,
   shouldDeferBackgroundSuspend,
+  shouldScheduleBackgroundSuspend,
+  shouldSoftResumeUnsuspendedPlayback,
 } from "@/lib/player-page-lifecycle";
+
+describe("shouldScheduleBackgroundSuspend", () => {
+  it("does not pause desktop/phone tab hide", () => {
+    expect(
+      shouldScheduleBackgroundSuspend({
+        reason: "visibility",
+        isTvOrSilk: false,
+        isPictureInPicture: false,
+      })
+    ).toBe(false);
+  });
+
+  it("still suspends TV visibility hide after the flicker delay", () => {
+    expect(
+      shouldScheduleBackgroundSuspend({
+        reason: "visibility",
+        isTvOrSilk: true,
+        isPictureInPicture: false,
+      })
+    ).toBe(true);
+  });
+
+  it("never suspends while Picture-in-Picture is active", () => {
+    expect(
+      shouldScheduleBackgroundSuspend({
+        reason: "visibility",
+        isTvOrSilk: true,
+        isPictureInPicture: true,
+      })
+    ).toBe(false);
+    expect(
+      shouldScheduleBackgroundSuspend({
+        reason: "pagehide",
+        isTvOrSilk: false,
+        isPictureInPicture: true,
+      })
+    ).toBe(false);
+    expect(
+      shouldScheduleBackgroundSuspend({
+        reason: "freeze",
+        isTvOrSilk: false,
+        isPictureInPicture: true,
+      })
+    ).toBe(false);
+  });
+
+  it("schedules suspend on pagehide and freeze for desktop", () => {
+    expect(
+      shouldScheduleBackgroundSuspend({
+        reason: "pagehide",
+        isTvOrSilk: false,
+        isPictureInPicture: false,
+      })
+    ).toBe(true);
+    expect(
+      shouldScheduleBackgroundSuspend({
+        reason: "freeze",
+        isTvOrSilk: false,
+        isPictureInPicture: false,
+      })
+    ).toBe(true);
+  });
+});
+
+describe("shouldSoftResumeUnsuspendedPlayback", () => {
+  it("resumes when the OS paused a stream we left playing", () => {
+    expect(
+      shouldSoftResumeUnsuspendedPlayback({
+        wasPlayingWhenHidden: true,
+        isVideoPaused: true,
+        didSuspend: false,
+      })
+    ).toBe(true);
+  });
+
+  it("does not resume a user-paused or still-playing video", () => {
+    expect(
+      shouldSoftResumeUnsuspendedPlayback({
+        wasPlayingWhenHidden: false,
+        isVideoPaused: true,
+        didSuspend: false,
+      })
+    ).toBe(false);
+    expect(
+      shouldSoftResumeUnsuspendedPlayback({
+        wasPlayingWhenHidden: true,
+        isVideoPaused: false,
+        didSuspend: false,
+      })
+    ).toBe(false);
+  });
+
+  it("does not soft-resume after a real suspend", () => {
+    expect(
+      shouldSoftResumeUnsuspendedPlayback({
+        wasPlayingWhenHidden: true,
+        isVideoPaused: true,
+        didSuspend: true,
+      })
+    ).toBe(false);
+  });
+});
 
 describe("shouldDeferBackgroundSuspend", () => {
   it("defers suspend during brief TV visibility flickers", () => {

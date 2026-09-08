@@ -7,13 +7,18 @@ import {
   applyGentleLiveHlsRecovery,
   applySoftLiveHlsRecovery,
 } from "@/lib/live-hls-playback";
+import { isVideoInPictureInPicture } from "@/lib/picture-in-picture";
 import {
   PLAYER_BACKGROUND_SUSPEND_MS,
   planBackgroundRecovery,
+  shouldScheduleBackgroundSuspend,
+  shouldSoftResumeUnsuspendedPlayback,
   type BackgroundContentKind,
+  type BackgroundLifecycleReason,
 } from "@/lib/player-page-lifecycle";
 import { suspendPlayerMediaForBackground } from "@/lib/player-teardown";
 import type { PlayerSource } from "@/store/player";
+import { isTvOrSilkUserAgent } from "@/lib/tv-user-agent";
 import { voidSafeVideoPlay } from "@/lib/video-play";
 
 export type UsePlayerPageLifecycleParams = {
@@ -44,7 +49,9 @@ function resumeAfterSuspend(
 }
 
 /**
- * Suspend media on tab/TV sleep; recover on wake without sync `video.load()`.
+ * Suspend media on TV sleep / page freeze; keep playing on desktop tab hide.
+ * Recovers on wake without sync `video.load()`.
+ *
  * Listens to visibilitychange, pagehide/pageshow (bfcache), and freeze/resume.
  *
  * Critical: do **not** pause/`stopLoad` on the first hidden tick. TV browsers (Silk,
@@ -64,6 +71,7 @@ export function usePlayerPageLifecycle(p: UsePlayerPageLifecycleParams) {
 
   const hiddenAtRef = useRef(0);
   const suspendedRef = useRef(false);
+  const playingWhenHiddenRef = useRef(false);
   const suspendTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -79,13 +87,30 @@ export function usePlayerPageLifecycle(p: UsePlayerPageLifecycleParams) {
       }
     };
 
-    const markBackground = () => {
-      if (!hiddenAtRef.current) hiddenAtRef.current = Date.now();
+    const markBackground = (reason: BackgroundLifecycleReason) => {
+      const video = videoRef.current;
+      if (!hiddenAtRef.current) {
+        hiddenAtRef.current = Date.now();
+        playingWhenHiddenRef.current = !!video && !video.paused && !video.ended;
+      }
+
+      if (
+        !shouldScheduleBackgroundSuspend({
+          reason,
+          isTvOrSilk: isTvOrSilkUserAgent(),
+          isPictureInPicture: isVideoInPictureInPicture(video),
+        })
+      ) {
+        return;
+      }
+
       if (suspendedRef.current || suspendTimerRef.current != null) return;
       suspendTimerRef.current = setTimeout(() => {
         suspendTimerRef.current = null;
         // Woke before the delay elapsed (recover cleared hiddenAt).
         if (!hiddenAtRef.current || suspendedRef.current) return;
+        // Entered PiP during the TV flicker delay — user wants playback to continue.
+        if (isVideoInPictureInPicture(videoRef.current)) return;
         suspendPlayerMediaForBackground(videoRef.current, hlsRef.current);
         suspendedRef.current = true;
       }, PLAYER_BACKGROUND_SUSPEND_MS);
@@ -146,21 +171,31 @@ export function usePlayerPageLifecycle(p: UsePlayerPageLifecycleParams) {
       clearSuspendTimer();
       if (!hiddenAtRef.current) return;
 
-      // Brief flicker — never reached stopLoad/pause. Leave playback alone.
+      // Never reached stopLoad/pause — leave a still-playing desktop tab alone.
+      // Soft-resume when the OS paused us (iOS, Memory Saver) without our suspend.
       if (!suspendedRef.current) {
+        const video = videoRef.current;
+        const softResume = shouldSoftResumeUnsuspendedPlayback({
+          wasPlayingWhenHidden: playingWhenHiddenRef.current,
+          isVideoPaused: !!video?.paused,
+          didSuspend: false,
+        });
         hiddenAtRef.current = 0;
+        playingWhenHiddenRef.current = false;
+        if (softResume && video) voidSafeVideoPlay(video);
         return;
       }
 
       const hiddenMs = Date.now() - hiddenAtRef.current;
       hiddenAtRef.current = 0;
       suspendedRef.current = false;
+      playingWhenHiddenRef.current = false;
       applyRecoveryPlan(hiddenMs);
     };
 
     const onVisibilityChange = () => {
       if (document.visibilityState === "hidden") {
-        markBackground();
+        markBackground("visibility");
         return;
       }
       if (document.visibilityState === "visible") {
@@ -169,7 +204,7 @@ export function usePlayerPageLifecycle(p: UsePlayerPageLifecycleParams) {
     };
 
     const onPageHide = () => {
-      markBackground();
+      markBackground("pagehide");
     };
 
     const onPageShow = () => {
@@ -178,7 +213,7 @@ export function usePlayerPageLifecycle(p: UsePlayerPageLifecycleParams) {
     };
 
     const onFreeze = () => {
-      markBackground();
+      markBackground("freeze");
     };
 
     const onResume = () => {
