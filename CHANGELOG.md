@@ -23,6 +23,16 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.13.22] — 2026-09-08
+
+Clicking the VOD seek bar jumps to that time instead of restarting the title.
+
+### Fixed
+- **Seek click restarted from 00:00** — A mid-bar click used the range input’s stale playhead (usually the start) and rebuilt transcoded titles from the beginning. Clicks now use the pointer position on the track.
+- **Empty-bar seek** — Seeks wait until title duration is known so they cannot map to 0:00.
+
+---
+
 ## [0.13.21] — 2026-09-08
 
 The VOD seek bar stays visible even when title duration is still probing.

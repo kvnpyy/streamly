@@ -1459,6 +1459,7 @@ export function PlayerOverlay() {
   const onSeekCommit = useCallback(
     (targetSec: number) => {
       if (isLive) return;
+      if (!Number.isFinite(targetSec) || targetSec < 0) return;
       // Keep scrubbing gate through async land — clearing here lets timeupdate
       // snap the UI back to the tip before MSE finishes seeking.
       vodScrubbingRef.current = true;

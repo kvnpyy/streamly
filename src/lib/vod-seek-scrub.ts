@@ -22,6 +22,23 @@ export function resolveEffectiveVodDuration(opts: {
   );
 }
 
+/** Unknown duration maps every click to 0 — do not commit those seeks. */
+export function canCommitVodScrub(durationSec: number): boolean {
+  return Number.isFinite(durationSec) && durationSec > 1;
+}
+
+/** Map a pointer X on the seek track to 0–100. */
+export function clientXToScrubPercent(
+  clientX: number,
+  trackLeft: number,
+  trackWidth: number
+): number | null {
+  if (!Number.isFinite(clientX) || !Number.isFinite(trackLeft) || !(trackWidth > 0)) {
+    return null;
+  }
+  return Math.max(0, Math.min(100, ((clientX - trackLeft) / trackWidth) * 100));
+}
+
 /** Map seek-bar percent (0–100) to absolute seconds on the full title timeline. */
 export function scrubPercentToAbsoluteSec(
   progressPercent: number,

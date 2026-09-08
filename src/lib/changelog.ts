@@ -11,6 +11,16 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.13.22",
+    date: "2026-09-08",
+    summary:
+      "Clicking the VOD seek bar jumps to that time instead of restarting the title.",
+    highlights: [
+      "Seek clicks use the pointer position on the track, not the range input’s stale playhead.",
+      "Seeks are ignored until title duration is known, so an empty bar cannot send playback to 00:00.",
+    ],
+  },
+  {
     version: "0.13.21",
     date: "2026-09-08",
     summary:

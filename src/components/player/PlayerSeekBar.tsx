@@ -2,6 +2,8 @@
 
 import { useVodSeekPreview } from "@/hooks/use-vod-seek-preview";
 import {
+  canCommitVodScrub,
+  clientXToScrubPercent,
   displayScrubProgressPercent,
   scrubPercentToAbsoluteSec,
 } from "@/lib/vod-seek-scrub";
@@ -65,16 +67,18 @@ export function PlayerSeekBar({
   const secFromClientX = useCallback(
     (clientX: number) => {
       const track = trackRef.current;
-      if (!track || duration <= 0) return null;
+      if (!track || !canCommitVodScrub(duration)) return null;
       const rect = track.getBoundingClientRect();
-      const pct = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
-      return { sec: pct * duration, pct: pct * 100 };
+      const pct = clientXToScrubPercent(clientX, rect.left, rect.width);
+      if (pct == null) return null;
+      return { sec: scrubPercentToAbsoluteSec(pct, duration), pct };
     },
     [duration]
   );
 
   const applyScrubPercent = useCallback(
     (pct: number) => {
+      if (!canCommitVodScrub(duration)) return;
       setScrubProgress(pct);
       onScrubPreview(scrubPercentToAbsoluteSec(pct, duration));
     },
@@ -83,9 +87,21 @@ export function PlayerSeekBar({
 
   const commitScrubPercent = useCallback(
     (pct: number) => {
+      if (!canCommitVodScrub(duration)) return;
       onSeekCommit(scrubPercentToAbsoluteSec(pct, duration));
     },
     [duration, onSeekCommit]
+  );
+
+  const applyPointerClientX = useCallback(
+    (clientX: number) => {
+      const hit = secFromClientX(clientX);
+      if (!hit) return null;
+      setScrubProgress(hit.pct);
+      onScrubPreview(hit.sec);
+      return hit;
+    },
+    [onScrubPreview, secFromClientX]
   );
 
   const onTrackPointerMove = useCallback(
@@ -102,12 +118,9 @@ export function PlayerSeekBar({
   const onScrubPointerMove = useCallback(
     (e: React.PointerEvent) => {
       onTrackPointerMove(e);
-      if (scrubbing) {
-        const hit = secFromClientX(e.clientX);
-        if (hit) setScrubProgress(hit.pct);
-      }
+      if (scrubbing) applyPointerClientX(e.clientX);
     },
-    [scrubbing, onTrackPointerMove, secFromClientX]
+    [scrubbing, onTrackPointerMove, applyPointerClientX]
   );
 
   const onTrackPointerLeave = useCallback(() => {
@@ -167,34 +180,42 @@ export function PlayerSeekBar({
         max={100}
         step={0.1}
         value={sliderProgress}
-        onPointerDown={() => {
+        onPointerDown={(e) => {
+          if (!canCommitVodScrub(duration)) return;
           pointerActiveRef.current = true;
           scrubCommittedRef.current = false;
           setScrubbing(true);
-          setScrubProgress(progress);
           onScrubStart?.();
+          // Click position wins — a controlled range often still reports the
+          // old playhead (0) on pointerup, which rebuilt the title from 00:00.
+          applyPointerClientX(e.clientX);
+          try {
+            e.currentTarget.setPointerCapture(e.pointerId);
+          } catch {
+            /* not capturable */
+          }
         }}
         onPointerMove={onScrubPointerMove}
         onInput={(e) => {
+          // Pointer path owns the value; range onInput is keyboard / a11y only.
+          if (pointerActiveRef.current) return;
           const pct = parseFloat(e.currentTarget.value);
-          if (!Number.isFinite(pct)) return;
+          if (!Number.isFinite(pct) || !canCommitVodScrub(duration)) return;
           setScrubbing(true);
           applyScrubPercent(pct);
-          if (!pointerActiveRef.current) {
-            scrubCommittedRef.current = true;
-            commitScrubPercent(pct);
-          }
+          scrubCommittedRef.current = true;
+          commitScrubPercent(pct);
         }}
         onPointerUp={(e) => {
-          const pct = parseFloat(e.currentTarget.value);
           pointerActiveRef.current = false;
           setScrubbing(false);
+          const hit = applyPointerClientX(e.clientX);
           setScrubProgress(null);
-          if (Number.isFinite(pct)) {
+          if (hit) {
             // Mark committed before commit so a same-turn pointercancel cannot
             // bump landGen and snap the playhead back to the tip.
             scrubCommittedRef.current = true;
-            commitScrubPercent(pct);
+            onSeekCommit(hit.sec);
           }
         }}
         onPointerCancel={() => {
@@ -205,7 +226,8 @@ export function PlayerSeekBar({
           onScrubCancel?.();
         }}
         aria-label="Seek"
-        className="relative w-full appearance-none bg-transparent h-6 cursor-pointer
+        disabled={!canCommitVodScrub(duration)}
+        className="relative w-full appearance-none bg-transparent h-6 cursor-pointer touch-none
                   [&::-webkit-slider-runnable-track]:appearance-none
                   [&::-webkit-slider-runnable-track]:bg-transparent
                   [&::-webkit-slider-thumb]:appearance-none

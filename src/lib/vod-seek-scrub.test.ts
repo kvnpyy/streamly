@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  canCommitVodScrub,
+  clientXToScrubPercent,
   displayScrubProgressPercent,
   resolveEffectiveVodDuration,
   scrubPercentToAbsoluteSec,
@@ -44,6 +46,29 @@ describe("resolveEffectiveVodDuration", () => {
         mediaDurationSec: Number.POSITIVE_INFINITY,
       })
     ).toBe(0);
+  });
+});
+
+describe("canCommitVodScrub", () => {
+  it("rejects unknown duration so a click cannot seek to 0", () => {
+    expect(canCommitVodScrub(0)).toBe(false);
+    expect(canCommitVodScrub(1)).toBe(false);
+    expect(canCommitVodScrub(Number.POSITIVE_INFINITY)).toBe(false);
+  });
+
+  it("allows a real title length", () => {
+    expect(canCommitVodScrub(3600)).toBe(true);
+  });
+});
+
+describe("clientXToScrubPercent", () => {
+  it("maps the middle of the track to 50", () => {
+    expect(clientXToScrubPercent(250, 100, 300)).toBe(50);
+  });
+
+  it("clamps to the track edges", () => {
+    expect(clientXToScrubPercent(0, 100, 300)).toBe(0);
+    expect(clientXToScrubPercent(500, 100, 300)).toBe(100);
   });
 });
 
