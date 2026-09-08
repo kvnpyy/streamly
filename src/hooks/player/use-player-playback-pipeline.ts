@@ -35,6 +35,7 @@ import {
 import { withLiveHlsCompatMse } from "@/lib/stream-url";
 import { isAmazonSilkUserAgent, isTvClassUserAgent, isTvOrSilkUserAgent } from "@/lib/tv-user-agent";
 import { humanizePlaybackErrorResponse } from "@/lib/playback-error-message";
+import { readXhrBodyAsText } from "@/lib/xhr-response-text";
 import {
   destroyHlsInstance,
   pauseVideoElement,
@@ -603,7 +604,7 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
               !reqUrl.includes("media=") &&
               xhr.status >= 400
             ) {
-              const raw = xhr.responseText?.trim();
+              const raw = readXhrBodyAsText(xhr);
               const body = humanizePlaybackErrorResponse(
                 raw,
                 "Could not prepare this file for browser playback. If your IPTV plan allows only one stream, close other players and try again.",
