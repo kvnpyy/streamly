@@ -44,6 +44,7 @@ import { detachVideoElement, safeVideoPlay, voidSafeVideoPlay } from "@/lib/vide
 import {
   durationHintFromTranscodePlaylistResponse,
   parseStreamlyDurationSec,
+  xhrTextBody,
 } from "@/lib/vod-transcode-manifest";
 import {
   playbackUrlUsesVodTranscode,
@@ -597,73 +598,71 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
           xhr.addEventListener("load", function onLoad() {
             xhr.removeEventListener("load", onLoad);
             if (cancelled) return;
-            const rid = xhr.getResponseHeader(STREAM_PROXY_REQUEST_ID_HEADER);
-            if (rid) {
-            streamSupportRequestIdRef.current = rid;
-            setStreamSupportRequestId(rid);
-          }
-            if (
-              vodTranscodeHls &&
-              !reqUrl.includes("media=") &&
-              xhr.status >= 400
-            ) {
-              const raw = xhr.responseText?.trim();
-              const body = humanizePlaybackErrorResponse(
-                raw,
-                "Could not prepare this file for browser playback. If your IPTV plan allows only one stream, close other players and try again.",
-                xhr.status
-              );
-              const vv = videoRef.current;
-              const midPlayback =
-                !!vv &&
-                (vv.currentTime > 0.5 ||
-                  vv.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA);
-              // 503 = still encoding. Mid-play 502 is often a brief overload /
-              // provider blip — hard-failing here kills an episode at ~10m.
-              if (xhr.status === 503 || (midPlayback && xhr.status === 502)) {
-                const srcPctHdr = xhr.getResponseHeader("x-vod-source-pct");
-                const srcPct = srcPctHdr ? parseFloat(srcPctHdr) : NaN;
-                if (Number.isFinite(srcPct) && srcPct > 0) {
-                  const mapped = Math.min(88, Math.round(8 + srcPct * 0.7));
-                  setVodPrepProgress((p) => Math.max(p, mapped));
-                } else {
-                  setVodPrepProgress((p) => Math.min(92, Math.max(p, 20) + 3));
+            try {
+              const rid = xhr.getResponseHeader(STREAM_PROXY_REQUEST_ID_HEADER);
+              if (rid) {
+                streamSupportRequestIdRef.current = rid;
+                setStreamSupportRequestId(rid);
+              }
+              const isPlaylist = !reqUrl.includes("media=");
+              if (vodTranscodeHls && isPlaylist && xhr.status >= 400) {
+                const raw = xhrTextBody(xhr).trim();
+                const body = humanizePlaybackErrorResponse(
+                  raw,
+                  "Could not prepare this file for browser playback. If your IPTV plan allows only one stream, close other players and try again.",
+                  xhr.status
+                );
+                const vv = videoRef.current;
+                const midPlayback =
+                  !!vv &&
+                  (vv.currentTime > 0.5 ||
+                    vv.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA);
+                // 503 = still encoding. Mid-play 502 is often a brief overload /
+                // provider blip — hard-failing here kills an episode at ~10m.
+                if (xhr.status === 503 || (midPlayback && xhr.status === 502)) {
+                  const srcPctHdr = xhr.getResponseHeader("x-vod-source-pct");
+                  const srcPct = srcPctHdr ? parseFloat(srcPctHdr) : NaN;
+                  if (Number.isFinite(srcPct) && srcPct > 0) {
+                    const mapped = Math.min(88, Math.round(8 + srcPct * 0.7));
+                    setVodPrepProgress((p) => Math.max(p, mapped));
+                  } else {
+                    setVodPrepProgress((p) => Math.min(92, Math.max(p, 20) + 3));
+                  }
+                  return;
                 }
+                surfacePlaybackError(body);
                 return;
               }
-              surfacePlaybackError(body);
-              return;
-            }
-            if (vodTranscodeHls && !reqUrl.includes("media=")) {
-              setVodPrepProgress((p) => Math.max(p, 34));
-            }
-            if (!vodTranscodeHls) return;
-            const srcPctHdr = xhr.getResponseHeader("x-vod-source-pct");
-            const srcPct = srcPctHdr ? parseFloat(srcPctHdr) : NaN;
-            if (Number.isFinite(srcPct) && srcPct > 0) {
-              // Map download progress into the lower prep band so "Preparing…" moves.
-              const mapped = Math.min(88, Math.round(8 + srcPct * 0.7));
-              setVodPrepProgress((p) => Math.max(p, mapped));
-            }
-            const offHdr = xhr.getResponseHeader("x-vod-start-offset-sec");
-            const encHdr = xhr.getResponseHeader("x-vod-encoded-sec");
-            const off = offHdr ? parseFloat(offHdr) : NaN;
-            const enc = encHdr ? parseFloat(encHdr) : NaN;
-            // Apply timeline hints before duration so resume can see encodedSec
-            // when durationchange fires from applyVodDurationHint.
-            applyVodTranscodeTimelineHints({
-              startOffset: Number.isFinite(off) && off >= 0 ? off : undefined,
-              encoded: Number.isFinite(enc) && enc > 0 ? enc : undefined,
-            });
-            const hint = durationHintFromTranscodePlaylistResponse(
-              xhr.getResponseHeader("x-vod-duration-sec"),
-              xhr.responseText || ""
-            );
-            if (hint != null && hint > 1) {
-              applyVodDurationHint(hint);
-            }
-            if (Number.isFinite(enc) && enc > 2) {
-              setVodPrepProgress((p) => Math.max(p, 90));
+              if (vodTranscodeHls && isPlaylist) {
+                setVodPrepProgress((p) => Math.max(p, 34));
+              }
+              if (!vodTranscodeHls) return;
+              const srcPctHdr = xhr.getResponseHeader("x-vod-source-pct");
+              const srcPct = srcPctHdr ? parseFloat(srcPctHdr) : NaN;
+              if (Number.isFinite(srcPct) && srcPct > 0) {
+                const mapped = Math.min(88, Math.round(8 + srcPct * 0.7));
+                setVodPrepProgress((p) => Math.max(p, mapped));
+              }
+              const offHdr = xhr.getResponseHeader("x-vod-start-offset-sec");
+              const encHdr = xhr.getResponseHeader("x-vod-encoded-sec");
+              const off = offHdr ? parseFloat(offHdr) : NaN;
+              const enc = encHdr ? parseFloat(encHdr) : NaN;
+              applyVodTranscodeTimelineHints({
+                startOffset: Number.isFinite(off) && off >= 0 ? off : undefined,
+                encoded: Number.isFinite(enc) && enc > 0 ? enc : undefined,
+              });
+              const hint = durationHintFromTranscodePlaylistResponse(
+                xhr.getResponseHeader("x-vod-duration-sec"),
+                isPlaylist ? xhrTextBody(xhr) : ""
+              );
+              if (hint != null && hint > 1) {
+                applyVodDurationHint(hint);
+              }
+              if (Number.isFinite(enc) && enc > 2) {
+                setVodPrepProgress((p) => Math.max(p, 90));
+              }
+            } catch {
+              /* never throw into hls.js — fragment XHRs are arraybuffer */
             }
           });
         },

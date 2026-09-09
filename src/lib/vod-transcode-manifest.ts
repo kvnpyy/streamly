@@ -443,6 +443,24 @@ export function durationHintFromTranscodePlaylistResponse(
   return parseStreamlyDurationSec(playlistText);
 }
 
+/**
+ * Playlist XHRs are text. hls.js fragment loads use arraybuffer — reading
+ * `responseText` there throws InvalidStateError and aborts the frag load
+ * (seek jumps fail; ±10s still works from already-buffered media).
+ */
+export function xhrTextBody(xhr: {
+  responseType?: string;
+  responseText?: string;
+}): string {
+  const type = xhr.responseType ?? "";
+  if (type !== "" && type !== "text") return "";
+  try {
+    return xhr.responseText ?? "";
+  } catch {
+    return "";
+  }
+}
+
 export function rewriteTranscodeManifest(
   text: string,
   upstream: string,

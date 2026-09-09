@@ -11,6 +11,16 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.13.23",
+    date: "2026-09-09",
+    summary:
+      "Seek jumps work again — fragment loads no longer crash reading playlist text.",
+    highlights: [
+      "hls.js media segments use arraybuffer XHRs; reading responseText threw and aborted those loads.",
+      "Duration is still read from playlist responses and headers; ±10s was never affected because those segments were already buffered.",
+    ],
+  },
+  {
     version: "0.13.22",
     date: "2026-09-08",
     summary:

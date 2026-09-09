@@ -13,6 +13,7 @@ import {
   maxInProgressPlaylistSegments,
   durationHintFromTranscodePlaylistResponse,
   parseStreamlyDurationSec,
+  xhrTextBody,
   IN_PROGRESS_ENCODE_EDGE_HOLDBACK,
   prepareManifestForPlayback,
   rewriteTranscodeManifest,
@@ -254,6 +255,18 @@ describe("rewriteTranscodeManifest", () => {
     expect(
       durationHintFromTranscodePlaylistResponse(null, "#EXTM3U\n#EXTINF:6,\nseg.ts\n")
     ).toBeNull();
+  });
+
+  it("does not read responseText from arraybuffer fragment XHRs", () => {
+    expect(xhrTextBody({ responseType: "arraybuffer", responseText: "nope" })).toBe(
+      ""
+    );
+    expect(xhrTextBody({ responseType: "text", responseText: "#EXTM3U" })).toBe(
+      "#EXTM3U"
+    );
+    expect(xhrTextBody({ responseType: "", responseText: "#EXTM3U" })).toBe(
+      "#EXTM3U"
+    );
   });
 });
 

@@ -23,6 +23,15 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.13.23] — 2026-09-09
+
+Seek jumps work again — fragment loads no longer crash reading playlist text.
+
+### Fixed
+- **Seek bar click did nothing** — Duration parsing read `XMLHttpRequest.responseText` on every `/api/stream` load, including `.ts` fragments (`responseType: arraybuffer`). That threw `InvalidStateError` and aborted the jump. ±10s still worked from already-buffered media.
+
+---
+
 ## [0.13.22] — 2026-09-08
 
 Clicking the VOD seek bar jumps to that time instead of restarting the title.
