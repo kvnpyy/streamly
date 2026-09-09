@@ -309,6 +309,8 @@ export function PlayerOverlay() {
   const vodSeekLandGenRef = useRef(0);
   const playbackTimeRef = useRef(0);
   const [vodTotalSec, setVodTotalSec] = useState(0);
+  /** `<video>.duration` — transcode EVENT playlists often have this before ffprobe. */
+  const [mediaClockSec, setMediaClockSec] = useState(0);
   /** Throttles automatic `startLoad(-1)` storms on live HLS (see `tryHlsLiveEdgeRestart`). */
   const hlsLiveEdgeRestartGateRef = useRef(0);
   /** Bumped on Try again — stale defer timers / old hls handlers must not re-show the overlay. */
@@ -592,6 +594,7 @@ export function PlayerOverlay() {
     vodResumeLockedRef.current = false;
     vodStartOffsetRef.current = 0;
     vodEncodedSecRef.current = 0;
+    setMediaClockSec(0);
 
     // Seed resume hold synchronously before the playback pipeline effect runs.
     let resumeHold: VodTimelineHold | null = null;
@@ -1195,6 +1198,7 @@ export function PlayerOverlay() {
     setVideoHasFrame,
     setVodPrepProgress,
     setIsPip,
+    setMediaClockSec,
     applyVodDurationHint,
   });
 
@@ -1226,15 +1230,15 @@ export function PlayerOverlay() {
   }, []);
 
   const getPlaybackDuration = useCallback(() => {
-    if (isLive) return 0;
-    if (vodTotalSec > 1) return vodTotalSec;
-    const hint = vodDurationHintRef.current;
-    if (hint > 1) return hint;
     const v = videoRef.current;
     const vd = v?.duration;
-    if (Number.isFinite(vd) && vd && vd > 1 && vd < 86400) return vd;
-    return duration > 1 && Number.isFinite(duration) ? duration : 0;
-  }, [isLive, vodTotalSec, duration]);
+    return resolveEffectiveVodDuration({
+      isLive,
+      titleDurationSec: vodTotalSec > 1 ? vodTotalSec : vodDurationHintRef.current,
+      mediaDurationSec: duration,
+      mediaClockSec: Number.isFinite(vd) ? vd : mediaClockSec,
+    });
+  }, [isLive, vodTotalSec, duration, mediaClockSec]);
 
   const getPlaybackTimeNow = useCallback(() => {
     const v = videoRef.current;
@@ -2197,6 +2201,7 @@ export function PlayerOverlay() {
     isLive,
     titleDurationSec: vodTotalSec,
     mediaDurationSec: duration,
+    mediaClockSec,
   });
 
   const playNextEpisode = useCallback(() => {

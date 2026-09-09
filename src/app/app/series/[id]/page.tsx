@@ -11,6 +11,7 @@ import { useTvBrowser } from "@/components/TvBrowserProvider";
 import { proxiedCssBackground } from "@/lib/image-proxy";
 import {
   findSeriesResumeTarget,
+  parseEpisodeDurationSec,
   seriesEpisodeRecentMeta,
   seriesEpisodeWatchState,
 } from "@/lib/continue-watching";
@@ -196,6 +197,7 @@ export default function SeriesDetail() {
         playUrl,
         ep.container_extension || "mkv"
       );
+      const durationSec = parseEpisodeDurationSec(ep);
       return {
         kind: "series" as const,
         id: seriesId,
@@ -205,6 +207,7 @@ export default function SeriesDetail() {
         poster: buildImageProxy(ep.info?.movie_image || show.cover),
         url: playUrl,
         containerExt: ext,
+        ...(durationSec > 1 ? { durationSec } : {}),
       };
     });
     return { kind: "series", items };
@@ -220,6 +223,7 @@ export default function SeriesDetail() {
           ep
         );
         warmVodTranscodePlay(proxyUrl, { compatMse: tvBrowser });
+        const durationSec = parseEpisodeDurationSec(ep);
         play(
           {
             kind: "series",
@@ -230,6 +234,7 @@ export default function SeriesDetail() {
             poster: buildImageProxy(ep.info?.movie_image || show.cover),
             url: proxyUrl,
             containerExt,
+            ...(durationSec > 1 ? { durationSec } : {}),
           },
           episodePlaylist ? { playlist: episodePlaylist } : undefined
         );

@@ -23,6 +23,15 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.13.24] — 2026-09-09
+
+Clicking the VOD seek bar on transcoded episodes (MKV series) now jumps to that time.
+
+### Fixed
+- **Seek bar click still did nothing** — ±10s already used `<video>.duration` and Xtream runtime; the bar did not, so it stayed disabled on transcoded series (e.g. Sopranos). Clicks are handled on the track, not a disabled range input.
+
+---
+
 ## [0.13.23] — 2026-09-09
 
 Seek jumps work again — fragment loads no longer crash reading playlist text.

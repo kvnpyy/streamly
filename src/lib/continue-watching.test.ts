@@ -226,4 +226,15 @@ describe("continue-watching", () => {
     expect(meta.episodeStreamId).toBe(55);
     expect(meta.durationSec).toBe(2700);
   });
+
+  it("seriesEpisodeRecentMeta parses HH:MM:SS duration strings", () => {
+    const meta = seriesEpisodeRecentMeta("2", {
+      id: "56",
+      episode_num: "3",
+      title: "Guy Walks into a Psychiatrist's Office",
+      container_extension: "mkv",
+      info: { duration: "00:50:12" },
+    });
+    expect(meta.durationSec).toBe(3012);
+  });
 });

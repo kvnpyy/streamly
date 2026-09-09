@@ -222,6 +222,15 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
       vodStartOffsetRef.current = 0;
       vodEncodedSecRef.current = 0;
     }
+    const catalogDur = current.durationSec;
+    if (
+      current.kind !== "live" &&
+      catalogDur != null &&
+      Number.isFinite(catalogDur) &&
+      catalogDur > 1
+    ) {
+      applyVodDurationHint(catalogDur);
+    }
     setLevels([]);
     setCurrentLevel(-1);
     setSubtitles([]);

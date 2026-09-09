@@ -14,11 +14,14 @@ export function resolveEffectiveVodDuration(opts: {
   isLive: boolean;
   titleDurationSec: number;
   mediaDurationSec: number;
+  /** `<video>.duration` — EVENT transcode playlists often have this before ffprobe. */
+  mediaClockSec?: number;
 }): number {
   if (opts.isLive) return 0;
   return (
     usableVodDurationSec(opts.titleDurationSec) ||
-    usableVodDurationSec(opts.mediaDurationSec)
+    usableVodDurationSec(opts.mediaDurationSec) ||
+    usableVodDurationSec(opts.mediaClockSec)
   );
 }
 

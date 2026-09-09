@@ -266,6 +266,9 @@ export async function resolveSeriesPlayerSourceFromRecent(
     poster: recent.icon ? buildImageProxy(recent.icon) : undefined,
     url: proxyUrl,
     containerExt,
+    ...(epMeta.durationSec != null && epMeta.durationSec > 1
+      ? { durationSec: epMeta.durationSec }
+      : {}),
   };
 }
 
@@ -299,6 +302,9 @@ export function buildSeriesPlayerSourceFromRecent(
     poster: recent.icon ? buildImageProxy(recent.icon) : undefined,
     url: playUrl,
     containerExt: epMeta.containerExt || "mkv",
+    ...(epMeta.durationSec != null && epMeta.durationSec > 1
+      ? { durationSec: epMeta.durationSec }
+      : {}),
   };
 }
 
@@ -362,13 +368,8 @@ export function seriesEpisodeRecentMeta(
   season: string,
   ep: SeriesEpisode
 ): Record<string, string | number | undefined> {
-  const durationRaw = ep.info?.duration ?? ep.info?.duration_secs;
-  const durationSec =
-    typeof durationRaw === "number" && Number.isFinite(durationRaw)
-      ? durationRaw
-      : typeof durationRaw === "string"
-        ? parseInt(durationRaw, 10)
-        : undefined;
+  const parsedDurationSec = parseEpisodeDurationSec(ep);
+  const durationSec = parsedDurationSec > 1 ? parsedDurationSec : undefined;
   const streamId = parsePositiveRouteId(ep.id);
   if (streamId == null) {
     return {

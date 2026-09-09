@@ -47,6 +47,17 @@ describe("resolveEffectiveVodDuration", () => {
       })
     ).toBe(0);
   });
+
+  it("falls back to the media clock so ±10s and the bar share a duration", () => {
+    expect(
+      resolveEffectiveVodDuration({
+        isLive: false,
+        titleDurationSec: 0,
+        mediaDurationSec: 0,
+        mediaClockSec: 3120,
+      })
+    ).toBe(3120);
+  });
 });
 
 describe("canCommitVodScrub", () => {

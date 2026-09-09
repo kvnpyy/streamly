@@ -11,6 +11,16 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.13.24",
+    date: "2026-09-09",
+    summary:
+      "Clicking the VOD seek bar on transcoded episodes (MKV series) now jumps to that time.",
+    highlights: [
+      "The bar uses the same duration clock as ±10s, plus Xtream episode runtime when the probe is late.",
+      "Clicks land on the track itself — a disabled range input can no longer swallow the seek.",
+    ],
+  },
+  {
     version: "0.13.23",
     date: "2026-09-09",
     summary:

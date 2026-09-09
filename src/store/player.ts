@@ -13,6 +13,8 @@ export type PlayerSource = {
   url: string;
   poster?: string;
   containerExt?: string;
+  /** Catalog / Xtream runtime — seeds the seek bar before ffprobe. */
+  durationSec?: number;
 };
 
 function sourcesMatchInPlaylist(needle: PlayerSource, item: PlayerSource): boolean {

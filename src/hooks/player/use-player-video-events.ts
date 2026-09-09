@@ -62,6 +62,7 @@ export type UsePlayerVideoEventsParams = {
   setVideoHasFrame: Dispatch<SetStateAction<boolean>>;
   setVodPrepProgress: Dispatch<SetStateAction<number>>;
   setIsPip: Dispatch<SetStateAction<boolean>>;
+  setMediaClockSec: Dispatch<SetStateAction<number>>;
   applyVodDurationHint: (sec: number) => void;
 };
 
@@ -96,6 +97,7 @@ export function usePlayerVideoEvents(p: UsePlayerVideoEventsParams) {
     setVideoHasFrame,
     setVodPrepProgress,
     setIsPip,
+    setMediaClockSec,
     applyVodDurationHint,
   } = p;
 
@@ -511,7 +513,16 @@ export function usePlayerVideoEvents(p: UsePlayerVideoEventsParams) {
         }
       }
     };
+    const noteMediaClock = () => {
+      if (isLiveStream) return;
+      const vd = v.duration;
+      if (Number.isFinite(vd) && vd > 1 && vd < 86400) {
+        setMediaClockSec(vd);
+      }
+    };
+
     const onMeta = () => {
+      noteMediaClock();
       const hint = vodDurationHintRef.current || vodTotalSec;
       if (usesTranscodePlayback) {
         if (hint > 1) applyVodDurationHint(hint);
@@ -530,7 +541,9 @@ export function usePlayerVideoEvents(p: UsePlayerVideoEventsParams) {
     };
 
     const onDurationChange = () => {
-      if (isLiveStream || usesTranscodePlayback) return;
+      if (isLiveStream) return;
+      noteMediaClock();
+      if (usesTranscodePlayback) return;
       const vd = v.duration;
       if (Number.isFinite(vd) && vd > 1 && vd < 86400) {
         applyVodDurationHint(vd);
@@ -723,5 +736,6 @@ export function usePlayerVideoEvents(p: UsePlayerVideoEventsParams) {
     setVideoHasFrame,
     setVodPrepProgress,
     setIsPip,
+    setMediaClockSec,
   ]);
 }

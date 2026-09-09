@@ -56,6 +56,7 @@ export function PlayerSeekBar({
     : hoverSec;
   const previewActive = previewSec != null && duration > 0;
   const previewPct = scrubbing ? sliderProgress : hoverPct;
+  const canScrub = canCommitVodScrub(duration);
 
   const { imageUrl, loading } = useVodSeekPreview({
     playbackUrl,
@@ -104,24 +105,70 @@ export function PlayerSeekBar({
     [onScrubPreview, secFromClientX]
   );
 
+  const endScrub = useCallback(
+    (clientX: number | null, commit: boolean) => {
+      pointerActiveRef.current = false;
+      setScrubbing(false);
+      const hit = clientX != null ? applyPointerClientX(clientX) : null;
+      setScrubProgress(null);
+      if (commit && hit) {
+        scrubCommittedRef.current = true;
+        onSeekCommit(hit.sec);
+        return;
+      }
+      if (!commit && !scrubCommittedRef.current) {
+        onScrubCancel?.();
+      }
+    },
+    [applyPointerClientX, onSeekCommit, onScrubCancel]
+  );
+
+  const onTrackPointerDown = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      if (!canCommitVodScrub(duration)) return;
+      e.stopPropagation();
+      e.preventDefault();
+      pointerActiveRef.current = true;
+      scrubCommittedRef.current = false;
+      setScrubbing(true);
+      onScrubStart?.();
+      applyPointerClientX(e.clientX);
+      try {
+        e.currentTarget.setPointerCapture(e.pointerId);
+      } catch {
+        /* not capturable */
+      }
+    },
+    [duration, onScrubStart, applyPointerClientX]
+  );
+
   const onTrackPointerMove = useCallback(
     (e: React.PointerEvent) => {
-      if (scrubbing) return;
+      if (pointerActiveRef.current) {
+        applyPointerClientX(e.clientX);
+        return;
+      }
       const hit = secFromClientX(e.clientX);
       if (!hit) return;
       setHoverSec(hit.sec);
       setHoverPct(hit.pct);
     },
-    [scrubbing, secFromClientX]
+    [applyPointerClientX, secFromClientX]
   );
 
-  const onScrubPointerMove = useCallback(
+  const onTrackPointerUp = useCallback(
     (e: React.PointerEvent) => {
-      onTrackPointerMove(e);
-      if (scrubbing) applyPointerClientX(e.clientX);
+      if (!pointerActiveRef.current) return;
+      e.stopPropagation();
+      endScrub(e.clientX, true);
     },
-    [scrubbing, onTrackPointerMove, applyPointerClientX]
+    [endScrub]
   );
+
+  const onTrackPointerCancel = useCallback(() => {
+    if (!pointerActiveRef.current && !scrubbing) return;
+    endScrub(null, false);
+  }, [endScrub, scrubbing]);
 
   const onTrackPointerLeave = useCallback(() => {
     if (!scrubbing) {
@@ -132,8 +179,12 @@ export function PlayerSeekBar({
   return (
     <div
       ref={trackRef}
-      className="relative group/scrub mb-3"
+      className="relative group/scrub mb-3 py-2 cursor-pointer touch-none select-none"
+      style={{ touchAction: "none" }}
+      onPointerDown={onTrackPointerDown}
       onPointerMove={onTrackPointerMove}
+      onPointerUp={onTrackPointerUp}
+      onPointerCancel={onTrackPointerCancel}
       onPointerLeave={onTrackPointerLeave}
     >
       {previewActive && (
@@ -164,7 +215,7 @@ export function PlayerSeekBar({
         </div>
       )}
 
-      <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 h-2 bg-white/30 rounded-full overflow-hidden">
+      <div className="pointer-events-none absolute inset-x-0 top-1/2 -translate-y-1/2 h-2 bg-white/30 rounded-full overflow-hidden">
         <div
           className="absolute inset-y-0 left-0 bg-white/40"
           style={{ width: `${bufferedProgress}%` }}
@@ -180,24 +231,7 @@ export function PlayerSeekBar({
         max={100}
         step={0.1}
         value={sliderProgress}
-        onPointerDown={(e) => {
-          if (!canCommitVodScrub(duration)) return;
-          pointerActiveRef.current = true;
-          scrubCommittedRef.current = false;
-          setScrubbing(true);
-          onScrubStart?.();
-          // Click position wins — a controlled range often still reports the
-          // old playhead (0) on pointerup, which rebuilt the title from 00:00.
-          applyPointerClientX(e.clientX);
-          try {
-            e.currentTarget.setPointerCapture(e.pointerId);
-          } catch {
-            /* not capturable */
-          }
-        }}
-        onPointerMove={onScrubPointerMove}
         onInput={(e) => {
-          // Pointer path owns the value; range onInput is keyboard / a11y only.
           if (pointerActiveRef.current) return;
           const pct = parseFloat(e.currentTarget.value);
           if (!Number.isFinite(pct) || !canCommitVodScrub(duration)) return;
@@ -205,29 +239,16 @@ export function PlayerSeekBar({
           applyScrubPercent(pct);
           scrubCommittedRef.current = true;
           commitScrubPercent(pct);
-        }}
-        onPointerUp={(e) => {
-          pointerActiveRef.current = false;
-          setScrubbing(false);
-          const hit = applyPointerClientX(e.clientX);
-          setScrubProgress(null);
-          if (hit) {
-            // Mark committed before commit so a same-turn pointercancel cannot
-            // bump landGen and snap the playhead back to the tip.
-            scrubCommittedRef.current = true;
-            onSeekCommit(hit.sec);
-          }
-        }}
-        onPointerCancel={() => {
-          pointerActiveRef.current = false;
           setScrubbing(false);
           setScrubProgress(null);
-          if (scrubCommittedRef.current) return;
-          onScrubCancel?.();
         }}
         aria-label="Seek"
-        disabled={!canCommitVodScrub(duration)}
-        className="relative w-full appearance-none bg-transparent h-6 cursor-pointer touch-none
+        aria-valuemin={0}
+        aria-valuemax={Math.round(duration)}
+        aria-valuenow={Math.round(time)}
+        aria-valuetext={formatTime(time)}
+        tabIndex={canScrub ? 0 : -1}
+        className="pointer-events-none relative w-full appearance-none bg-transparent h-6
                   [&::-webkit-slider-runnable-track]:appearance-none
                   [&::-webkit-slider-runnable-track]:bg-transparent
                   [&::-webkit-slider-thumb]:appearance-none
