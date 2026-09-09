@@ -8,7 +8,7 @@ const ENCODED_DURATION_TAG_RE =
 /** While ffmpeg is still running, cap playlist size so Safari/hls.js don't choke on huge m3u8. */
 /**
  * Publish up to ~5h of in-progress media (by EXTINF sum). Count-only caps are unsafe:
- * default hls_time is 2s → 4500 segs ≈ 2.5h and long movies froze before ENDLIST.
+ * default hls_time is 4s → 4500 segs ≈ 5h; a 2s cap froze long movies before ENDLIST.
  */
 export const MAX_IN_PROGRESS_PLAYLIST_DURATION_SEC = 5 * 3600;
 
@@ -38,6 +38,26 @@ export function maxInProgressPlaylistSegments(segmentSec: number): number {
  * published playlist behind disk — 4 segs ≈ 16s at 4s/seg.
  */
 export const IN_PROGRESS_ENCODE_EDGE_HOLDBACK = 4;
+
+/**
+ * Always leave at least this many segments in an in-progress playlist so the
+ * player can start with a real buffer. Combined with holdback, 4 disk segs
+ * publish 3 — enough to play without sitting on the encode tip.
+ */
+export const MIN_PUBLISHED_IN_PROGRESS_SEGMENTS = 3;
+
+/**
+ * How many trailing segments to hide while ffmpeg is still writing.
+ * Always keep {@link MIN_PUBLISHED_IN_PROGRESS_SEGMENTS} visible so startup
+ * is not a single 2–4s fragment; apply full holdback once disk is ahead.
+ */
+export function encodeEdgeHoldbackCount(segmentCount: number): number {
+  if (segmentCount <= MIN_PUBLISHED_IN_PROGRESS_SEGMENTS) return 0;
+  return Math.min(
+    IN_PROGRESS_ENCODE_EDGE_HOLDBACK,
+    segmentCount - MIN_PUBLISHED_IN_PROGRESS_SEGMENTS
+  );
+}
 
 export function sumExtinfDurationSec(manifestText: string): number {
   let sum = 0;
@@ -388,11 +408,11 @@ export function prepareManifestForPlayback(
     }
     kept = byDuration;
   }
-  if (
-    !playlistComplete &&
-    kept.length >= IN_PROGRESS_ENCODE_EDGE_HOLDBACK + 2
-  ) {
-    kept = kept.slice(0, kept.length - IN_PROGRESS_ENCODE_EDGE_HOLDBACK);
+  if (!playlistComplete) {
+    const holdback = encodeEdgeHoldbackCount(kept.length);
+    if (holdback > 0) {
+      kept = kept.slice(0, kept.length - holdback);
+    }
   }
 
   const out = [...header];

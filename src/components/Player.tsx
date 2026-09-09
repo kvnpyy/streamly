@@ -2565,9 +2565,7 @@ export function PlayerOverlay() {
               ref={videoRef}
               poster={isLive || showVodPrepare ? undefined : posterSrc}
               playsInline
-              preload={
-                silkLikeClient ? "metadata" : isLive ? "auto" : "metadata"
-              }
+              preload={silkLikeClient ? "metadata" : "auto"}
               autoPlay
               onClick={togglePlay}
               className={cn(

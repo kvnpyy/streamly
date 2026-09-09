@@ -185,8 +185,8 @@ export function buildVodTranscodeHlsJsConfig() {
    * Netflix-broken scrub UX even when the playlist lists every segment.
    */
   return {
-    maxBufferLength: 36,
-    maxMaxBufferLength: 84,
+    maxBufferLength: 48,
+    maxMaxBufferLength: 96,
     backBufferLength: 600,
     // Tip-resume joins can leave a 2–4s PTS hole (keyframe -ss + output_ts_offset).
     // 0.3s made hls.js stall/freeze across that join for the rest of the title.
@@ -194,12 +194,13 @@ export function buildVodTranscodeHlsJsConfig() {
     maxFragLookUpTolerance: 0.75,
     stretchShortVideoTrack: false,
     startFragPrefetch: true,
-    liveSyncDurationCount: 3,
+    liveSyncDurationCount: 4,
     liveMaxLatencyDurationCount: Infinity,
     liveSyncMode: "buffered" as const,
     maxLiveSyncPlaybackRate: 1,
     liveSyncOnStallIncrease: 0,
-    initialLiveManifestSize: 1,
+    // Wait for a few published segs — starting on 1 × 2s fragment freezes every few seconds.
+    initialLiveManifestSize: 3,
     manifestLoadingTimeOut: 30_000,
     levelLoadingTimeOut: 30_000,
     fragLoadingTimeOut: 45_000,
@@ -208,7 +209,7 @@ export function buildVodTranscodeHlsJsConfig() {
     fragLoadingMaxRetry: 24,
     nudgeOffset: 0.1,
     nudgeMaxRetry: 20,
-    highBufferWatchdogPeriod: 5,
+    highBufferWatchdogPeriod: 8,
     startPosition: 0,
   };
 }

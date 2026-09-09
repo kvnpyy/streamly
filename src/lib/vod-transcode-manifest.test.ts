@@ -15,6 +15,8 @@ import {
   parseStreamlyDurationSec,
   xhrTextBody,
   IN_PROGRESS_ENCODE_EDGE_HOLDBACK,
+  MIN_PUBLISHED_IN_PROGRESS_SEGMENTS,
+  encodeEdgeHoldbackCount,
   prepareManifestForPlayback,
   rewriteTranscodeManifest,
   trimContiguousSegmentsFromStart,
@@ -63,7 +65,7 @@ describe("rewriteTranscodeManifest", () => {
     const out = prepareManifestForPlayback(raw, false, existing);
     expect(out).toContain("#EXT-X-DISCONTINUITY");
     const uriCount = out.split("\n").filter((l) => /seg_\d+\.ts/i.test(l)).length;
-    expect(uriCount).toBe(maxSegs - IN_PROGRESS_ENCODE_EDGE_HOLDBACK);
+    expect(uriCount).toBe(maxSegs - encodeEdgeHoldbackCount(maxSegs));
     expect(sumExtinfDurationSec(out)).toBeLessThanOrEqual(
       MAX_IN_PROGRESS_PLAYLIST_DURATION_SEC
     );
@@ -88,6 +90,30 @@ describe("rewriteTranscodeManifest", () => {
     const done = prepareManifestForPlayback(segs.join("\n"), true, existing);
     expect(countManifestSegments(done)).toBe(8);
     expect(done).toContain("seg_00007.ts");
+  });
+
+  it("hides the encode tip before six segments exist so startup is not a 2s stall loop", () => {
+    const existing = new Set(
+      Array.from({ length: 5 }, (_, i) => `seg_${String(i).padStart(5, "0")}.ts`)
+    );
+    const segs: string[] = ["#EXTM3U"];
+    for (let i = 0; i < 5; i++) {
+      segs.push("#EXTINF:4,", `seg_${String(i).padStart(5, "0")}.ts`);
+    }
+    const growing = prepareManifestForPlayback(segs.join("\n"), false, existing);
+    expect(countManifestSegments(growing)).toBe(MIN_PUBLISHED_IN_PROGRESS_SEGMENTS);
+    expect(growing).toContain("seg_00000.ts");
+    expect(growing).toContain("seg_00002.ts");
+    expect(growing).not.toContain("seg_00004.ts");
+  });
+
+  it("encodeEdgeHoldbackCount keeps a startup buffer then applies full holdback", () => {
+    expect(encodeEdgeHoldbackCount(1)).toBe(0);
+    expect(encodeEdgeHoldbackCount(3)).toBe(0);
+    expect(encodeEdgeHoldbackCount(4)).toBe(1);
+    expect(encodeEdgeHoldbackCount(5)).toBe(2);
+    expect(encodeEdgeHoldbackCount(7)).toBe(IN_PROGRESS_ENCODE_EDGE_HOLDBACK);
+    expect(encodeEdgeHoldbackCount(8)).toBe(IN_PROGRESS_ENCODE_EDGE_HOLDBACK);
   });
 
   it("stops at the first missing segment in the sequence", () => {
@@ -212,7 +238,8 @@ describe("rewriteTranscodeManifest", () => {
     );
     const out = prepareManifestForPlayback(raw, false, existing);
     const uriCount = out.split("\n").filter((l) => /seg_\d+\.ts/i.test(l)).length;
-    expect(uriCount).toBe(6 - IN_PROGRESS_ENCODE_EDGE_HOLDBACK);
+    expect(uriCount).toBe(6 - encodeEdgeHoldbackCount(6));
+    expect(uriCount).toBeGreaterThanOrEqual(MIN_PUBLISHED_IN_PROGRESS_SEGMENTS);
   });
 
   it("marks complete playlists as VOD and adds seek timeline tags", () => {

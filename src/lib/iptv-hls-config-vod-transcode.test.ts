@@ -6,14 +6,14 @@ describe("buildVodTranscodeHlsJsConfig", () => {
     const cfg = buildVodTranscodeHlsJsConfig();
     expect(cfg.stretchShortVideoTrack).toBe(false);
     expect(cfg.maxLiveSyncPlaybackRate).toBe(1);
-    expect(cfg.liveSyncDurationCount).toBeGreaterThanOrEqual(3);
+    expect(cfg.liveSyncDurationCount).toBeGreaterThanOrEqual(4);
     // Must bridge tip-resume PTS holes (~2–4s); keep below a full segment.
     expect(cfg.maxBufferHole).toBeGreaterThanOrEqual(3);
     expect(cfg.maxBufferHole).toBeLessThanOrEqual(4);
     expect(cfg.liveSyncMode).toBe("buffered");
-    expect(cfg.maxBufferLength).toBeGreaterThanOrEqual(32);
+    expect(cfg.maxBufferLength).toBeGreaterThanOrEqual(40);
     expect(cfg.startFragPrefetch).toBe(true);
-    expect(cfg.initialLiveManifestSize).toBe(1);
+    expect(cfg.initialLiveManifestSize).toBeGreaterThanOrEqual(3);
     // hls.js throws if count- and duration-based live sync are mixed.
     expect(cfg.liveSyncDuration).toBeUndefined();
     expect(cfg.liveMaxLatencyDuration).toBeUndefined();

@@ -11,6 +11,17 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.13.27",
+    date: "2026-09-09",
+    summary:
+      "Episode VODs stutter less — playback stays behind the transcode instead of freezing every few seconds.",
+    highlights: [
+      "Transcoded series wait for a few HLS segments before starting, and hide the encode tip earlier.",
+      "Default HLS segments are 4 seconds (was 2), so a stall is less frequent if the encode is still catching up.",
+      "More of the episode is downloaded before ffmpeg starts, so the encoder is less likely to run out of source mid-play.",
+    ],
+  },
+  {
     version: "0.13.26",
     date: "2026-09-09",
     summary:

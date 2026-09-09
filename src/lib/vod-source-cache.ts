@@ -53,8 +53,8 @@ export function isVodSourceCacheEnabled(): boolean {
 }
 
 export function vodSourceStartBytes(): number {
-  const n = parseInt(process.env.STREAM_VOD_SOURCE_START_BYTES ?? "12000000", 10);
-  return Number.isFinite(n) && n >= 1_000_000 && n <= 200_000_000 ? n : 12_000_000;
+  const n = parseInt(process.env.STREAM_VOD_SOURCE_START_BYTES ?? "24000000", 10);
+  return Number.isFinite(n) && n >= 1_000_000 && n <= 200_000_000 ? n : 24_000_000;
 }
 
 /**

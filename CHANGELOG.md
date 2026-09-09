@@ -23,6 +23,17 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.13.27] — 2026-09-09
+
+Episode VODs stutter less — playback stays behind the transcode instead of freezing every few seconds.
+
+### Fixed
+- **VOD transcode startup** — Do not start the player on a single 2s fragment at the encode tip; wait for a few published segments and hide the tip as soon as disk is ahead.
+- **Segment length** — Default `STREAM_TRANSCODE_HLS_TIME` is 4s (was 2s), matching the holdback cushion.
+- **Source cache** — Default `STREAM_VOD_SOURCE_START_BYTES` is 24MB so ffmpeg has more of the file before playback.
+
+---
+
 ## [0.13.26] — 2026-09-09
 
 Mark episodes as watched from the series page and keep finished episodes tracked.

@@ -3,6 +3,7 @@ import "server-only";
 import {
   buildManifestFromContiguousDisk,
   contiguousSegmentCount,
+  countManifestSegments,
   encodedCoverageSec,
   manifestIsTipOnlyTail,
   manifestNeedsContiguityHeal,
@@ -14,6 +15,7 @@ import {
   prepareManifestForPlayback,
   rewriteTranscodeManifest,
   sumExtinfDurationSec,
+  MIN_PUBLISHED_IN_PROGRESS_SEGMENTS,
   VOD_TRANSCODE_SEGMENT_RE as SEGMENT_RE,
 } from "@/lib/vod-transcode-manifest";
 import { transcodeManifestWaitMs } from "@/lib/vod-transcode-wait";
@@ -133,8 +135,8 @@ function manifestHttpWaitMs(): number {
 }
 
 function hlsSegmentSeconds(): number {
-  const n = parseFloat(process.env.STREAM_TRANSCODE_HLS_TIME ?? "2");
-  return Number.isFinite(n) && n >= 2 && n <= 8 ? n : 2;
+  const n = parseFloat(process.env.STREAM_TRANSCODE_HLS_TIME ?? "4");
+  return Number.isFinite(n) && n >= 2 && n <= 8 ? n : 4;
 }
 
 function transcodeStallKillMs(): number {
@@ -1159,6 +1161,18 @@ function finishJob(job: TranscodeJob, ok: boolean, err?: string) {
   drainTranscodeQueue();
 }
 
+async function inProgressPlaylistHasStartupBuffer(
+  job: TranscodeJob,
+  manifestText: string
+): Promise<boolean> {
+  const onDisk = await listSegmentFiles(job.dir);
+  const playlistComplete =
+    job.proc == null && (await isPlaylistFullyEncoded(job, manifestText));
+  if (playlistComplete) return true;
+  const trimmed = prepareManifestForPlayback(manifestText, false, onDisk);
+  return countManifestSegments(trimmed) >= MIN_PUBLISHED_IN_PROGRESS_SEGMENTS;
+}
+
 async function waitForReady(
   job: TranscodeJob,
   signal?: AbortSignal,
@@ -1166,7 +1180,7 @@ async function waitForReady(
   opts?: { failJobOnTimeout?: boolean }
 ): Promise<boolean> {
   const existing = await readManifestIfReady(job.dir);
-  if (existing) {
+  if (existing && (await inProgressPlaylistHasStartupBuffer(job, existing))) {
     job.state = "ready";
     return true;
   }
@@ -1174,7 +1188,6 @@ async function waitForReady(
   const deadline = Date.now() + (maxWaitMs ?? waitForPlaylistMs());
   while (Date.now() < deadline) {
     const state = job.state;
-    if (state === "ready") return true;
     if (state === "failed") {
       notifyWaiters(job, false);
       return false;
@@ -1182,7 +1195,7 @@ async function waitForReady(
     if (state === "queued") drainTranscodeQueue();
     if (signal?.aborted) return !!(await readManifestIfReady(job.dir));
     const text = await readManifestIfReady(job.dir);
-    if (text) {
+    if (text && (await inProgressPlaylistHasStartupBuffer(job, text))) {
       job.state = "ready";
       notifyWaiters(job, true);
       return true;
@@ -1190,11 +1203,13 @@ async function waitForReady(
     await new Promise((r) => setTimeout(r, 100));
   }
   const late = await readManifestIfReady(job.dir);
-  if (late) {
+  if (late && (await inProgressPlaylistHasStartupBuffer(job, late))) {
     job.state = "ready";
     notifyWaiters(job, true);
     return true;
   }
+  // First fragments exist but not enough for a stable start — caller 503s/retries.
+  if (late) return true;
   if (opts?.failJobOnTimeout !== false) {
     job.state = "failed";
     job.error = "Transcode took too long to start.";
@@ -2141,7 +2156,7 @@ export async function handleVodTranscodeRequest(opts: {
     );
     if (
       !playlistComplete &&
-      !trimmed.split(/\r?\n/).some((l) => SEGMENT_RE.test(l.trim()))
+      countManifestSegments(trimmed) < MIN_PUBLISHED_IN_PROGRESS_SEGMENTS
     ) {
       return {
         status: 503,
