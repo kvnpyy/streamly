@@ -23,6 +23,16 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.13.28] — 2026-09-09
+
+Live TV Auto quality is no longer stuck on the lowest rung, and movies can load panel sidecar subtitles.
+
+### Changed
+- **Live quality** — Chrome/Brave Auto uses the highest remaining H.264/AAC rung (HEVC/Dolby still skipped). Desktop live is not capped to the player window size.
+- **Subtitles** — HLS WebVTT, CEA-708, and Xtream sidecar SRT/VTT show in the captions menu when the provider includes them. Live DVB/teletext is still not decoded in-browser.
+
+---
+
 ## [0.13.27] — 2026-09-09
 
 Episode VODs stutter less — playback stays behind the transcode instead of freezing every few seconds.

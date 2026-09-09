@@ -338,9 +338,62 @@ export type StabilizeLiveHlsContext = {
   livingRoomLike: boolean;
   silkLike: boolean;
   appleMobileLiveMse: boolean;
-  /** Phone-sized mobile live (not TV/Silk) — pin safe quality rung to avoid HEVC/Dolby drift. */
+  /** Phone-sized mobile live (not TV/Silk) — start low, then climb within decode-safe rungs. */
   mobilePhoneLive?: boolean;
 };
+
+export type SafeLiveAbrPolicy = {
+  /** First fragment uses the lowest decode-safe rung (phones / TV). */
+  startAtLowest: boolean;
+  /**
+   * Keep ABR from climbing (TV/Silk). Desktop/phone should leave this false so
+   * Auto can use the highest remaining H.264/AAC rung.
+   */
+  pinToLowest: boolean;
+};
+
+type LiveAbrHls = Pick<
+  Hls,
+  "levels" | "startLevel" | "autoLevelCapping" | "autoLevelEnabled" | "currentLevel"
+>;
+
+/**
+ * After HEVC/Dolby rungs are stripped, bound ABR to remaining browser-safe levels.
+ * Desktop Auto should sit at the highest safe rung — not the lowest.
+ */
+export function applySafeLiveAbrCeiling(
+  hls: LiveAbrHls,
+  policy: SafeLiveAbrPolicy
+): void {
+  const levels = hls.levels;
+  if (!levels?.length) return;
+  const lowest = indexOfLowestSafeLevel(levels);
+  const maxSafe = maxSafeLevelIndex(levels);
+  const start = policy.startAtLowest
+    ? lowest >= 0
+      ? lowest
+      : maxSafe
+    : maxSafe >= 0
+      ? maxSafe
+      : lowest;
+  const cap = policy.pinToLowest
+    ? start
+    : maxSafe >= 0
+      ? maxSafe
+      : start;
+  if (start < 0 && cap < 0) return;
+  try {
+    if (start >= 0) hls.startLevel = start;
+    if (cap >= 0) {
+      hls.autoLevelCapping = cap;
+      if (policy.pinToLowest && !hls.autoLevelEnabled) {
+        hls.currentLevel = cap;
+      }
+    }
+  } catch {
+    /* noop */
+  }
+}
 
 export function stabilizeBrowserFriendlyCodecs(
   hls: Hls,
@@ -356,38 +409,22 @@ export function stabilizeBrowserFriendlyCodecs(
     !ctx.livingRoomLike &&
     !ctx.silkLike &&
     !ctx.appleMobileLiveMse &&
+    !ctx.mobilePhoneLive &&
     hls.levels?.length;
 
   if (desktopMseLiveTune) {
-    try {
-      const maxSafe = maxSafeLevelIndex(hls.levels);
-      if (maxSafe >= 0) {
-        hls.autoLevelCapping = maxSafe;
-      }
-    } catch {
-      /* noop */
-    }
-  }
-
-  if (
-    (ctx.livingRoomLike || ctx.silkLike || ctx.mobilePhoneLive) &&
-    hls.levels?.length
-  ) {
-    try {
-      const startIdx = indexOfLowestSafeLevel(hls.levels);
-      if (startIdx >= 0) {
-        hls.startLevel = startIdx;
-        if (ctx.isLive) {
-          /** Hold ABR inside decode-safe rungs — climbing on TV causes visible time jumps. */
-          hls.autoLevelCapping = startIdx;
-          if (!hls.autoLevelEnabled) {
-            hls.currentLevel = startIdx;
-          }
-        }
-      }
-    } catch {
-      /* noop */
-    }
+    applySafeLiveAbrCeiling(hls, {
+      startAtLowest: false,
+      pinToLowest: false,
+    });
+  } else if ((ctx.livingRoomLike || ctx.silkLike) && hls.levels?.length) {
+    /** Hold ABR on TV — climbing causes visible time jumps. */
+    applySafeLiveAbrCeiling(hls, { startAtLowest: true, pinToLowest: true });
+  } else if (ctx.mobilePhoneLive && hls.levels?.length) {
+    applySafeLiveAbrCeiling(hls, {
+      startAtLowest: true,
+      pinToLowest: false,
+    });
   }
 }
 

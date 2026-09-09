@@ -39,4 +39,21 @@ describe("buildIptvHlsJsConfig live IPTV smoothness", () => {
     expect(cfg.maxLiveSyncPlaybackRate).toBe(1);
     expect(cfg.liveSyncOnStallIncrease).toBe(0);
   });
+
+  it("desktop live does not cap quality to the player box", () => {
+    const desktop = buildIptvHlsJsConfig({
+      isLive: true,
+      mobileLike: false,
+      chromiumDesktop: true,
+    });
+    expect(desktop.capLevelToPlayerSize).toBe(false);
+    expect(desktop.enableCEA708Captions).toBe(true);
+    expect(desktop.abrBandWidthUpFactor).toBeGreaterThanOrEqual(0.4);
+
+    const phone = buildIptvHlsJsConfig({
+      isLive: true,
+      mobileLike: true,
+    });
+    expect(phone.capLevelToPlayerSize).toBe(true);
+  });
 });

@@ -59,6 +59,7 @@ import { usePlayerCast } from "@/hooks/player/use-player-cast";
 import { usePlayerLiveSupplements } from "@/hooks/player/use-player-live-supplements";
 import { usePlayerPageLifecycle } from "@/hooks/player/use-player-page-lifecycle";
 import { usePlayerPlaybackPipeline } from "@/hooks/player/use-player-playback-pipeline";
+import { usePlayerSidecarSubtitles } from "@/hooks/player/use-player-sidecar-subtitles";
 import { usePlayerStallEscalation } from "@/hooks/player/use-player-stall-escalation";
 import { usePlayerVideoEvents } from "@/hooks/player/use-player-video-events";
 import { usePlayerVodResume } from "@/hooks/player/use-player-vod-resume";
@@ -84,6 +85,7 @@ import {
   applyGentleLiveHlsRecovery,
   applySoftLiveHlsRecovery,
   hlsRenditionLabel,
+  maxSafeLevelIndex,
 } from "@/lib/live-hls-playback";
 import {
   isPictureInPictureSupported,
@@ -139,11 +141,13 @@ const PlayerControlMenus = dynamic(
 );
 
 type SubtitleTrack = {
-  id: number; // -1 = off
+  id: number; // -1 = off; HLS uses 0…n; native/sidecar use 1000 + textTrack index
   label: string;
   lang?: string;
-  source: "hls" | "native";
+  source: "hls" | "native" | "sidecar";
 };
+
+const NATIVE_SUBTITLE_ID_BASE = 1000;
 
 /**
  * Brave on iPhone/iPad (WKWebView). Apple only wires reliable native video fullscreen to Safari;
@@ -1230,24 +1234,47 @@ export function PlayerOverlay() {
     applyVodDurationHint,
   });
 
-  // Native subtitle track detection (e.g. mp4 with embedded subs)
+  usePlayerSidecarSubtitles({ open, current, creds, videoRef });
+
+  // Native / sidecar / CEA-708 tracks on <video> (keep HLS menu entries).
   useEffect(() => {
     const v = videoRef.current;
     if (!v) return;
-    const onAdd = () => {
-      const native: SubtitleTrack[] = Array.from(v.textTracks).map((t, i) => ({
-        id: i,
-        label: t.label || t.language || `Subtitle ${i + 1}`,
-        lang: t.language,
-        source: "native" as const,
-      }));
-      // Don't clobber HLS-provided subtitles
-      setSubtitles((prev) =>
-        prev.some((s) => s.source === "hls") ? prev : native
+    const syncNative = () => {
+      const native: SubtitleTrack[] = Array.from(v.textTracks).flatMap(
+        (t, i) => {
+          if (t.kind !== "subtitles" && t.kind !== "captions") return [];
+          return [
+            {
+              id: NATIVE_SUBTITLE_ID_BASE + i,
+              label:
+                t.label ||
+                t.language ||
+                (t.kind === "captions" ? "Captions" : `Subtitle ${i + 1}`),
+              lang: t.language || undefined,
+              source: "native" as const,
+            },
+          ];
+        }
       );
+      setSubtitles((prev) => {
+        const hls = prev.filter((s) => s.source === "hls");
+        const extra = native.filter(
+          (n) =>
+            !hls.some(
+              (h) =>
+                (h.label && h.label === n.label) ||
+                (h.lang && n.lang && h.lang === n.lang)
+            )
+        );
+        return [...hls, ...extra];
+      });
     };
-    v.textTracks?.addEventListener?.("addtrack", onAdd);
-    return () => v.textTracks?.removeEventListener?.("addtrack", onAdd);
+    v.textTracks?.addEventListener?.("addtrack", syncNative);
+    syncNative();
+    return () => {
+      v.textTracks?.removeEventListener?.("addtrack", syncNative);
+    };
   }, [open, current]);
 
   const togglePlay = useCallback(() => {
@@ -1804,6 +1831,16 @@ export function PlayerOverlay() {
     if (!hls) return;
     userTouchedHlsQualityRef.current = true;
     userChoseAutoHlsQualityRef.current = lvl === -1;
+    if (lvl === -1) {
+      const cap = maxSafeLevelIndex(hls.levels);
+      if (cap >= 0) {
+        try {
+          hls.autoLevelCapping = cap;
+        } catch {
+          /* noop */
+        }
+      }
+    }
     hls.currentLevel = lvl;
     setCurrentLevel(lvl);
   };
@@ -1811,14 +1848,22 @@ export function PlayerOverlay() {
   const switchSubtitle = (id: number) => {
     setActiveSubtitle(id);
     const hls = hlsRef.current;
-    if (hls && subtitles.some((s) => s.source === "hls")) {
-      hls.subtitleTrack = id;
-      return;
-    }
     const v = videoRef.current;
+    const chosen = subtitles.find((s) => s.id === id);
+    if (hls) {
+      try {
+        hls.subtitleTrack = chosen?.source === "hls" ? chosen.id : -1;
+      } catch {
+        /* noop */
+      }
+    }
     if (!v) return;
     Array.from(v.textTracks).forEach((t, i) => {
-      t.mode = i === id ? "showing" : "disabled";
+      const want =
+        chosen &&
+        chosen.source !== "hls" &&
+        chosen.id === NATIVE_SUBTITLE_ID_BASE + i;
+      t.mode = want ? "showing" : "disabled";
     });
   };
 

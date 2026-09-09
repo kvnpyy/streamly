@@ -56,7 +56,8 @@ export function buildIptvHlsJsConfig(opts: {
     maxBuf = 42;
     maxMaxBuf = 96;
     backBuf = 64;
-    abrUp = 0.12;
+    /** Climb toward the highest safe H.264 rung instead of lingering on the floor. */
+    abrUp = 0.42;
     maxHoleLive = 0.55;
   } else if (tvLivingRoomLive) {
     /** Prefer a brief stall over seeking — hole-skip and live-edge catch-up look like “skipping”. */
@@ -124,7 +125,15 @@ export function buildIptvHlsJsConfig(opts: {
 
   return {
     lowLatencyMode: false,
-    capLevelToPlayerSize: isLive || livingRoomLike || silkLike,
+    enableWebVTT: true,
+    enableIMSC1: true,
+    enableCEA708Captions: true,
+    renderTextTracksNatively: true,
+    /**
+     * Desktop live in a window used to look SD because ABR matched the element
+     * box, not the source. Phones/TVs still cap to viewport to save decode.
+     */
+    capLevelToPlayerSize: livingRoomLike || silkLike || (isLive && tightBuffers),
     enableWorker: false,
     manifestLoadingTimeOut: timeouts,
     levelLoadingTimeOut: timeouts,

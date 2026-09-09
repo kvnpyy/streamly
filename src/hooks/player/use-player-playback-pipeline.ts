@@ -11,11 +11,12 @@ import {
 } from "@/lib/browser";
 import {
   applyGentleLiveHlsRecovery,
+  applySafeLiveAbrCeiling,
   LIVE_PLAYBACK_ERROR_GRACE_MS,
-  indexOfLowestSafeLevel,
   levelDeclaresHevc,
   levelDeclaresNonPreferredChromePackagedAudio,
   livePlaybackStoppedMessage,
+  maxSafeLevelIndex,
   preferBrowserFriendlyAudioTrack,
   stabilizeBrowserFriendlyCodecs,
   tryCapAbrLower,
@@ -105,7 +106,7 @@ export type UsePlayerPlaybackPipelineParams = {
   setVodTotalSec: Dispatch<SetStateAction<number>>;
   setLevels: Dispatch<SetStateAction<Level[]>>;
   setCurrentLevel: Dispatch<SetStateAction<number>>;
-  setSubtitles: Dispatch<SetStateAction<{ id: number; label: string; lang?: string; source: "hls" | "native" }[]>>;
+  setSubtitles: Dispatch<SetStateAction<{ id: number; label: string; lang?: string; source: "hls" | "native" | "sidecar" }[]>>;
   setActiveSubtitle: Dispatch<SetStateAction<number>>;
   setAudioTracks: Dispatch<SetStateAction<PlayerAudioTrack[]>>;
   setActiveAudioTrack: Dispatch<SetStateAction<number>>;
@@ -501,7 +502,7 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
 
       /**
        * Live playlists refresh and ABR climbs — re-apply filters so we don't drift into HEVC/Dolby variants Chromium can't decode over MSE.
-       * Desktop Chromium: pin lowest-safe **once on MANIFEST_PARSED only** — repeating `currentLevel=` on every `MANIFEST_LOADED`/recovery thrashed MSE and produced bogus codec errors.
+       * Desktop Chromium: cap to highest-safe **once on MANIFEST_PARSED only** — repeating `currentLevel=` on every `MANIFEST_LOADED`/recovery thrashed MSE.
        */
       const recoveryGenAtStart = livePlaybackRecoveryGenRef.current;
       let livePlaybackHealthy = false;
@@ -746,31 +747,33 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
           return;
         }
         runStabilizeBrowserFriendlyCodecs();
-        if (chromiumLiveQualityLockEligible || mobileLiveQualityLockEligible) {
-          const startIdx = indexOfLowestSafeLevel(hls.levels);
-          if (startIdx >= 0) {
-            try {
-              hls.startLevel = startIdx;
-              hls.autoLevelCapping = startIdx;
-            } catch {
-              /* noop */
-            }
-          }
+        if (chromiumLiveQualityLockEligible) {
+          applySafeLiveAbrCeiling(hls, {
+            startAtLowest: false,
+            pinToLowest: false,
+          });
+        } else if (mobileLiveQualityLockEligible) {
+          applySafeLiveAbrCeiling(hls, {
+            startAtLowest: true,
+            pinToLowest: false,
+          });
         }
         livePlaybackErrorSuppressUntilRef.current =
           performance.now() + LIVE_PLAYBACK_ERROR_GRACE_MS;
         setCurrentLevel(-1);
-        // Pull subtitle tracks from HLS manifest
+        // Pull subtitle tracks from HLS manifest (keep sidecar/native extras).
         const subs = hls.subtitleTracks as MediaPlaylist[] | undefined;
         if (subs && subs.length) {
-          setSubtitles(
-            subs.map((t, i) => ({
-              id: i,
-              label: t.name || t.lang || `Track ${i + 1}`,
-              lang: t.lang,
-              source: "hls" as const,
-            }))
-          );
+          const hlsSubs = subs.map((t, i) => ({
+            id: i,
+            label: t.name || t.lang || `Track ${i + 1}`,
+            lang: t.lang,
+            source: "hls" as const,
+          }));
+          setSubtitles((prev) => [
+            ...hlsSubs,
+            ...prev.filter((s) => s.source !== "hls"),
+          ]);
           hls.subtitleTrack = -1;
         }
         void tryAutoplay();
@@ -779,14 +782,16 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
       hls.on(Hls.Events.SUBTITLE_TRACKS_UPDATED, (_e, data) => {
         if (cancelled) return;
         const subs = data.subtitleTracks || [];
-        setSubtitles(
-          subs.map((t, i) => ({
-            id: i,
-            label: t.name || t.lang || `Track ${i + 1}`,
-            lang: t.lang,
-            source: "hls" as const,
-          }))
-        );
+        const hlsSubs = subs.map((t, i) => ({
+          id: i,
+          label: t.name || t.lang || `Track ${i + 1}`,
+          lang: t.lang,
+          source: "hls" as const,
+        }));
+        setSubtitles((prev) => [
+          ...hlsSubs,
+          ...prev.filter((s) => s.source !== "hls"),
+        ]);
       });
 
       hls.on(Hls.Events.AUDIO_TRACKS_UPDATED, () => {
@@ -840,7 +845,7 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
           levelDeclaresHevc(lv) ||
           levelDeclaresNonPreferredChromePackagedAudio(lv)
         ) {
-          const safeIdx = indexOfLowestSafeLevel(hls.levels);
+          const safeIdx = maxSafeLevelIndex(hls.levels);
           if (
             safeIdx >= 0 &&
             safeIdx !== idx &&
@@ -853,7 +858,7 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
                * Forcing `currentLevel` after playback started thrashes MSE and surfaces
                * `<video error>` ~1s in — cap ABR and only hard-switch before first buffer.
                */
-              if (!livePlaybackHealthy) {
+              if (!livePlaybackHealthy && !userTouchedHlsQualityRef.current) {
                 hls.currentLevel = safeIdx;
               }
             } catch {

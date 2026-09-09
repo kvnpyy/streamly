@@ -11,6 +11,17 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.13.28",
+    date: "2026-09-09",
+    summary:
+      "Live TV Auto quality is no longer stuck on the lowest rung, and movies can load panel sidecar subtitles.",
+    highlights: [
+      "Chrome/Brave live Auto now uses the best H.264/AAC variant the browser can decode, instead of pinning 480p.",
+      "Desktop live no longer downscales to the player window size; phones and TVs still do.",
+      "Captions button lists HLS, CEA-708, and Xtream SRT/VTT sidecar tracks when the provider sends them. Live DVB/teletext still is not available in the browser.",
+    ],
+  },
+  {
     version: "0.13.27",
     date: "2026-09-09",
     summary:

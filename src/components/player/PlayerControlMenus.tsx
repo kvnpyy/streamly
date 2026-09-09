@@ -36,7 +36,7 @@ export type PlayerSubtitleTrack = {
   id: number;
   label: string;
   lang?: string;
-  source: "hls" | "native";
+  source: "hls" | "native" | "sidecar";
 };
 
 export type PlayerControlMenusProps = {
@@ -286,9 +286,8 @@ export function PlayerControlMenus({
                 typeof navigator !== "undefined" &&
                 isChromiumBasedDesktopBrowser() && (
                   <div className="px-3 pb-2 text-[11px] text-white/45 leading-snug">
-                    Brave and Chrome default to the safest rung to reduce Dolby/HEVC
-                    drop-outs. Pick Auto or higher for more bitrate (riskier on some
-                    channels).
+                    Auto stays on H.264/AAC the browser can decode (HEVC/Dolby
+                    rungs are skipped). Pick a specific rung if Auto looks soft.
                   </div>
                 )}
               <button
