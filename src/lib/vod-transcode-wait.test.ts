@@ -2,12 +2,15 @@ import { describe, expect, it } from "vitest";
 import { transcodeManifestWaitMs } from "@/lib/vod-transcode-wait";
 
 describe("transcodeManifestWaitMs", () => {
-  it("uses extended wait for start-of-file playback", () => {
-    expect(transcodeManifestWaitMs(0)).toBe(60_000);
-    expect(transcodeManifestWaitMs(0, { httpWaitMs: 30_000 })).toBe(60_000);
+  it("caps every request well under Cloudflare’s 524 timeout", () => {
+    expect(transcodeManifestWaitMs(0)).toBe(16_000);
+    expect(transcodeManifestWaitMs(2914)).toBe(16_000);
+    expect(transcodeManifestWaitMs(1800, { playlistWaitMs: 120_000 })).toBe(
+      16_000
+    );
   });
 
-  it("uses full playlist wait for mid-file seeks", () => {
-    expect(transcodeManifestWaitMs(1800)).toBe(120_000);
+  it("honors a shorter explicit HTTP wait", () => {
+    expect(transcodeManifestWaitMs(0, { httpWaitMs: 8_000 })).toBe(8_000);
   });
 });

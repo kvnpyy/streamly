@@ -11,6 +11,16 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.13.25",
+    date: "2026-09-09",
+    summary:
+      "Jumping ahead in a transcoded episode no longer freezes on a Cloudflare 524.",
+    highlights: [
+      "Mid-file encode restarts return 503 quickly instead of holding the request until Cloudflare times out.",
+      "Playback keeps going until the new playlist is ready; 524/504 are treated as “still preparing.”",
+    ],
+  },
+  {
     version: "0.13.24",
     date: "2026-09-09",
     summary:

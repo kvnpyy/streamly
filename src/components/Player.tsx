@@ -30,6 +30,7 @@ import {
 import { transcodeSeekNeedsServerRestart as transcodeSeekNeedsServerRestartPolicy } from "@/lib/vod-transcode-seek-policy";
 import { resolveEffectiveVodDuration } from "@/lib/vod-seek-scrub";
 import { humanizePlaybackErrorResponse } from "@/lib/playback-error-message";
+import { waitForVodTranscodePlaylistReady } from "@/lib/vod-transcode-http";
 import { TvPlayerRemoteHints } from "@/components/TvPlayerRemoteHints";
 import { VodPrepareOverlay } from "@/components/VodPrepareOverlay";
 import { useTvBrowser } from "@/components/TvBrowserProvider";
@@ -360,6 +361,7 @@ export function PlayerOverlay() {
   const [playbackRetryKey, setPlaybackRetryKey] = useState(0);
   const vodTriedTranscodeRef = useRef(false);
   const vodPrepKickRef = useRef<AbortController | null>(null);
+  const vodSeekPrepAbortRef = useRef<AbortController | null>(null);
   const [levels, setLevels] = useState<Level[]>([]);
   const [currentLevel, setCurrentLevel] = useState<number>(-1);
   const [subtitles, setSubtitles] = useState<SubtitleTrack[]>([]);
@@ -762,34 +764,57 @@ export function PlayerOverlay() {
 
       vodTriedTranscodeRef.current = true;
       setVodTranscodeBoost(true);
-      vodStartOffsetRef.current = 0;
-      vodEncodedSecRef.current = 0;
       setVodSeekTargetSec(Math.max(0, absoluteSec));
       setVodSeekInFlight(true);
-      setVideoHasFrame(false);
-      setLoading(true);
       setError(null);
       setTime(Math.max(0, absoluteSec));
 
-      const v = videoRef.current;
-      if (v) {
-        try {
-          if (hlsRef.current) {
-            hlsRef.current.stopLoad();
-            hlsRef.current.destroy();
-            hlsRef.current = null;
-          }
-          v.pause();
-          detachVideoElement(v);
-        } catch {
-          /* noop */
-        }
-      }
+      vodSeekPrepAbortRef.current?.abort();
+      const prep = new AbortController();
+      vodSeekPrepAbortRef.current = prep;
 
-      setVodPlaybackOverride(url);
-      void fetch(url, { credentials: "same-origin", cache: "no-store" }).catch(
-        () => {}
-      );
+      // Keep current playback up until the seek encode has a playlist.
+      // Tearing down first + a 120s origin hold caused Cloudflare 524 freezes.
+      void (async () => {
+        const result = await waitForVodTranscodePlaylistReady(url, {
+          signal: prep.signal,
+          deadlineMs: 180_000,
+        });
+        if (prep.signal.aborted || vodSeekPrepAbortRef.current !== prep) return;
+        if (result !== "ready") {
+          setVodSeekInFlight(false);
+          setVodSeekTargetSec(null);
+          vodTimelineHoldRef.current = null;
+          const v = videoRef.current;
+          if (v && Number.isFinite(v.currentTime)) {
+            const off = vodStartOffsetRef.current;
+            setTime(Math.max(0, off + v.currentTime));
+          }
+          return;
+        }
+
+        vodStartOffsetRef.current = 0;
+        vodEncodedSecRef.current = 0;
+        setVideoHasFrame(false);
+        setLoading(true);
+
+        const v = videoRef.current;
+        if (v) {
+          try {
+            if (hlsRef.current) {
+              hlsRef.current.stopLoad();
+              hlsRef.current.destroy();
+              hlsRef.current = null;
+            }
+            v.pause();
+            detachVideoElement(v);
+          } catch {
+            /* noop */
+          }
+        }
+
+        setVodPlaybackOverride(url);
+      })();
     },
     [current, tvBrowser, silkLikeClient, vodPlaybackUrl, vodTotalSec]
   );
@@ -829,6 +854,8 @@ export function PlayerOverlay() {
 
     vodPrepKickRef.current?.abort();
     vodPrepKickRef.current = null;
+    vodSeekPrepAbortRef.current?.abort();
+    vodSeekPrepAbortRef.current = null;
 
     const v = videoRef.current;
     if (v) {
@@ -924,6 +951,8 @@ export function PlayerOverlay() {
   }, [open]);
 
   useEffect(() => {
+    vodSeekPrepAbortRef.current?.abort();
+    vodSeekPrepAbortRef.current = null;
     queueMicrotask(() => setVodPlaybackOverride(null));
   }, [open, current?.kind, current?.id, current?.url]);
 

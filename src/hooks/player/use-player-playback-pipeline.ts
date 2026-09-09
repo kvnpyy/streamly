@@ -35,6 +35,7 @@ import {
 import { withLiveHlsCompatMse } from "@/lib/stream-url";
 import { isAmazonSilkUserAgent, isTvClassUserAgent, isTvOrSilkUserAgent } from "@/lib/tv-user-agent";
 import { humanizePlaybackErrorResponse } from "@/lib/playback-error-message";
+import { isRetryableVodTranscodeHttpStatus } from "@/lib/vod-transcode-http";
 import {
   destroyHlsInstance,
   pauseVideoElement,
@@ -626,9 +627,13 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
                   !!vv &&
                   (vv.currentTime > 0.5 ||
                     vv.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA);
-                // 503 = still encoding. Mid-play 502 is often a brief overload /
-                // provider blip — hard-failing here kills an episode at ~10m.
-                if (xhr.status === 503 || (midPlayback && xhr.status === 502)) {
+                // 503 / 524 / 504 = still encoding or gateway timeout.
+                // Mid-play 502 is often a brief overload — hard-failing kills
+                // an episode at ~10m.
+                if (
+                  isRetryableVodTranscodeHttpStatus(xhr.status) ||
+                  (midPlayback && xhr.status === 502)
+                ) {
                   const srcPctHdr = xhr.getResponseHeader("x-vod-source-pct");
                   const srcPct = srcPctHdr ? parseFloat(srcPctHdr) : NaN;
                   if (Number.isFinite(srcPct) && srcPct > 0) {
@@ -977,6 +982,8 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
               // 503 = segment still encoding — hls.js retries; restarting load jumps buffer holes.
               if (
                 httpCode === 503 ||
+                httpCode === 524 ||
+                httpCode === 504 ||
                 data.details === Hls.ErrorDetails.FRAG_LOAD_TIMEOUT
               ) {
                 return;

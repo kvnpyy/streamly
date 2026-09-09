@@ -23,6 +23,15 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.13.25] — 2026-09-09
+
+Jumping ahead in a transcoded episode no longer freezes on a Cloudflare 524.
+
+### Fixed
+- **Seek freeze / 524** — Restarting an MKV encode at a later time (e.g. 48:34) held `/api/stream` for up to 120s. Cloudflare cut it off and the player had already torn down. The origin now returns 503 quickly, the current picture stays up until the new playlist exists, and 524 is treated as still-preparing.
+
+---
+
 ## [0.13.24] — 2026-09-09
 
 Clicking the VOD seek bar on transcoded episodes (MKV series) now jumps to that time.

@@ -5,7 +5,7 @@ export function playbackErrorFallback(
   status?: number,
   context: PlaybackErrorContext = "vod-transcode"
 ): string {
-  if (status === 503) {
+  if (status === 503 || status === 504 || status === 524) {
     return "Server is busy preparing this video. Wait a minute, then try again.";
   }
   if (status === 502) {

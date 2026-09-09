@@ -24,12 +24,14 @@ export function useVodSeekPreview({
   const [loading, setLoading] = useState(false);
   const cacheRef = useRef(new Map<number, string>());
   const abortRef = useRef<AbortController | null>(null);
+  const imageUrlRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!enabled || previewSec == null || previewSec < 0) {
       abortRef.current?.abort();
       queueMicrotask(() => {
         setLoading(false);
+        imageUrlRef.current = null;
         setImageUrl(null);
       });
       return;
@@ -37,7 +39,10 @@ export function useVodSeekPreview({
 
     const upstream = upstreamFromPlaybackProxyUrl(playbackUrl);
     if (!upstream) {
-      queueMicrotask(() => setImageUrl(poster ?? null));
+      queueMicrotask(() => {
+        imageUrlRef.current = poster ?? null;
+        setImageUrl(poster ?? null);
+      });
       return;
     }
 
@@ -45,6 +50,7 @@ export function useVodSeekPreview({
     const cached = cacheRef.current.get(bucket);
     if (cached) {
       queueMicrotask(() => {
+        imageUrlRef.current = cached;
         setImageUrl(cached);
         setLoading(false);
       });
@@ -71,9 +77,15 @@ export function useVodSeekPreview({
           if (first != null) {
             const old = cacheRef.current.get(first);
             cacheRef.current.delete(first);
-            if (old?.startsWith("blob:")) URL.revokeObjectURL(old);
+            if (
+              old?.startsWith("blob:") &&
+              old !== imageUrlRef.current
+            ) {
+              URL.revokeObjectURL(old);
+            }
           }
         }
+        imageUrlRef.current = objectUrl;
         setImageUrl(objectUrl);
         setLoading(false);
       })
