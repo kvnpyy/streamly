@@ -3,8 +3,9 @@
 import { useEffect, type RefObject } from "react";
 import type Hls from "hls.js";
 import {
+  applyVodResumePersist,
+  decideVodResumePersist,
   resolveStoredVodResumeSec,
-  shouldPersistVodResume,
   vodAbsoluteSec,
   vodRelativeSec,
   vodResumeStorageKey,
@@ -201,7 +202,14 @@ export function usePlayerVodResume(p: UsePlayerVodResumeParams) {
       return Number.isFinite(vd) && vd > 1 && vd < 86400 ? vd : 0;
     };
 
-    const onEnded = () => usePrefs.getState().clearVodResume(key);
+    const onEnded = () => {
+      const d = readDuration();
+      if (!d) return;
+      applyVodResumePersist(
+        key,
+        decideVodResumePersist(d, d)
+      );
+    };
     const onTime = () => {
       if (vodScrubbingRef.current) return;
       if (
@@ -219,9 +227,10 @@ export function usePlayerVodResume(p: UsePlayerVodResumeParams) {
       });
       const d = readDuration();
       if (!d || absolute - lastPersist < 7) return;
-      if (!shouldPersistVodResume(absolute, d)) return;
+      const action = decideVodResumePersist(absolute, d);
+      if (!action) return;
       lastPersist = absolute;
-      usePrefs.getState().saveVodResume(key, absolute);
+      applyVodResumePersist(key, action);
     };
 
     video.addEventListener("ended", onEnded);

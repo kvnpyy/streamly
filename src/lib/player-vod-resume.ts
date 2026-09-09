@@ -1,4 +1,8 @@
 import type { PlayerSource } from "@/store/player";
+import { usePrefs } from "@/store/preferences";
+
+/** Treat episode as finished when resume is this close to the end. */
+export const EPISODE_COMPLETED_RATIO = 0.92;
 
 /** Preserved across transcode seek reloads so pipeline resets do not wipe the target. */
 export type VodTimelineHold = {
@@ -54,6 +58,26 @@ export function resolveStoredVodResumeSec(
   return stored;
 }
 
+/** Seconds from the end where we stop periodic saves (finale handled on ended/close). */
+export const VOD_RESUME_FINALE_MARGIN_SEC = 45;
+
+export function isVodResumeCompleted(
+  resumeSec: number,
+  durationSec: number
+): boolean {
+  return (
+    durationSec > 30 &&
+    Number.isFinite(resumeSec) &&
+    resumeSec >= durationSec * EPISODE_COMPLETED_RATIO
+  );
+}
+
+/** Stored resume position that marks a title as fully watched. */
+export function vodResumeCompletedSec(durationSec: number): number {
+  if (!Number.isFinite(durationSec) || durationSec <= 30) return 0;
+  return Math.max(15, Math.floor(durationSec * EPISODE_COMPLETED_RATIO));
+}
+
 export function shouldPersistVodResume(
   absoluteSec: number,
   durationSec: number
@@ -62,11 +86,46 @@ export function shouldPersistVodResume(
     absoluteSec > 12 &&
     durationSec > 1 &&
     Number.isFinite(durationSec) &&
-    absoluteSec < durationSec - 45
+    absoluteSec < durationSec - VOD_RESUME_FINALE_MARGIN_SEC
   );
 }
 
 /** Scrub/resume near the title start should drop continue-watching, not keep an old tip. */
 export function shouldClearVodResume(absoluteSec: number): boolean {
   return Number.isFinite(absoluteSec) && absoluteSec <= 12;
+}
+
+export type VodResumePersistAction =
+  | { type: "clear" }
+  | { type: "save"; seconds: number };
+
+/** Single decision point for scrub, close, wake, and periodic saves. */
+export function decideVodResumePersist(
+  absoluteSec: number,
+  durationSec: number
+): VodResumePersistAction | null {
+  if (!Number.isFinite(absoluteSec) || !Number.isFinite(durationSec)) {
+    return null;
+  }
+  if (shouldClearVodResume(absoluteSec)) return { type: "clear" };
+  if (isVodResumeCompleted(absoluteSec, durationSec)) {
+    return { type: "save", seconds: vodResumeCompletedSec(durationSec) };
+  }
+  if (shouldPersistVodResume(absoluteSec, durationSec)) {
+    return { type: "save", seconds: absoluteSec };
+  }
+  return null;
+}
+
+/** Apply a persist decision to the prefs store. */
+export function applyVodResumePersist(
+  storageKey: string | null,
+  action: VodResumePersistAction | null
+): void {
+  if (!storageKey || !action) return;
+  if (action.type === "clear") {
+    usePrefs.getState().clearVodResume(storageKey);
+    return;
+  }
+  usePrefs.getState().saveVodResume(storageKey, action.seconds);
 }

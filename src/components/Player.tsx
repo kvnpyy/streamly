@@ -37,8 +37,8 @@ import { useTvBrowser } from "@/components/TvBrowserProvider";
 import { useAuth } from "@/store/auth";
 import { usePlayer, type PlayerSource } from "@/store/player";
 import {
-  shouldClearVodResume,
-  shouldPersistVodResume,
+  applyVodResumePersist,
+  decideVodResumePersist,
   type VodTimelineHold,
   vodResumeStorageKey,
 } from "@/lib/player-vod-resume";
@@ -1128,12 +1128,11 @@ export function PlayerOverlay() {
           : vodTotalSec > 1
             ? vodTotalSec
             : undefined;
-      if (
-        resumeKey &&
-        durationSec &&
-        shouldPersistVodResume(absolute, durationSec)
-      ) {
-        usePrefs.getState().saveVodResume(resumeKey, absolute);
+      if (resumeKey && durationSec) {
+        applyVodResumePersist(
+          resumeKey,
+          decideVodResumePersist(absolute, durationSec)
+        );
       }
 
       if (absolute >= 15) {
@@ -1301,13 +1300,10 @@ export function PlayerOverlay() {
       const persistIfLanded = () => {
         if (landGen !== vodSeekLandGenRef.current) return;
         if (!resumeKey) return;
-        if (shouldClearVodResume(absolute)) {
-          usePrefs.getState().clearVodResume(resumeKey);
-          return;
-        }
-        if (shouldPersistVodResume(absolute, dur)) {
-          usePrefs.getState().saveVodResume(resumeKey, absolute);
-        }
+        applyVodResumePersist(
+          resumeKey,
+          decideVodResumePersist(absolute, dur)
+        );
       };
       const clearScrubGate = () => {
         if (landGen !== vodSeekLandGenRef.current) return;

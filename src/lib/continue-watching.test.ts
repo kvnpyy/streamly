@@ -6,6 +6,8 @@ import {
   computeContinueProgressPct,
   CONTINUE_PROGRESS_MIN_SEC,
   findSeriesResumeTarget,
+  markSeriesEpisodeUnwatched,
+  markSeriesEpisodeWatched,
   parseEpisodeDurationSec,
   parseRecentEpisodeMeta,
   seriesEpisodeWatchState,
@@ -225,6 +227,46 @@ describe("continue-watching", () => {
     });
     expect(meta.episodeStreamId).toBe(55);
     expect(meta.durationSec).toBe(2700);
+  });
+
+  it("markSeriesEpisodeWatched stores a completion sentinel", () => {
+    const ep = {
+      id: "10",
+      episode_num: "1",
+      title: "Pilot",
+      container_extension: "mp4",
+      info: { duration_secs: 3600 },
+    };
+    const saves: Record<string, number> = {};
+    expect(
+      markSeriesEpisodeWatched(accountKey, 5, ep, (key, sec) => {
+        saves[key] = sec;
+      })
+    ).toBe(true);
+    expect(saves[`${accountKey}|series|10`]).toBe(3312);
+    expect(
+      seriesEpisodeWatchState(accountKey, 5, ep, saves).status
+    ).toBe("completed");
+  });
+
+  it("markSeriesEpisodeUnwatched clears resume", () => {
+    const ep = {
+      id: "10",
+      episode_num: "1",
+      title: "Pilot",
+      container_extension: "mp4",
+      info: { duration_secs: 3600 },
+    };
+    const key = `${accountKey}|series|10`;
+    const vodResumeSec: Record<string, number> = { [key]: 3312 };
+    expect(
+      markSeriesEpisodeUnwatched(accountKey, 5, ep, (k) => {
+        delete vodResumeSec[k];
+      })
+    ).toBe(true);
+    expect(
+      seriesEpisodeWatchState(accountKey, 5, ep, vodResumeSec).status
+    ).toBe("unwatched");
   });
 
   it("seriesEpisodeRecentMeta parses HH:MM:SS duration strings", () => {

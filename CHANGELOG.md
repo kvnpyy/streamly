@@ -23,6 +23,19 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.13.26] — 2026-09-09
+
+Mark episodes as watched from the series page and keep finished episodes tracked.
+
+### Added
+- **Mark as watched** — Circle/check button on each episode row; tap to toggle watched or unwatched.
+
+### Fixed
+- **Completion tracking** — Finishing an episode (or scrubbing past ~92%) now saves a completion bookmark instead of clearing resume, so “Watched” badges stick.
+- **Persist consistency** — Resume, scrub, close, wake, and ended events all use the same persist decision path.
+
+---
+
 ## [0.13.25] — 2026-09-09
 
 Jumping ahead in a transcoded episode no longer freezes on a Cloudflare 524.

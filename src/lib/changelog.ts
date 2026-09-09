@@ -11,6 +11,17 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.13.26",
+    date: "2026-09-09",
+    summary:
+      "Mark episodes as watched from the series page and keep finished episodes tracked.",
+    highlights: [
+      "Each episode row has a mark-watched toggle — tap again to mark unwatched.",
+      "Finishing playback now saves a completion bookmark instead of clearing progress.",
+      "Resume, scrub, close, and ended events share one persist path so watch state stays consistent.",
+    ],
+  },
+  {
     version: "0.13.25",
     date: "2026-09-09",
     summary:

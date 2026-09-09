@@ -1,4 +1,9 @@
-import { vodResumeStorageKey } from "@/lib/player-vod-resume";
+import {
+  EPISODE_COMPLETED_RATIO,
+  isVodResumeCompleted,
+  vodResumeCompletedSec,
+  vodResumeStorageKey,
+} from "@/lib/player-vod-resume";
 import { parsePositiveRouteId } from "@/lib/utils";
 import {
   buildImageProxy,
@@ -19,8 +24,7 @@ export const CONTINUE_WATCHING_PATH = "/app/continue";
 /** Minimum resume seconds before we show a progress bar (matches player save threshold). */
 export const CONTINUE_PROGRESS_MIN_SEC = 15;
 
-/** Treat episode as finished when resume is this close to the end (matches player save cutoff). */
-export const EPISODE_COMPLETED_RATIO = 0.92;
+export { EPISODE_COMPLETED_RATIO };
 
 export type SeriesEpisodeWatchStatus = "unwatched" | "in_progress" | "completed";
 
@@ -90,10 +94,7 @@ export function seriesEpisodeWatchState(
     };
   }
 
-  if (
-    durationSec > 30 &&
-    resumeSec >= durationSec * EPISODE_COMPLETED_RATIO
-  ) {
+  if (isVodResumeCompleted(resumeSec, durationSec)) {
     return {
       status: "completed",
       resumeSec,
@@ -362,6 +363,32 @@ export function findSeriesResumeTarget(
     best = { season, episode: ep, resumeSec: watch.resumeSec };
   }
   return best;
+}
+
+export function markSeriesEpisodeWatched(
+  accountKey: string,
+  seriesId: number,
+  ep: SeriesEpisode,
+  saveVodResume: (storageKey: string, seconds: number) => void
+): boolean {
+  const key = seriesEpisodeResumeKey(accountKey, seriesId, ep);
+  const durationSec = parseEpisodeDurationSec(ep);
+  const completedSec = vodResumeCompletedSec(durationSec);
+  if (!key || completedSec <= 0) return false;
+  saveVodResume(key, completedSec);
+  return true;
+}
+
+export function markSeriesEpisodeUnwatched(
+  accountKey: string,
+  seriesId: number,
+  ep: SeriesEpisode,
+  clearVodResume: (storageKey: string) => void
+): boolean {
+  const key = seriesEpisodeResumeKey(accountKey, seriesId, ep);
+  if (!key) return false;
+  clearVodResume(key);
+  return true;
 }
 
 export function seriesEpisodeRecentMeta(

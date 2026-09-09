@@ -11,6 +11,8 @@ import { useTvBrowser } from "@/components/TvBrowserProvider";
 import { proxiedCssBackground } from "@/lib/image-proxy";
 import {
   findSeriesResumeTarget,
+  markSeriesEpisodeUnwatched,
+  markSeriesEpisodeWatched,
   parseEpisodeDurationSec,
   seriesEpisodeRecentMeta,
   seriesEpisodeWatchState,
@@ -31,7 +33,15 @@ import { VirtualEpisodeList } from "@/components/VirtualEpisodeList";
 import { GenreChips } from "@/components/GenreChips";
 import { seriesCategoryPreviewQueryOptions } from "@/lib/catalog-items-search";
 import { pickSimilarSeries } from "@/lib/similar-titles";
-import { ArrowLeft, Check, Heart, Play, Star } from "lucide-react";
+import {
+  ArrowLeft,
+  Check,
+  CheckCircle2,
+  Circle,
+  Heart,
+  Play,
+  Star,
+} from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useMemo, useState } from "react";
@@ -66,6 +76,8 @@ export default function SeriesDetail() {
     toggleFavorite,
     addRecent,
     vodResumeSec,
+    saveVodResume,
+    clearVodResume,
     hideAdult,
     parentalUnlocked,
   } = usePrefs();
@@ -248,6 +260,24 @@ export default function SeriesDetail() {
       })();
     },
     [creds, seriesId, info.data, play, episodePlaylist, addRecent, tvBrowser]
+  );
+
+  const toggleEpisodeWatched = useCallback(
+    (ep: SeriesEpisode) => {
+      if (!accountKey || seriesId == null) return;
+      const watch = seriesEpisodeWatchState(
+        accountKey,
+        seriesId,
+        ep,
+        vodResumeSec
+      );
+      if (watch.status === "completed") {
+        markSeriesEpisodeUnwatched(accountKey, seriesId, ep, clearVodResume);
+      } else {
+        markSeriesEpisodeWatched(accountKey, seriesId, ep, saveVodResume);
+      }
+    },
+    [accountKey, seriesId, vodResumeSec, saveVodResume, clearVodResume]
   );
 
   if (!creds) {
@@ -512,22 +542,30 @@ export default function SeriesDetail() {
             const warmTranscode = () => {
               warmVodTranscodePlay(playUrl, { compatMse: tvBrowser });
             };
+            const isWatched = watch?.status === "completed";
+            const canToggleWatched =
+              accountKey != null &&
+              seriesId != null &&
+              parseEpisodeDurationSec(ep) > 30;
             return (
-              <button
+              <div
                 key={`${ep.id}-${ep.episode_num}`}
-                onFocus={warmTranscode}
-                onMouseEnter={warmTranscode}
-                onClick={() => playEpisode(activeSeason!, ep)}
                 className={cn(
                   "w-full text-left card p-3 flex items-center gap-4 hover:border-(--line-2) hover:bg-(--bg-3) transition-colors group",
                   isResumeEpisode &&
                     "border-(--brand)/55 bg-(--brand)/10 ring-2 ring-(--brand)/30 border-l-4 border-l-(--brand)",
-                  watch?.status === "completed" &&
+                  isWatched &&
                     !isResumeEpisode &&
                     "border-l-4 border-l-emerald-500/70"
                 )}
               >
-                <div className="size-20 sm:size-28 shrink-0 rounded-lg overflow-hidden bg-(--bg-3) relative">
+                <button
+                  type="button"
+                  onFocus={warmTranscode}
+                  onMouseEnter={warmTranscode}
+                  onClick={() => playEpisode(activeSeason!, ep)}
+                  className="size-20 sm:size-28 shrink-0 rounded-lg overflow-hidden bg-(--bg-3) relative"
+                >
                   {/* CSS background-image: silently skips broken URLs, no red-box indicator.
                       Falls back to series cover when the episode has no dedicated image. */}
                   {(() => {
@@ -546,7 +584,7 @@ export default function SeriesDetail() {
                       />
                     ) : null;
                   })()}
-                  {watch?.status === "completed" && (
+                  {isWatched && (
                     <>
                       <div
                         className="absolute inset-0 bg-black/30 pointer-events-none"
@@ -578,7 +616,7 @@ export default function SeriesDetail() {
                       <div
                         className={cn(
                           "h-full transition-[width] duration-300 shadow-[0_0_8px_rgba(0,0,0,0.35)]",
-                          watch!.status === "completed"
+                          isWatched
                             ? "bg-emerald-400"
                             : isResumeEpisode
                               ? "bg-(--brand)"
@@ -588,8 +626,12 @@ export default function SeriesDetail() {
                       />
                     </div>
                   )}
-                </div>
-                <div className="min-w-0 flex-1">
+                </button>
+                <button
+                  type="button"
+                  onClick={() => playEpisode(activeSeason!, ep)}
+                  className="min-w-0 flex-1 text-left"
+                >
                   <div className="flex items-center gap-2 flex-wrap">
                     <div className="text-sm text-(--text-muted)">
                       Episode {ep.episode_num}
@@ -599,7 +641,7 @@ export default function SeriesDetail() {
                         Continue watching
                       </span>
                     )}
-                    {watch?.status === "completed" && !isResumeEpisode && (
+                    {isWatched && !isResumeEpisode && (
                       <span className="text-[11px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded-md border border-emerald-500/45 text-emerald-100 bg-emerald-500/20">
                         Watched
                       </span>
@@ -643,7 +685,7 @@ export default function SeriesDetail() {
                       {ep.info.plot}
                     </div>
                   )}
-                </div>
+                </button>
                 <div className="shrink-0 hidden sm:flex flex-col items-end gap-0.5 text-xs tabular-nums">
                   {ep.info?.duration && (
                     <span className="text-(--text-muted)">{ep.info.duration}</span>
@@ -654,7 +696,32 @@ export default function SeriesDetail() {
                     </span>
                   )}
                 </div>
-              </button>
+                {canToggleWatched && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toggleEpisodeWatched(ep);
+                    }}
+                    className={cn(
+                      "shrink-0 size-10 rounded-xl border grid place-items-center transition-colors",
+                      isWatched
+                        ? "border-emerald-500/45 bg-emerald-500/15 text-emerald-200 hover:bg-emerald-500/25"
+                        : "border-(--line) bg-(--bg-2) text-(--text-muted) hover:text-(--text) hover:bg-(--bg-3)"
+                    )}
+                    title={isWatched ? "Mark as unwatched" : "Mark as watched"}
+                    aria-label={
+                      isWatched ? "Mark episode as unwatched" : "Mark episode as watched"
+                    }
+                  >
+                    {isWatched ? (
+                      <CheckCircle2 className="size-5" />
+                    ) : (
+                      <Circle className="size-5" />
+                    )}
+                  </button>
+                )}
+              </div>
             );
           }}
         />

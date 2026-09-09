@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
+  decideVodResumePersist,
+  isVodResumeCompleted,
   resolveStoredVodResumeSec,
   shouldClearVodResume,
   shouldPersistVodResume,
   vodAbsoluteSec,
+  vodResumeCompletedSec,
   vodRelativeSec,
 } from "@/lib/player-vod-resume";
 
@@ -61,6 +64,35 @@ describe("shouldClearVodResume", () => {
     expect(shouldClearVodResume(0)).toBe(true);
     expect(shouldClearVodResume(8)).toBe(true);
     expect(shouldClearVodResume(13)).toBe(false);
+  });
+});
+
+describe("vod completion", () => {
+  it("marks completed when resume is near the end", () => {
+    expect(isVodResumeCompleted(3550, 3600)).toBe(true);
+    expect(isVodResumeCompleted(600, 3600)).toBe(false);
+  });
+
+  it("stores a completion sentinel at 92% of duration", () => {
+    expect(vodResumeCompletedSec(3600)).toBe(3312);
+  });
+
+  it("decideVodResumePersist saves completion on ended", () => {
+    expect(decideVodResumePersist(3600, 3600)).toEqual({
+      type: "save",
+      seconds: 3312,
+    });
+  });
+
+  it("decideVodResumePersist clears near the start", () => {
+    expect(decideVodResumePersist(5, 3600)).toEqual({ type: "clear" });
+  });
+
+  it("decideVodResumePersist saves mid-playback positions", () => {
+    expect(decideVodResumePersist(600, 3600)).toEqual({
+      type: "save",
+      seconds: 600,
+    });
   });
 });
 
