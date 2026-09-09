@@ -41,6 +41,16 @@ describe("vod-source-cache", () => {
     expect(isVodSourceCacheEnabled()).toBe(false);
   });
 
+  it("encode start waits for at least 48MB even if START_BYTES is lower", async () => {
+    process.env.STREAM_VOD_SOURCE_START_BYTES = "12000000";
+    vi.resetModules();
+    const { vodSourceStartBytes, vodSourceEncodeStartBytes } = await import(
+      "./vod-source-cache"
+    );
+    expect(vodSourceStartBytes()).toBe(12_000_000);
+    expect(vodSourceEncodeStartBytes()).toBe(48_000_000);
+  });
+
   it("estimates more bytes for deeper seeks", async () => {
     const { estimateBytesForSeekSec, vodSourceStartBytes } = await import(
       "./vod-source-cache"

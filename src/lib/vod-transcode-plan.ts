@@ -9,6 +9,66 @@ export type VodTranscodePlan = {
 
 const BROWSER_AUDIO = new Set(["aac", "mp3", "mp4a"]);
 
+export function clampTranscodeMaxHeight(maxHeight: number): number {
+  return Number.isFinite(maxHeight) && maxHeight >= 360 && maxHeight <= 1080
+    ? Math.round(maxHeight)
+    : 540;
+}
+
+/**
+ * Height-capped, 16-aligned scale. Never pass maxHeight as width — that produced
+ * 540x304 from 1080p, which hardware/MSE decoders smear into grey/false color.
+ */
+export function transcodeScaleFilter(maxHeight: number): string {
+  const h = clampTranscodeMaxHeight(maxHeight);
+  return `scale=-2:'min(${h},ih)':force_original_aspect_ratio=decrease:force_divisible_by=16,format=yuv420p`;
+}
+
+/** libx264 flags that stay Main even with the ultrafast preset (which defaults to Baseline). */
+export function transcodeLibx264Args(opts: {
+  preset: string;
+  maxHeight: number;
+  gop: number;
+  segSec: number;
+}): string[] {
+  return [
+    "-c:v",
+    "libx264",
+    "-preset",
+    opts.preset,
+    "-profile:v",
+    "main",
+    "-level:v",
+    "4.0",
+    "-pix_fmt",
+    "yuv420p",
+    "-x264-params",
+    "cabac=1:bframes=0:ref=1:8x8dct=0",
+    "-fps_mode",
+    "cfr",
+    "-g",
+    String(opts.gop),
+    "-keyint_min",
+    String(opts.gop),
+    "-sc_threshold",
+    "0",
+    "-force_key_frames",
+    `expr:gte(t,n_forced*${opts.segSec})`,
+    "-vf",
+    transcodeScaleFilter(opts.maxHeight),
+  ];
+}
+
+/** Incomplete jobs keep ffmpeg running after pause / player close. */
+export function shouldIdleStopFfmpeg(opts: {
+  viewerActive: boolean;
+  ffmpegRunning: boolean;
+  playlistComplete: boolean;
+}): boolean {
+  if (opts.viewerActive || !opts.ffmpegRunning) return false;
+  return opts.playlistComplete;
+}
+
 export function planFromProbeCodecs(
   videoCodec: string | null | undefined,
   audioCodec: string | null | undefined,

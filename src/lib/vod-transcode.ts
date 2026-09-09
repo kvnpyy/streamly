@@ -21,6 +21,8 @@ import {
 import { transcodeManifestWaitMs } from "@/lib/vod-transcode-wait";
 import {
   planFromProbeCodecs,
+  shouldIdleStopFfmpeg,
+  transcodeLibx264Args,
   type VodTranscodePlan,
 } from "@/lib/vod-transcode-plan";
 import {
@@ -42,6 +44,7 @@ import {
   reopenVodSourceIfTruncated,
   touchVodSource,
   vodSourceStartBytes,
+  vodSourceEncodeStartBytes,
   waitForVodSourceBytes,
   waitForVodSourceForSeek,
   waitForVodSourceGrowth,
@@ -330,9 +333,9 @@ function ffprobeInputArgs(
     "-loglevel",
     "error",
     "-probesize",
-    fast ? "1M" : "8M",
+    fast ? "8M" : "16M",
     "-analyzeduration",
-    fast ? "750K" : "2M",
+    fast ? "4M" : "8M",
   ];
   if (localFile) return args;
   args.push("-user_agent", IPTV_UA_VOD);
@@ -522,18 +525,17 @@ async function resolveJobMeta(job: TranscodeJob): Promise<JobMeta> {
   const cached = await readJobMeta(job.dir);
   let probeInput = await resolveProbeInput(job);
 
-  // Early HTTP probes of a tiny .partial often report "no audio". Wait for a
-  // bit more local source before locking audioStreamIndex: null into meta.
+  // Tiny .partial files often report "no audio" / no video. Wait for a full
+  // encode buffer before locking codec meta (even when already on a local path).
   if (
     isVodSourceCacheEnabled() &&
-    (cached?.audioStreamIndex == null || !cached) &&
-    isHttpInput(probeInput)
+    (cached?.audioStreamIndex == null || !cached)
   ) {
     try {
       await waitForVodSourceBytes(
         job.upstream,
-        Math.max(vodSourceStartBytes(), 2_000_000),
-        { timeoutMs: 45_000 }
+        vodSourceEncodeStartBytes(),
+        { timeoutMs: 60_000 }
       );
       probeInput = await resolveProbeInput(job);
     } catch {
@@ -693,36 +695,64 @@ function stopTranscodeProcOnly(job: TranscodeJob): boolean {
 
 async function sweepIdleTranscodeJobs(): Promise<void> {
   for (const job of jobs.values()) {
-    if (jobViewerActive(job)) continue;
     if (!job.proc || job.proc.exitCode != null) continue;
+    let playlistComplete = false;
     try {
       const raw = await fsp.readFile(path.join(job.dir, MANIFEST_NAME), "utf8");
-      if (await isPlaylistFullyEncoded(job, raw)) continue;
+      playlistComplete = await isPlaylistFullyEncoded(job, raw);
     } catch {
-      /* no manifest yet — still safe to stop a runaway encode */
+      playlistComplete = false;
+    }
+    if (
+      !shouldIdleStopFfmpeg({
+        viewerActive: jobViewerActive(job),
+        ffmpegRunning: true,
+        playlistComplete,
+      })
+    ) {
+      continue;
     }
     stopTranscodeProcOnly(job);
   }
 }
 
-/** Client closed player — stop all ffmpeg for this upstream immediately. */
+/** Pause / close: keep ffmpeg + source download so the encode can finish. */
 export function releaseVodTranscodeJobs(upstream: string): number {
-  let stopped = 0;
+  let n = 0;
   for (const job of jobs.values()) {
     if (job.upstream !== upstream) continue;
     job.lastViewerAt = 0;
-    if (stopTranscodeProcOnly(job)) stopped += 1;
+    n += 1;
   }
-  // Keep the source download while any writer for this upstream is still exiting.
-  const stillWriting = [...jobs.values()].some(
-    (j) =>
-      j.upstream === upstream &&
-      ((j.proc && j.proc.exitCode == null) || spawnFfmpegInflight.has(j.key))
-  );
-  if (!stillWriting) {
-    releaseVodSourceDownload(upstream);
+  return n;
+}
+
+/** Free a slot by stopping the oldest encode that has no viewer. Cache stays on disk. */
+async function evictIdleTranscodeSlot(
+  exceptKey?: string
+): Promise<boolean> {
+  let oldest: TranscodeJob | null = null;
+  for (const job of jobs.values()) {
+    if (exceptKey && job.key === exceptKey) continue;
+    if (!job.proc || job.proc.exitCode != null) continue;
+    if (jobViewerActive(job)) continue;
+    if (!oldest || job.lastViewerAt < oldest.lastViewerAt) oldest = job;
   }
-  return stopped;
+  if (!oldest) return false;
+  await stopJobProc(oldest);
+  if (oldest.state === "running" || oldest.state === "starting") {
+    oldest.state = "ready";
+  }
+  return true;
+}
+
+async function maybeEvictForSlot(
+  job: TranscodeJob,
+  force = false
+): Promise<void> {
+  if (activeTranscodeCount() < maxConcurrentJobs()) return;
+  if (!force && !jobViewerActive(job)) return;
+  await evictIdleTranscodeSlot(job.key);
 }
 /** One in-flight ensureJob per cache key — prevents duplicate ffmpeg on the same output dir. */
 const ensureJobInflight = new Map<string, Promise<TranscodeJob>>();
@@ -740,17 +770,21 @@ function activeTranscodeCount(): number {
 }
 
 function drainTranscodeQueue(): void {
-  if (activeTranscodeCount() >= maxConcurrentJobs()) return;
-  for (const job of jobs.values()) {
-    if (job.state !== "queued") continue;
-    job.state = "starting";
-    void beginTranscodeJob(job);
+  const queued = [...jobs.values()].find((j) => j.state === "queued");
+  if (!queued) return;
+  if (activeTranscodeCount() >= maxConcurrentJobs()) {
+    void evictIdleTranscodeSlot(queued.key).then((freed) => {
+      if (!freed) return;
+      drainTranscodeQueue();
+    });
     return;
   }
+  queued.state = "starting";
+  void beginTranscodeJob(queued);
 }
 
 /** Bump suffix when transcode output format changes (invalidates stale cache). */
-const CACHE_KEY_SUFFIX = "|v8-src";
+const CACHE_KEY_SUFFIX = "|v9-hscale";
 
 function cacheKeyForUpstream(upstream: string, startOffsetSec = 0): string {
   const off = Math.max(0, Math.floor(startOffsetSec));
@@ -1015,6 +1049,7 @@ async function resumeTranscodeJob(job: TranscodeJob): Promise<void> {
   // Stall recovery used to SIGTERM and clear job.proc without waiting — orphans
   // kept writing while a resume ffmpeg started on the same index.m3u8.
   await stopJobProc(job);
+  await maybeEvictForSlot(job);
   if (activeTranscodeCount() >= maxConcurrentJobs()) {
     job.state = "queued";
     return;
@@ -1088,9 +1123,8 @@ async function resumeTranscodeJob(job: TranscodeJob): Promise<void> {
   }
 }
 
-/** Keep ffmpeg running while a viewer is active until the full episode is encoded. */
+/** Keep ffmpeg running until the full episode is encoded (pause / close included). */
 async function ensureEncodingContinues(job: TranscodeJob): Promise<void> {
-  if (!jobViewerActive(job)) return;
   if (job.proc && job.proc.exitCode == null) return;
 
   let raw: string | null = null;
@@ -1285,6 +1319,7 @@ async function spawnFfmpeg(
 ): Promise<void> {
   if (job.proc && job.proc.exitCode == null) return;
   if (spawnFfmpegInflight.has(job.key)) return;
+  await maybeEvictForSlot(job);
   if (activeTranscodeCount() >= maxConcurrentJobs()) {
     job.state = "queued";
     return;
@@ -1310,6 +1345,7 @@ async function spawnFfmpegLocked(
   if (job.proc && job.proc.exitCode == null) return;
   // Kill orphan writers left after a prior SIGTERM-without-wait.
   await stopJobProc(job);
+  await maybeEvictForSlot(job);
   if (activeTranscodeCount() >= maxConcurrentJobs()) {
     job.state = "queued";
     return;
@@ -1317,6 +1353,7 @@ async function spawnFfmpegLocked(
   await fsp.mkdir(job.dir, { recursive: true });
   // Re-check after await — another caller may have started ffmpeg.
   if (job.proc && job.proc.exitCode == null) return;
+  await maybeEvictForSlot(job);
   if (activeTranscodeCount() >= maxConcurrentJobs()) {
     job.state = "queued";
     return;
@@ -1357,7 +1394,11 @@ async function spawnFfmpegLocked(
     "-hide_banner",
     "-loglevel",
     "warning",
-    ...(useLocalSource ? [] : ffmpegInputArgs(refererHost)),
+    "-fflags",
+    "+genpts+discardcorrupt",
+    ...(useLocalSource
+      ? ["-probesize", "16M", "-analyzeduration", "8M"]
+      : ffmpegInputArgs(refererHost)),
     ...(seekSec > 0 ? ["-ss", String(seekSec)] : []),
     "-i",
     inputPath,
@@ -1391,28 +1432,13 @@ async function spawnFfmpegLocked(
       seekSec > 0 ? "aresample=async=1" : "aresample=async=1:first_pts=0"
     );
   } else {
-    const vfScale = `scale='min(${plan.maxHeight},iw)':-2`;
     args.push(
-      "-c:v",
-      "libx264",
-      "-preset",
-      x264Preset(),
-      "-profile:v",
-      "main",
-      "-pix_fmt",
-      "yuv420p",
-      "-fps_mode",
-      "cfr",
-      "-g",
-      String(gop),
-      "-keyint_min",
-      String(gop),
-      "-sc_threshold",
-      "0",
-      "-force_key_frames",
-      `expr:gte(t,n_forced*${segSec})`,
-      "-vf",
-      vfScale,
+      ...transcodeLibx264Args({
+        preset: x264Preset(),
+        maxHeight: plan.maxHeight,
+        gop,
+        segSec,
+      }),
       "-c:a",
       "aac",
       "-b:a",
@@ -1523,29 +1549,27 @@ async function spawnFfmpegLocked(
       } catch {
         /* noop */
       }
-      if (jobViewerActive(job)) {
-        if (isVodSourceCacheEnabled()) {
-          const encoded = encodedCoverageSec({
-            manifestText: raw,
-            onDisk: await listSegmentFiles(job.dir),
-            segmentSec: hlsSegmentSeconds(),
-          });
-          await reopenVodSourceIfTruncated(
-            job.upstream,
-            job.startOffsetSec + encoded,
-            job.durationSec
-          );
-          const st = await getVodSourceStatus(job.upstream);
-          if (st && !st.complete) {
-            ensureVodSource(job.upstream);
-            await waitForVodSourceGrowth(job.upstream, st.bytes, {
-              timeoutMs: 90_000,
-            }).catch(() => {});
-          }
+      if (isVodSourceCacheEnabled()) {
+        const encoded = encodedCoverageSec({
+          manifestText: raw,
+          onDisk: await listSegmentFiles(job.dir),
+          segmentSec: hlsSegmentSeconds(),
+        });
+        await reopenVodSourceIfTruncated(
+          job.upstream,
+          job.startOffsetSec + encoded,
+          job.durationSec
+        );
+        const st = await getVodSourceStatus(job.upstream);
+        if (st && !st.complete) {
+          ensureVodSource(job.upstream);
+          await waitForVodSourceGrowth(job.upstream, st.bytes, {
+            timeoutMs: 90_000,
+          }).catch(() => {});
         }
-        await ensureTranscodeJobContiguous(job);
-        void ensureEncodingContinues(job);
       }
+      await ensureTranscodeJobContiguous(job);
+      void ensureEncodingContinues(job);
       drainTranscodeQueue();
     })();
   });
@@ -1889,7 +1913,7 @@ async function beginTranscodeJob(job: TranscodeJob): Promise<void> {
 
     if (isVodSourceCacheEnabled()) {
       try {
-        await waitForVodSourceBytes(job.upstream, vodSourceStartBytes(), {
+        await waitForVodSourceBytes(job.upstream, vodSourceEncodeStartBytes(), {
           timeoutMs: Math.min(waitForPlaylistMs(), 180_000),
         });
         // Keep downloading ahead of ffmpeg (disk read — frees the IPTV connection).
@@ -1935,10 +1959,14 @@ async function beginTranscodeJob(job: TranscodeJob): Promise<void> {
 
     const slotWaitMs = Math.min(waitForPlaylistMs(), 180_000);
     let waited = 0;
+    let evicted = false;
     while (
       activeTranscodeCount() >= maxConcurrentJobs() &&
       waited < slotWaitMs
     ) {
+      if (!evicted) {
+        evicted = await evictIdleTranscodeSlot(job.key);
+      }
       job.state = "queued";
       await new Promise((r) => setTimeout(r, 400));
       waited += 400;

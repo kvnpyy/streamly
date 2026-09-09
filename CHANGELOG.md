@@ -23,6 +23,18 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.13.29] — 2026-09-09
+
+VOD transcode no longer paints a grey, color-smeared picture, and keeps encoding if you pause.
+
+### Fixed
+- **Scale** — `STREAM_TRANSCODE_MAX_HEIGHT` is applied as height (1080p → ~960×528), 16-aligned for hardware decoders. It was wrongly used as width (540×304).
+- **Profile** — ultrafast x264 now forces Main (`cabac=1`) instead of Constrained Baseline.
+- **Startup** — ffmpeg waits for 48MB of the source (10-bit HEVC) so the first segments are not black/corrupt.
+- **Pause** — incomplete encodes keep running after pause/close; idle slots are only reclaimed when a new title needs ffmpeg.
+
+---
+
 ## [0.13.28] — 2026-09-09
 
 Live TV Auto quality is no longer stuck on the lowest rung, and movies can load panel sidecar subtitles.

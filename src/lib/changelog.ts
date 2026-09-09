@@ -11,6 +11,17 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.13.29",
+    date: "2026-09-09",
+    summary:
+      "VOD transcode no longer paints a grey, color-smeared picture, and keeps encoding if you pause.",
+    highlights: [
+      "1080p HEVC is scaled to a 16-aligned ~540p height (not a 540-pixel-wide smear).",
+      "x264 stays Main profile so TVs and browsers can decode the stream.",
+      "ffmpeg waits for more of the file, then keeps encoding after pause until the episode is done.",
+    ],
+  },
+  {
     version: "0.13.28",
     date: "2026-09-09",
     summary:
