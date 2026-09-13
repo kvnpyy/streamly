@@ -68,6 +68,14 @@ function maxOf(values: number[]): number {
   return clean.length ? Math.max(...clean) : 0;
 }
 
+function lastFinite(values: number[]): number {
+  for (let i = values.length - 1; i >= 0; i--) {
+    const v = values[i];
+    if (Number.isFinite(v)) return v as number;
+  }
+  return 0;
+}
+
 export function assessCapacity(input: CapacityAssessInput): {
   overall: CapacitySignal;
   findings: CapacityFinding[];
@@ -102,7 +110,9 @@ export function assessCapacity(input: CapacityAssessInput): {
   const ramUsedPctP95 = percentile(ram, 95);
   const ramUsedPctMax = maxOf(ram);
   const cpuPctP95 = percentile(cpu, 95);
-  const diskUsedPct = maxOf(disk);
+  // Disk is sticky — score the latest sample, not the 48h max. Otherwise a
+  // prune (cache cleanup) keeps firing upgrade_now until history ages out.
+  const diskUsedPct = lastFinite(disk);
   const swapUsedMbP95 = percentile(swap, 95);
   const egressMbpsP95 = percentile(egress, 95);
   const egressMbpsPeak = maxOf(egress);

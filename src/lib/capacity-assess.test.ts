@@ -44,6 +44,20 @@ describe("assessCapacity", () => {
     expect(["upgrade_soon", "upgrade_now"]).toContain(r.overall);
   });
 
+  it("scores disk from the latest sample, not the window max", () => {
+    const filled = samples(59, { disk: 100 });
+    const afterPrune = samples(1, { disk: 41 }).map((s) => ({
+      ...s,
+      ts: new Date(Date.UTC(2026, 0, 1, 5, 0)).toISOString(),
+    }));
+    const r = assessCapacity({
+      samples: [...filled, ...afterPrune],
+      vps: { ramGb: 8, bandwidthMbps: 400 },
+    });
+    expect(r.stats.diskUsedPct).toBe(41);
+    expect(r.findings.some((f) => f.id === "disk")).toBe(false);
+  });
+
   it("reports healthy when metrics are low", () => {
     const r = assessCapacity({
       samples: samples(60, { ram: 35, cpu: 15, egress: 8, active: 2 }),

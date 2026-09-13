@@ -149,6 +149,8 @@ Test without sending: `npm run monitor:notify -- --dry-run`
 
 Sentry (errors) and this stack (capacity) are complementary — Sentry won’t tell you when egress or RAM is trending high.
 
+HLS transcode cache under `STREAM_TRANSCODE_CACHE_DIR` is capped with `STREAM_TRANSCODE_MAX_BYTES` (default 20 GB). Without that, completed titles stay on disk until the volume fills (`upgrade_now` / `ENOSPC`).
+
 ## Production process
 
 Run Next in production mode (`next start` or your process manager). Put **Cloudflare** or another reverse proxy in front for TLS, caching static assets, and basic L3/L4 filtering if you want it — application logic stays in this Node process.

@@ -53,6 +53,10 @@ import {
   quantizeTranscodeSeekSec,
   shouldReuseTranscodeJobForSeek,
 } from "@/lib/vod-transcode-seek-policy";
+import {
+  planTranscodeDiskEvictions,
+  transcodeMaxCacheBytes,
+} from "@/lib/vod-transcode-disk-cache";
 
 const IPTV_UA_VOD = "VLC/3.0.20 LibVLC/3.0.20";
 const MANIFEST_NAME = "index.m3u8";
@@ -642,6 +646,8 @@ type TranscodeJob = {
 
 const jobs = new Map<string, TranscodeJob>();
 let idleSweepTimer: ReturnType<typeof setInterval> | null = null;
+let diskSweepTimer: ReturnType<typeof setInterval> | null = null;
+const DISK_SWEEP_MS = 60_000;
 
 function jobViewerActive(job: TranscodeJob): boolean {
   const at = job.lastViewerAt;
@@ -679,6 +685,87 @@ function ensureIdleSweepRunning(): void {
     void sweepIdleTranscodeJobs();
   }, transcodeIdleSweepMs());
   idleSweepTimer.unref?.();
+  ensureDiskSweepRunning();
+}
+
+function ensureDiskSweepRunning(): void {
+  if (diskSweepTimer) return;
+  diskSweepTimer = setInterval(() => {
+    void sweepTranscodeDiskCache();
+  }, DISK_SWEEP_MS);
+  diskSweepTimer.unref?.();
+  void sweepTranscodeDiskCache();
+}
+
+/** Start HLS cache LRU + idle ffmpeg stop. Safe to call more than once. */
+export function startTranscodeCacheMaintenance(): void {
+  if (!isVodTranscodeEnabledServer()) return;
+  ensureIdleSweepRunning();
+}
+
+async function transcodeDirSizeBytes(dir: string): Promise<number> {
+  try {
+    const names = await fsp.readdir(dir);
+    let total = 0;
+    for (const name of names) {
+      try {
+        const st = await fsp.stat(path.join(dir, name));
+        if (st.isFile()) total += st.size;
+      } catch {
+        /* skip */
+      }
+    }
+    return total;
+  } catch {
+    return 0;
+  }
+}
+
+async function sweepTranscodeDiskCache(): Promise<void> {
+  const root = cacheRoot();
+  const maxBytes = transcodeMaxCacheBytes();
+  let names: string[];
+  try {
+    names = await fsp.readdir(root);
+  } catch {
+    return;
+  }
+
+  const dirs: Array<{
+    key: string;
+    bytes: number;
+    mtimeMs: number;
+  }> = [];
+  let usedBytes = 0;
+  for (const name of names) {
+    const dir = path.join(root, name);
+    try {
+      const st = await fsp.stat(dir);
+      if (!st.isDirectory()) continue;
+      const bytes = await transcodeDirSizeBytes(dir);
+      dirs.push({ key: name, bytes, mtimeMs: st.mtimeMs });
+      usedBytes += bytes;
+    } catch {
+      /* skip */
+    }
+  }
+  if (usedBytes <= maxBytes) return;
+
+  const protectKeys = new Set<string>();
+  for (const [key, job] of jobs) {
+    if (job.proc && job.proc.exitCode == null) protectKeys.add(key);
+    if (jobViewerActive(job)) protectKeys.add(key);
+  }
+
+  const victims = planTranscodeDiskEvictions({
+    dirs,
+    usedBytes,
+    maxBytes,
+    protectKeys,
+  });
+  for (const key of victims) {
+    await wipeTranscodeJobDir(path.join(root, key), key);
+  }
 }
 
 function stopTranscodeProcOnly(job: TranscodeJob): boolean {

@@ -23,6 +23,16 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.13.30] — 2026-09-13
+
+Stop the VPS disk from filling with old HLS transcodes, and stop capacity mail from staying red after a prune.
+
+### Fixed
+- **Transcode disk cap** — HLS segment cache is LRU-evicted with `STREAM_TRANSCODE_MAX_BYTES` (default 20 GB). Idle stop was keeping every title on disk, which filled the VPS.
+- **Capacity alerts** — disk signal uses the latest sample, so a cache prune does not keep emailing `upgrade_now` for 48 hours.
+
+---
+
 ## [0.13.29] — 2026-09-09
 
 VOD transcode no longer paints a grey, color-smeared picture, and keeps encoding if you pause.

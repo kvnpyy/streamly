@@ -11,6 +11,16 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.13.30",
+    date: "2026-09-13",
+    summary:
+      "Stop the VPS disk from filling with old HLS transcodes, and stop capacity mail from staying red after a prune.",
+    highlights: [
+      "Finished transcodes are LRU-evicted once the HLS cache hits STREAM_TRANSCODE_MAX_BYTES (default 20 GB; 15 GB on this VPS).",
+      "Capacity disk alerts use the latest sample, so a cache prune does not keep firing upgrade_now.",
+    ],
+  },
+  {
     version: "0.13.29",
     date: "2026-09-09",
     summary:
