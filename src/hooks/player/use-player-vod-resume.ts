@@ -5,6 +5,7 @@ import type Hls from "hls.js";
 import {
   applyVodResumePersist,
   decideVodResumePersist,
+  shouldSkipVodResumeSeek,
   resolveStoredVodResumeSec,
   vodAbsoluteSec,
   vodRelativeSec,
@@ -90,7 +91,7 @@ export function usePlayerVodResume(p: UsePlayerVodResumeParams) {
 
       const off = vodStartOffsetRef.current;
       const absolute = resolveStoredVodResumeSec(stored, off);
-      if (absolute >= d - 25) {
+      if (shouldSkipVodResumeSeek(absolute, d)) {
         vodResumeLockedRef.current = true;
         return;
       }

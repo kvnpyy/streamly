@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  isNoSpaceError,
   planTranscodeDiskEvictions,
   transcodeMaxCacheBytes,
 } from "./vod-transcode-disk-cache";
@@ -56,5 +57,13 @@ describe("planTranscodeDiskEvictions", () => {
         protectKeys: ["old"],
       })
     ).toEqual(["mid", "new"]);
+  });
+});
+
+describe("isNoSpaceError", () => {
+  it("detects Node ENOSPC", () => {
+    expect(isNoSpaceError({ code: "ENOSPC" })).toBe(true);
+    expect(isNoSpaceError({ code: "EACCES" })).toBe(false);
+    expect(isNoSpaceError("ENOSPC")).toBe(false);
   });
 });

@@ -61,21 +61,52 @@ export function resolveStoredVodResumeSec(
 /** Seconds from the end where we stop periodic saves (finale handled on ended/close). */
 export const VOD_RESUME_FINALE_MARGIN_SEC = 45;
 
+/**
+ * Manual mark-watched when Xtream did not send a usable runtime.
+ * Larger than any real title so the player must skip resume, not seek here.
+ */
+export const MANUAL_WATCHED_RESUME_SEC = 1_000_000;
+
+/**
+ * Stored resume that counts as finished. Must stay in lockstep with
+ * `vodResumeCompletedSec` — `Math.floor(duration * 0.92)` is often 1s below
+ * `duration * 0.92`, so comparing against the raw ratio never marked
+ * real episode lengths as watched.
+ */
 export function isVodResumeCompleted(
   resumeSec: number,
   durationSec: number
 ): boolean {
-  return (
-    durationSec > 30 &&
-    Number.isFinite(resumeSec) &&
-    resumeSec >= durationSec * EPISODE_COMPLETED_RATIO
-  );
+  if (!Number.isFinite(resumeSec) || resumeSec <= 0) return false;
+  if (resumeSec >= MANUAL_WATCHED_RESUME_SEC) return true;
+  const completed = vodResumeCompletedSec(durationSec);
+  return completed > 0 && resumeSec >= completed;
 }
 
 /** Stored resume position that marks a title as fully watched. */
 export function vodResumeCompletedSec(durationSec: number): number {
   if (!Number.isFinite(durationSec) || durationSec <= 30) return 0;
   return Math.max(15, Math.floor(durationSec * EPISODE_COMPLETED_RATIO));
+}
+
+/** Do not seek into a finished title — start from 0 instead. */
+export function shouldSkipVodResumeSeek(
+  resumeSec: number,
+  durationSec: number
+): boolean {
+  if (!Number.isFinite(resumeSec) || resumeSec < 15) return false;
+  if (isVodResumeCompleted(resumeSec, durationSec)) return true;
+  return durationSec > 30 && resumeSec >= durationSec - 25;
+}
+
+/** Resume seconds to play from, or null when the title is finished / unset. */
+export function playableStoredVodResumeSec(
+  stored: number | null | undefined,
+  durationSec: number
+): number | null {
+  if (stored == null || !Number.isFinite(stored) || stored < 15) return null;
+  if (shouldSkipVodResumeSeek(stored, durationSec)) return null;
+  return Math.floor(stored);
 }
 
 export function shouldPersistVodResume(

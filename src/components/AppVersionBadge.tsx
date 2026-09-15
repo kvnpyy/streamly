@@ -18,7 +18,7 @@ export function AppVersionBadge() {
   return (
     <div
       className={cn(
-        "fixed right-2 z-[90] pointer-events-auto",
+        "fixed right-2 z-[90] pointer-events-none",
         "max-lg:bottom-[var(--mobile-bottom-nav-clearance)] lg:bottom-1"
       )}
       style={

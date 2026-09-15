@@ -141,6 +141,18 @@ describe("continue-watching", () => {
     ).toBe(3601);
   });
 
+  it("parseEpisodeDurationSec reads duration_secs sent as a string", () => {
+    expect(
+      parseEpisodeDurationSec({
+        id: "1",
+        episode_num: "1",
+        title: "x",
+        container_extension: "mkv",
+        info: { duration_secs: "634" },
+      })
+    ).toBe(634);
+  });
+
   it("seriesEpisodeWatchState marks near-end resume as completed", () => {
     const ep = {
       id: "10",
@@ -244,6 +256,43 @@ describe("continue-watching", () => {
       })
     ).toBe(true);
     expect(saves[`${accountKey}|series|10`]).toBe(3312);
+    expect(
+      seriesEpisodeWatchState(accountKey, 5, ep, saves).status
+    ).toBe("completed");
+  });
+
+  it("markSeriesEpisodeWatched completes typical Xtream runtimes", () => {
+    const ep = {
+      id: "10",
+      episode_num: "1",
+      title: "Pilot",
+      container_extension: "mp4",
+      info: { duration_secs: 634 },
+    };
+    const saves: Record<string, number> = {};
+    expect(
+      markSeriesEpisodeWatched(accountKey, 5, ep, (key, sec) => {
+        saves[key] = sec;
+      })
+    ).toBe(true);
+    expect(
+      seriesEpisodeWatchState(accountKey, 5, ep, saves).status
+    ).toBe("completed");
+  });
+
+  it("markSeriesEpisodeWatched still completes when runtime is missing", () => {
+    const ep = {
+      id: "10",
+      episode_num: "1",
+      title: "Pilot",
+      container_extension: "mp4",
+    };
+    const saves: Record<string, number> = {};
+    expect(
+      markSeriesEpisodeWatched(accountKey, 5, ep, (key, sec) => {
+        saves[key] = sec;
+      })
+    ).toBe(true);
     expect(
       seriesEpisodeWatchState(accountKey, 5, ep, saves).status
     ).toBe("completed");

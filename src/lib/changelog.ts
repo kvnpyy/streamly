@@ -11,6 +11,18 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.13.31",
+    date: "2026-09-15",
+    summary:
+      "Mark as watched actually marks the episode, and transcode mkdir retries after a full disk.",
+    highlights: [
+      "Series mark-watched now treats the saved 92% bookmark as completed — uneven episode runtimes used to stay unwatched.",
+      "The episode circle fills in as soon as you tap it, including rows with no Xtream runtime.",
+      "Xtream duration_secs sent as a string still counts, so the toggle shows on more episode rows.",
+      "If the VPS is out of space, creating a transcode folder sweeps old HLS cache and retries (Fixes JAVASCRIPT-NEXTJS-1K).",
+    ],
+  },
+  {
     version: "0.13.30",
     date: "2026-09-13",
     summary:

@@ -54,6 +54,7 @@ import {
   shouldReuseTranscodeJobForSeek,
 } from "@/lib/vod-transcode-seek-policy";
 import {
+  isNoSpaceError,
   planTranscodeDiskEvictions,
   transcodeMaxCacheBytes,
 } from "@/lib/vod-transcode-disk-cache";
@@ -701,6 +702,16 @@ function ensureDiskSweepRunning(): void {
 export function startTranscodeCacheMaintenance(): void {
   if (!isVodTranscodeEnabledServer()) return;
   ensureIdleSweepRunning();
+}
+
+async function mkdirTranscodeDir(dir: string): Promise<void> {
+  try {
+    await fsp.mkdir(dir, { recursive: true });
+  } catch (err) {
+    if (!isNoSpaceError(err)) throw err;
+    await sweepTranscodeDiskCache();
+    await fsp.mkdir(dir, { recursive: true });
+  }
 }
 
 async function transcodeDirSizeBytes(dir: string): Promise<number> {
@@ -1437,7 +1448,7 @@ async function spawnFfmpegLocked(
     job.state = "queued";
     return;
   }
-  await fsp.mkdir(job.dir, { recursive: true });
+  await mkdirTranscodeDir(job.dir);
   // Re-check after await — another caller may have started ffmpeg.
   if (job.proc && job.proc.exitCode == null) return;
   await maybeEvictForSlot(job);
@@ -1923,7 +1934,7 @@ async function ensureJobLocked(
   }
 
   // wipeTranscodeJobDir removes the job folder — recreate before ffmpeg writes segments.
-  await fsp.mkdir(dir, { recursive: true });
+  await mkdirTranscodeDir(dir);
 
   const manifest = await readManifestIfReady(dir);
   const cachedMeta = await readJobMeta(dir);

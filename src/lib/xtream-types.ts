@@ -139,7 +139,7 @@ export type SeriesEpisode = {
   container_extension: string;
   info?: {
     plot?: string;
-    duration_secs?: number;
+    duration_secs?: number | string;
     duration?: string;
     movie_image?: string;
     rating?: string | number;

@@ -39,6 +39,7 @@ import { usePlayer, type PlayerSource } from "@/store/player";
 import {
   applyVodResumePersist,
   decideVodResumePersist,
+  playableStoredVodResumeSec,
   type VodTimelineHold,
   vodResumeStorageKey,
 } from "@/lib/player-vod-resume";
@@ -448,8 +449,10 @@ export function PlayerOverlay() {
     const resumeKey = vodResumeStorageKey(accountKey, current);
     const stored =
       resumeKey != null ? usePrefs.getState().getVodResume(resumeKey) : null;
-    const resumeSec =
-      stored != null && stored >= 15 ? Math.floor(stored) : null;
+    const resumeSec = playableStoredVodResumeSec(
+      stored,
+      current.durationSec ?? 0
+    );
 
     return buildInitialVodPlaybackUrl(current.url, {
       containerExt: current.containerExt,
@@ -615,9 +618,13 @@ export function PlayerOverlay() {
       const resumeKey = vodResumeStorageKey(accountKey, current);
       const stored =
         resumeKey != null ? usePrefs.getState().getVodResume(resumeKey) : null;
-      if (stored != null && stored >= 15) {
+      const playable = playableStoredVodResumeSec(
+        stored,
+        current.durationSec ?? 0
+      );
+      if (playable != null) {
         resumeHold = {
-          absoluteTimeSec: Math.floor(stored),
+          absoluteTimeSec: playable,
           startOffsetSec: 0,
         };
       }
@@ -980,8 +987,10 @@ export function PlayerOverlay() {
     const resumeKey = vodResumeStorageKey(accountKey, current);
     const stored =
       resumeKey != null ? usePrefs.getState().getVodResume(resumeKey) : null;
-    const resumeSec =
-      stored != null && stored >= 15 ? Math.floor(stored) : null;
+    const resumeSec = playableStoredVodResumeSec(
+      stored,
+      current.durationSec ?? 0
+    );
 
     queueMicrotask(() => {
       if (preferServerTranscode) {
@@ -1121,8 +1130,13 @@ export function PlayerOverlay() {
         : null;
       if (resumeKey) {
         const saved = usePrefs.getState().getVodResume(resumeKey);
-        if (saved != null && Number.isFinite(saved)) {
-          absolute = Math.max(absolute, saved);
+        const durGuess =
+          vodDurationHintRef.current > 1
+            ? vodDurationHintRef.current
+            : current.durationSec ?? 0;
+        const playable = playableStoredVodResumeSec(saved, durGuess);
+        if (playable != null) {
+          absolute = Math.max(absolute, playable);
         }
       }
       absolute = Math.max(0, absolute);

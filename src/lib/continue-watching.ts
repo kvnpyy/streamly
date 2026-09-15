@@ -1,10 +1,11 @@
 import {
   EPISODE_COMPLETED_RATIO,
   isVodResumeCompleted,
+  MANUAL_WATCHED_RESUME_SEC,
   vodResumeCompletedSec,
   vodResumeStorageKey,
 } from "@/lib/player-vod-resume";
-import { parsePositiveRouteId } from "@/lib/utils";
+import { parsePositiveRouteId, safeNumber } from "@/lib/utils";
 import {
   buildImageProxy,
   buildSeriesEpisodePlayUrl,
@@ -37,10 +38,8 @@ export type SeriesEpisodeWatchState = {
 
 /** Parse runtime from Xtream episode metadata (seconds). */
 export function parseEpisodeDurationSec(ep: SeriesEpisode): number {
-  const secs = ep.info?.duration_secs;
-  if (typeof secs === "number" && Number.isFinite(secs) && secs > 0) {
-    return secs;
-  }
+  const secs = safeNumber(ep.info?.duration_secs, 0);
+  if (secs > 0) return secs;
   const raw = ep.info?.duration;
   if (typeof raw === "number" && Number.isFinite(raw) && raw > 0) {
     return raw;
@@ -372,10 +371,13 @@ export function markSeriesEpisodeWatched(
   saveVodResume: (storageKey: string, seconds: number) => void
 ): boolean {
   const key = seriesEpisodeResumeKey(accountKey, seriesId, ep);
+  if (!key) return false;
   const durationSec = parseEpisodeDurationSec(ep);
   const completedSec = vodResumeCompletedSec(durationSec);
-  if (!key || completedSec <= 0) return false;
-  saveVodResume(key, completedSec);
+  saveVodResume(
+    key,
+    completedSec > 0 ? completedSec : MANUAL_WATCHED_RESUME_SEC
+  );
   return true;
 }
 

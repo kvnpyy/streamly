@@ -15,6 +15,7 @@ import {
   markSeriesEpisodeWatched,
   parseEpisodeDurationSec,
   seriesEpisodeRecentMeta,
+  seriesEpisodeResumeKey,
   seriesEpisodeWatchState,
 } from "@/lib/continue-watching";
 import { MY_LIST_LABEL } from "@/lib/my-list";
@@ -132,6 +133,9 @@ export default function SeriesDetail() {
     );
   }, [info.data]);
 
+  const [watchedToggles, setWatchedToggles] = useState<Record<string, boolean>>(
+    {}
+  );
   const [manualSeason, setManualSeason] = useState<string | null>(null);
 
   /** All seasons in order — used for next/previous episode in the player (like live channel flip). */
@@ -265,19 +269,32 @@ export default function SeriesDetail() {
   const toggleEpisodeWatched = useCallback(
     (ep: SeriesEpisode) => {
       if (!accountKey || seriesId == null) return;
+      const key = seriesEpisodeResumeKey(accountKey, seriesId, ep);
+      if (!key) return;
       const watch = seriesEpisodeWatchState(
         accountKey,
         seriesId,
         ep,
         vodResumeSec
       );
-      if (watch.status === "completed") {
+      const currentlyWatched =
+        watchedToggles[key] ?? watch.status === "completed";
+      if (currentlyWatched) {
         markSeriesEpisodeUnwatched(accountKey, seriesId, ep, clearVodResume);
+        setWatchedToggles((prev) => ({ ...prev, [key]: false }));
       } else {
         markSeriesEpisodeWatched(accountKey, seriesId, ep, saveVodResume);
+        setWatchedToggles((prev) => ({ ...prev, [key]: true }));
       }
     },
-    [accountKey, seriesId, vodResumeSec, saveVodResume, clearVodResume]
+    [
+      accountKey,
+      seriesId,
+      vodResumeSec,
+      watchedToggles,
+      saveVodResume,
+      clearVodResume,
+    ]
   );
 
   if (!creds) {
@@ -527,26 +544,33 @@ export default function SeriesDetail() {
                   )
                 : null;
             const epStreamId = parseInt(ep.id, 10);
+            const resumeKey =
+              accountKey && seriesId != null
+                ? seriesEpisodeResumeKey(accountKey, seriesId, ep)
+                : null;
+            const isWatched =
+              (resumeKey != null ? watchedToggles[resumeKey] : undefined) ??
+              watch?.status === "completed";
             const isResumeEpisode =
+              !isWatched &&
               resumeStreamId != null &&
               Number.isFinite(epStreamId) &&
               epStreamId === resumeStreamId;
             const showProgress =
-              watch?.progressPct != null && watch.progressPct > 0;
+              !isWatched &&
+              watch?.progressPct != null &&
+              watch.progressPct > 0;
             const remainingSec =
               watch &&
               watch.durationSec > 0 &&
-              watch.status === "in_progress"
+              watch.status === "in_progress" &&
+              !isWatched
                 ? Math.max(0, watch.durationSec - watch.resumeSec)
                 : null;
             const warmTranscode = () => {
               warmVodTranscodePlay(playUrl, { compatMse: tvBrowser });
             };
-            const isWatched = watch?.status === "completed";
-            const canToggleWatched =
-              accountKey != null &&
-              seriesId != null &&
-              parseEpisodeDurationSec(ep) > 30;
+            const canToggleWatched = Boolean(accountKey && seriesId != null && resumeKey);
             return (
               <div
                 key={`${ep.id}-${ep.episode_num}`}
@@ -703,8 +727,9 @@ export default function SeriesDetail() {
                       e.stopPropagation();
                       toggleEpisodeWatched(ep);
                     }}
+                    aria-pressed={isWatched}
                     className={cn(
-                      "shrink-0 size-10 rounded-xl border grid place-items-center transition-colors",
+                      "relative z-20 shrink-0 size-10 rounded-xl border grid place-items-center transition-colors",
                       isWatched
                         ? "border-emerald-500/45 bg-emerald-500/15 text-emerald-200 hover:bg-emerald-500/25"
                         : "border-(--line) bg-(--bg-2) text-(--text-muted) hover:text-(--text) hover:bg-(--bg-3)"
@@ -715,7 +740,7 @@ export default function SeriesDetail() {
                     }
                   >
                     {isWatched ? (
-                      <CheckCircle2 className="size-5" />
+                      <CheckCircle2 className="size-5 fill-emerald-400/90" />
                     ) : (
                       <Circle className="size-5" />
                     )}

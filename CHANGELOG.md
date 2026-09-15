@@ -23,6 +23,18 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.13.31] — 2026-09-15
+
+Mark as watched actually marks the episode, and transcode mkdir retries after a full disk.
+
+### Fixed
+- **Mark as watched** — the saved 92% bookmark now counts as completed. `Math.floor(duration × 0.92)` was 1 second below the completion check for most real episode lengths, so the toggle appeared to do nothing.
+- **Watched circle** — tapping the episode circle fills it immediately. Rows without Xtream runtime can still be marked watched.
+- **Episode runtime** — Xtream `duration_secs` sent as a string is parsed, so more rows get a mark-watched control.
+- **Transcode disk** — `mkdir` on a full disk sweeps old HLS cache and retries once (`Fixes JAVASCRIPT-NEXTJS-1K`).
+
+---
+
 ## [0.13.30] — 2026-09-13
 
 Stop the VPS disk from filling with old HLS transcodes, and stop capacity mail from staying red after a prune.

@@ -16,6 +16,16 @@ export function transcodeMaxCacheBytes(
   return Number.isFinite(n) && n >= MIN_MAX_BYTES ? n : DEFAULT_MAX_BYTES;
 }
 
+/** Node `fs.mkdir` ENOSPC — sweep HLS cache and retry once. */
+export function isNoSpaceError(err: unknown): boolean {
+  return Boolean(
+    err &&
+      typeof err === "object" &&
+      "code" in err &&
+      (err as { code: unknown }).code === "ENOSPC"
+  );
+}
+
 /** Oldest unprotected dirs first, until `usedBytes` would fall to `maxBytes`. */
 export function planTranscodeDiskEvictions(opts: {
   dirs: readonly TranscodeDiskDir[];

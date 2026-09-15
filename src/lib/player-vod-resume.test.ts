@@ -2,9 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
   decideVodResumePersist,
   isVodResumeCompleted,
+  playableStoredVodResumeSec,
   resolveStoredVodResumeSec,
   shouldClearVodResume,
   shouldPersistVodResume,
+  shouldSkipVodResumeSeek,
   vodAbsoluteSec,
   vodResumeCompletedSec,
   vodRelativeSec,
@@ -71,6 +73,22 @@ describe("vod completion", () => {
   it("marks completed when resume is near the end", () => {
     expect(isVodResumeCompleted(3550, 3600)).toBe(true);
     expect(isVodResumeCompleted(600, 3600)).toBe(false);
+  });
+
+  it("treats the stored floor sentinel as completed for uneven runtimes", () => {
+    const durationSec = 634;
+    const sentinel = vodResumeCompletedSec(durationSec);
+    expect(sentinel).toBe(583);
+    expect(sentinel).toBeLessThan(durationSec * 0.92);
+    expect(isVodResumeCompleted(sentinel, durationSec)).toBe(true);
+    expect(isVodResumeCompleted(sentinel - 1, durationSec)).toBe(false);
+  });
+
+  it("skips resume seek once a title is completed", () => {
+    expect(shouldSkipVodResumeSeek(3312, 3600)).toBe(true);
+    expect(shouldSkipVodResumeSeek(600, 3600)).toBe(false);
+    expect(playableStoredVodResumeSec(3312, 3600)).toBeNull();
+    expect(playableStoredVodResumeSec(600, 3600)).toBe(600);
   });
 
   it("stores a completion sentinel at 92% of duration", () => {
