@@ -1805,14 +1805,14 @@ export function PlayerOverlay() {
   }, [open, current?.url, current?.id]);
 
   useEffect(() => {
-    let resumeTimer: ReturnType<typeof window.setTimeout> | null = null;
+    let resumeTimer: ReturnType<typeof setTimeout> | null = null;
     const onFs = () => {
       const fs = !!document.fullscreenElement;
       isFsRef.current = fs;
       setIsFs(fs);
       if (!open || current?.kind !== "live" || !isTvOrSilkUserAgent()) return;
-      if (resumeTimer) window.clearTimeout(resumeTimer);
-      resumeTimer = window.setTimeout(() => {
+      if (resumeTimer) clearTimeout(resumeTimer);
+      resumeTimer = setTimeout(() => {
         resumeTimer = null;
         const el = videoRef.current;
         if (!el) return;
@@ -1830,7 +1830,7 @@ export function PlayerOverlay() {
     };
     document.addEventListener("fullscreenchange", onFs);
     return () => {
-      if (resumeTimer) window.clearTimeout(resumeTimer);
+      if (resumeTimer) clearTimeout(resumeTimer);
       document.removeEventListener("fullscreenchange", onFs);
     };
   }, [open, current?.kind]);
