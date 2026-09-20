@@ -1805,7 +1805,7 @@ export function PlayerOverlay() {
   }, [open, current?.url, current?.id]);
 
   useEffect(() => {
-    let resumeTimer: ReturnType<typeof setTimeout> | null = null;
+    let resumeTimer: ReturnType<typeof window.setTimeout> | null = null;
     const onFs = () => {
       const fs = !!document.fullscreenElement;
       isFsRef.current = fs;
