@@ -63,6 +63,7 @@ import { usePlayerPlaybackPipeline } from "@/hooks/player/use-player-playback-pi
 import { usePlayerSidecarSubtitles } from "@/hooks/player/use-player-sidecar-subtitles";
 import { usePlayerStallEscalation } from "@/hooks/player/use-player-stall-escalation";
 import { usePlayerVideoEvents } from "@/hooks/player/use-player-video-events";
+import { useTvLiveFreezeWatchdog } from "@/hooks/player/use-tv-live-freeze-watchdog";
 import { usePlayerVodResume } from "@/hooks/player/use-player-vod-resume";
 import { usePlayerAutoplayNext } from "@/hooks/player/use-player-autoplay-next";
 import type { PlayerAudioTrack } from "@/lib/player-audio-tracks";
@@ -85,8 +86,10 @@ import {
 import {
   applyGentleLiveHlsRecovery,
   applySoftLiveHlsRecovery,
+  applyTvLiveFreezeAction,
   hlsRenditionLabel,
   maxSafeLevelIndex,
+  reloadTvLiveAtPlayhead,
 } from "@/lib/live-hls-playback";
 import {
   isPictureInPictureSupported,
@@ -97,6 +100,7 @@ import { withLiveHlsCompatMse } from "@/lib/stream-url";
 import { detachVideoElement, resetVideoElement, safeVideoPlay, voidSafeVideoPlay } from "@/lib/video-play";
 import { pauseVideoElement } from "@/lib/player-teardown";
 import { isAmazonSilkUserAgent, isTvOrSilkUserAgent } from "@/lib/tv-user-agent";
+import { tvLiveFullscreenResumeAction } from "@/lib/live-tv-freeze-recovery";
 import {
   isPlayPauseShortcutKey,
   isPlayerControlKeyboardTarget,
@@ -1248,6 +1252,14 @@ export function PlayerOverlay() {
     applyVodDurationHint,
   });
 
+  useTvLiveFreezeWatchdog({
+    open,
+    isLive,
+    videoRef,
+    hlsRef,
+    onReinit: wakeReinitPlayback,
+  });
+
   usePlayerSidecarSubtitles({ open, current, creds, videoRef });
 
   // Native / sidecar / CEA-708 tracks on <video> (keep HLS menu entries).
@@ -1793,14 +1805,35 @@ export function PlayerOverlay() {
   }, [open, current?.url, current?.id]);
 
   useEffect(() => {
+    let resumeTimer: ReturnType<typeof setTimeout> | null = null;
     const onFs = () => {
       const fs = !!document.fullscreenElement;
       isFsRef.current = fs;
       setIsFs(fs);
+      if (!open || current?.kind !== "live" || !isTvOrSilkUserAgent()) return;
+      if (resumeTimer) window.clearTimeout(resumeTimer);
+      resumeTimer = window.setTimeout(() => {
+        resumeTimer = null;
+        const el = videoRef.current;
+        if (!el) return;
+        const action = tvLiveFullscreenResumeAction({
+          paused: el.paused,
+          hasError: Boolean(el.error),
+        });
+        if (action === "none") return;
+        playbackBreadcrumb(
+          action === "reload" ? "tv_live_freeze_reload" : "tv_live_freeze_play",
+          { reason: "fullscreen" }
+        );
+        applyTvLiveFreezeAction(action, hlsRef.current, el);
+      }, 280);
     };
     document.addEventListener("fullscreenchange", onFs);
-    return () => document.removeEventListener("fullscreenchange", onFs);
-  }, []);
+    return () => {
+      if (resumeTimer) window.clearTimeout(resumeTimer);
+      document.removeEventListener("fullscreenchange", onFs);
+    };
+  }, [open, current?.kind]);
 
   /** Exit any active fullscreen when the player overlay is closed. */
   useEffect(() => {
@@ -2506,9 +2539,13 @@ export function PlayerOverlay() {
     livePlaybackErrorSuppressUntilRef.current = performance.now() + 8_000;
     setStalled(false);
     const hls = hlsRef.current;
-    if (hls && !isTvOrSilkUserAgent()) {
+    if (hls) {
       try {
-        applyGentleLiveHlsRecovery(hls, el);
+        if (isTvOrSilkUserAgent()) {
+          reloadTvLiveAtPlayhead(hls, el);
+        } else {
+          applyGentleLiveHlsRecovery(hls, el);
+        }
       } catch {
         voidSafeVideoPlay(el);
       }

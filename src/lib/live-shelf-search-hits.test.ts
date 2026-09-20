@@ -49,4 +49,28 @@ describe("buildLiveSearchHitsByCategory", () => {
 
     expect(hits.get("10")?.map((s) => s.stream_id)).toEqual([500]);
   });
+
+  it("ranks a live UFC event above UFC Network within a category", () => {
+    const streams = [
+      ch(1, "UFC NETWORK", "10"),
+      ch(2, "UFC 311 PPV", "10"),
+    ];
+    const byId = new Map(streams.map((s) => [s.stream_id, s]));
+    const nameLower = new Map(
+      streams.map((s) => [s.stream_id, s.name.toLowerCase()])
+    );
+
+    const hits = buildLiveSearchHitsByCategory({
+      queryLower: "ufc",
+      streamIdsByCategory: { "10": [1, 2] },
+      streamById: byId,
+      streams: [],
+      nameLowerById: nameLower,
+      nowPlayingMap: new Map(),
+      categoryIds: ["10"],
+      maxHitsPerCategory: 12,
+    });
+
+    expect(hits.get("10")?.map((s) => s.stream_id)).toEqual([2, 1]);
+  });
 });

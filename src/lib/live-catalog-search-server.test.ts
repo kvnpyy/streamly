@@ -95,4 +95,22 @@ describe("searchLiveCatalog", () => {
     expect(result.matches.map((s) => s.stream_id)).toEqual([999]);
     expect(result.scanPool.length).toBe(120);
   });
+
+  it("ranks UFC 311 above UFC Network when searching ufc", () => {
+    const streams = [
+      ch(1, "UFC NETWORK", "20"),
+      ch(2, "UFC Fight Pass", "20"),
+      ch(3, "UFC 311 PPV HD", "20"),
+    ];
+    const ctx = bundle(streams);
+
+    const result = searchLiveCatalog(
+      ctx.bundle,
+      ctx.index,
+      ctx.streamById,
+      { q: "ufc" }
+    );
+
+    expect(result.matches[0]?.stream_id).toBe(3);
+  });
 });

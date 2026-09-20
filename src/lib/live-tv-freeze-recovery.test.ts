@@ -2,12 +2,16 @@ import { describe, expect, it } from "vitest";
 import {
   TV_LIVE_DECODER_STALL_MS,
   TV_LIVE_FREEZE_STUCK_MS,
+  TV_LIVE_MAX_AUTO_REINITS,
   TV_LIVE_MIN_PLAYHEAD_SEC,
   TV_LIVE_RECOVERY_COOLDOWN_MS,
   bufferAheadAtPlayhead,
+  initialTvLiveFreezeWatchState,
   nextTvLiveFreezeAction,
   playheadLooksStuck,
+  sampleTvLiveFreezeWatch,
   stepAfterTvLiveFreezeAction,
+  tvLiveFullscreenResumeAction,
   type TvLiveFreezeInputs,
 } from "@/lib/live-tv-freeze-recovery";
 
@@ -90,10 +94,16 @@ describe("nextTvLiveFreezeAction", () => {
     ).toBe("none");
   });
 
-  it("escalates play → media → reload, never a live-edge snap", () => {
+  it("escalates play → media → reload → reinit (channel-flip rebuild)", () => {
     expect(nextTvLiveFreezeAction(base({ recoveryStep: 0 }))).toBe("play");
     expect(nextTvLiveFreezeAction(base({ recoveryStep: 1 }))).toBe("media");
     expect(nextTvLiveFreezeAction(base({ recoveryStep: 2 }))).toBe("reload");
+    expect(nextTvLiveFreezeAction(base({ recoveryStep: 3 }))).toBe("reinit");
+    expect(
+      nextTvLiveFreezeAction(
+        base({ recoveryStep: 3, reinitCount: TV_LIVE_MAX_AUTO_REINITS })
+      )
+    ).toBe("none");
   });
 
   it("does not treat a short wait with distant buffer as a decoder stall", () => {
@@ -138,7 +148,91 @@ describe("nextTvLiveFreezeAction", () => {
   it("advances the step without resetting to a snap path", () => {
     expect(stepAfterTvLiveFreezeAction("play")).toBe(1);
     expect(stepAfterTvLiveFreezeAction("media")).toBe(2);
-    expect(stepAfterTvLiveFreezeAction("reload")).toBe(2);
-    expect(stepAfterTvLiveFreezeAction("none")).toBe(2);
+    expect(stepAfterTvLiveFreezeAction("reload")).toBe(3);
+    expect(stepAfterTvLiveFreezeAction("reinit")).toBe(3);
+    expect(stepAfterTvLiveFreezeAction("none")).toBe(3);
+  });
+
+  it("recovers a paused fullscreen freeze the way a channel flip would", () => {
+    expect(
+      nextTvLiveFreezeAction(
+        base({
+          paused: true,
+          fullscreen: true,
+          recoveryStep: 3,
+        })
+      )
+    ).toBe("reinit");
+    expect(
+      nextTvLiveFreezeAction(
+        base({
+          paused: true,
+          fullscreen: false,
+          recoveryStep: 3,
+        })
+      )
+    ).toBe("none");
+  });
+});
+
+describe("sampleTvLiveFreezeWatch", () => {
+  it("escalates after a long stuck playhead even if timeupdate would have stopped", () => {
+    let state = initialTvLiveFreezeWatchState();
+    const tick = (nowMs: number, currentTime: number) => {
+      const out = sampleTvLiveFreezeWatch(state, {
+        nowMs,
+        currentTime,
+        paused: false,
+        hasError: false,
+        readyState: 3,
+        bufferAheadSec: 4,
+      });
+      state = out.state;
+      return out.action;
+    };
+
+    expect(tick(0, 12)).toBe("none");
+    expect(tick(1_000, 14)).toBe("none");
+    expect(tick(2_000, 14)).toBe("none");
+    expect(tick(2_000 + TV_LIVE_FREEZE_STUCK_MS, 14)).toBe("play");
+    expect(tick(2_000 + TV_LIVE_FREEZE_STUCK_MS + 21_000, 14)).toBe("media");
+    expect(tick(2_000 + TV_LIVE_FREEZE_STUCK_MS + 42_000, 14)).toBe("reload");
+    expect(tick(2_000 + TV_LIVE_FREEZE_STUCK_MS + 63_000, 14)).toBe("reinit");
+  });
+
+  it("does not recover a user pause", () => {
+    let state = initialTvLiveFreezeWatchState();
+    const playing = sampleTvLiveFreezeWatch(state, {
+      nowMs: 0,
+      currentTime: 20,
+      paused: false,
+      hasError: false,
+      readyState: 3,
+      bufferAheadSec: 4,
+    });
+    state = playing.state;
+    const held = sampleTvLiveFreezeWatch(state, {
+      nowMs: TV_LIVE_FREEZE_STUCK_MS + 5_000,
+      currentTime: 20,
+      paused: true,
+      hasError: false,
+      readyState: 3,
+      bufferAheadSec: 4,
+    });
+    expect(held.action).toBe("none");
+  });
+});
+
+describe("tvLiveFullscreenResumeAction", () => {
+  it("reloads when fullscreen paused the element, otherwise only plays", () => {
+    expect(
+      tvLiveFullscreenResumeAction({ paused: true, hasError: false })
+    ).toBe("reload");
+    expect(
+      tvLiveFullscreenResumeAction({ paused: false, hasError: false })
+    ).toBe("play");
+    expect(
+      tvLiveFullscreenResumeAction({ paused: true, hasError: true })
+    ).toBe("none");
   });
 });

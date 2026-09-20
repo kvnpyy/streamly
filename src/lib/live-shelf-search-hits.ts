@@ -1,3 +1,5 @@
+import { sortLiveStreamsBySearchScore } from "@/lib/live-search-rank";
+import { normalizeSearchText } from "@/lib/search-normalize";
 import type { LiveStream } from "@/lib/xtream-types";
 
 const DEFAULT_MAX_HITS_PER_CATEGORY = 12;
@@ -81,10 +83,18 @@ export function buildLiveSearchHitsByCategory({
         ) {
           if (!hits) hits = [];
           hits.push(s);
-          if (hits.length >= maxHitsPerCategory) break;
         }
       }
-      if (hits?.length) map.set(catId, hits);
+      if (hits?.length) {
+        const needle = normalizeSearchText(queryLower);
+        map.set(
+          catId,
+          sortLiveStreamsBySearchScore(hits, needle, (ch) =>
+            nowPlayingMap.get(ch.stream_id) ??
+            programTitleByStreamId?.get(ch.stream_id)
+          ).slice(0, maxHitsPerCategory)
+        );
+      }
     }
     return map;
   }
@@ -100,7 +110,18 @@ export function buildLiveSearchHitsByCategory({
       hits = [];
       map.set(catId, hits);
     }
-    if (hits.length < maxHitsPerCategory) hits.push(s);
+    hits.push(s);
+  }
+
+  const needle = normalizeSearchText(queryLower);
+  for (const [catId, hits] of map) {
+    map.set(
+      catId,
+      sortLiveStreamsBySearchScore(hits, needle, (ch) =>
+        nowPlayingMap.get(ch.stream_id) ??
+        programTitleByStreamId?.get(ch.stream_id)
+      ).slice(0, maxHitsPerCategory)
+    );
   }
 
   return map;

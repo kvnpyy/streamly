@@ -1,6 +1,7 @@
 "use client";
 
 import { inferCountryFromCategory } from "@/lib/channel-meta";
+import { filterStreamsByLiveQuery } from "@/lib/live-programme-search";
 import type { EpgListingLike } from "@/lib/epg-time";
 import {
   getBulkCachedEpgTitles,
@@ -120,15 +121,12 @@ export function TvCategoryView({
   // ── Filtered list ───────────────────────────────────────────────────────
   const filteredChannels = useMemo(() => {
     if (!searchQuery.trim()) return channels;
-    const q = searchQuery.toLowerCase();
-    return channels.filter((c) => {
-      const nowPlaying =
-        nowPlayingMap.get(c.stream_id) ?? localEpg.get(c.stream_id);
-      return (
-        c.name.toLowerCase().includes(q) ||
-        nowPlaying?.toLowerCase().includes(q)
-      );
-    });
+    return filterStreamsByLiveQuery(
+      channels,
+      searchQuery,
+      nowPlayingMap,
+      localEpg
+    );
   }, [channels, searchQuery, nowPlayingMap, localEpg]);
 
   const displayChannels = useDeferredValue(filteredChannels);

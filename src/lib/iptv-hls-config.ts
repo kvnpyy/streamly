@@ -131,9 +131,12 @@ export function buildIptvHlsJsConfig(opts: {
     renderTextTracksNatively: true,
     /**
      * Desktop live in a window used to look SD because ABR matched the element
-     * box, not the source. Phones/TVs still cap to viewport to save decode.
+     * box, not the source. Phones still cap to viewport. TV live must not —
+     * fullscreen grows the element and a recap wedges Tizen/webOS MSE.
      */
-    capLevelToPlayerSize: livingRoomLike || silkLike || (isLive && tightBuffers),
+    capLevelToPlayerSize: tvLivingRoomLive
+      ? false
+      : livingRoomLike || silkLike || (isLive && tightBuffers),
     enableWorker: false,
     manifestLoadingTimeOut: timeouts,
     levelLoadingTimeOut: timeouts,
@@ -145,9 +148,9 @@ export function buildIptvHlsJsConfig(opts: {
     maxBufferLength: maxBuf,
     maxMaxBufferLength: maxMaxBuf,
     maxBufferHole: isLive ? maxHoleLive : maxHoleVod,
-    nudgeMaxRetry: tvLivingRoomLive ? 0 : silkLike ? 18 : 14,
-    nudgeOffset: tvLivingRoomLive ? 0 : silkLike ? 0.14 : 0.12,
-    highBufferWatchdogPeriod: tvLivingRoomLive ? 30 : silkLike ? 4.5 : 3,
+    nudgeMaxRetry: tvLivingRoomLive ? 8 : silkLike ? 18 : 14,
+    nudgeOffset: tvLivingRoomLive ? 0.1 : silkLike ? 0.14 : 0.12,
+    highBufferWatchdogPeriod: tvLivingRoomLive ? 8 : silkLike ? 4.5 : 3,
     manifestLoadingMaxRetry: manifestRetry,
     levelLoadingMaxRetry: manifestRetry,
     fragLoadingMaxRetry: fragRetry,

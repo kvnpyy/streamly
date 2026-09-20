@@ -11,6 +11,28 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.13.33",
+    date: "2026-09-19",
+    summary:
+      "TV live recovers a frozen fullscreen stream the same way flipping the channel does.",
+    highlights: [
+      "TV live HLS no longer recaps quality when the player goes fullscreen (that wedged Tizen/webOS).",
+      "Entering or leaving fullscreen resumes playback if the TV paused MSE.",
+      "A freeze that survives play / media recover / reload now rebuilds the player pipeline — the same teardown as flipping away and back.",
+    ],
+  },
+  {
+    version: "0.13.32",
+    date: "2026-09-19",
+    summary:
+      "Live TV search puts the event you’re looking for above generic network channels.",
+    highlights: [
+      "Searching “ufc” ranks a channel named or playing UFC 311 above UFC Network.",
+      "On-air programme title matches now outrank channel-name-only hits.",
+      "Numbered event names beat generic NETWORK / Fight Pass style channels.",
+    ],
+  },
+  {
     version: "0.13.31",
     date: "2026-09-15",
     summary:

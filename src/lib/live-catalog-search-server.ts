@@ -1,6 +1,7 @@
 import type { TvRegion } from "@/lib/geo-continent";
 import { filterStreamsForTvRegion } from "@/lib/live-category-shelf";
 import { lookupStreamIdsForCategory } from "@/lib/live-stream-index";
+import { sortLiveStreamsBySearchScore } from "@/lib/live-search-rank";
 import {
   normalizeSearchText,
   textMatchesSearch,
@@ -121,12 +122,14 @@ export function searchLiveCatalog(
     tvRegion
   );
 
-  const matches: LiveStream[] = [];
+  const nameHits: LiveStream[] = [];
   for (const s of inScope) {
-    if (textMatchesSearch(s.name, needle) && matches.length < matchLimit) {
-      matches.push(s);
-    }
+    if (textMatchesSearch(s.name, needle)) nameHits.push(s);
   }
+  const matches = sortLiveStreamsBySearchScore(nameHits, needle).slice(
+    0,
+    matchLimit
+  );
 
   /** Prefer name hits first so EPG enrichment targets likely channels. */
   const scanPool: LiveStream[] = [];

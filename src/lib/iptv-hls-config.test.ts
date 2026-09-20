@@ -26,7 +26,7 @@ describe("buildIptvHlsJsConfig live IPTV smoothness", () => {
     expect(cfg.liveSyncOnStallIncrease).toBe(0);
   });
 
-  it("TV live never seeks to catch the live edge or nudge over holes", () => {
+  it("TV live never seeks to catch the live edge; decoder nudge is allowed", () => {
     const cfg = buildIptvHlsJsConfig({
       isLive: true,
       mobileLike: true,
@@ -34,10 +34,12 @@ describe("buildIptvHlsJsConfig live IPTV smoothness", () => {
     });
     expect(cfg.liveSyncMode).toBeUndefined();
     expect(cfg.liveMaxLatencyDurationCount).toBe(Infinity);
-    expect(cfg.nudgeMaxRetry).toBe(0);
+    expect(cfg.nudgeMaxRetry).toBeGreaterThan(0);
+    expect(cfg.nudgeOffset).toBeGreaterThan(0);
     expect(cfg.maxBufferHole).toBeLessThanOrEqual(0.2);
     expect(cfg.maxLiveSyncPlaybackRate).toBe(1);
     expect(cfg.liveSyncOnStallIncrease).toBe(0);
+    expect(cfg.capLevelToPlayerSize).toBe(false);
   });
 
   it("desktop live does not cap quality to the player box", () => {

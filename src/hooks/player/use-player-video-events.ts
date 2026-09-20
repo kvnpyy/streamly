@@ -10,6 +10,7 @@ import {
   LIVE_PLAYBACK_ERROR_GRACE_MS,
   LIVE_VIDEO_ERROR_DEFER_MS,
   liveCodecUserMessage,
+  recoverTvLiveMedia,
 } from "@/lib/live-hls-playback";
 import { playbackUrlIsHls } from "@/lib/playback-url";
 import { withLiveHlsCompatMse } from "@/lib/stream-url";
@@ -195,7 +196,9 @@ export function usePlayerVideoEvents(p: UsePlayerVideoEventsParams) {
       const vv = videoRef.current;
       if (!vv || vv.paused || current?.kind !== "live") return;
       if (isTvOrSilkUserAgent()) {
-        voidSafeVideoPlay(vv);
+        const hls = hlsRef.current;
+        if (hls) recoverTvLiveMedia(hls, vv);
+        else voidSafeVideoPlay(vv);
         return;
       }
       const hls = hlsRef.current;
@@ -476,9 +479,10 @@ export function usePlayerVideoEvents(p: UsePlayerVideoEventsParams) {
       const usingHlsJs = hlsRef.current != null;
       /**
        * hls.js desktop: 32s is conservative so we do not fight live sync.
-       * TV: do not auto recoverMediaError — it replays the sliding window.
+       * TV freeze recovery is owned by useTvLiveFreezeWatchdog (polls even
+       * when timeupdate stops).
        */
-      const tvLiveClient = isTvOrSilkUserAgent();
+      if (isTvOrSilkUserAgent()) return;
       const stuckThresholdMs = usingHlsJs
         ? 32_000
         : isAppleMobileWebKitDevice()
@@ -488,9 +492,7 @@ export function usePlayerVideoEvents(p: UsePlayerVideoEventsParams) {
         liveProgress.stuckSince = now;
         liveProgress.lastCt = ct;
         nativeStallKicks += 1;
-        if (tvLiveClient) {
-          voidSafeVideoPlay(v);
-        } else if (usingHlsJs) {
+        if (usingHlsJs) {
           const hls = hlsRef.current;
           if (hls) {
             try {
@@ -613,7 +615,11 @@ export function usePlayerVideoEvents(p: UsePlayerVideoEventsParams) {
           recoveryPasses += 1;
           try {
             if (isTvOrSilkUserAgent()) {
-              voidSafeVideoPlay(vv);
+              if (recoveryPasses <= 1) {
+                voidSafeVideoPlay(vv);
+              } else {
+                recoverTvLiveMedia(hls, vv);
+              }
             } else {
               applyGentleLiveHlsRecovery(hls, vv);
             }

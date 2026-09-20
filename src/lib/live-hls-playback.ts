@@ -8,6 +8,7 @@ import {
   isChromiumBasedDesktopBrowser,
   isSafariFamilyWithoutChromium,
 } from "@/lib/browser";
+import type { TvLiveFreezeAction } from "@/lib/live-tv-freeze-recovery";
 import { voidSafeVideoPlay } from "@/lib/video-play";
 import Hls, { type Level } from "hls.js";
 
@@ -56,6 +57,36 @@ export function recoverTvLiveMedia(
     /* noop */
   }
   voidSafeVideoPlay(video);
+}
+
+/** Resume fragment fetch at the current playhead — never `startLoad(-1)`. */
+export function reloadTvLiveAtPlayhead(
+  hls: Hls,
+  video: HTMLVideoElement
+): void {
+  try {
+    hls.startLoad();
+  } catch {
+    /* noop */
+  }
+  voidSafeVideoPlay(video);
+}
+
+export function applyTvLiveFreezeAction(
+  action: TvLiveFreezeAction,
+  hls: Hls | null,
+  video: HTMLVideoElement
+): void {
+  if (action === "none" || action === "reinit") return;
+  if (action === "play" || !hls) {
+    voidSafeVideoPlay(video);
+    return;
+  }
+  if (action === "media") {
+    recoverTvLiveMedia(hls, video);
+    return;
+  }
+  reloadTvLiveAtPlayhead(hls, video);
 }
 
 /**

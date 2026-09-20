@@ -23,6 +23,26 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.13.33] — 2026-09-19
+
+TV live recovers a frozen fullscreen stream the same way flipping the channel does.
+
+### Fixed
+- **TV fullscreen live** — quality is no longer recapped to the bigger surface, which wedged Samsung/webOS after leaving the modal player.
+- **TV fullscreen resume** — if the TV pauses MSE on enter/exit fullscreen, playback restarts at the current position.
+- **TV freeze rebuild** — if play / media recover / reload still leave a stuck playhead, the player tears down and rebuilds the pipeline (what flipping away and back already did). Cap of two auto-rebuilds per freeze streak.
+
+---
+
+## [0.13.32] — 2026-09-19
+
+Live TV search puts the event you’re looking for above generic network channels.
+
+### Fixed
+- **Live search ranking** — “ufc” no longer buries the fight under UFC Network. Numbered events (UFC 311) and channels actually playing that title rank first; generic network-name hits come after.
+
+---
+
 ## [0.13.31] — 2026-09-15
 
 Mark as watched actually marks the episode, and transcode mkdir retries after a full disk.

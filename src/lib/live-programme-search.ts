@@ -3,6 +3,7 @@ import {
   getCachedEpgKnownIds,
 } from "@/lib/epg-local-cache";
 import type { LiveChannelIndex } from "@/lib/live-channel-index";
+import { sortLiveStreamsBySearchScore } from "@/lib/live-search-rank";
 import {
   normalizeSearchText,
   textMatchesSearch,
@@ -63,7 +64,15 @@ export function planLiveProgrammeSearch(
   };
 }
 
-/** Name matches plus on-air / scanned programme-title matches (no duplicate name checks). */
+function liveSearchProgrammeTitle(
+  streamId: number,
+  nowPlayingMap: Map<number, string>,
+  programmeTitles: Map<number, string>
+): string | undefined {
+  return nowPlayingMap.get(streamId) ?? programmeTitles.get(streamId);
+}
+
+/** Name matches plus on-air / scanned programme-title matches, ranked for watch intent. */
 export function mergeLiveSearchResults(
   nameMatched: LiveStream[],
   streams: LiveStream[],
@@ -74,15 +83,28 @@ export function mergeLiveSearchResults(
   if (!queryLower) return streams;
 
   const needle = normalizeSearchText(queryLower);
-  const out = nameMatched.slice();
-  const seen = new Set(nameMatched.map((s) => s.stream_id));
+  const out: LiveStream[] = [];
+  const seen = new Set<number>();
+  for (const s of nameMatched) {
+    if (seen.has(s.stream_id)) continue;
+    seen.add(s.stream_id);
+    out.push(s);
+  }
   for (const s of streams) {
     if (seen.has(s.stream_id)) continue;
-    const np =
-      nowPlayingMap.get(s.stream_id) ?? programmeTitles.get(s.stream_id);
-    if (np && textMatchesSearch(np, needle)) out.push(s);
+    const np = liveSearchProgrammeTitle(
+      s.stream_id,
+      nowPlayingMap,
+      programmeTitles
+    );
+    if (np && textMatchesSearch(np, needle)) {
+      seen.add(s.stream_id);
+      out.push(s);
+    }
   }
-  return out;
+  return sortLiveStreamsBySearchScore(out, needle, (s) =>
+    liveSearchProgrammeTitle(s.stream_id, nowPlayingMap, programmeTitles)
+  );
 }
 
 export type ProgrammeSearchCacheSeed = {
@@ -129,9 +151,14 @@ export function filterStreamsByLiveQuery(
       out.push(s);
       continue;
     }
-    const np =
-      nowPlayingMap.get(s.stream_id) ?? programmeTitles.get(s.stream_id);
+    const np = liveSearchProgrammeTitle(
+      s.stream_id,
+      nowPlayingMap,
+      programmeTitles
+    );
     if (np && textMatchesSearch(np, needle)) out.push(s);
   }
-  return out;
+  return sortLiveStreamsBySearchScore(out, needle, (s) =>
+    liveSearchProgrammeTitle(s.stream_id, nowPlayingMap, programmeTitles)
+  );
 }

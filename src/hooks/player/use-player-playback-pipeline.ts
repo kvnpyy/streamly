@@ -18,6 +18,7 @@ import {
   livePlaybackStoppedMessage,
   maxSafeLevelIndex,
   preferBrowserFriendlyAudioTrack,
+  reloadTvLiveAtPlayhead,
   stabilizeBrowserFriendlyCodecs,
   tryCapAbrLower,
 } from "@/lib/live-hls-playback";
@@ -1248,10 +1249,14 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
           return;
         }
         const hls = hlsRef.current;
-        if (!liveStallRecoveryTried && hls && !isTvOrSilkUserAgent()) {
+        if (!liveStallRecoveryTried && hls) {
           liveStallRecoveryTried = true;
           try {
-            applyGentleLiveHlsRecovery(hls, v);
+            if (isTvOrSilkUserAgent()) {
+              reloadTvLiveAtPlayhead(hls, v);
+            } else {
+              applyGentleLiveHlsRecovery(hls, v);
+            }
           } catch {
             /* noop */
           }

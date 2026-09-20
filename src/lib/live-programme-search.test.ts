@@ -52,11 +52,26 @@ describe("live-programme-search", () => {
     const merged = mergeLiveSearchResults(
       nameMatched,
       streams,
-      "game",
+      "cnn",
       new Map(),
-      new Map([[2, "Big Game Night"]])
+      new Map([[2, "CNN Tonight"]])
     );
-    expect(merged.map((s) => s.stream_id)).toEqual([1, 2]);
+    expect(merged.map((s) => s.stream_id).sort()).toEqual([1, 2]);
+  });
+
+  it("ranks an on-air UFC event above UFC Network for query ufc", () => {
+    const streams = [
+      ch(1, "UFC NETWORK"),
+      ch(2, "Sky Sports Box Office"),
+    ];
+    const merged = mergeLiveSearchResults(
+      [streams[0]!],
+      streams,
+      "ufc",
+      new Map(),
+      new Map([[2, "UFC 311: Makhachev vs Moicano"]])
+    );
+    expect(merged.map((s) => s.stream_id)).toEqual([2, 1]);
   });
 
   it("filters by channel name in one pass", () => {
