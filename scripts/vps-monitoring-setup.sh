@@ -49,7 +49,7 @@ COLLECT="$APP_DIR/scripts/vps-monitor-collect.sh"
 chmod +x "$COLLECT"
 chown "$APP_USER:$APP_USER" "$COLLECT"
 
-CRON_COLLECT="*/5 * * * * mkdir -p /run/streamly-monitor && cd $APP_DIR && /usr/bin/env bash $APP_DIR/scripts/vps-monitor-collect.sh >> /run/streamly-monitor/collect.log 2>&1"
+CRON_COLLECT="*/5 * * * * mkdir -p /dev/shm/streamly-monitor && cd $APP_DIR && /usr/bin/env bash $APP_DIR/scripts/vps-monitor-collect.sh >> /dev/shm/streamly-monitor/collect.log 2>&1"
 CRON_NOTIFY="15 * * * * cd $APP_DIR && /usr/bin/npm run monitor:notify >> $APP_DIR/data/monitor/notify-cron.log 2>&1"
 
 sudo -u "$APP_USER" bash -s <<CRONSH

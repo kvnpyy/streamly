@@ -11,7 +11,8 @@ LATEST_FILE="$MONITOR_DIR/latest.json"
 MAX_SAMPLES="${CAPACITY_MAX_SAMPLES:-3024}"
 
 mkdir -p "$MONITOR_DIR"
-RUNTIME_LOG_DIR="/run/streamly-monitor"
+# tmpfs, and writable by the unprivileged app user. /run is root-only.
+RUNTIME_LOG_DIR="/dev/shm/streamly-monitor"
 RUNTIME_SAMPLES="$RUNTIME_LOG_DIR/samples.jsonl"
 
 # Cron used to append on the root volume. At 0 bytes free that redirect fails
@@ -47,7 +48,7 @@ ensure_sample_room() {
   fi
 }
 
-migrate_collect_cron_log
+migrate_collect_cron_log || true
 ensure_sample_room
 
 read_mem() {
