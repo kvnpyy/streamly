@@ -54,8 +54,14 @@ import {
   shouldReuseTranscodeJobForSeek,
 } from "@/lib/vod-transcode-seek-policy";
 import {
+  diskFreeReserveBytes,
+  evictionKeysForPressure,
+  filesystemFreeBytes,
+  reclaimDiskPressure,
+  registerDiskReclaimer,
+} from "@/lib/disk-pressure";
+import {
   isNoSpaceError,
-  planTranscodeDiskEvictions,
   transcodeMaxCacheBytes,
 } from "@/lib/vod-transcode-disk-cache";
 
@@ -709,7 +715,7 @@ async function mkdirTranscodeDir(dir: string): Promise<void> {
     await fsp.mkdir(dir, { recursive: true });
   } catch (err) {
     if (!isNoSpaceError(err)) throw err;
-    await sweepTranscodeDiskCache();
+    await reclaimDiskPressure();
     await fsp.mkdir(dir, { recursive: true });
   }
 }
@@ -760,24 +766,27 @@ async function sweepTranscodeDiskCache(): Promise<void> {
       /* skip */
     }
   }
-  if (usedBytes <= maxBytes) return;
-
+  // Only a live ffmpeg is protected. Viewer-warm dirs used to be kept past the
+  // cap, which let HLS cache plus source files fill the volume.
   const protectKeys = new Set<string>();
   for (const [key, job] of jobs) {
     if (job.proc && job.proc.exitCode == null) protectKeys.add(key);
-    if (jobViewerActive(job)) protectKeys.add(key);
   }
 
-  const victims = planTranscodeDiskEvictions({
-    dirs,
+  const victims = evictionKeysForPressure({
+    files: dirs,
     usedBytes,
     maxBytes,
+    freeBytes: await filesystemFreeBytes(root),
+    reserveBytes: diskFreeReserveBytes(),
     protectKeys,
   });
   for (const key of victims) {
     await wipeTranscodeJobDir(path.join(root, key), key);
   }
 }
+
+registerDiskReclaimer(sweepTranscodeDiskCache);
 
 function stopTranscodeProcOnly(job: TranscodeJob): boolean {
   if (!job.proc || job.proc.exitCode != null) return false;
@@ -1559,6 +1568,12 @@ async function spawnFfmpegLocked(
     seekSec > 0 ? "make_non_negative" : "make_zero",
     "-max_muxing_queue_size",
     "4096",
+    // Default mux delay pads each MPEG-TS segment and leaves a video hole
+    // hls.js trips over at every keyframe.
+    "-muxdelay",
+    "0",
+    "-muxpreload",
+    "0",
     "-f",
     "hls",
     "-hls_time",

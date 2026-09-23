@@ -11,6 +11,44 @@ LATEST_FILE="$MONITOR_DIR/latest.json"
 MAX_SAMPLES="${CAPACITY_MAX_SAMPLES:-3024}"
 
 mkdir -p "$MONITOR_DIR"
+RUNTIME_LOG_DIR="/run/streamly-monitor"
+RUNTIME_SAMPLES="$RUNTIME_LOG_DIR/samples.jsonl"
+
+# Cron used to append on the root volume. At 0 bytes free that redirect fails
+# and the job never starts, so the next run moves the log onto tmpfs.
+migrate_collect_cron_log() {
+  local current updated
+  current=$(crontab -l 2>/dev/null || true)
+  if ! printf '%s\n' "$current" | grep -F 'vps-monitor-collect.sh >>' >/dev/null; then
+    return 0
+  fi
+  mkdir -p "$RUNTIME_LOG_DIR"
+  updated=$(printf '%s\n' "$current" | sed "s#>> .*/collect-cron.log 2>&1#>> ${RUNTIME_LOG_DIR}/collect.log 2>\\&1#")
+  if [ "$updated" != "$current" ]; then
+    printf '%s\n' "$updated" | crontab - || true
+  fi
+}
+
+# Truncating our own samples file frees blocks, so one new sample can land
+# even when df reports the volume full.
+ensure_sample_room() {
+  local avail_kb kept
+  avail_kb=$(df -P "$MONITOR_DIR" | awk 'NR==2 { print $4 }')
+  if [ "${avail_kb:-0}" -ge 102400 ]; then
+    return 0
+  fi
+  if [ ! -f "$SAMPLES_FILE" ]; then
+    return 0
+  fi
+  kept=$(tail -n 200 "$SAMPLES_FILE" 2>/dev/null || true)
+  : >"$SAMPLES_FILE"
+  if [ -n "$kept" ]; then
+    printf '%s\n' "$kept" >"$SAMPLES_FILE"
+  fi
+}
+
+migrate_collect_cron_log
+ensure_sample_room
 
 read_mem() {
   local total avail used pct
@@ -79,7 +117,7 @@ write_net_state() {
     echo "prev_iface=$1"
     echo "prev_tx=$2"
     echo "prev_ts=$3"
-  } >"$STATE_FILE"
+  } >"$STATE_FILE" || true
 }
 
 calc_egress_mbps() {
@@ -228,7 +266,12 @@ console.log(JSON.stringify(o));
   "$node_rss" "$load1" "$api_err_missing" "$api_err_turnstile" \
   "$api_err_stream4xx" "$api_health")
 
-printf '%s\n' "$sample" >>"$SAMPLES_FILE"
+if ! printf '%s\n' "$sample" >>"$SAMPLES_FILE"; then
+  mkdir -p "$RUNTIME_LOG_DIR"
+  printf '%s\n' "$sample" >>"$RUNTIME_SAMPLES" || true
+elif [ -s "$RUNTIME_SAMPLES" ]; then
+  cat "$RUNTIME_SAMPLES" >>"$SAMPLES_FILE" && : >"$RUNTIME_SAMPLES" || true
+fi
 
 if [ -f "$SAMPLES_FILE" ]; then
   lines=$(wc -l <"$SAMPLES_FILE" | tr -d ' ')

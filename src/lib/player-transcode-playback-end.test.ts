@@ -4,6 +4,7 @@ import {
   isAtTranscodeBufferEdge,
   isEncodeCaughtUp,
   isNearEpisodeEnd,
+  seekTargetForTranscodeBufferHole,
   shouldTreatTranscodeAsEnded,
   shouldTreatTranscodeSnapAsEnded,
 } from "./player-transcode-playback-end";
@@ -26,6 +27,55 @@ function mockVideo(opts: {
     ended: opts.ended ?? false,
   } as unknown as HTMLVideoElement;
 }
+
+describe("seekTargetForTranscodeBufferHole", () => {
+  const ranges = [
+    { start: 0, end: 8 },
+    { start: 8.2, end: 16 },
+  ];
+
+  it("does not seek while seconds of the current segment are still buffered", () => {
+    expect(
+      seekTargetForTranscodeBufferHole({ currentTime: 5, ranges })
+    ).toBeNull();
+  });
+
+  it("steps over a short boundary hole once the playhead is stuck on it", () => {
+    const target = seekTargetForTranscodeBufferHole({
+      currentTime: 7.95,
+      ranges,
+    });
+    expect(target).toBeGreaterThan(8.2);
+    expect(target).toBeLessThan(8.3);
+  });
+
+  it("bridges a multi-second tip-resume hole only while stuck inside it", () => {
+    const resume = [
+      { start: 0, end: 40 },
+      { start: 43, end: 50 },
+    ];
+    expect(
+      seekTargetForTranscodeBufferHole({ currentTime: 30, ranges: resume })
+    ).toBeNull();
+    const target = seekTargetForTranscodeBufferHole({
+      currentTime: 40.5,
+      ranges: resume,
+    });
+    expect(target).toBeGreaterThan(43);
+  });
+
+  it("does not jump a large gap", () => {
+    expect(
+      seekTargetForTranscodeBufferHole({
+        currentTime: 8,
+        ranges: [
+          { start: 0, end: 8 },
+          { start: 20, end: 28 },
+        ],
+      })
+    ).toBeNull();
+  });
+});
 
 describe("isNearEpisodeEnd", () => {
   it("is true inside the finale margin", () => {

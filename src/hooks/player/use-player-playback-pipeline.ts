@@ -38,6 +38,7 @@ import { withLiveHlsCompatMse } from "@/lib/stream-url";
 import { isAmazonSilkUserAgent, isTvClassUserAgent, isTvOrSilkUserAgent } from "@/lib/tv-user-agent";
 import { humanizePlaybackErrorResponse } from "@/lib/playback-error-message";
 import { isRetryableVodTranscodeHttpStatus } from "@/lib/vod-transcode-http";
+import { seekTargetForTranscodeBufferHole } from "@/lib/player-transcode-playback-end";
 import {
   destroyHlsInstance,
   pauseVideoElement,
@@ -445,6 +446,8 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
       return true;
     };
 
+    let onTranscodeBufferWaiting: (() => void) | null = null;
+
     // Native WebKit: VOD + Apple live fallback when MSE/hls.js isn’t available (older iOS, unsupported codecs).
     // Apple mobile **live** + MSE: use hls.js — smoother IPTV experience than native `<video>` alone.
     if (useNativeAppleHls && !appleMobileLiveMse) {
@@ -688,6 +691,33 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
       hlsRef.current = hls;
       hls.loadSource(url);
       hls.attachMedia(video);
+
+      let lastTranscodeHoleSeekAt = 0;
+      onTranscodeBufferWaiting = () => {
+        if (cancelled || !vodTranscodeHls || vodScrubbingRef?.current) return;
+        const vv = videoRef.current;
+        if (!vv || vv.paused || vv.seeking) return;
+        const now = performance.now();
+        if (now - lastTranscodeHoleSeekAt < 1_500) return;
+        const ranges = [];
+        for (let i = 0; i < vv.buffered.length; i++) {
+          ranges.push({ start: vv.buffered.start(i), end: vv.buffered.end(i) });
+        }
+        const target = seekTargetForTranscodeBufferHole({
+          currentTime: vv.currentTime,
+          ranges,
+        });
+        if (target == null) return;
+        lastTranscodeHoleSeekAt = now;
+        try {
+          vv.currentTime = target;
+        } catch {
+          /* noop */
+        }
+      };
+      if (vodTranscodeHls && onTranscodeBufferWaiting) {
+        video.addEventListener("waiting", onTranscodeBufferWaiting);
+      }
 
       /** Fatal `NETWORK_ERROR` streak — reset whenever data actually flows (Safari otherwise accumulates transient fatals). */
       let consecutiveNetworkErrors = 0;
@@ -1270,6 +1300,9 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
     stallTimer.current = setTimeout(runStallWatchdog, stallMs);
 
     return () => {
+      if (onTranscodeBufferWaiting) {
+        video.removeEventListener("waiting", onTranscodeBufferWaiting);
+      }
       pauseVideoElement(video);
       cancelled = true;
       probeFetchRef.current?.abort();

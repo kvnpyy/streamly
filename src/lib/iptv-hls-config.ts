@@ -200,11 +200,14 @@ export function buildVodTranscodeHlsJsConfig() {
     maxBufferLength: 48,
     maxMaxBufferLength: 96,
     backBufferLength: 600,
-    // Tip-resume joins can leave a 2–4s PTS hole (keyframe -ss + output_ts_offset).
-    // 0.3s made hls.js stall/freeze across that join for the rest of the title.
-    maxBufferHole: 3.5,
-    maxFragLookUpTolerance: 0.75,
-    stretchShortVideoTrack: false,
+    // Keep this small. A multi-second hole makes hls.js treat the tail of every
+    // segment as starvation and seek, which is a split-second pause each GOP
+    // (often 5–10s on copied H.264). Stretch the last video frame across the
+    // usual AAC/video tail instead. Larger tip-resume holes are bridged only
+    // once the playhead is actually stuck.
+    maxBufferHole: 0.05,
+    maxFragLookUpTolerance: 0.25,
+    stretchShortVideoTrack: true,
     startFragPrefetch: true,
     liveSyncDurationCount: 4,
     liveMaxLatencyDurationCount: Infinity,

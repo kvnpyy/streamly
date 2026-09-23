@@ -28,7 +28,7 @@ ssh ubuntu@YOUR_VPS 'sudo bash /tmp/streamly-tuning/vps-apply-tuning.sh'
 
 When `STREAM_VOD_TRANSCODE=1`, the app **downloads** the episode to disk (`STREAM_VOD_SOURCE_DIR`, default `/var/lib/streamly/vod-source` or `.cache/vod-source`) and runs ffmpeg against that local file. This avoids mid-episode stalls when the provider HTTP connection drops mid-encode. Single-connection IPTV panels get one download at a time (not download + live HTTP ffmpeg).
 
-- Disk: HLS segments under `STREAM_TRANSCODE_CACHE_DIR` **plus** source files under `STREAM_VOD_SOURCE_DIR`. Idle TTL stops ffmpeg and deletes unused **source** files; HLS dirs stay for resume until `STREAM_TRANSCODE_MAX_BYTES` (default 20 GB) LRU-evicts oldest titles. Cap sources with `STREAM_VOD_SOURCE_MAX_BYTES`.
+- Disk: HLS segments under `STREAM_TRANSCODE_CACHE_DIR` **plus** source files under `STREAM_VOD_SOURCE_DIR`. Idle TTL deletes unused source files. Both caches are a hard cap (`STREAM_TRANSCODE_MAX_BYTES`, default 20 GB; `STREAM_VOD_SOURCE_MAX_BYTES`, default 15 GB): once either cap is hit, or free space drops below `STREAM_DISK_FREE_RESERVE_BYTES` (default 8 GB), the oldest files go, including ones played in the last few hours. Only an in-flight download or a running ffmpeg is kept.
 - Emergency rollback: `STREAM_VOD_SOURCE_CACHE=0` (ffmpeg reads the provider URL again).
 
 ## Cloudflare (DNS proxy ON)

@@ -26,6 +26,15 @@ describe("vod-source-cache", () => {
     delete process.env.STREAM_VOD_SOURCE_START_BYTES;
   });
 
+  it("caps the source cache at 15GB unless configured", async () => {
+    delete process.env.STREAM_VOD_SOURCE_MAX_BYTES;
+    vi.resetModules();
+    const { vodSourceMaxCacheBytes } = await import("./vod-source-cache");
+    expect(vodSourceMaxCacheBytes()).toBe(15_000_000_000);
+    expect(vodSourceMaxCacheBytes("8000000000")).toBe(8_000_000_000);
+    expect(vodSourceMaxCacheBytes("100")).toBe(15_000_000_000);
+  });
+
   it("is enabled when STREAM_VOD_TRANSCODE=1 by default", async () => {
     delete process.env.STREAM_VOD_SOURCE_CACHE;
     process.env.STREAM_VOD_TRANSCODE = "1";

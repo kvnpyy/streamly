@@ -23,6 +23,18 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.13.34] — 2026-09-22
+
+VOD downloads can no longer fill the VPS by staying exempt from the cache cap, and capacity samples keep recording when the disk is almost full.
+
+### Fixed
+- **VOD source cap** — files touched in the last 3 hours were skipped by the 15 GB sweep, so a busy stretch filled the disk and `GET /api/stream` failed with `ENOSPC` (`Fixes JAVASCRIPT-NEXTJS-1R`). The cap is now hard. Only an in-flight download is kept.
+- **Free-space reserve** — source and HLS caches also evict when the volume has under 8 GB free (`STREAM_DISK_FREE_RESERVE_BYTES`), not only when a cache directory is over its own cap.
+- **Capacity sampler** — a full disk made the 5-minute cron fail before it could write, so the outage had no samples. The collector frees room in its own samples file and, on the next successful run, moves its cron log onto tmpfs.
+- **VOD hitch** — episodes no longer pause for a split second every few seconds. The player was seeking at each segment boundary; it now stretches the short video tail and only skips a hole when playback is actually stuck.
+
+---
+
 ## [0.13.33] — 2026-09-19
 
 TV live recovers a frozen fullscreen stream the same way flipping the channel does.

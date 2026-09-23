@@ -11,6 +11,18 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.13.34",
+    date: "2026-09-22",
+    summary:
+      "VOD downloads stay within the disk cap, and episodes no longer hitch every few seconds.",
+    highlights: [
+      "Source files played in the last few hours are still deleted once STREAM_VOD_SOURCE_MAX_BYTES is exceeded. Only an in-flight download is kept.",
+      "Source and HLS caches also shrink when the volume has under 8 GB free, so the disk does not have to hit 100% first.",
+      "Capacity samples keep recording when the disk is almost full, and the collector log moves off the root volume.",
+      "VOD episodes no longer hitch for a split second every few seconds at each segment boundary.",
+    ],
+  },
+  {
     version: "0.13.33",
     date: "2026-09-19",
     summary:

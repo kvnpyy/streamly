@@ -3,6 +3,14 @@ import "server-only";
 import crypto from "crypto";
 import fsp from "fs/promises";
 import path from "path";
+import {
+  diskFreeReserveBytes,
+  evictionKeysForPressure,
+  filesystemFreeBytes,
+  reclaimDiskPressure,
+  registerDiskReclaimer,
+} from "@/lib/disk-pressure";
+import { isNoSpaceError } from "@/lib/vod-transcode-disk-cache";
 
 const IPTV_UA_VOD = "VLC/3.0.20 LibVLC/3.0.20";
 
@@ -109,9 +117,16 @@ function sourceIdleSweepMs(): number {
   return Number.isFinite(n) && n >= 15_000 && n <= 600_000 ? n : 60_000;
 }
 
-function sourceMaxCacheBytes(): number {
-  const n = parseInt(process.env.STREAM_VOD_SOURCE_MAX_BYTES ?? "40000000000", 10);
-  return Number.isFinite(n) && n >= 2_000_000_000 ? n : 40_000_000_000;
+const DEFAULT_VOD_SOURCE_MAX_BYTES = 15_000_000_000;
+
+/** Hard cap for downloaded episode files. Default 15 GB so a 72 GB VPS still has room for HLS cache. */
+export function vodSourceMaxCacheBytes(
+  raw = process.env.STREAM_VOD_SOURCE_MAX_BYTES
+): number {
+  const n = parseInt(raw ?? String(DEFAULT_VOD_SOURCE_MAX_BYTES), 10);
+  return Number.isFinite(n) && n >= 2_000_000_000
+    ? n
+    : DEFAULT_VOD_SOURCE_MAX_BYTES;
 }
 
 export function vodSourceCacheKey(upstream: string): string {
@@ -170,7 +185,7 @@ async function ensureEntry(upstream: string): Promise<SourceEntry> {
   }
 
   const root = sourceRoot();
-  await fsp.mkdir(root, { recursive: true });
+  await mkdirSourceRoot(root);
   const partialPath = path.join(root, `${key}.partial`);
   const finalPath = path.join(root, `${key}.bin`);
 
@@ -299,6 +314,7 @@ async function runDownload(entry: SourceEntry): Promise<void> {
   }
 
   let written = append ? existing : 0;
+  await reclaimVodSourceDisk();
   const fh = await fsp.open(entry.partialPath, append ? "a" : "w");
   try {
     const reader = res.body.getReader();
@@ -321,6 +337,9 @@ async function runDownload(entry: SourceEntry): Promise<void> {
     }
   } catch (err) {
     if (ac.signal.aborted) return;
+    if (isNoSpaceError(err)) {
+      await reclaimDiskPressure();
+    }
     entry.error =
       err instanceof Error ? err.message : "Source download interrupted.";
     throw err;
@@ -582,24 +601,6 @@ function ensureIdleSweepRunning(): void {
   idleSweepTimer.unref?.();
 }
 
-async function directorySizeBytes(dir: string): Promise<number> {
-  try {
-    const names = await fsp.readdir(dir);
-    let total = 0;
-    for (const name of names) {
-      try {
-        const st = await fsp.stat(path.join(dir, name));
-        if (st.isFile()) total += st.size;
-      } catch {
-        /* skip */
-      }
-    }
-    return total;
-  } catch {
-    return 0;
-  }
-}
-
 async function sweepIdleVodSources(): Promise<void> {
   const now = Date.now();
   const idleMs = sourceIdleMs();
@@ -618,41 +619,88 @@ async function sweepIdleVodSources(): Promise<void> {
     await fsp.rm(entry.finalPath, { force: true }).catch(() => {});
   }
 
-  const root = sourceRoot();
-  const maxBytes = sourceMaxCacheBytes();
-  let used = await directorySizeBytes(root);
-  if (used <= maxBytes) return;
+  await reclaimVodSourceDisk();
+}
 
-  // Evict oldest complete files first (by mtime).
+async function mkdirSourceRoot(dir: string): Promise<void> {
   try {
-    const names = await fsp.readdir(root);
-    const files: Array<{ path: string; mtime: number; size: number }> = [];
-    for (const name of names) {
-      if (!name.endsWith(".bin") && !name.endsWith(".partial")) continue;
-      const p = path.join(root, name);
-      try {
-        const st = await fsp.stat(p);
-        files.push({ path: p, mtime: st.mtimeMs, size: st.size });
-      } catch {
-        /* skip */
-      }
-    }
-    files.sort((a, b) => a.mtime - b.mtime);
-    for (const f of files) {
-      if (used <= maxBytes) break;
-      const base = path.basename(f.path);
-      const key = base.replace(/\.(bin|partial)$/, "");
-      const live = entries.get(key);
-      if (live?.downloadPromise) continue;
-      if (live && Date.now() - live.lastTouchAt < idleMs) continue;
-      await fsp.rm(f.path, { force: true }).catch(() => {});
-      entries.delete(key);
-      used -= f.size;
-    }
-  } catch {
-    /* noop */
+    await fsp.mkdir(dir, { recursive: true });
+  } catch (err) {
+    if (!isNoSpaceError(err)) throw err;
+    await reclaimDiskPressure();
+    await fsp.mkdir(dir, { recursive: true });
   }
 }
+
+/**
+ * Drop oldest source files until the cache is under its cap and the volume
+ * has its free-space reserve. In-flight downloads are kept. The idle window
+ * does not protect files once either limit is breached — that exemption is
+ * what let the VPS hit ENOSPC while the configured cap was 15 GB.
+ */
+async function reclaimVodSourceDisk(): Promise<void> {
+  const root = sourceRoot();
+  let names: string[];
+  try {
+    names = await fsp.readdir(root);
+  } catch {
+    return;
+  }
+
+  const grouped = new Map<string, { bytes: number; mtimeMs: number }>();
+  for (const name of names) {
+    if (!name.endsWith(".bin") && !name.endsWith(".partial")) continue;
+    const key = name.replace(/\.(bin|partial)$/, "");
+    const p = path.join(root, name);
+    try {
+      const st = await fsp.stat(p);
+      const prev = grouped.get(key);
+      grouped.set(key, {
+        bytes: (prev?.bytes ?? 0) + st.size,
+        mtimeMs: Math.max(prev?.mtimeMs ?? 0, st.mtimeMs),
+      });
+    } catch {
+      /* skip */
+    }
+  }
+
+  const files = [...grouped.entries()].map(([key, info]) => ({
+    key,
+    bytes: info.bytes,
+    mtimeMs: info.mtimeMs,
+  }));
+  const usedBytes = files.reduce((sum, f) => sum + f.bytes, 0);
+  const protectKeys: string[] = [];
+  for (const [key, entry] of entries) {
+    if (entry.downloadPromise) protectKeys.push(key);
+  }
+
+  const victims = evictionKeysForPressure({
+    files,
+    usedBytes,
+    maxBytes: vodSourceMaxCacheBytes(),
+    freeBytes: await filesystemFreeBytes(root),
+    reserveBytes: diskFreeReserveBytes(),
+    protectKeys,
+  });
+
+  for (const key of victims) {
+    const live = entries.get(key);
+    if (live?.downloadPromise) continue;
+    if (live?.abort) {
+      try {
+        live.abort.abort();
+      } catch {
+        /* noop */
+      }
+    }
+    entries.delete(key);
+    await fsp.rm(path.join(root, `${key}.partial`), { force: true }).catch(() => {});
+    await fsp.rm(path.join(root, `${key}.bin`), { force: true }).catch(() => {});
+  }
+}
+
+registerDiskReclaimer(reclaimVodSourceDisk);
 
 /** Test helper — clear in-memory state. */
 export function _resetVodSourceCacheForTests(): void {

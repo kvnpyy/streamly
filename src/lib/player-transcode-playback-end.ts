@@ -15,6 +15,61 @@ export function bufferedEndSec(video: HTMLVideoElement): number {
   return bufEnd;
 }
 
+export type BufferedRange = { start: number; end: number };
+
+/**
+ * Seek across a real timeline hole only when the playhead is already at the
+ * end of its buffered range. Seeking while seconds of video remain is what
+ * made copied episodes hitch once per GOP.
+ */
+export function seekTargetForTranscodeBufferHole(opts: {
+  currentTime: number;
+  ranges: readonly BufferedRange[];
+  maxStuckAheadSec?: number;
+  minHoleSec?: number;
+  maxHoleSec?: number;
+}): number | null {
+  const currentTime = opts.currentTime;
+  if (!Number.isFinite(currentTime) || currentTime < 0) return null;
+  const maxStuckAheadSec = opts.maxStuckAheadSec ?? 0.12;
+  const minHoleSec = opts.minHoleSec ?? 0.08;
+  const maxHoleSec = opts.maxHoleSec ?? 4.5;
+  const ranges = [...opts.ranges]
+    .filter((r) => r.end > r.start)
+    .sort((a, b) => a.start - b.start);
+  if (ranges.length === 0) return null;
+
+  let current: BufferedRange | null = null;
+  for (const range of ranges) {
+    if (currentTime >= range.start - 0.02 && currentTime <= range.end + 0.02) {
+      current = range;
+    }
+  }
+
+  const nextAfter = (end: number): BufferedRange | null => {
+    for (const range of ranges) {
+      if (range.start > end + 0.01) return range;
+    }
+    return null;
+  };
+
+  if (current) {
+    const ahead = current.end - currentTime;
+    if (ahead > maxStuckAheadSec) return null;
+    const next = nextAfter(current.end);
+    if (!next) return null;
+    const hole = next.start - current.end;
+    if (hole < minHoleSec || hole > maxHoleSec) return null;
+    return next.start + 0.001;
+  }
+
+  const next = nextAfter(currentTime);
+  if (!next) return null;
+  const hole = next.start - currentTime;
+  if (hole < minHoleSec || hole > maxHoleSec) return null;
+  return next.start + 0.001;
+}
+
 export function bufferAheadSec(video: HTMLVideoElement): number {
   const bufEnd = bufferedEndSec(video);
   if (bufEnd <= 0) return 0;
