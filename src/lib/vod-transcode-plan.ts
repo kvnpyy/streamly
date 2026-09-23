@@ -29,7 +29,6 @@ export function transcodeLibx264Args(opts: {
   preset: string;
   maxHeight: number;
   gop: number;
-  segSec: number;
 }): string[] {
   return [
     "-c:v",
@@ -52,8 +51,9 @@ export function transcodeLibx264Args(opts: {
     String(opts.gop),
     "-sc_threshold",
     "0",
-    "-force_key_frames",
-    `expr:gte(t,n_forced*${opts.segSec})`,
+    // Do not also force keyframes at exact hls_time. Combined with -g that
+    // inserts a second keyframe one frame early, and ffmpeg writes a one-frame
+    // segment. Those crumbs are the repeating hitch on a cached episode.
     "-vf",
     transcodeScaleFilter(opts.maxHeight),
   ];

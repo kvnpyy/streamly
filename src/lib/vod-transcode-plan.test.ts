@@ -36,11 +36,11 @@ describe("transcodeLibx264Args", () => {
       preset: "ultrafast",
       maxHeight: 540,
       gop: 96,
-      segSec: 4,
     });
     expect(args).toContain("main");
     expect(args).toContain("cabac=1:bframes=0:ref=1:8x8dct=0");
     expect(args).toContain("ultrafast");
+    expect(args.join(" ")).not.toContain("force_key_frames");
   });
 });
 

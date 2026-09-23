@@ -32,12 +32,11 @@ export function maxInProgressPlaylistSegments(segmentSec: number): number {
 }
 
 /**
- * Hide only the newest flushed segment. It can still be opening when the
- * playlist is built. Hiding more than that freezes the published playlist at
- * a few segments while playback catches up, so every later segment arrives
- * as a split-second pause (one GOP, often 5–10s on copied H.264).
+ * Hide a fixed tail while ffmpeg is still writing. The count must not grow
+ * with the encode: a ramp from 0 up to this value kept the published playlist
+ * stuck at a few segments, so playback paused on every new piece.
  */
-export const IN_PROGRESS_ENCODE_EDGE_HOLDBACK = 1;
+export const IN_PROGRESS_ENCODE_EDGE_HOLDBACK = 4;
 
 /**
  * Prefer a few segments in the first playlist. Playback still starts from
@@ -46,13 +45,36 @@ export const IN_PROGRESS_ENCODE_EDGE_HOLDBACK = 1;
 export const MIN_PUBLISHED_IN_PROGRESS_SEGMENTS = 3;
 
 /**
- * Trailing segments to omit from an in-progress playlist.
- * One, once anything is on disk. A growing holdback removes segments the
- * player was about to buffer.
+ * Trailing segments to omit. Before the tail is full, keep only the oldest
+ * segment published so the list only grows. After that, always hide exactly
+ * {@link IN_PROGRESS_ENCODE_EDGE_HOLDBACK}.
  */
 export function encodeEdgeHoldbackCount(segmentCount: number): number {
   if (segmentCount <= 1) return 0;
+  if (segmentCount <= IN_PROGRESS_ENCODE_EDGE_HOLDBACK) {
+    return segmentCount - 1;
+  }
   return IN_PROGRESS_ENCODE_EDGE_HOLDBACK;
+}
+
+/**
+ * Cached encodes that used forced keyframes are full of one-frame segments.
+ * Replaying that playlist hitches every few seconds. A short final segment
+ * alone is normal and does not count.
+ */
+export function cachedTranscodeShouldBeRebuilt(manifestText: string): boolean {
+  let total = 0;
+  let micro = 0;
+  for (const line of manifestText.split(/\r?\n/)) {
+    const m = line.trim().match(/^#EXTINF:([\d.]+)/i);
+    if (!m) continue;
+    const d = parseFloat(m[1]!);
+    if (!Number.isFinite(d) || d <= 0) continue;
+    total++;
+    if (d < 0.75) micro++;
+  }
+  if (total < 8) return false;
+  return micro >= 4;
 }
 
 export function sumExtinfDurationSec(manifestText: string): number {

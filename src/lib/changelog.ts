@@ -11,6 +11,17 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.13.36",
+    date: "2026-09-22",
+    summary:
+      "Replaying an episode no longer reuses a transcode full of one-frame scraps.",
+    highlights: [
+      "A cached episode with lots of sub-second segments is thrown out and encoded again.",
+      "New encodes no longer insert an extra keyframe that was creating those one-frame pieces.",
+      "While an episode is still encoding, the player keeps a steady lead instead of catching the last segment.",
+    ],
+  },
+  {
     version: "0.13.35",
     date: "2026-09-22",
     summary:

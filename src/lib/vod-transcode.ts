@@ -11,6 +11,7 @@ import {
   hasOrphanSegmentsBeyondPrefix,
   manifestReferencesMissingOrGappedSegments,
   parseExtinfDurationsBySegment,
+  cachedTranscodeShouldBeRebuilt,
   encodedLooksFullyComplete,
   prepareManifestForPlayback,
   rewriteTranscodeManifest,
@@ -1544,7 +1545,6 @@ async function spawnFfmpegLocked(
         preset: x264Preset(),
         maxHeight: plan.maxHeight,
         gop,
-        segSec,
       }),
       "-c:a",
       "aac",
@@ -1782,6 +1782,10 @@ async function hydrateTranscodeJobFromDisk(
   if (metaOff !== off) return null;
 
   const manifest = await readManifestIfReady(dir);
+  if (manifest && cachedTranscodeShouldBeRebuilt(manifest)) {
+    await wipeTranscodeJobDir(dir, key);
+    return null;
+  }
   if (!manifest) {
     const onDisk = await listSegmentFiles(dir);
     if (contiguousSegmentCount(onDisk) <= 0) return null;

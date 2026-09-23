@@ -17,6 +17,7 @@ import {
   IN_PROGRESS_ENCODE_EDGE_HOLDBACK,
   MIN_PUBLISHED_IN_PROGRESS_SEGMENTS,
   encodeEdgeHoldbackCount,
+  cachedTranscodeShouldBeRebuilt,
   prepareManifestForPlayback,
   rewriteTranscodeManifest,
   trimContiguousSegmentsFromStart,
@@ -93,29 +94,51 @@ describe("rewriteTranscodeManifest", () => {
   });
 
   it("keeps publishing earlier segments as the encode grows", () => {
+    const n = 12;
     const existing = new Set(
-      Array.from({ length: 5 }, (_, i) => `seg_${String(i).padStart(5, "0")}.ts`)
+      Array.from({ length: n }, (_, i) => `seg_${String(i).padStart(5, "0")}.ts`)
     );
     const segs: string[] = ["#EXTM3U"];
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < n; i++) {
       segs.push("#EXTINF:4,", `seg_${String(i).padStart(5, "0")}.ts`);
     }
     const growing = prepareManifestForPlayback(segs.join("\n"), false, existing);
-    expect(countManifestSegments(growing)).toBe(5 - IN_PROGRESS_ENCODE_EDGE_HOLDBACK);
+    expect(countManifestSegments(growing)).toBe(n - IN_PROGRESS_ENCODE_EDGE_HOLDBACK);
     expect(countManifestSegments(growing)).toBeGreaterThanOrEqual(
       MIN_PUBLISHED_IN_PROGRESS_SEGMENTS
     );
     expect(growing).toContain("seg_00000.ts");
-    expect(growing).toContain("seg_00003.ts");
-    expect(growing).not.toContain("seg_00004.ts");
+    expect(growing).toContain("seg_00007.ts");
+    expect(growing).not.toContain("seg_00011.ts");
   });
 
-  it("encodeEdgeHoldbackCount hides only the newest segment", () => {
+  it("flags a cached encode full of one-frame segments for rebuild", () => {
+    const healthy = Array.from({ length: 20 }, () => "#EXTINF:4.000,").join("\n");
+    expect(cachedTranscodeShouldBeRebuilt(healthy)).toBe(false);
+    const oneShortTail = `${healthy}\n#EXTINF:0.040,`;
+    expect(cachedTranscodeShouldBeRebuilt(oneShortTail)).toBe(false);
+    const crumbs = [
+      ...Array.from({ length: 12 }, () => "#EXTINF:4.000,"),
+      "#EXTINF:0.042,",
+      "#EXTINF:0.083,",
+      "#EXTINF:0.125,",
+      "#EXTINF:0.417,",
+    ].join("\n");
+    expect(cachedTranscodeShouldBeRebuilt(crumbs)).toBe(true);
+  });
+
+  it("encodeEdgeHoldbackCount hides a fixed tail and never shrinks the list", () => {
     expect(encodeEdgeHoldbackCount(1)).toBe(0);
     expect(encodeEdgeHoldbackCount(2)).toBe(1);
-    expect(encodeEdgeHoldbackCount(3)).toBe(IN_PROGRESS_ENCODE_EDGE_HOLDBACK);
+    expect(encodeEdgeHoldbackCount(4)).toBe(3);
     expect(encodeEdgeHoldbackCount(8)).toBe(IN_PROGRESS_ENCODE_EDGE_HOLDBACK);
-    expect(encodeEdgeHoldbackCount(40)).toBe(1);
+    expect(encodeEdgeHoldbackCount(40)).toBe(IN_PROGRESS_ENCODE_EDGE_HOLDBACK);
+    const published = [1, 2, 4, 5, 8, 40].map(
+      (n) => n - encodeEdgeHoldbackCount(n)
+    );
+    for (let i = 1; i < published.length; i++) {
+      expect(published[i]).toBeGreaterThanOrEqual(published[i - 1]!);
+    }
   });
 
   it("stops at the first missing segment in the sequence", () => {
@@ -138,7 +161,6 @@ describe("rewriteTranscodeManifest", () => {
     ]);
     const out = prepareManifestForPlayback(raw, false, existing);
     expect(out).toContain("seg_00006.ts");
-    expect(out).toContain("seg_00007.ts");
     expect(out).not.toContain("seg_00008.ts");
     expect(out).not.toContain("seg_00010.ts");
   });
@@ -243,7 +265,7 @@ describe("rewriteTranscodeManifest", () => {
     const out = prepareManifestForPlayback(raw, false, existing);
     const uriCount = out.split("\n").filter((l) => /seg_\d+\.ts/i.test(l)).length;
     expect(uriCount).toBe(6 - encodeEdgeHoldbackCount(6));
-    expect(uriCount).toBeGreaterThanOrEqual(MIN_PUBLISHED_IN_PROGRESS_SEGMENTS);
+    expect(out).not.toContain("seg_00006.ts");
   });
 
   it("marks complete playlists as VOD and adds seek timeline tags", () => {

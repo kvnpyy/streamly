@@ -23,6 +23,16 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.13.36] — 2026-09-22
+
+Replaying an episode no longer reuses a transcode full of one-frame scraps.
+
+### Fixed
+- **Same-episode hitch** — forced keyframes were writing tiny extra segments into the cache. Playing that episode again walked every scrap and paused constantly. Those caches are discarded and encoded again without the extra keyframe cut.
+- **In-progress buffer** — the playlist again keeps a few segments ahead of playback, and that lead no longer shrinks as the encode grows.
+
+---
+
 ## [0.13.35] — 2026-09-22
 
 VOD episodes keep a buffer instead of pausing at every segment.
