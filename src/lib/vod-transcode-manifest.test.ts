@@ -43,6 +43,7 @@ describe("rewriteTranscodeManifest", () => {
       true
     );
     expect(out).toContain("transcode=hls");
+    expect(out).toContain("tcv=2");
     expect(out).toContain("compat=mse");
     expect(out).toContain("media=seg_00001.ts");
   });

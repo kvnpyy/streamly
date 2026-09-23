@@ -519,7 +519,9 @@ export function rewriteTranscodeManifest(
       : "";
   const castQs = opts?.forCast ? "&cast=1" : "";
   const originPrefix = opts?.proxyOrigin?.replace(/\/+$/, "") ?? "";
-  const baseQs = `u=${encodeURIComponent(upstream)}&type=vod&transcode=hls${compatQs}${seekQs}${castQs}`;
+  // tcv busts browser-cached segments. Those responses are immutable for a day,
+  // so a rebuilt encode would otherwise replay the old one-frame scraps.
+  const baseQs = `u=${encodeURIComponent(upstream)}&type=vod&transcode=hls&tcv=2${compatQs}${seekQs}${castQs}`;
   const streamlyTags: string[] = [];
   if (opts?.playlistComplete) {
     streamlyTags.push("#EXT-X-PLAYLIST-TYPE:VOD");
