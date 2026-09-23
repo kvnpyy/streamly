@@ -32,31 +32,27 @@ export function maxInProgressPlaylistSegments(segmentSec: number): number {
 }
 
 /**
- * Hide the freshest N segments while ffmpeg is still writing. Clients that race the
- * encode edge get 503/404 holes; hls.js then jumps buffer holes and freezes near the
- * tip (especially late in long titles when encode slows). Holdback keeps the
- * published playlist behind disk — 4 segs ≈ 16s at 4s/seg.
+ * Hide only the newest flushed segment. It can still be opening when the
+ * playlist is built. Hiding more than that freezes the published playlist at
+ * a few segments while playback catches up, so every later segment arrives
+ * as a split-second pause (one GOP, often 5–10s on copied H.264).
  */
-export const IN_PROGRESS_ENCODE_EDGE_HOLDBACK = 4;
+export const IN_PROGRESS_ENCODE_EDGE_HOLDBACK = 1;
 
 /**
- * Always leave at least this many segments in an in-progress playlist so the
- * player can start with a real buffer. Combined with holdback, 4 disk segs
- * publish 3 — enough to play without sitting on the encode tip.
+ * Prefer a few segments in the first playlist. Playback still starts from
+ * whatever is published; holdback must not un-publish them to "make room".
  */
 export const MIN_PUBLISHED_IN_PROGRESS_SEGMENTS = 3;
 
 /**
- * How many trailing segments to hide while ffmpeg is still writing.
- * Always keep {@link MIN_PUBLISHED_IN_PROGRESS_SEGMENTS} visible so startup
- * is not a single 2–4s fragment; apply full holdback once disk is ahead.
+ * Trailing segments to omit from an in-progress playlist.
+ * One, once anything is on disk. A growing holdback removes segments the
+ * player was about to buffer.
  */
 export function encodeEdgeHoldbackCount(segmentCount: number): number {
-  if (segmentCount <= MIN_PUBLISHED_IN_PROGRESS_SEGMENTS) return 0;
-  return Math.min(
-    IN_PROGRESS_ENCODE_EDGE_HOLDBACK,
-    segmentCount - MIN_PUBLISHED_IN_PROGRESS_SEGMENTS
-  );
+  if (segmentCount <= 1) return 0;
+  return IN_PROGRESS_ENCODE_EDGE_HOLDBACK;
 }
 
 export function sumExtinfDurationSec(manifestText: string): number {

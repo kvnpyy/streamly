@@ -92,7 +92,7 @@ describe("rewriteTranscodeManifest", () => {
     expect(done).toContain("seg_00007.ts");
   });
 
-  it("hides the encode tip before six segments exist so startup is not a 2s stall loop", () => {
+  it("keeps publishing earlier segments as the encode grows", () => {
     const existing = new Set(
       Array.from({ length: 5 }, (_, i) => `seg_${String(i).padStart(5, "0")}.ts`)
     );
@@ -101,19 +101,21 @@ describe("rewriteTranscodeManifest", () => {
       segs.push("#EXTINF:4,", `seg_${String(i).padStart(5, "0")}.ts`);
     }
     const growing = prepareManifestForPlayback(segs.join("\n"), false, existing);
-    expect(countManifestSegments(growing)).toBe(MIN_PUBLISHED_IN_PROGRESS_SEGMENTS);
+    expect(countManifestSegments(growing)).toBe(5 - IN_PROGRESS_ENCODE_EDGE_HOLDBACK);
+    expect(countManifestSegments(growing)).toBeGreaterThanOrEqual(
+      MIN_PUBLISHED_IN_PROGRESS_SEGMENTS
+    );
     expect(growing).toContain("seg_00000.ts");
-    expect(growing).toContain("seg_00002.ts");
+    expect(growing).toContain("seg_00003.ts");
     expect(growing).not.toContain("seg_00004.ts");
   });
 
-  it("encodeEdgeHoldbackCount keeps a startup buffer then applies full holdback", () => {
+  it("encodeEdgeHoldbackCount hides only the newest segment", () => {
     expect(encodeEdgeHoldbackCount(1)).toBe(0);
-    expect(encodeEdgeHoldbackCount(3)).toBe(0);
-    expect(encodeEdgeHoldbackCount(4)).toBe(1);
-    expect(encodeEdgeHoldbackCount(5)).toBe(2);
-    expect(encodeEdgeHoldbackCount(7)).toBe(IN_PROGRESS_ENCODE_EDGE_HOLDBACK);
+    expect(encodeEdgeHoldbackCount(2)).toBe(1);
+    expect(encodeEdgeHoldbackCount(3)).toBe(IN_PROGRESS_ENCODE_EDGE_HOLDBACK);
     expect(encodeEdgeHoldbackCount(8)).toBe(IN_PROGRESS_ENCODE_EDGE_HOLDBACK);
+    expect(encodeEdgeHoldbackCount(40)).toBe(1);
   });
 
   it("stops at the first missing segment in the sequence", () => {
@@ -136,7 +138,8 @@ describe("rewriteTranscodeManifest", () => {
     ]);
     const out = prepareManifestForPlayback(raw, false, existing);
     expect(out).toContain("seg_00006.ts");
-    expect(out).toContain("seg_00008.ts");
+    expect(out).toContain("seg_00007.ts");
+    expect(out).not.toContain("seg_00008.ts");
     expect(out).not.toContain("seg_00010.ts");
   });
 
@@ -184,7 +187,8 @@ describe("rewriteTranscodeManifest", () => {
       "seg_00001.ts",
     ].join("\n");
     const fromStale = prepareManifestForPlayback(stale, false, onDisk);
-    expect(countManifestSegments(fromStale)).toBe(2);
+    expect(countManifestSegments(fromStale)).toBe(1);
+    expect(fromStale).not.toContain("seg_00011.ts");
     const rebuilt = buildManifestFromContiguousDisk(onDisk, new Map(), 4);
     expect(countManifestSegments(rebuilt)).toBe(12);
     expect(rebuilt).toContain("seg_00011.ts");

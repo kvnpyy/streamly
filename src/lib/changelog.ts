@@ -11,6 +11,15 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.13.35",
+    date: "2026-09-22",
+    summary:
+      "VOD episodes keep a buffer instead of pausing at every segment.",
+    highlights: [
+      "Finished transcode segments stay in the playlist. Only the newest one is held back, so playback is not stuck waiting on each 5–10 second piece.",
+    ],
+  },
+  {
     version: "0.13.34",
     date: "2026-09-22",
     summary:

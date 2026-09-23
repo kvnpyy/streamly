@@ -40,13 +40,13 @@ describe("seekTargetForTranscodeBufferHole", () => {
     ).toBeNull();
   });
 
-  it("steps over a short boundary hole once the playhead is stuck on it", () => {
-    const target = seekTargetForTranscodeBufferHole({
-      currentTime: 7.95,
-      ranges,
-    });
-    expect(target).toBeGreaterThan(8.2);
-    expect(target).toBeLessThan(8.3);
+  it("does not seek across a short boundary gap", () => {
+    expect(
+      seekTargetForTranscodeBufferHole({
+        currentTime: 7.95,
+        ranges,
+      })
+    ).toBeNull();
   });
 
   it("bridges a multi-second tip-resume hole only while stuck inside it", () => {

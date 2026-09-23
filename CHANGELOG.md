@@ -23,6 +23,15 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.13.35] — 2026-09-22
+
+VOD episodes keep a buffer instead of pausing at every segment.
+
+### Fixed
+- **VOD hitch** — in-progress playlists were hiding more finished segments as the encode grew, so playback sat on the last published segment and paused for a split second each time the next one appeared (about every 5–10 seconds on copied video). Only the newest segment stays hidden.
+
+---
+
 ## [0.13.34] — 2026-09-22
 
 VOD downloads can no longer fill the VPS by staying exempt from the cache cap, and capacity samples keep recording when the disk is almost full.

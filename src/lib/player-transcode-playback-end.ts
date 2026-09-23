@@ -32,7 +32,7 @@ export function seekTargetForTranscodeBufferHole(opts: {
   const currentTime = opts.currentTime;
   if (!Number.isFinite(currentTime) || currentTime < 0) return null;
   const maxStuckAheadSec = opts.maxStuckAheadSec ?? 0.12;
-  const minHoleSec = opts.minHoleSec ?? 0.08;
+  const minHoleSec = opts.minHoleSec ?? 0.5;
   const maxHoleSec = opts.maxHoleSec ?? 4.5;
   const ranges = [...opts.ranges]
     .filter((r) => r.end > r.start)
