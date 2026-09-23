@@ -11,6 +11,14 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.13.37",
+    date: "2026-09-23",
+    summary: "VOD playback no longer jumps ahead a second or two at each segment.",
+    highlights: [
+      "A brief wait at a segment boundary was seeking the playhead forward. That jump is put back, and automatic nudges stay under a fraction of a second.",
+    ],
+  },
+  {
     version: "0.13.36",
     date: "2026-09-22",
     summary:

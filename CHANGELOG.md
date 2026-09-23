@@ -23,6 +23,15 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.13.37] — 2026-09-23
+
+VOD playback no longer jumps ahead a second or two at each segment.
+
+### Fixed
+- **VOD skip** — a boundary wait was seeking the playhead forward. Those seeks are cancelled, and the player no longer walks the clock forward on its own.
+
+---
+
 ## [0.13.36] — 2026-09-22
 
 Replaying an episode no longer reuses a transcode full of one-frame scraps.

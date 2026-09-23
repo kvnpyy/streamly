@@ -222,8 +222,11 @@ export function buildVodTranscodeHlsJsConfig() {
     manifestLoadingMaxRetry: 28,
     levelLoadingMaxRetry: 28,
     fragLoadingMaxRetry: 24,
-    nudgeOffset: 0.1,
-    nudgeMaxRetry: 20,
+    // A boundary wait used to walk currentTime forward (0.1 + 0.2 + …) until
+    // a second or two of picture was gone. Keep each nudge tiny.
+    nudgeOffset: 0.05,
+    nudgeMaxRetry: 4,
+    nudgeOnVideoHole: false,
     highBufferWatchdogPeriod: 8,
     startPosition: 0,
   };

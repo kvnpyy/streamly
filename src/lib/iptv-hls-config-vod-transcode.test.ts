@@ -15,6 +15,9 @@ describe("buildVodTranscodeHlsJsConfig", () => {
     expect(cfg.maxBufferLength).toBeGreaterThanOrEqual(40);
     expect(cfg.startFragPrefetch).toBe(true);
     expect(cfg.initialLiveManifestSize).toBeGreaterThanOrEqual(3);
+    expect(cfg.nudgeMaxRetry).toBeLessThanOrEqual(4);
+    expect(cfg.nudgeOffset).toBeLessThanOrEqual(0.05);
+    expect(cfg.nudgeOnVideoHole).toBe(false);
     // hls.js throws if count- and duration-based live sync are mixed.
     expect(cfg.liveSyncDuration).toBeUndefined();
     expect(cfg.liveMaxLatencyDuration).toBeUndefined();
