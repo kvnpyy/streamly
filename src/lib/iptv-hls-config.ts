@@ -209,6 +209,9 @@ export function buildVodTranscodeHlsJsConfig() {
     maxFragLookUpTolerance: 0.25,
     stretchShortVideoTrack: true,
     startFragPrefetch: true,
+    /** Normal HLS, not low-latency. LL mode estimates a live edge and pulls the playhead toward it. */
+    lowLatencyMode: false,
+    forceKeyFrameOnDiscontinuity: false,
     liveSyncDurationCount: 4,
     liveMaxLatencyDurationCount: Infinity,
     liveSyncMode: "buffered" as const,
@@ -230,6 +233,25 @@ export function buildVodTranscodeHlsJsConfig() {
     highBufferWatchdogPeriod: 8,
     startPosition: 0,
   };
+}
+
+/**
+ * hls.js seeks forward over any buffer gap it notices at a segment boundary.
+ * That seek is the 1–2s skip. Leaving the playhead where it is keeps the picture
+ * continuous; snapping it back and forth made the skip worse.
+ */
+export function disableVodTranscodeGapSeek(hls: {
+  streamController?: {
+    gapController?: {
+      _trySkipBufferHole?: (...args: unknown[]) => number;
+      _tryNudgeBuffer?: (...args: unknown[]) => number;
+    };
+  };
+}): void {
+  const gap = hls.streamController?.gapController;
+  if (!gap) return;
+  gap._trySkipBufferHole = () => 0;
+  gap._tryNudgeBuffer = () => 0;
 }
 
 /** iPhone/iPad live via hls.js — calmer live-edge sync than default mobile config. */

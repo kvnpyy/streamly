@@ -27,6 +27,7 @@ import {
   buildAppleMobileLiveHlsConfig,
   buildIptvHlsJsConfig,
   buildVodTranscodeHlsJsConfig,
+  disableVodTranscodeGapSeek,
   levelsListKey,
 } from "@/lib/iptv-hls-config";
 import { playbackUrlIsHls } from "@/lib/playback-url";
@@ -445,8 +446,6 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
       return true;
     };
 
-    let undoTranscodeSkip: (() => void) | null = null;
-
     // Native WebKit: VOD + Apple live fallback when MSE/hls.js isn’t available (older iOS, unsupported codecs).
     // Apple mobile **live** + MSE: use hls.js — smoother IPTV experience than native `<video>` alone.
     if (useNativeAppleHls && !appleMobileLiveMse) {
@@ -687,49 +686,14 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
         },
       };
       const hls = new Hls(hlsConfig);
+      if (vodTranscodeHls) {
+        disableVodTranscodeGapSeek(
+          hls as unknown as Parameters<typeof disableVodTranscodeGapSeek>[0]
+        );
+      }
       hlsRef.current = hls;
       hls.loadSource(url);
       hls.attachMedia(video);
-
-      if (vodTranscodeHls) {
-        let playhead = video.currentTime;
-        let ignoreSeek = false;
-        let reverts = 0;
-        let revertWindow = 0;
-        const onTime = () => {
-          const vv = videoRef.current;
-          if (!vv || vv.seeking || ignoreSeek) return;
-          playhead = vv.currentTime;
-        };
-        const onSeeking = () => {
-          if (cancelled || vodScrubbingRef?.current || ignoreSeek) return;
-          const vv = videoRef.current;
-          if (!vv || vv.paused || playhead < 1) return;
-          const delta = vv.currentTime - playhead;
-          if (delta < 0.4 || delta > 2.8) return;
-          const now = performance.now();
-          if (now - revertWindow > 2000) {
-            revertWindow = now;
-            reverts = 0;
-          }
-          if (reverts >= 2) return;
-          reverts += 1;
-          const back = playhead;
-          ignoreSeek = true;
-          try {
-            vv.currentTime = back;
-          } catch {
-            /* noop */
-          }
-          ignoreSeek = false;
-        };
-        video.addEventListener("timeupdate", onTime);
-        video.addEventListener("seeking", onSeeking);
-        undoTranscodeSkip = () => {
-          video.removeEventListener("timeupdate", onTime);
-          video.removeEventListener("seeking", onSeeking);
-        };
-      }
 
       /** Fatal `NETWORK_ERROR` streak — reset whenever data actually flows (Safari otherwise accumulates transient fatals). */
       let consecutiveNetworkErrors = 0;
@@ -1312,7 +1276,6 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
     stallTimer.current = setTimeout(runStallWatchdog, stallMs);
 
     return () => {
-      undoTranscodeSkip?.();
       pauseVideoElement(video);
       cancelled = true;
       probeFetchRef.current?.abort();

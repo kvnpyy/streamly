@@ -11,6 +11,14 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.13.38",
+    date: "2026-09-24",
+    summary: "VOD no longer skips ahead when a segment boundary looks like a gap.",
+    highlights: [
+      "The player was jumping the playhead forward at each segment, and pulling that jump back made it worse. The playhead stays put.",
+    ],
+  },
+  {
     version: "0.13.37",
     date: "2026-09-23",
     summary: "VOD playback no longer jumps ahead a second or two at each segment.",

@@ -23,6 +23,15 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.13.38] — 2026-09-24
+
+VOD no longer skips ahead when a segment boundary looks like a gap.
+
+### Fixed
+- **VOD skip** — the player was seeking forward over each segment boundary, and undoing that seek made the jump worse. It now leaves the playhead where it is.
+
+---
+
 ## [0.13.37] — 2026-09-23
 
 VOD playback no longer jumps ahead a second or two at each segment.

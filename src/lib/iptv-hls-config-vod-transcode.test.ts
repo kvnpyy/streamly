@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { buildVodTranscodeHlsJsConfig } from "@/lib/iptv-hls-config";
+import {
+  buildVodTranscodeHlsJsConfig,
+  disableVodTranscodeGapSeek,
+} from "@/lib/iptv-hls-config";
 
 describe("buildVodTranscodeHlsJsConfig", () => {
   it("buffers behind the encode edge and stretches short video across segment tails", () => {
@@ -18,9 +21,35 @@ describe("buildVodTranscodeHlsJsConfig", () => {
     expect(cfg.nudgeMaxRetry).toBeLessThanOrEqual(4);
     expect(cfg.nudgeOffset).toBeLessThanOrEqual(0.05);
     expect(cfg.nudgeOnVideoHole).toBe(false);
+    expect(cfg.lowLatencyMode).toBe(false);
+    expect(cfg.forceKeyFrameOnDiscontinuity).toBe(false);
     // hls.js throws if count- and duration-based live sync are mixed.
     expect(cfg.liveSyncDuration).toBeUndefined();
     expect(cfg.liveMaxLatencyDuration).toBeUndefined();
+  });
+
+  it("does not let the gap controller seek the playhead forward", () => {
+    let skipped = 0;
+    let nudged = 0;
+    const hls = {
+      streamController: {
+        gapController: {
+          _trySkipBufferHole: () => {
+            skipped += 1;
+            return 5;
+          },
+          _tryNudgeBuffer: () => {
+            nudged += 1;
+            return 2;
+          },
+        },
+      },
+    };
+    disableVodTranscodeGapSeek(hls);
+    expect(hls.streamController.gapController._trySkipBufferHole()).toBe(0);
+    expect(hls.streamController.gapController._tryNudgeBuffer()).toBe(0);
+    expect(skipped).toBe(0);
+    expect(nudged).toBe(0);
   });
 
   it("disables max-latency live snap so scrub-back is not yanked to the tip", () => {
