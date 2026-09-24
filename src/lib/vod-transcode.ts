@@ -8,6 +8,7 @@ import {
   manifestIsTipOnlyTail,
   manifestNeedsContiguityHeal,
   resumeSeekSecForDiskPrefix,
+  shouldRestartFragmentedTranscode,
   hasOrphanSegmentsBeyondPrefix,
   manifestReferencesMissingOrGappedSegments,
   parseExtinfDurationsBySegment,
@@ -198,6 +199,69 @@ function waitForChildExit(
     proc.once("exit", () => done(true));
     proc.once("close", () => done(true));
   });
+}
+
+/** One ffmpeg per episode directory. A second writer deletes init.mp4. */
+async function killStrayFfmpegForDir(dir: string): Promise<void> {
+  const listed = await new Promise<string>((resolve) => {
+    const proc = spawn("ps", ["-ax", "-o", "pid=", "-o", "command="], {
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+    let out = "";
+    proc.stdout?.on("data", (c: Buffer) => {
+      out += c.toString();
+    });
+    proc.on("error", () => resolve(""));
+    proc.on("close", () => resolve(out));
+  });
+  for (const line of listed.split("\n")) {
+    if (!line.includes(dir) || !/\bffmpeg\b/.test(line)) continue;
+    const pid = parseInt(line.trim().split(/\s+/)[0] ?? "", 10);
+    if (!Number.isFinite(pid) || pid <= 0 || pid === process.pid) continue;
+    try {
+      process.kill(pid, "SIGKILL");
+    } catch {
+      /* already gone */
+    }
+  }
+}
+
+async function fragmentedOutputState(dir: string): Promise<{
+  hasInit: boolean;
+  hasFirstSegment: boolean;
+  segmentCount: number;
+}> {
+  const onDisk = await listSegmentFiles(dir);
+  let hasInit = false;
+  try {
+    const st = await fsp.stat(path.join(dir, "init.mp4"));
+    hasInit = st.size > 32;
+  } catch {
+    hasInit = false;
+  }
+  return {
+    hasInit,
+    hasFirstSegment: onDisk.has("seg_00000.m4s") || onDisk.has("seg_00000.ts"),
+    segmentCount: onDisk.size,
+  };
+}
+
+/** Delete a package that advertises the opening but cannot play it. */
+async function discardUnplayableTranscodeOutput(job: TranscodeJob): Promise<void> {
+  await stopJobProc(job);
+  await killStrayFfmpegForDir(job.dir);
+  const names = await fsp.readdir(job.dir).catch(() => [] as string[]);
+  await Promise.all(
+    names
+      .filter(
+        (name) =>
+          name === "index.m3u8" ||
+          name === "init.mp4" ||
+          name === ".ffmpeg.pid" ||
+          /^seg_\d+\.(?:ts|m4s)(?:\.tmp)?$/i.test(name)
+      )
+      .map((name) => fsp.rm(path.join(job.dir, name), { force: true }).catch(() => {}))
+  );
 }
 
 /**
@@ -605,6 +669,19 @@ async function resolveJobMeta(job: TranscodeJob): Promise<JobMeta> {
     maxHeight: transcodeMaxHeight(),
   });
   if (audioStreamCount === 0) {
+    const source = isVodSourceCacheEnabled()
+      ? await getVodSourceStatus(job.upstream)
+      : null;
+    const sourceReady = !source || source.complete || source.bytes > 8_000_000;
+    if (!sourceReady) {
+      return {
+        plan,
+        durationSec: null,
+        startOffsetSec: job.startOffsetSec,
+        audioStreamIndex: null,
+        encodeRev: TRANSCODE_ENCODE_REV,
+      };
+    }
     console.warn(
       `[vod-transcode] no audio streams in upstream (key=${job.key})`
     );
@@ -1182,8 +1259,24 @@ async function resumeTranscodeJob(job: TranscodeJob): Promise<void> {
         });
       }
     }
+    const playlistText = await fsp
+      .readFile(path.join(job.dir, MANIFEST_NAME), "utf8")
+      .catch(() => "");
+    const packaged = await fragmentedOutputState(job.dir);
+    if (
+      shouldRestartFragmentedTranscode({
+        playlistText,
+        ...packaged,
+        ffmpegRunning: false,
+      })
+    ) {
+      await discardUnplayableTranscodeOutput(job);
+      void beginTranscodeJob(job);
+      return;
+    }
     const prefixCount = await ensureTranscodeJobContiguous(job);
     if (prefixCount === 0) {
+      await discardUnplayableTranscodeOutput(job);
       void beginTranscodeJob(job);
       return;
     }
@@ -1263,6 +1356,19 @@ async function ensureEncodingContinues(job: TranscodeJob): Promise<void> {
   }
 
   if (await isPlaylistFullyEncoded(job, raw)) return;
+
+  const packaged = await fragmentedOutputState(job.dir);
+  if (
+    shouldRestartFragmentedTranscode({
+      playlistText: raw,
+      ...packaged,
+      ffmpegRunning: false,
+    })
+  ) {
+    await discardUnplayableTranscodeOutput(job);
+    void beginTranscodeJob(job);
+    return;
+  }
 
   const inflight = resumeInflight.get(job.key);
   if (inflight) {
@@ -1463,6 +1569,7 @@ async function spawnFfmpegLocked(
   if (job.proc && job.proc.exitCode == null) return;
   // Kill orphan writers left after a prior SIGTERM-without-wait.
   await stopJobProc(job);
+  await killStrayFfmpegForDir(job.dir);
   await maybeEvictForSlot(job);
   if (activeTranscodeCount() >= maxConcurrentJobs()) {
     job.state = "queued";
@@ -2300,6 +2407,22 @@ export async function handleVodTranscodeRequest(opts: {
       /* keep prior raw */
     }
     const onDiskAfter = await listSegmentFiles(job.dir);
+    const packagedNow = await fragmentedOutputState(job.dir);
+    if (
+      shouldRestartFragmentedTranscode({
+        playlistText: rawAfterHeal,
+        ...packagedNow,
+        ffmpegRunning: !!(job.proc && job.proc.exitCode == null),
+      })
+    ) {
+      await discardUnplayableTranscodeOutput(job);
+      void beginTranscodeJob(job);
+      return {
+        status: 503,
+        errorText: "First video segment is still being prepared. Retry in a few seconds.",
+        extraHeaders: await vodSourceProgressHeaders(opts.upstream),
+      };
+    }
     // Completeness is disk + duration + source — not fragile in-memory job.state.
     // A finished from-0 encode after deploy hydrate must still serve VOD+ENDLIST
     // so hls.js does not treat the full movie as a live EVENT tip.

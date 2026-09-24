@@ -23,9 +23,57 @@ import {
   trimContiguousSegmentsFromStart,
   manifestNeedsContiguityHeal,
   resumeSeekSecForDiskPrefix,
+  shouldRestartFragmentedTranscode,
   sumExtinfDurationSec,
 } from "./vod-transcode-manifest";
 import { shouldReuseTranscodeJobForSeek } from "./vod-transcode-seek-policy";
+
+describe("shouldRestartFragmentedTranscode", () => {
+  it("restarts when the init segment or the opening segment is missing", () => {
+    expect(
+      shouldRestartFragmentedTranscode({
+        playlistText: '#EXTM3U\n#EXT-X-MAP:URI="init.mp4"\n#EXTINF:4,\nseg_00000.m4s\n',
+        hasInit: false,
+        hasFirstSegment: false,
+        segmentCount: 12,
+        ffmpegRunning: true,
+      })
+    ).toBe(true);
+    expect(
+      shouldRestartFragmentedTranscode({
+        playlistText: '#EXTM3U\n#EXT-X-MAP:URI="init.mp4"\n',
+        hasInit: false,
+        hasFirstSegment: true,
+        segmentCount: 4,
+        ffmpegRunning: false,
+      })
+    ).toBe(true);
+  });
+
+  it("keeps a healthy in-progress fMP4 encode", () => {
+    expect(
+      shouldRestartFragmentedTranscode({
+        playlistText: '#EXTM3U\n#EXT-X-MAP:URI="init.mp4"\n#EXTINF:4,\nseg_00000.m4s\n',
+        hasInit: true,
+        hasFirstSegment: true,
+        segmentCount: 6,
+        ffmpegRunning: true,
+      })
+    ).toBe(false);
+  });
+
+  it("does not wipe an encode that has not written its first file yet", () => {
+    expect(
+      shouldRestartFragmentedTranscode({
+        playlistText: "",
+        hasInit: false,
+        hasFirstSegment: false,
+        segmentCount: 0,
+        ffmpegRunning: true,
+      })
+    ).toBe(false);
+  });
+});
 
 describe("rewriteTranscodeManifest", () => {
   it("rewrites segment lines to proxied transcode URLs", () => {

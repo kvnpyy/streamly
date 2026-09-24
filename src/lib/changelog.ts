@@ -11,6 +11,16 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.13.41",
+    date: "2026-09-24",
+    summary:
+      "A VOD episode that lost its opening segment now starts over instead of failing to load.",
+    highlights: [
+      "Playback waits and rebuilds when the first few seconds of a cached encode are missing.",
+      "Only one encoder runs per episode, so the opening file is not deleted mid-play.",
+    ],
+  },
+  {
     version: "0.13.40",
     date: "2026-09-24",
     summary:

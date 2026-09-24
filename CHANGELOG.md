@@ -23,6 +23,15 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.13.41] — 2026-09-24
+
+A VOD episode that lost its opening segment now starts over instead of failing to load.
+
+### Fixed
+- **VOD load** — if the first few seconds of a cached encode are missing, playback rebuilds that episode from the start. Only one encoder is allowed to write it.
+
+---
+
 ## [0.13.40] — 2026-09-24
 
 The remaining small VOD skip was one video frame repeated at every segment edge.

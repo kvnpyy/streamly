@@ -187,6 +187,28 @@ export function contiguousSegmentCount(
 }
 
 /**
+ * Fragmented MP4 cannot play without init.mp4 plus seg_00000. A resume that
+ * appends onto a playlist advertising that start, when those files are gone,
+ * makes the player fail the opening segment. Start over instead.
+ */
+export function shouldRestartFragmentedTranscode(opts: {
+  playlistText: string;
+  hasInit: boolean;
+  hasFirstSegment: boolean;
+  segmentCount: number;
+  ffmpegRunning: boolean;
+}): boolean {
+  if (opts.ffmpegRunning && opts.segmentCount === 0 && !opts.playlistText.trim()) {
+    return false;
+  }
+  if (opts.segmentCount > 0 && !opts.hasFirstSegment) return true;
+  const needsInit = /#EXT-X-MAP:/i.test(opts.playlistText);
+  if (!needsInit) return false;
+  if (!opts.hasInit && (opts.segmentCount > 0 || !opts.ffmpegRunning)) return true;
+  return false;
+}
+
+/**
  * Resume ffmpeg input offset after a contiguous disk prefix.
  * Empty/corrupt m3u8 must not yield seek=startOffset with start_number=N — that
  * re-encodes from the job start into segment N and freezes the tip (~14 min here).
