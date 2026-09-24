@@ -11,6 +11,15 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.13.39",
+    date: "2026-09-24",
+    summary:
+      "The VOD skip guard now runs on the player object that was actually seeking.",
+    highlights: [
+      "Segment-boundary jumps were still coming from the live gap controller. That is the controller that is now turned off.",
+    ],
+  },
+  {
     version: "0.13.38",
     date: "2026-09-24",
     summary: "VOD no longer skips ahead when a segment boundary looks like a gap.",

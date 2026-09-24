@@ -241,14 +241,12 @@ export function buildVodTranscodeHlsJsConfig() {
  * continuous; snapping it back and forth made the skip worse.
  */
 export function disableVodTranscodeGapSeek(hls: {
-  streamController?: {
-    gapController?: {
-      _trySkipBufferHole?: (...args: unknown[]) => number;
-      _tryNudgeBuffer?: (...args: unknown[]) => number;
-    };
+  gapController?: {
+    _trySkipBufferHole?: (...args: unknown[]) => number;
+    _tryNudgeBuffer?: (...args: unknown[]) => number;
   };
 }): void {
-  const gap = hls.streamController?.gapController;
+  const gap = hls.gapController;
   if (!gap) return;
   gap._trySkipBufferHole = () => 0;
   gap._tryNudgeBuffer = () => 0;

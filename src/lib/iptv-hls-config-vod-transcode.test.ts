@@ -32,22 +32,20 @@ describe("buildVodTranscodeHlsJsConfig", () => {
     let skipped = 0;
     let nudged = 0;
     const hls = {
-      streamController: {
-        gapController: {
-          _trySkipBufferHole: () => {
-            skipped += 1;
-            return 5;
-          },
-          _tryNudgeBuffer: () => {
-            nudged += 1;
-            return 2;
-          },
+      gapController: {
+        _trySkipBufferHole: () => {
+          skipped += 1;
+          return 5;
+        },
+        _tryNudgeBuffer: () => {
+          nudged += 1;
+          return 2;
         },
       },
     };
     disableVodTranscodeGapSeek(hls);
-    expect(hls.streamController.gapController._trySkipBufferHole()).toBe(0);
-    expect(hls.streamController.gapController._tryNudgeBuffer()).toBe(0);
+    expect(hls.gapController._trySkipBufferHole()).toBe(0);
+    expect(hls.gapController._tryNudgeBuffer()).toBe(0);
     expect(skipped).toBe(0);
     expect(nudged).toBe(0);
   });

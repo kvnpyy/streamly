@@ -23,6 +23,15 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.13.39] — 2026-09-24
+
+The VOD skip guard now actually runs. The previous one was attached to the wrong player object, so seeking continued.
+
+### Fixed
+- **VOD skip** — segment-boundary seeks were still coming from the live gap controller. That controller is now the one that is turned off.
+
+---
+
 ## [0.13.38] — 2026-09-24
 
 VOD no longer skips ahead when a segment boundary looks like a gap.
