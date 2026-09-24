@@ -23,6 +23,15 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.13.40] — 2026-09-24
+
+The remaining small VOD skip was one video frame repeated at every segment edge.
+
+### Fixed
+- **VOD hitch** — new encodes are fragmented MP4, which does not overlap the boundary frame. An episode already cached is rebuilt the next time it is played.
+
+---
+
 ## [0.13.39] — 2026-09-24
 
 The VOD skip guard now actually runs. The previous one was attached to the wrong player object, so seeking continued.

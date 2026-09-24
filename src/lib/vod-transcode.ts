@@ -462,11 +462,15 @@ async function probeStreamCodecs(input: string): Promise<ProbedCodecs> {
   });
 }
 
+/** Bump when segment packaging changes. Older caches are discarded on the next play. */
+const TRANSCODE_ENCODE_REV = 3;
+
 type JobMeta = {
   plan: VodTranscodePlan;
   durationSec: number | null;
   startOffsetSec?: number;
   audioStreamIndex?: number | null;
+  encodeRev?: number;
 };
 
 async function probeDurationSec(input: string): Promise<number | null> {
@@ -618,6 +622,7 @@ async function resolveJobMeta(job: TranscodeJob): Promise<JobMeta> {
     durationSec: null,
     startOffsetSec: job.startOffsetSec,
     audioStreamIndex,
+    encodeRev: TRANSCODE_ENCODE_REV,
   };
   await writeJobMeta(job.dir, meta);
 
@@ -956,6 +961,11 @@ function mergeHeaders(
 
 const SEGMENT_CACHE_CONTROL = "public, max-age=86400, immutable";
 
+function transcodeMediaContentType(name: string): string {
+  if (name.endsWith(".m4s") || name.endsWith(".mp4")) return "video/mp4";
+  return "video/mp2t";
+}
+
 async function waitForSegmentFile(
   segPath: string,
   maxWaitMs = 12_000
@@ -1053,7 +1063,7 @@ async function healTranscodeJobContiguity(job: TranscodeJob): Promise<number> {
 
   const lastSeq = prefixCount - 1;
   for (const name of onDisk) {
-    const m = /^seg_(\d+)\.ts$/.exec(name);
+    const m = /^seg_(\d+)\.(?:ts|m4s)$/.exec(name);
     if (!m) continue;
     if (parseInt(m[1]!, 10) > lastSeq) {
       await fsp.rm(path.join(dir, name), { force: true }).catch(() => {});
@@ -1062,7 +1072,7 @@ async function healTranscodeJobContiguity(job: TranscodeJob): Promise<number> {
 
   const healedDisk = new Set(
     [...onDisk].filter((f) => {
-      const m = /^seg_(\d+)\.ts$/.exec(f);
+      const m = /^seg_(\d+)\.(?:ts|m4s)$/.exec(f);
       return m && parseInt(m[1]!, 10) <= lastSeq;
     })
   );
@@ -1197,7 +1207,7 @@ async function resumeTranscodeJob(job: TranscodeJob): Promise<void> {
     if (prefixForSeek > 0) {
       const lastSeg = path.join(
         job.dir,
-        `seg_${String(prefixForSeek - 1).padStart(5, "0")}.ts`
+        `seg_${String(prefixForSeek - 1).padStart(5, "0")}.m4s`
       );
       const lastPts = await probeTsLastVideoPtsSec(lastSeg);
       // Continue just after the last packet so the join is contiguous.
@@ -1495,7 +1505,7 @@ async function spawnFfmpegLocked(
       ? Math.max(0, resume.outputTsOffsetSec ?? seekSec)
       : seekSec;
 
-  const segPattern = path.join(job.dir, "seg_%05d.ts");
+  const segPattern = path.join(job.dir, "seg_%05d.m4s");
   const outManifest = path.join(job.dir, MANIFEST_NAME);
   const args = [
     "-nostdin",
@@ -1586,8 +1596,12 @@ async function spawnFfmpegLocked(
     // freezes mid-film scrub.
     "-hls_flags",
     "independent_segments+temp_file+append_list",
+    // fMP4 does not repeat the boundary frame the way MPEG-TS does. That
+    // one-frame overlap was the remaining slight skip every segment.
     "-hls_segment_type",
-    "mpegts",
+    "fmp4",
+    "-hls_fmp4_init_filename",
+    "init.mp4",
     "-hls_segment_filename",
     segPattern,
   );
@@ -1782,7 +1796,8 @@ async function hydrateTranscodeJobFromDisk(
   if (metaOff !== off) return null;
 
   const manifest = await readManifestIfReady(dir);
-  if (manifest && cachedTranscodeShouldBeRebuilt(manifest)) {
+  const stalePackaging = (cachedMeta.encodeRev ?? 0) !== TRANSCODE_ENCODE_REV;
+  if (stalePackaging || (manifest && cachedTranscodeShouldBeRebuilt(manifest))) {
     await wipeTranscodeJobDir(dir, key);
     return null;
   }
@@ -2174,7 +2189,7 @@ export async function handleVodTranscodeRequest(opts: {
       ? path.basename(opts.media)
       : MANIFEST_NAME;
 
-  if (!SEGMENT_RE.test(media) && media !== MANIFEST_NAME) {
+  if (!SEGMENT_RE.test(media) && media !== MANIFEST_NAME && media !== "init.mp4") {
     return { status: 400, errorText: "Invalid transcode media." };
   }
 
@@ -2385,7 +2400,7 @@ export async function handleVodTranscodeRequest(opts: {
     if (!segmentReady) {
       const diskAfterWait = await listSegmentFiles(job.dir);
       const diskPrefix = contiguousSegmentCount(diskAfterWait);
-      const seqMatch = /^seg_(\d+)\.ts$/.exec(media);
+      const seqMatch = /^seg_(\d+)\.(?:ts|m4s)$/.exec(media);
       const segNum = seqMatch ? parseInt(seqMatch[1]!, 10) : -1;
       const notEncodedYet =
         segNum >= 0 &&
@@ -2407,7 +2422,7 @@ export async function handleVodTranscodeRequest(opts: {
     const st = await fsp.stat(segPath);
     return {
       status: 200,
-      contentType: "video/mp2t",
+      contentType: transcodeMediaContentType(media),
       extraHeaders: {
         "content-length": String(st.size),
         "cache-control": SEGMENT_CACHE_CONTROL,
@@ -2419,7 +2434,7 @@ export async function handleVodTranscodeRequest(opts: {
   return {
     status: 200,
     body: new Uint8Array(data),
-    contentType: "video/mp2t",
+    contentType: transcodeMediaContentType(media),
     extraHeaders: {
       "content-length": String(data.byteLength),
       "cache-control": SEGMENT_CACHE_CONTROL,

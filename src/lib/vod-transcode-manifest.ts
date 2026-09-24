@@ -1,4 +1,5 @@
-export const VOD_TRANSCODE_SEGMENT_RE = /^seg_\d+\.ts$/i;
+export const VOD_TRANSCODE_SEGMENT_RE = /^seg_\d+\.(?:ts|m4s)$/i;
+export const VOD_TRANSCODE_INIT_NAME = "init.mp4";
 
 const DURATION_TAG_RE = /^#EXT-X-STREAMLY-DURATION-SEC:([\d.]+)/im;
 const START_OFFSET_TAG_RE = /^#EXT-X-STREAMLY-START-OFFSET-SEC:([\d.]+)/im;
@@ -117,7 +118,7 @@ export function segmentNameFromPlaylistLine(line: string): string | null {
 }
 
 function segmentSequence(name: string): number | null {
-  const m = name.match(/^seg_(\d+)\.ts$/i);
+  const m = name.match(/^seg_(\d+)\.(?:ts|m4s)$/i);
   if (!m) return null;
   const n = parseInt(m[1]!, 10);
   return Number.isFinite(n) ? n : null;
@@ -225,7 +226,7 @@ export function manifestIsTipOnlyTail(
   manifestText: string,
   onDisk: ReadonlySet<string>
 ): boolean {
-  if (!onDisk.has("seg_00000.ts")) return false;
+  if (!onDisk.has("seg_00000.ts") && !onDisk.has("seg_00000.m4s")) return false;
   let firstSeq: number | null = null;
   let pendingInf = false;
   for (const line of manifestText.split(/\r?\n/)) {
@@ -308,6 +309,7 @@ export function buildManifestFromContiguousDisk(
 ): string {
   const prefix = contiguousSegmentCount(onDisk);
   if (prefix <= 0) return "#EXTM3U\n";
+  const ext = [...onDisk].some((name) => name.endsWith(".m4s")) ? "m4s" : "ts";
   const targetDur = Math.max(2, Math.ceil(defaultSegSec));
   const lines = [
     "#EXTM3U",
@@ -316,8 +318,11 @@ export function buildManifestFromContiguousDisk(
     "#EXT-X-MEDIA-SEQUENCE:0",
     "#EXT-X-INDEPENDENT-SEGMENTS",
   ];
+  if (ext === "m4s") {
+    lines.push(`#EXT-X-MAP:URI="${VOD_TRANSCODE_INIT_NAME}"`);
+  }
   for (let i = 0; i < prefix; i++) {
-    const name = `seg_${String(i).padStart(5, "0")}.ts`;
+    const name = `seg_${String(i).padStart(5, "0")}.${ext}`;
     if (!onDisk.has(name)) break;
     const dur = durationBySegment.get(name) ?? defaultSegSec;
     lines.push(`#EXTINF:${dur.toFixed(6)},`, name);
@@ -521,7 +526,7 @@ export function rewriteTranscodeManifest(
   const originPrefix = opts?.proxyOrigin?.replace(/\/+$/, "") ?? "";
   // tcv busts browser-cached segments. Those responses are immutable for a day,
   // so a rebuilt encode would otherwise replay the old one-frame scraps.
-  const baseQs = `u=${encodeURIComponent(upstream)}&type=vod&transcode=hls&tcv=2${compatQs}${seekQs}${castQs}`;
+  const baseQs = `u=${encodeURIComponent(upstream)}&type=vod&transcode=hls&tcv=3${compatQs}${seekQs}${castQs}`;
   const streamlyTags: string[] = [];
   if (opts?.playlistComplete) {
     streamlyTags.push("#EXT-X-PLAYLIST-TYPE:VOD");
@@ -542,6 +547,13 @@ export function rewriteTranscodeManifest(
     .split(/\r?\n/)
     .map((line) => {
       const trimmed = line.trim();
+      const mapUri = trimmed.match(/^#EXT-X-MAP:URI="([^"]+)"/i);
+      if (mapUri) {
+        const file = mapUri[1]!.split("/").pop() || mapUri[1]!;
+        const rel = `/api/stream?${baseQs}&media=${encodeURIComponent(file)}`;
+        const url = originPrefix ? `${originPrefix}${rel}` : rel;
+        return `#EXT-X-MAP:URI="${url}"`;
+      }
       if (!trimmed || trimmed.startsWith("#")) return line;
       const media = trimmed.split("/").pop() || trimmed;
       if (

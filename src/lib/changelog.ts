@@ -11,6 +11,16 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.13.40",
+    date: "2026-09-24",
+    summary:
+      "The remaining small VOD skip was one video frame repeated at every segment edge.",
+    highlights: [
+      "New encodes use fragmented MP4 so segment edges no longer overlap by a frame.",
+      "An episode already on disk is encoded again the next time you play it.",
+    ],
+  },
+  {
     version: "0.13.39",
     date: "2026-09-24",
     summary:

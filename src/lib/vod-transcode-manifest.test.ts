@@ -43,7 +43,14 @@ describe("rewriteTranscodeManifest", () => {
       true
     );
     expect(out).toContain("transcode=hls");
-    expect(out).toContain("tcv=2");
+    expect(out).toContain("tcv=3");
+    const mapped = rewriteTranscodeManifest(
+      '#EXTM3U\n#EXT-X-MAP:URI="init.mp4"\n#EXTINF:4,\nseg_00000.m4s\n',
+      "http://provider.example/ep.mkv",
+      false
+    );
+    expect(mapped).toContain("media=init.mp4");
+    expect(mapped).toContain("media=seg_00000.m4s");
     expect(out).toContain("compat=mse");
     expect(out).toContain("media=seg_00001.ts");
   });
