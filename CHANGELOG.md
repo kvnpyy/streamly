@@ -23,6 +23,17 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.13.42] — 2026-09-26
+
+Marking an episode watched stays on that season, watched episodes follow your account, and a live channel that keeps freezing is restabilized.
+
+### Fixed
+- **Series seasons** — checking off an episode in a later season no longer jumps the list back to season 1.
+- **Watched episodes** — finished episodes sync with your Streamly account, including titles the provider didn't give a runtime for, and show up on your other devices.
+- **Live TV** — a frozen channel is detected on every device, recovered without jumping the live edge, and after two stuck recoveries copied into a short stable window. Desktop demux runs off the main thread. Stalls are reported to Sentry.
+
+---
+
 ## [0.13.41] — 2026-09-24
 
 A VOD episode that lost its opening segment now starts over instead of failing to load.

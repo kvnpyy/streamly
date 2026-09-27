@@ -23,6 +23,20 @@ export function pickPreferredSeriesEpisode(
   return a;
 }
 
+/**
+ * Season to keep showing after a watch toggle.
+ * Resume progress must not pull the list back to an earlier season.
+ */
+export function lockedSeriesSeason(
+  seasons: readonly string[],
+  manualSeason: string | null,
+  activeSeason: string | null
+): string | null {
+  if (manualSeason != null && seasons.includes(manualSeason)) return manualSeason;
+  if (activeSeason != null && seasons.includes(activeSeason)) return activeSeason;
+  return seasons[0] ?? null;
+}
+
 /** Sort episodes within a season by `episode_num`. */
 export function compareSeriesEpisodeNum(
   a: SeriesEpisode,

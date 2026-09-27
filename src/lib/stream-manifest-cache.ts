@@ -11,6 +11,18 @@ const store = new Map<string, Entry>();
 const DEFAULT_TTL_MS = 2000;
 /** Live HLS playlists poll often — slightly longer TTL cuts VPS CPU without stale offline detection. */
 export const LIVE_HLS_MANIFEST_CACHE_TTL_MS = 3_500;
+
+/**
+ * Media playlists with a 1–2s target must not be held. A 3.5s cache outlives
+ * the sliding window and hls.js then retries the dropped segment.
+ * Master playlists stay cached.
+ */
+export function liveHlsManifestCacheTtlMs(playlist: string): number | null {
+  if (/#EXT-X-STREAM-INF:/i.test(playlist)) return LIVE_HLS_MANIFEST_CACHE_TTL_MS;
+  const match = playlist.match(/#EXT-X-TARGETDURATION:\s*(\d+)/i);
+  if (match && Number(match[1]) <= 2) return null;
+  return LIVE_HLS_MANIFEST_CACHE_TTL_MS;
+}
 const MAX_ENTRIES = 800;
 
 export function manifestCacheKey(parts: {

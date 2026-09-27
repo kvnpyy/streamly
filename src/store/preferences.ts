@@ -3,7 +3,10 @@
 import { browsePrefPatchIsNoop } from "@/lib/browse-pref-patch";
 import { dispatchMyListToggle } from "@/lib/my-list";
 import { mergePersistedPrefs } from "@/lib/prefs-persist-merge";
-import { sanitizeRecents } from "@/lib/watch-state-sync";
+import {
+  sanitizeRecents,
+  trimVodResumeSnapshot,
+} from "@/lib/watch-state-sync";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { TvRegion } from "@/lib/geo-continent";
@@ -74,6 +77,7 @@ type PersistedPrefsV8 = Pick<
   | "sidebarCollapsed"
   | "comfortTvBrowsing"
   | "vodResumeSec"
+  | "vodResumeWriteAt"
   | "activeSavedProviderAccountId"
   | "tvRegionFilter"
 >;
@@ -110,7 +114,10 @@ export type PrefsState = {
   /** Replace recently watched (used by cloud sync). */
   setRecents: (recents: RecentItem[]) => void;
   /** Replace VOD resume map (used by cloud sync). */
-  setVodResumeSec: (vodResumeSec: Record<string, number>) => void;
+  setVodResumeSec: (
+    vodResumeSec: Record<string, number>,
+    vodResumeWriteAt?: Record<string, number>
+  ) => void;
   addRecent: (f: Omit<Favorite, "addedAt">) => void;
   clearRecents: () => void;
   removeRecent: (kind: FavoriteKind, id: number) => void;
@@ -118,6 +125,8 @@ export type PrefsState = {
   resetAllPrefs: () => void;
   /** VOD resume positions (seconds). Key: `${accountKey}|movie|${streamId}` or `|series|…`. */
   vodResumeSec: Record<string, number>;
+  /** Epoch ms of the last resume write or explicit clear, keyed like `vodResumeSec`. */
+  vodResumeWriteAt: Record<string, number>;
   saveVodResume: (storageKey: string, seconds: number) => void;
   getVodResume: (storageKey: string) => number | undefined;
   clearVodResume: (storageKey: string) => void;
@@ -193,7 +202,11 @@ export const usePrefs = create<PrefsState>()(
         !!get().favorites.find((x) => x.kind === kind && x.id === id),
       setFavorites: (favorites) => set({ favorites }),
       setRecents: (recents) => set({ recents: sanitizeRecents(recents) }),
-      setVodResumeSec: (vodResumeSec) => set({ vodResumeSec }),
+      setVodResumeSec: (vodResumeSec, vodResumeWriteAt) =>
+        set((state) => ({
+          vodResumeSec,
+          vodResumeWriteAt: vodResumeWriteAt ?? state.vodResumeWriteAt,
+        })),
       addRecent: (f) => {
         const filtered = get().recents.filter(
           (x) => !(x.kind === f.kind && x.id === f.id)
@@ -205,7 +218,8 @@ export const usePrefs = create<PrefsState>()(
           ].slice(0, 50),
         });
       },
-      clearRecents: () => set({ recents: [], vodResumeSec: {} }),
+      clearRecents: () =>
+        set({ recents: [], vodResumeSec: {}, vodResumeWriteAt: {} }),
       removeRecent: (kind, id) =>
         set({
           recents: get().recents.filter(
@@ -213,25 +227,37 @@ export const usePrefs = create<PrefsState>()(
           ),
         }),
       vodResumeSec: {},
+      vodResumeWriteAt: {},
       saveVodResume: (storageKey, seconds) => {
         if (!storageKey || !Number.isFinite(seconds) || seconds < 12) return;
+        const now = Date.now();
         set((state) => {
-          const next = { ...state.vodResumeSec, [storageKey]: seconds };
-          const keys = Object.keys(next);
-          if (keys.length <= 220) return { vodResumeSec: next };
-          const drop = keys.length - 200;
-          for (let i = 0; i < drop; i++) delete next[keys[i]!];
-          return { vodResumeSec: next };
+          const trimmed = trimVodResumeSnapshot({
+            sec: { ...state.vodResumeSec, [storageKey]: seconds },
+            writeAt: { ...state.vodResumeWriteAt, [storageKey]: now },
+          });
+          return {
+            vodResumeSec: trimmed.sec,
+            vodResumeWriteAt: trimmed.writeAt,
+          };
         });
       },
       getVodResume: (storageKey) =>
         storageKey ? get().vodResumeSec[storageKey] : undefined,
       clearVodResume: (storageKey) => {
         if (!storageKey) return;
+        const now = Date.now();
         set((state) => {
-          const rest = { ...state.vodResumeSec };
-          delete rest[storageKey];
-          return { vodResumeSec: rest };
+          const sec = { ...state.vodResumeSec };
+          delete sec[storageKey];
+          const trimmed = trimVodResumeSnapshot({
+            sec,
+            writeAt: { ...state.vodResumeWriteAt, [storageKey]: now },
+          });
+          return {
+            vodResumeSec: trimmed.sec,
+            vodResumeWriteAt: trimmed.writeAt,
+          };
         });
       },
       resetAllPrefs: () =>
@@ -245,6 +271,7 @@ export const usePrefs = create<PrefsState>()(
           sidebarCollapsed: false,
           comfortTvBrowsing: false,
           vodResumeSec: {},
+          vodResumeWriteAt: {},
           activeSavedProviderAccountId: null,
         }),
       sidebarCollapsed: false,
@@ -269,6 +296,7 @@ export const usePrefs = create<PrefsState>()(
         sidebarCollapsed: s.sidebarCollapsed,
         comfortTvBrowsing: s.comfortTvBrowsing,
         vodResumeSec: s.vodResumeSec,
+        vodResumeWriteAt: s.vodResumeWriteAt,
         activeSavedProviderAccountId: s.activeSavedProviderAccountId,
         tvRegionFilter: s.tvRegionFilter,
       }),
@@ -300,6 +328,10 @@ export const usePrefs = create<PrefsState>()(
           vodResumeSec:
             p.vodResumeSec && typeof p.vodResumeSec === "object"
               ? p.vodResumeSec
+              : {},
+          vodResumeWriteAt:
+            p.vodResumeWriteAt && typeof p.vodResumeWriteAt === "object"
+              ? p.vodResumeWriteAt
               : {},
           activeSavedProviderAccountId:
             typeof p.activeSavedProviderAccountId === "string"

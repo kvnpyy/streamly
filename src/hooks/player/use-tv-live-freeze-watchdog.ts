@@ -7,60 +7,97 @@ import {
   bufferAheadAtPlayhead,
   initialTvLiveFreezeWatchState,
   sampleTvLiveFreezeWatch,
+  shouldSwitchLiveToRemux,
+  stuckRecoveryCountsTowardRemux,
+  type LiveFreezePolicy,
 } from "@/lib/live-tv-freeze-recovery";
-import { playbackBreadcrumb } from "@/lib/playback-telemetry";
+import { noteLiveSessionStall } from "@/lib/playback-telemetry";
 import { isTvOrSilkUserAgent } from "@/lib/tv-user-agent";
 
-const TV_LIVE_FREEZE_TICK_MS = 1_000;
+const LIVE_FREEZE_TICK_MS = 1_000;
 
 export type UseTvLiveFreezeWatchdogParams = {
   open: boolean;
   isLive: boolean;
+  /** Changing channel resets the stuck-recovery count. */
+  channelId: string | null;
   videoRef: RefObject<HTMLVideoElement | null>;
   hlsRef: RefObject<InstanceType<typeof Hls> | null>;
+  remuxActive: boolean;
+  remuxGaveUpRef: RefObject<boolean>;
   /** Same teardown + rebuild as flipping the channel. */
   onReinit: () => void;
+  /** After two stuck recoveries, switch this channel onto the copy-remux window. */
+  onRemuxBudget: () => void;
 };
 
 /**
- * TV live often wedges the MSE decoder so `timeupdate` stops. Poll the playhead
- * and escalate play → recoverMediaError → startLoad() → full pipeline rebuild
- * (what users already do by flipping away and back).
+ * Poll the playhead on every live client. Tizen stops firing `timeupdate`
+ * when MSE wedges; desktop Chromium does the same. TV escalates
+ * play → recoverMediaError → startLoad → rebuild. Desktop and phones
+ * start with startLoad() at the playhead, and only seek or rebuild on a
+ * decoder stall (buffer still ahead).
  */
 export function useTvLiveFreezeWatchdog(p: UseTvLiveFreezeWatchdogParams) {
-  const { open, isLive, videoRef, hlsRef, onReinit } = p;
+  const {
+    open,
+    isLive,
+    channelId,
+    videoRef,
+    hlsRef,
+    remuxActive,
+    remuxGaveUpRef,
+    onReinit,
+    onRemuxBudget,
+  } = p;
 
   useEffect(() => {
     if (!open || !isLive) return;
-    if (typeof navigator === "undefined" || !isTvOrSilkUserAgent()) return;
 
+    const policy: LiveFreezePolicy = isTvOrSilkUserAgent() ? "tv" : "gentle";
     let state = initialTvLiveFreezeWatchState();
+    let stuckRecoveries = 0;
     const id = window.setInterval(() => {
       const video = videoRef.current;
       if (!video) return;
-      const { state: next, action } = sampleTvLiveFreezeWatch(state, {
-        nowMs: performance.now(),
-        currentTime: video.currentTime,
-        paused: video.paused,
-        hasError: Boolean(video.error),
-        readyState: video.readyState,
-        bufferAheadSec: bufferAheadAtPlayhead(
-          video.buffered,
-          video.currentTime
-        ),
-        fullscreen: Boolean(document.fullscreenElement),
-      });
+      const bufferAheadSec = bufferAheadAtPlayhead(
+        video.buffered,
+        video.currentTime
+      );
+      const { state: next, action } = sampleTvLiveFreezeWatch(
+        state,
+        {
+          nowMs: performance.now(),
+          currentTime: video.currentTime,
+          paused: video.paused,
+          hasError: Boolean(video.error),
+          readyState: video.readyState,
+          bufferAheadSec,
+          fullscreen: Boolean(document.fullscreenElement),
+        },
+        policy
+      );
       state = next;
       if (action === "none") return;
-      playbackBreadcrumb(
-        action === "play"
-          ? "tv_live_freeze_play"
-          : action === "media"
-            ? "tv_live_freeze_media"
-            : action === "reinit"
-              ? "tv_live_freeze_reinit"
-              : "tv_live_freeze_reload"
-      );
+      let switching = false;
+      if (stuckRecoveryCountsTowardRemux(action)) {
+        stuckRecoveries += 1;
+        switching = shouldSwitchLiveToRemux({
+          stuckRecoveries,
+          remuxActive,
+          gaveUp: remuxGaveUpRef.current,
+        });
+      }
+      noteLiveSessionStall({
+        hlsErrorDetail: "playhead_freeze",
+        bufferAheadSec,
+        recoveryAction: switching ? "remux" : action,
+        playheadStuck: true,
+      });
+      if (switching) {
+        onRemuxBudget();
+        return;
+      }
       if (action === "reinit") {
         onReinit();
         state = {
@@ -71,8 +108,18 @@ export function useTvLiveFreezeWatchdog(p: UseTvLiveFreezeWatchdogParams) {
         return;
       }
       applyTvLiveFreezeAction(action, hlsRef.current, video);
-    }, TV_LIVE_FREEZE_TICK_MS);
+    }, LIVE_FREEZE_TICK_MS);
 
     return () => window.clearInterval(id);
-  }, [open, isLive, videoRef, hlsRef, onReinit]);
+  }, [
+    open,
+    isLive,
+    channelId,
+    videoRef,
+    hlsRef,
+    remuxActive,
+    remuxGaveUpRef,
+    onReinit,
+    onRemuxBudget,
+  ]);
 }

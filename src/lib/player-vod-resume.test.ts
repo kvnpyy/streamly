@@ -95,6 +95,16 @@ describe("vod completion", () => {
     expect(vodResumeCompletedSec(3600)).toBe(3312);
   });
 
+  it("treats a no-runtime mark-watched sentinel as completed", () => {
+    expect(isVodResumeCompleted(1_000_000, 0)).toBe(true);
+    expect(shouldSkipVodResumeSeek(1_000_000, 0)).toBe(true);
+  });
+
+  it("treats the legacy 24h clamped sentinel as completed when runtime is missing", () => {
+    expect(isVodResumeCompleted(86400, 0)).toBe(true);
+    expect(isVodResumeCompleted(1200, 0)).toBe(false);
+  });
+
   it("decideVodResumePersist saves completion on ended", () => {
     expect(decideVodResumePersist(3600, 3600)).toEqual({
       type: "save",

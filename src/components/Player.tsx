@@ -15,7 +15,11 @@ import {
   buildCastMediaDescriptor,
   buildTvSafeStreamCopyUrl,
 } from "@/lib/cast-media-url";
-import { extractStreamProxyUpstream } from "@/lib/stream-url";
+import {
+  extractStreamProxyUpstream,
+  withLiveCopyRemux,
+  withLiveHlsCompatMse,
+} from "@/lib/stream-url";
 import {
   appendVodTranscodeHls,
   buildInitialVodPlaybackUrl,
@@ -95,8 +99,11 @@ import {
   isPictureInPictureSupported,
   toggleVideoPictureInPicture,
 } from "@/lib/picture-in-picture";
-import { playbackBreadcrumb } from "@/lib/playback-telemetry";
-import { withLiveHlsCompatMse } from "@/lib/stream-url";
+import {
+  beginLivePlaybackSession,
+  endLivePlaybackSession,
+  playbackBreadcrumb,
+} from "@/lib/playback-telemetry";
 import { detachVideoElement, resetVideoElement, safeVideoPlay, voidSafeVideoPlay } from "@/lib/video-play";
 import { pauseVideoElement } from "@/lib/player-teardown";
 import { isAmazonSilkUserAgent, isTvOrSilkUserAgent } from "@/lib/tv-user-agent";
@@ -361,6 +368,19 @@ export function PlayerOverlay() {
   const [vodPlaybackOverride, setVodPlaybackOverride] = useState<string | null>(
     null
   );
+  /**
+   * Copy-remux URL keyed by channel so a channel change drops it without
+   * an effect setState.
+   */
+  const [remuxForChannel, setRemuxForChannel] = useState<{
+    key: string;
+    url: string;
+  } | null>(null);
+  const liveRemuxGaveUpRef = useRef(false);
+  const liveChannelKey =
+    current?.kind === "live" ? String(current.id) : "";
+  const liveRemuxUrl =
+    remuxForChannel?.key === liveChannelKey ? remuxForChannel.url : null;
   const [vodTranscodeBoost, setVodTranscodeBoost] = useState(false);
   const [videoHasFrame, setVideoHasFrame] = useState(false);
   const [vodPrepStartedAt, setVodPrepStartedAt] = useState<number | null>(null);
@@ -368,6 +388,12 @@ export function PlayerOverlay() {
   const [vodSeekInFlight, setVodSeekInFlight] = useState(false);
   const [vodSeekTargetSec, setVodSeekTargetSec] = useState<number | null>(null);
   const [playbackRetryKey, setPlaybackRetryKey] = useState(0);
+  const failLiveRemux = useCallback(() => {
+    liveRemuxGaveUpRef.current = true;
+    setRemuxForChannel(null);
+    setLoading(true);
+    setPlaybackRetryKey((k) => k + 1);
+  }, [setLoading, setPlaybackRetryKey]);
   const vodTriedTranscodeRef = useRef(false);
   const vodPrepKickRef = useRef<AbortController | null>(null);
   const vodSeekPrepAbortRef = useRef<AbortController | null>(null);
@@ -1030,6 +1056,8 @@ export function PlayerOverlay() {
     isLive,
     creds,
     vodPlaybackUrl,
+    liveRemuxUrl,
+    onLiveRemuxFailed: failLiveRemux,
     playbackRetryKey,
     chromiumDesktopClient,
     tvBrowser,
@@ -1252,12 +1280,39 @@ export function PlayerOverlay() {
     applyVodDurationHint,
   });
 
+  useEffect(() => {
+    liveRemuxGaveUpRef.current = false;
+  }, [liveChannelKey]);
+
+  useEffect(() => {
+    if (!open || current?.kind !== "live") return;
+    beginLivePlaybackSession();
+    return () => endLivePlaybackSession();
+  }, [open, current?.kind, current?.id]);
+
+  const requestLiveRemux = useCallback(() => {
+    if (liveRemuxGaveUpRef.current) return;
+    if (!current || current.kind !== "live") return;
+    const next = withLiveCopyRemux(withLiveHlsCompatMse(current.url, true));
+    if (!next) return;
+    const key = String(current.id);
+    setRemuxForChannel((prev) =>
+      prev?.key === key && prev.url === next ? prev : { key, url: next }
+    );
+    setLoading(true);
+    setPlaybackRetryKey((k) => k + 1);
+  }, [current, setLoading, setPlaybackRetryKey]);
+
   useTvLiveFreezeWatchdog({
     open,
     isLive,
+    channelId: liveChannelKey || null,
     videoRef,
     hlsRef,
+    remuxActive: liveRemuxUrl != null,
+    remuxGaveUpRef: liveRemuxGaveUpRef,
     onReinit: wakeReinitPlayback,
+    onRemuxBudget: requestLiveRemux,
   });
 
   usePlayerSidecarSubtitles({ open, current, creds, videoRef });

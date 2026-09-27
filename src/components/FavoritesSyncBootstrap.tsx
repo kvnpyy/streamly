@@ -7,9 +7,10 @@ import {
 } from "@/lib/prefs-persist-api";
 import {
   mergeRecents,
-  mergeVodResumeSec,
+  mergeVodResumeSnapshots,
   sanitizeRecents,
-  sanitizeVodResumeSec,
+  vodResumeSnapshotsEqual,
+  type VodResumeSnapshot,
 } from "@/lib/watch-state-sync";
 import { useAuth } from "@/store/auth";
 import {
@@ -91,7 +92,7 @@ async function pushFavorites(
 
 type RemoteWatchState = {
   recents: RecentItem[];
-  vodResumeSec: Record<string, number>;
+  resume: VodResumeSnapshot;
 };
 
 async function fetchRemoteWatchState(
@@ -109,13 +110,20 @@ async function fetchRemoteWatchState(
     const data = (await res.json().catch(() => ({}))) as {
       recents?: RecentItem[];
       vodResumeSec?: Record<string, number>;
+      vodResumeWriteAt?: Record<string, number>;
     };
     return {
       recents: Array.isArray(data.recents) ? data.recents : [],
-      vodResumeSec:
-        data.vodResumeSec && typeof data.vodResumeSec === "object"
-          ? data.vodResumeSec
-          : {},
+      resume: {
+        sec:
+          data.vodResumeSec && typeof data.vodResumeSec === "object"
+            ? data.vodResumeSec
+            : {},
+        writeAt:
+          data.vodResumeWriteAt && typeof data.vodResumeWriteAt === "object"
+            ? data.vodResumeWriteAt
+            : {},
+      },
     };
   } catch {
     return null;
@@ -125,7 +133,7 @@ async function fetchRemoteWatchState(
 async function pushWatchState(
   accountKey: string,
   recents: RecentItem[],
-  vodResumeSec: Record<string, number>,
+  resume: VodResumeSnapshot,
   opts?: { onStaleSession?: () => void }
 ): Promise<boolean> {
   try {
@@ -133,7 +141,12 @@ async function pushWatchState(
       method: "PUT",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ accountKey, recents, vodResumeSec }),
+      body: JSON.stringify({
+        accountKey,
+        recents,
+        vodResumeSec: resume.sec,
+        vodResumeWriteAt: resume.writeAt,
+      }),
     });
     if (res.status === 409) {
       opts?.onStaleSession?.();
@@ -234,22 +247,28 @@ export function FavoritesSyncBootstrap({ children }: { children: ReactNode }) {
 
       if (remoteWatch !== null) {
         const localRecents = usePrefs.getState().recents;
-        const localResume = usePrefs.getState().vodResumeSec;
+        const localResume: VodResumeSnapshot = {
+          sec: usePrefs.getState().vodResumeSec,
+          writeAt: usePrefs.getState().vodResumeWriteAt,
+        };
         const mergedRecents = sanitizeRecents(
           mergeRecents(localRecents, remoteWatch.recents)
         );
-        const mergedResume = sanitizeVodResumeSec(
-          mergeVodResumeSec(localResume, remoteWatch.vodResumeSec)
+        const mergedResume = mergeVodResumeSnapshots(
+          localResume,
+          remoteWatch.resume
         );
         if (cancelled || activePullKeyRef.current !== key) return;
         skipNextWatchPushRef.current = true;
         usePrefs.getState().setRecents(mergedRecents);
-        usePrefs.getState().setVodResumeSec(mergedResume);
+        usePrefs.getState().setVodResumeSec(
+          mergedResume.sec,
+          mergedResume.writeAt
+        );
 
         if (
           mergedRecents.length !== remoteWatch.recents.length ||
-          Object.keys(mergedResume).length !==
-            Object.keys(remoteWatch.vodResumeSec).length
+          !vodResumeSnapshotsEqual(mergedResume, remoteWatch.resume)
         ) {
           await pushWatchState(key, mergedRecents, mergedResume, {
             onStaleSession: onStaleCloudSession,
@@ -297,7 +316,8 @@ export function FavoritesSyncBootstrap({ children }: { children: ReactNode }) {
 
       const watchChanged =
         state.recents !== prev.recents ||
-        state.vodResumeSec !== prev.vodResumeSec;
+        state.vodResumeSec !== prev.vodResumeSec ||
+        state.vodResumeWriteAt !== prev.vodResumeWriteAt;
       if (watchChanged) {
         if (skipNextWatchPushRef.current) {
           skipNextWatchPushRef.current = false;
@@ -309,10 +329,14 @@ export function FavoritesSyncBootstrap({ children }: { children: ReactNode }) {
             watchPushTimerRef.current = null;
             if (watchPushingRef.current || cloudSyncBlockedRef.current) return;
             watchPushingRef.current = true;
-            const { recents, vodResumeSec } = usePrefs.getState();
-            void pushWatchState(key, recents, vodResumeSec, {
-              onStaleSession: onStaleCloudSession,
-            }).finally(() => {
+            const { recents, vodResumeSec, vodResumeWriteAt } =
+              usePrefs.getState();
+            void pushWatchState(
+              key,
+              recents,
+              { sec: vodResumeSec, writeAt: vodResumeWriteAt },
+              { onStaleSession: onStaleCloudSession }
+            ).finally(() => {
               watchPushingRef.current = false;
             });
           }, PUSH_DEBOUNCE_MS);

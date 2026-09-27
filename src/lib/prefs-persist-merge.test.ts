@@ -31,6 +31,7 @@ function basePrefs(overrides: Partial<PrefsState> = {}): PrefsState {
     removeRecent: () => {},
     resetAllPrefs: () => {},
     vodResumeSec: {},
+    vodResumeWriteAt: {},
     saveVodResume: () => {},
     getVodResume: () => undefined,
     clearVodResume: () => {},

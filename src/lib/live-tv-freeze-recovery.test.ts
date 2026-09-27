@@ -7,10 +7,14 @@ import {
   TV_LIVE_RECOVERY_COOLDOWN_MS,
   bufferAheadAtPlayhead,
   initialTvLiveFreezeWatchState,
+  isGentleDecoderStall,
+  nextGentleLiveFreezeAction,
   nextTvLiveFreezeAction,
   playheadLooksStuck,
   sampleTvLiveFreezeWatch,
+  shouldSwitchLiveToRemux,
   stepAfterTvLiveFreezeAction,
+  stuckRecoveryCountsTowardRemux,
   tvLiveFullscreenResumeAction,
   type TvLiveFreezeInputs,
 } from "@/lib/live-tv-freeze-recovery";
@@ -220,6 +224,121 @@ describe("sampleTvLiveFreezeWatch", () => {
       bufferAheadSec: 4,
     });
     expect(held.action).toBe("none");
+  });
+});
+
+describe("nextGentleLiveFreezeAction", () => {
+  it("starts a stuck desktop playhead with startLoad at the playhead", () => {
+    expect(nextGentleLiveFreezeAction(base({ recoveryStep: 0 }))).toBe(
+      "reload"
+    );
+  });
+
+  it("keeps empty-buffer starvation on startLoad and never seeks", () => {
+    expect(
+      nextGentleLiveFreezeAction(
+        base({
+          recoveryStep: 2,
+          bufferAheadSec: 0,
+          readyState: 1,
+          waitingMs: 20_000,
+        })
+      )
+    ).toBe("reload");
+  });
+
+  it("uses recoverMediaError only after a gentle kick failed a decoder stall", () => {
+    const decoder = base({
+      stuckMs: 1_000,
+      bufferAheadSec: 3,
+      readyState: 3,
+      waitingMs: 0,
+    });
+    expect(isGentleDecoderStall({
+      playheadStuck: true,
+      bufferAheadSec: 3,
+      readyState: 3,
+    })).toBe(true);
+    expect(nextGentleLiveFreezeAction(decoder)).toBe("reload");
+    expect(
+      nextGentleLiveFreezeAction({ ...decoder, recoveryStep: 1 })
+    ).toBe("media");
+    expect(
+      nextGentleLiveFreezeAction({ ...decoder, recoveryStep: 2 })
+    ).toBe("reinit");
+  });
+
+  it("does not treat a short wait with no buffer as a decoder stall", () => {
+    expect(
+      isGentleDecoderStall({
+        playheadStuck: true,
+        bufferAheadSec: 0.2,
+        readyState: 2,
+      })
+    ).toBe(false);
+  });
+});
+
+describe("sampleTvLiveFreezeWatch gentle policy", () => {
+  it("polls a stuck desktop playhead into startLoad, then media only if buffer remains", () => {
+    let state = initialTvLiveFreezeWatchState();
+    const tick = (nowMs: number, currentTime: number) => {
+      const out = sampleTvLiveFreezeWatch(
+        state,
+        {
+          nowMs,
+          currentTime,
+          paused: false,
+          hasError: false,
+          readyState: 3,
+          bufferAheadSec: 4,
+        },
+        "gentle"
+      );
+      state = out.state;
+      return out.action;
+    };
+
+    expect(tick(0, 12)).toBe("none");
+    expect(tick(1_000, 14)).toBe("none");
+    expect(tick(2_000 + TV_LIVE_FREEZE_STUCK_MS, 14)).toBe("reload");
+    expect(tick(2_000 + TV_LIVE_FREEZE_STUCK_MS + 21_000, 14)).toBe("media");
+    expect(tick(2_000 + TV_LIVE_FREEZE_STUCK_MS + 42_000, 14)).toBe("reinit");
+  });
+});
+
+describe("live remux budget", () => {
+  it("counts stream recoveries and switches after two, once", () => {
+    expect(stuckRecoveryCountsTowardRemux("play")).toBe(false);
+    expect(stuckRecoveryCountsTowardRemux("reload")).toBe(true);
+    expect(
+      shouldSwitchLiveToRemux({
+        stuckRecoveries: 1,
+        remuxActive: false,
+        gaveUp: false,
+      })
+    ).toBe(false);
+    expect(
+      shouldSwitchLiveToRemux({
+        stuckRecoveries: 2,
+        remuxActive: false,
+        gaveUp: false,
+      })
+    ).toBe(true);
+    expect(
+      shouldSwitchLiveToRemux({
+        stuckRecoveries: 3,
+        remuxActive: true,
+        gaveUp: false,
+      })
+    ).toBe(false);
+    expect(
+      shouldSwitchLiveToRemux({
+        stuckRecoveries: 2,
+        remuxActive: false,
+        gaveUp: true,
+      })
+    ).toBe(false);
   });
 });
 

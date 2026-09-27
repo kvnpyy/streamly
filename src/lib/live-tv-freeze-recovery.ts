@@ -127,6 +127,102 @@ export function stepAfterTvLiveFreezeAction(
   return 3;
 }
 
+/** TV keeps its play → media → reload ladder. Everyone else starts gently. */
+export type LiveFreezePolicy = "tv" | "gentle";
+
+/**
+ * Desktop/phone decoder wedge: playhead stuck, data still buffered, element
+ * has current data. Does not require the waiting flag — a wedged MSE decoder
+ * often stays at readyState 3+ with a frozen clock.
+ */
+export function isGentleDecoderStall(input: {
+  playheadStuck: boolean;
+  bufferAheadSec: number;
+  readyState: number;
+}): boolean {
+  return (
+    input.playheadStuck &&
+    input.bufferAheadSec >= TV_LIVE_BUFFER_AHEAD_MIN_SEC &&
+    input.readyState >= 2
+  );
+}
+
+function liveFreezeBlocked(input: TvLiveFreezeInputs): boolean {
+  if (input.hasError) return true;
+  if (input.paused && !input.fullscreen) return true;
+  if (!input.sawProgress && input.currentTime < TV_LIVE_MIN_PLAYHEAD_SEC) {
+    return true;
+  }
+  if (
+    input.lastRecoveryAtMs > 0 &&
+    input.nowMs - input.lastRecoveryAtMs < TV_LIVE_RECOVERY_COOLDOWN_MS
+  ) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Desktop/phone: first kick is always startLoad() at the playhead.
+ * recoverMediaError, then a pipeline rebuild, only if the playhead is stuck
+ * with buffer still ahead (decoder stall) after that kick.
+ * Empty-buffer starvation never climbs into a seek.
+ */
+export function nextGentleLiveFreezeAction(
+  input: TvLiveFreezeInputs
+): TvLiveFreezeAction {
+  if (liveFreezeBlocked(input)) return "none";
+  const stuck = playheadLooksStuck(input.currentTime, input.lastCurrentTime);
+  if (!stuck) return "none";
+  const decoderStall = isGentleDecoderStall({
+    playheadStuck: stuck,
+    bufferAheadSec: input.bufferAheadSec,
+    readyState: input.readyState,
+  });
+  const frozen = decoderStall || input.stuckMs >= TV_LIVE_FREEZE_STUCK_MS;
+  if (!frozen) return "none";
+  if (!decoderStall) return "reload";
+  if (input.recoveryStep <= 0) return "reload";
+  if (input.recoveryStep === 1) return "media";
+  if ((input.reinitCount ?? 0) >= TV_LIVE_MAX_AUTO_REINITS) return "none";
+  return "reinit";
+}
+
+export function stepAfterLiveFreezeAction(
+  action: TvLiveFreezeAction,
+  policy: LiveFreezePolicy,
+  decoderStall: boolean
+): TvLiveFreezeStep {
+  if (policy === "gentle") {
+    if (action === "reload" && decoderStall) return 1;
+    if (action === "media") return 2;
+    if (action === "reinit") return 3;
+    return 0;
+  }
+  return stepAfterTvLiveFreezeAction(action);
+}
+
+/** reload / media / reinit are real recoveries. A bare play() is not. */
+export function stuckRecoveryCountsTowardRemux(
+  action: TvLiveFreezeAction
+): boolean {
+  return action === "reload" || action === "media" || action === "reinit";
+}
+
+export const LIVE_STUCK_RECOVERIES_BEFORE_REMUX = 2;
+
+export function shouldSwitchLiveToRemux(opts: {
+  stuckRecoveries: number;
+  remuxActive: boolean;
+  gaveUp: boolean;
+}): boolean {
+  return (
+    !opts.remuxActive &&
+    !opts.gaveUp &&
+    opts.stuckRecoveries >= LIVE_STUCK_RECOVERIES_BEFORE_REMUX
+  );
+}
+
 export type TvLiveFreezeWatchState = {
   lastCurrentTime: number;
   stuckSinceMs: number;
@@ -165,7 +261,8 @@ export type TvLiveFreezeSample = {
  */
 export function sampleTvLiveFreezeWatch(
   prev: TvLiveFreezeWatchState,
-  sample: TvLiveFreezeSample
+  sample: TvLiveFreezeSample,
+  policy: LiveFreezePolicy = "tv"
 ): { state: TvLiveFreezeWatchState; action: TvLiveFreezeAction } {
   const stuck = playheadLooksStuck(sample.currentTime, prev.lastCurrentTime);
   let stuckSinceMs = prev.stuckSinceMs;
@@ -185,7 +282,7 @@ export function sampleTvLiveFreezeWatch(
     sample.currentTime - prev.lastCurrentTime > TV_LIVE_PLAYHEAD_EPS_SEC;
   const sawProgress = prev.sawProgress || moved;
 
-  const action = nextTvLiveFreezeAction({
+  const freezeInput: TvLiveFreezeInputs = {
     nowMs: sample.nowMs,
     currentTime: sample.currentTime,
     lastCurrentTime: prev.lastCurrentTime,
@@ -200,7 +297,21 @@ export function sampleTvLiveFreezeWatch(
     lastRecoveryAtMs: prev.lastRecoveryAtMs,
     fullscreen: sample.fullscreen,
     reinitCount: prev.reinitCount,
-  });
+  };
+  const action =
+    policy === "gentle"
+      ? nextGentleLiveFreezeAction(freezeInput)
+      : nextTvLiveFreezeAction(freezeInput);
+  const gentleDecoderStall =
+    policy === "gentle" &&
+    isGentleDecoderStall({
+      playheadStuck: playheadLooksStuck(
+        sample.currentTime,
+        prev.lastCurrentTime
+      ),
+      bufferAheadSec: sample.bufferAheadSec,
+      readyState: sample.readyState,
+    });
 
   const recovered = moved && action === "none";
   return {
@@ -215,7 +326,7 @@ export function sampleTvLiveFreezeWatch(
           ? recovered
             ? 0
             : prev.recoveryStep
-          : stepAfterTvLiveFreezeAction(action),
+          : stepAfterLiveFreezeAction(action, policy, gentleDecoderStall),
       lastRecoveryAtMs:
         action === "none" ? prev.lastRecoveryAtMs : sample.nowMs,
       reinitCount: recovered

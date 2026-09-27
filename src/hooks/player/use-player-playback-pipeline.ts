@@ -22,7 +22,11 @@ import {
   stabilizeBrowserFriendlyCodecs,
   tryCapAbrLower,
 } from "@/lib/live-hls-playback";
-import { playbackBreadcrumb } from "@/lib/playback-telemetry";
+import {
+  noteLiveSessionStall,
+  playbackBreadcrumb,
+} from "@/lib/playback-telemetry";
+import { bufferAheadAtPlayhead } from "@/lib/live-tv-freeze-recovery";
 import {
   buildAppleMobileLiveHlsConfig,
   buildIptvHlsJsConfig,
@@ -35,7 +39,10 @@ import { resolveVodPlaybackUrl } from "@/lib/vod-transcode-url";
 import {
   readPreferredPlayerVolume,
 } from "@/lib/player-volume-pref";
-import { withLiveHlsCompatMse } from "@/lib/stream-url";
+import {
+  playbackUrlUsesLiveRemux,
+  withLiveHlsCompatMse,
+} from "@/lib/stream-url";
 import { isAmazonSilkUserAgent, isTvClassUserAgent, isTvOrSilkUserAgent } from "@/lib/tv-user-agent";
 import { humanizePlaybackErrorResponse } from "@/lib/playback-error-message";
 import { isRetryableVodTranscodeHttpStatus } from "@/lib/vod-transcode-http";
@@ -74,6 +81,9 @@ export type UsePlayerPlaybackPipelineParams = {
   isLive: boolean;
   creds: { server: string; username: string; password: string } | null;
   vodPlaybackUrl: string | null;
+  /** Live copy-remux proxy URL after two stuck recoveries. Null uses the provider proxy. */
+  liveRemuxUrl: string | null;
+  onLiveRemuxFailed: () => void;
   playbackRetryKey: number;
   chromiumDesktopClient: boolean;
   tvBrowser: boolean;
@@ -138,6 +148,8 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
     isLive,
     creds,
     vodPlaybackUrl,
+    liveRemuxUrl,
+    onLiveRemuxFailed,
     playbackRetryKey,
     chromiumDesktopClient,
     tvBrowser,
@@ -252,14 +264,14 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
     probeFetchRef.current?.abort();
     probeFetchRef.current = new AbortController();
     const probeSignal = probeFetchRef.current.signal;
-    const url = withLiveHlsCompatMse(
-      resolveVodPlaybackUrl(vodPlaybackUrl, current.url, {
-        containerExt: current.containerExt,
-        compatMse: tvBrowser || silkLikeClient,
-        kindIsLive: isLive,
-      }),
-      isLive
-    );
+    const providerUrl = resolveVodPlaybackUrl(vodPlaybackUrl, current.url, {
+      containerExt: current.containerExt,
+      compatMse: tvBrowser || silkLikeClient,
+      kindIsLive: isLive,
+    });
+    const playbackTarget =
+      isLive && liveRemuxUrl ? liveRemuxUrl : providerUrl;
+    const url = withLiveHlsCompatMse(playbackTarget, isLive);
     const vodTranscodeHls = !isLive && playbackUrlUsesVodTranscode(url);
     if (!timelineHold && vodTranscodeHls) {
       try {
@@ -531,9 +543,27 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
       };
 
       /** Live: keep hls.js for Try again (soft reload). Tear down only for VOD or channel change. */
-      const surfacePlaybackError = (message: string) => {
+      let pendingHlsDetail = "";
+      const surfacePlaybackError = (message: string, hlsDetail?: string) => {
         if (cancelled || recoveryGenAtStart !== livePlaybackRecoveryGenRef.current) {
           return;
+        }
+        if (isLive) {
+          const el = videoRef.current;
+          noteLiveSessionStall({
+            hlsErrorDetail: hlsDetail || pendingHlsDetail || "playback_error",
+            bufferAheadSec: el
+              ? bufferAheadAtPlayhead(el.buffered, el.currentTime)
+              : 0,
+            recoveryAction: playbackUrlUsesLiveRemux(url)
+              ? "remux_failed"
+              : "playback_error",
+            playheadStuck: true,
+          });
+          if (playbackUrlUsesLiveRemux(url)) {
+            onLiveRemuxFailed();
+            return;
+          }
         }
         if (
           isLive &&
@@ -928,6 +958,7 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
       }
 
       hls.on(Hls.Events.ERROR, (_e, data) => {
+        pendingHlsDetail = data.details || pendingHlsDetail;
         if (!data.fatal) {
           // BUFFER_APPEND_ERROR fires in tight loops on bad audio tracks — recover once before fatal MEDIA_ERROR.
           if (data.details === Hls.ErrorDetails.BUFFER_APPEND_ERROR) {
@@ -1270,6 +1301,14 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
           return;
         }
       }
+      if (isLive) {
+        noteLiveSessionStall({
+          hlsErrorDetail: "startup_stall",
+          bufferAheadSec: bufferAheadAtPlayhead(v.buffered, v.currentTime),
+          recoveryAction: "startup_stall",
+          playheadStuck: true,
+        });
+      }
       setStalled(true);
     };
 
@@ -1329,6 +1368,8 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
     isLive,
     creds,
     vodPlaybackUrl,
+    liveRemuxUrl,
+    onLiveRemuxFailed,
     applyVodDurationHint,
     applyVodTranscodeTimelineHints,
     vodTimelineHoldRef,

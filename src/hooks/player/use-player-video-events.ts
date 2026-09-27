@@ -478,40 +478,20 @@ export function usePlayerVideoEvents(p: UsePlayerVideoEventsParams) {
       }
       const usingHlsJs = hlsRef.current != null;
       /**
-       * hls.js desktop: 32s is conservative so we do not fight live sync.
-       * TV freeze recovery is owned by useTvLiveFreezeWatchdog (polls even
-       * when timeupdate stops).
+       * hls.js live (desktop, phone, and TV) is owned by the playhead poll.
+       * timeupdate stops when the decoder wedges, and recoverMediaError from
+       * this handler seeks the sliding window.
        */
-      if (isTvOrSilkUserAgent()) return;
-      const stuckThresholdMs = usingHlsJs
-        ? 32_000
-        : isAppleMobileWebKitDevice()
-          ? 4500
-          : 9000;
+      if (usingHlsJs || isTvOrSilkUserAgent()) return;
+      const stuckThresholdMs = isAppleMobileWebKitDevice() ? 4500 : 9000;
       if (now - liveProgress.stuckSince > stuckThresholdMs) {
         liveProgress.stuckSince = now;
         liveProgress.lastCt = ct;
         nativeStallKicks += 1;
-        if (usingHlsJs) {
-          const hls = hlsRef.current;
-          if (hls) {
-            try {
-              applyGentleLiveHlsRecovery(hls, v);
-            } catch {
-              try {
-                hls.recoverMediaError();
-              } catch {
-                /* noop */
-              }
-              voidSafeVideoPlay(v);
-            }
-          }
-        } else {
-          kickLivePlayback();
-          if (nativeStallKicks >= 8) {
-            nativeStallKicks = 0;
-            reloadNativeLiveSource();
-          }
+        kickLivePlayback();
+        if (nativeStallKicks >= 8) {
+          nativeStallKicks = 0;
+          reloadNativeLiveSource();
         }
       }
     };

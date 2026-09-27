@@ -3,6 +3,8 @@ import {
   appendStreamCompatMse,
   extractStreamProxyUpstream,
   streamProxyTypeIsHls,
+  playbackUrlUsesLiveRemux,
+  withLiveCopyRemux,
   withLiveHlsCompatMse,
 } from "./stream-url";
 
@@ -36,5 +38,19 @@ describe("stream-url", () => {
     ).toBe(upstream);
     expect(extractStreamProxyUpstream("https://cdn.example/1.m3u8")).toBeNull();
     expect(extractStreamProxyUpstream("/api/stream?type=hls")).toBeNull();
+  });
+
+  it("marks a live proxy URL for copy remux without dropping the upstream", () => {
+    const base =
+      "/api/stream?u=https%3A%2F%2Fpanel.example%2Flive.m3u8&type=hls";
+    const remux = withLiveCopyRemux(base);
+    expect(remux).toContain("remux=copy");
+    expect(remux).toContain("type=hls");
+    expect(extractStreamProxyUpstream(remux)).toBe(
+      "https://panel.example/live.m3u8"
+    );
+    expect(playbackUrlUsesLiveRemux(remux!)).toBe(true);
+    expect(playbackUrlUsesLiveRemux(base)).toBe(false);
+    expect(withLiveCopyRemux("https://cdn.example/live.m3u8")).toBeNull();
   });
 });

@@ -153,6 +153,20 @@ describe("continue-watching", () => {
     ).toBe(634);
   });
 
+  it("seriesEpisodeWatchState treats a clamped no-runtime sentinel as completed", () => {
+    const ep = {
+      id: "10",
+      episode_num: "1",
+      title: "Pilot",
+      container_extension: "mp4",
+    };
+    expect(
+      seriesEpisodeWatchState(accountKey, 5, ep, {
+        [`${accountKey}|series|10`]: 86400,
+      }).status
+    ).toBe("completed");
+  });
+
   it("seriesEpisodeWatchState marks near-end resume as completed", () => {
     const ep = {
       id: "10",

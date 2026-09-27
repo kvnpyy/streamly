@@ -1,9 +1,8 @@
 import { mergeFavorites } from "@/lib/favorites-sync";
 import {
   mergeRecents,
-  mergeVodResumeSec,
+  mergeVodResumeSnapshots,
   sanitizeRecents,
-  sanitizeVodResumeSec,
 } from "@/lib/watch-state-sync";
 import type { BrowsePrefs, PrefsState } from "@/store/preferences";
 
@@ -17,6 +16,7 @@ type PersistedPrefsSlice = Pick<
   | "sidebarCollapsed"
   | "comfortTvBrowsing"
   | "vodResumeSec"
+  | "vodResumeWriteAt"
   | "activeSavedProviderAccountId"
   | "tvRegionFilter"
 >;
@@ -45,6 +45,23 @@ export function mergePersistedPrefs(
     mergedBrowse[key] = { ...mergedBrowse[key], ...value };
   }
 
+  const resume = mergeVodResumeSnapshots(
+    {
+      sec: currentState.vodResumeSec,
+      writeAt: currentState.vodResumeWriteAt ?? {},
+    },
+    {
+      sec:
+        p.vodResumeSec && typeof p.vodResumeSec === "object"
+          ? p.vodResumeSec
+          : {},
+      writeAt:
+        p.vodResumeWriteAt && typeof p.vodResumeWriteAt === "object"
+          ? p.vodResumeWriteAt
+          : {},
+    }
+  );
+
   return {
     ...currentState,
     favorites: mergeFavorites(
@@ -57,14 +74,8 @@ export function mergePersistedPrefs(
         Array.isArray(p.recents) ? p.recents : []
       )
     ),
-    vodResumeSec: sanitizeVodResumeSec(
-      mergeVodResumeSec(
-        currentState.vodResumeSec,
-        p.vodResumeSec && typeof p.vodResumeSec === "object"
-          ? p.vodResumeSec
-          : {}
-      )
-    ),
+    vodResumeSec: resume.sec,
+    vodResumeWriteAt: resume.writeAt,
     browseByAccount: mergedBrowse,
     hideAdult:
       typeof p.hideAdult === "boolean" ? p.hideAdult : currentState.hideAdult,

@@ -60,6 +60,40 @@ export function streamProxyTypeIsHls(proxyUrl: string): boolean {
   }
 }
 
+export function playbackUrlUsesLiveRemux(proxyUrl: string): boolean {
+  if (!proxyUrl.includes("/api/stream")) return false;
+  try {
+    const base =
+      typeof window !== "undefined"
+        ? window.location.origin
+        : "https://localhost";
+    return new URL(proxyUrl, base).searchParams.get("remux") === "copy";
+  } catch {
+    return /(?:^|[?&])remux=copy(?:&|$)/.test(proxyUrl);
+  }
+}
+
+/**
+ * Same proxy URL, served from a server-side copy-remux window after the
+ * channel has already failed gentle recovery twice.
+ */
+export function withLiveCopyRemux(proxyUrl: string): string | null {
+  if (!proxyUrl.includes("/api/stream")) return null;
+  try {
+    const base =
+      typeof window !== "undefined"
+        ? window.location.origin
+        : "https://localhost";
+    const u = new URL(proxyUrl, base);
+    if (!u.searchParams.get("u")) return null;
+    u.searchParams.set("type", "hls");
+    u.searchParams.set("remux", "copy");
+    return u.pathname + u.search;
+  } catch {
+    return null;
+  }
+}
+
 /** Live HLS through our proxy — ask the server for browser-friendly variant filtering. */
 export function withLiveHlsCompatMse(proxyUrl: string, isLive: boolean): string {
   if (!isLive || !streamProxyTypeIsHls(proxyUrl)) return proxyUrl;

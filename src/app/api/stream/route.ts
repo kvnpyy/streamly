@@ -6,7 +6,7 @@ import { coerceHttpResponseStatus } from "@/lib/http-response-status";
 import { sanitizeTvMasterPlaylistIfNeeded } from "@/lib/hls-manifest-tv-sanitize";
 import {
   getCachedManifest,
-  LIVE_HLS_MANIFEST_CACHE_TTL_MS,
+  liveHlsManifestCacheTtlMs,
   manifestCacheKey,
   setCachedManifest,
 } from "@/lib/stream-manifest-cache";
@@ -38,6 +38,7 @@ import {
   looksLikeHtmlContentType,
 } from "@/lib/vod-stream-probe-server";
 import { isBrowserDocumentNavigation } from "@/lib/stream-proxy-navigation";
+import { handleLiveCopyRemux } from "@/lib/live-copy-remux";
 import { NextRequest } from "next/server";
 
 export const runtime = "nodejs";
@@ -315,6 +316,31 @@ async function handle(req: NextRequest, head: boolean) {
     );
   }
 
+  if (url.searchParams.get("remux") === "copy" && type === "hls") {
+    const remux = await handleLiveCopyRemux({
+      requestUrl: req.url,
+      upstream: target,
+      media: url.searchParams.get("media"),
+      head,
+    });
+    const remuxBody =
+      remux.body == null || typeof remux.body === "string"
+        ? remux.body
+        : new Blob([new Uint8Array(remux.body)]);
+    return respondShort(
+      new Response(remuxBody, {
+        status: coerceHttpResponseStatus(remux.status),
+        headers: corsHeaders(
+          {
+            "content-type": remux.contentType,
+            ...(remux.extraHeaders ?? {}),
+          },
+          requestId
+        ),
+      })
+    );
+  }
+
   if (
     url.searchParams.get("probe") === "1" &&
     type === "vod" &&
@@ -502,7 +528,7 @@ async function handle(req: NextRequest, head: boolean) {
       forCast: forCastManifest,
     });
     const cached = getCachedManifest(cacheKey);
-    if (cached != null) {
+    if (cached != null && liveHlsManifestCacheTtlMs(cached) != null) {
       responseHeaders.set("content-type", "application/vnd.apple.mpegurl");
       responseHeaders.set("x-stream-manifest-cache", "hit");
       responseHeaders.delete("content-length");
@@ -551,11 +577,10 @@ async function handle(req: NextRequest, head: boolean) {
       forCast: forCastManifest,
       proxyOrigin: forCastManifest ? new URL(req.url).origin : undefined,
     });
-    setCachedManifest(
-      cacheKey,
-      rewritten,
-      type === "hls" ? LIVE_HLS_MANIFEST_CACHE_TTL_MS : undefined
-    );
+    const manifestTtl = liveHlsManifestCacheTtlMs(rewritten);
+    if (manifestTtl != null) {
+      setCachedManifest(cacheKey, rewritten, manifestTtl);
+    }
     responseHeaders.set("content-type", "application/vnd.apple.mpegurl");
     responseHeaders.set("x-stream-manifest-cache", "miss");
     responseHeaders.delete("content-length");

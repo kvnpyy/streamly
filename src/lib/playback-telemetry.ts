@@ -1,4 +1,10 @@
 import * as Sentry from "@sentry/nextjs";
+import {
+  LiveSessionHealthTracker,
+  detectLiveDeviceClass,
+  type LiveSessionEvent,
+  type LiveSessionNote,
+} from "@/lib/live-session-health";
 
 export type PlaybackBreadcrumbEvent =
   | "stall_soft_recover"
@@ -29,4 +35,47 @@ export function playbackBreadcrumb(
   } catch {
     /* noop */
   }
+}
+
+let liveSession: LiveSessionHealthTracker | null = null;
+
+function emitLiveSessionEvent(event: LiveSessionEvent): void {
+  if (!process.env.NEXT_PUBLIC_SENTRY_DSN?.trim()) return;
+  try {
+    Sentry.captureMessage(event.message, {
+      level: event.level,
+      fingerprint: event.fingerprint,
+      tags: event.tags,
+      extra: event.extra,
+    });
+  } catch {
+    /* noop */
+  }
+}
+
+function currentDeviceClass() {
+  if (typeof navigator === "undefined") return "desktop" as const;
+  const narrow =
+    typeof window !== "undefined" &&
+    typeof window.matchMedia === "function" &&
+    window.matchMedia("(max-width: 768px)").matches;
+  return detectLiveDeviceClass(navigator.userAgent || "", narrow);
+}
+
+/** Starts a live viewing. One stall warning, or a 1% healthy sample on end. */
+export function beginLivePlaybackSession(): void {
+  liveSession = new LiveSessionHealthTracker(currentDeviceClass());
+}
+
+/** Explicit stall event. Not an XHR exception, so the fetch ignore list does not drop it. */
+export function noteLiveSessionStall(note: LiveSessionNote): void {
+  const event = liveSession?.noteStall(note);
+  if (event) emitLiveSessionEvent(event);
+}
+
+/** Call when the live channel closes. Healthy sessions are sampled at 1%. */
+export function endLivePlaybackSession(roll = Math.random()): void {
+  const event = liveSession?.finish(roll);
+  liveSession = null;
+  if (event) emitLiveSessionEvent(event);
 }

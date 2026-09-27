@@ -11,6 +11,17 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.13.42",
+    date: "2026-09-26",
+    summary:
+      "Marking an episode watched stays on that season, watched episodes follow your account, and a live channel that keeps freezing is restabilized.",
+    highlights: [
+      "Checking off an episode in a later season no longer jumps the list back to season 1.",
+      "Watched episodes sync with your Streamly account, including titles the provider didn't give a runtime for.",
+      "A frozen live channel is recovered without jumping the live edge, then copied into a short stable window after two stuck recoveries.",
+    ],
+  },
+  {
     version: "0.13.41",
     date: "2026-09-24",
     summary:

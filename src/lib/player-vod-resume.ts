@@ -1,3 +1,7 @@
+import {
+  VOD_RESUME_SEC_MAX,
+  VOD_RESUME_WATCHED_SENTINEL,
+} from "@/lib/watch-state-sync";
 import type { PlayerSource } from "@/store/player";
 import { usePrefs } from "@/store/preferences";
 
@@ -65,7 +69,7 @@ export const VOD_RESUME_FINALE_MARGIN_SEC = 45;
  * Manual mark-watched when Xtream did not send a usable runtime.
  * Larger than any real title so the player must skip resume, not seek here.
  */
-export const MANUAL_WATCHED_RESUME_SEC = 1_000_000;
+export const MANUAL_WATCHED_RESUME_SEC = VOD_RESUME_WATCHED_SENTINEL;
 
 /**
  * Stored resume that counts as finished. Must stay in lockstep with
@@ -80,7 +84,9 @@ export function isVodResumeCompleted(
   if (!Number.isFinite(resumeSec) || resumeSec <= 0) return false;
   if (resumeSec >= MANUAL_WATCHED_RESUME_SEC) return true;
   const completed = vodResumeCompletedSec(durationSec);
-  return completed > 0 && resumeSec >= completed;
+  if (completed > 0 && resumeSec >= completed) return true;
+  // Older account sync clamped the no-runtime sentinel to 24h.
+  return completed <= 0 && resumeSec >= VOD_RESUME_SEC_MAX;
 }
 
 /** Stored resume position that marks a title as fully watched. */

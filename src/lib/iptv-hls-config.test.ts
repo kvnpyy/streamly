@@ -40,6 +40,14 @@ describe("buildIptvHlsJsConfig live IPTV smoothness", () => {
     expect(cfg.maxLiveSyncPlaybackRate).toBe(1);
     expect(cfg.liveSyncOnStallIncrease).toBe(0);
     expect(cfg.capLevelToPlayerSize).toBe(false);
+    expect(cfg.enableWorker).toBe(false);
+    const tizenChromium = buildIptvHlsJsConfig({
+      isLive: true,
+      mobileLike: true,
+      livingRoomLike: true,
+      chromiumDesktop: true,
+    });
+    expect(tizenChromium.enableWorker).toBe(false);
   });
 
   it("desktop live does not cap quality to the player box", () => {
@@ -48,6 +56,7 @@ describe("buildIptvHlsJsConfig live IPTV smoothness", () => {
       mobileLike: false,
       chromiumDesktop: true,
     });
+    expect(desktop.enableWorker).toBe(true);
     expect(desktop.capLevelToPlayerSize).toBe(false);
     expect(desktop.enableCEA708Captions).toBe(true);
     expect(desktop.abrBandWidthUpFactor).toBeGreaterThanOrEqual(0.4);

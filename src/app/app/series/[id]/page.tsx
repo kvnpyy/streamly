@@ -22,7 +22,7 @@ import { MY_LIST_LABEL } from "@/lib/my-list";
 import { buildImageProxy, buildSeriesEpisodePlayUrl, xtream } from "@/lib/xtream";
 import { resolveSeriesEpisodePlayUrl } from "@/lib/vod-format-probe";
 import { inferVodContainerExtFromProxyUrl, warmVodTranscodePlay } from "@/lib/vod-transcode-url";
-import { sortSeriesEpisodes } from "@/lib/series-episodes";
+import { lockedSeriesSeason, sortSeriesEpisodes } from "@/lib/series-episodes";
 import type { SeriesEpisode } from "@/lib/xtream-types";
 import { useAuth } from "@/store/auth";
 import { usePlayer, type PlayerPlaylist } from "@/store/player";
@@ -269,6 +269,8 @@ export default function SeriesDetail() {
   const toggleEpisodeWatched = useCallback(
     (ep: SeriesEpisode) => {
       if (!accountKey || seriesId == null) return;
+      const locked = lockedSeriesSeason(seasons, manualSeason, activeSeason);
+      if (locked) setManualSeason(locked);
       const key = seriesEpisodeResumeKey(accountKey, seriesId, ep);
       if (!key) return;
       const watch = seriesEpisodeWatchState(
@@ -290,6 +292,9 @@ export default function SeriesDetail() {
     [
       accountKey,
       seriesId,
+      seasons,
+      manualSeason,
+      activeSeason,
       vodResumeSec,
       watchedToggles,
       saveVodResume,

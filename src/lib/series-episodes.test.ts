@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { SeriesEpisode } from "@/lib/xtream-types";
 import {
   dedupeSeriesEpisodes,
+  lockedSeriesSeason,
   normalizeSeriesEpisodesMap,
   pickPreferredSeriesEpisode,
   sortSeriesEpisodes,
@@ -67,6 +68,22 @@ describe("pickPreferredSeriesEpisode", () => {
       ep("1", 1, "2000")
     );
     expect(chosen.added).toBe("2000");
+  });
+});
+
+describe("lockedSeriesSeason", () => {
+  const seasons = ["1", "2", "3"];
+
+  it("stays on the season already open when resume would move", () => {
+    expect(lockedSeriesSeason(seasons, "3", "1")).toBe("3");
+  });
+
+  it("keeps the season on screen when the user has not picked a tab", () => {
+    expect(lockedSeriesSeason(seasons, null, "3")).toBe("3");
+  });
+
+  it("falls back to the first season", () => {
+    expect(lockedSeriesSeason(seasons, null, null)).toBe("1");
   });
 });
 

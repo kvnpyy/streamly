@@ -137,7 +137,11 @@ export function buildIptvHlsJsConfig(opts: {
     capLevelToPlayerSize: tvLivingRoomLive
       ? false
       : livingRoomLike || silkLike || (isLive && tightBuffers),
-    enableWorker: false,
+    /**
+     * Demux off the main thread on desktop. Tizen, webOS, and Silk keep the
+     * worker off — MSE workers wedge those decoders.
+     */
+    enableWorker: chromiumDesktop && !livingRoomLike && !silkLike,
     manifestLoadingTimeOut: timeouts,
     levelLoadingTimeOut: timeouts,
     fragLoadingTimeOut: timeouts,
