@@ -6,6 +6,7 @@ import {
   isNearEpisodeEnd,
   shouldTreatTranscodeAsEnded,
   shouldTreatTranscodeSnapAsEnded,
+  vodTranscodeRecoveryPlayhead,
 } from "./player-transcode-playback-end";
 
 function mockVideo(opts: {
@@ -132,6 +133,20 @@ describe("isEncodeCaughtUp", () => {
   it("is true when playhead is at the encode frontier", () => {
     expect(isEncodeCaughtUp(599, 600)).toBe(true);
     expect(isEncodeCaughtUp(100, 600)).toBe(false);
+  });
+});
+
+describe("vodTranscodeRecoveryPlayhead", () => {
+  it("stays on the playhead when playback has not snapped", () => {
+    expect(
+      vodTranscodeRecoveryPlayhead({ currentRel: 2408, highWaterRel: 2410 })
+    ).toBe(2408);
+  });
+
+  it("returns the furthest point after a snap back to the opening", () => {
+    expect(
+      vodTranscodeRecoveryPlayhead({ currentRel: 0.2, highWaterRel: 2410 })
+    ).toBe(2410);
   });
 });
 

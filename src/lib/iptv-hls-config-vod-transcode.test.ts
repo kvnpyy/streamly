@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildVodTranscodeHlsJsConfig,
   disableVodTranscodeGapSeek,
+  disableVodTranscodeLiveEdgeSeek,
 } from "@/lib/iptv-hls-config";
 
 describe("buildVodTranscodeHlsJsConfig", () => {
@@ -48,6 +49,20 @@ describe("buildVodTranscodeHlsJsConfig", () => {
     expect(hls.gapController._tryNudgeBuffer()).toBe(0);
     expect(skipped).toBe(0);
     expect(nudged).toBe(0);
+  });
+
+  it("does not seek to the live edge when a segment failure shrinks the window", () => {
+    let seeks = 0;
+    const hls = {
+      streamController: {
+        synchronizeToLiveEdge: () => {
+          seeks += 1;
+        },
+      },
+    };
+    disableVodTranscodeLiveEdgeSeek(hls);
+    hls.streamController.synchronizeToLiveEdge();
+    expect(seeks).toBe(0);
   });
 
   it("disables max-latency live snap so scrub-back is not yanked to the tip", () => {

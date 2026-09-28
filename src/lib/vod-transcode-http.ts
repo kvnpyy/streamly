@@ -1,5 +1,9 @@
-/** Still-encoding / gateway timeout — encode is running; client should poll. */
-const RETRYABLE_VOD_TRANSCODE_HTTP = new Set([503, 504, 524]);
+/**
+ * Still-encoding / gateway timeout — encode is running; client should poll.
+ * 502 is the same mid-episode overload (origin or Cloudflare): restarting the
+ * HLS load on it snaps EVENT playlists back to the opening.
+ */
+const RETRYABLE_VOD_TRANSCODE_HTTP = new Set([502, 503, 504, 524]);
 
 /** 524 is Cloudflare’s “origin took too long” — treat like 503, not a hard fail. */
 export function isRetryableVodTranscodeHttpStatus(status: number): boolean {

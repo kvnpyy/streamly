@@ -11,6 +11,16 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.13.48",
+    date: "2026-09-28",
+    summary:
+      "A VOD episode that hits a brief server error keeps playing instead of jumping back to the start.",
+    highlights: [
+      "When a segment fails to load, playback retries that moment instead of restarting the episode.",
+      "If the playhead still snaps to the opening, it is put back where you were.",
+    ],
+  },
+  {
     version: "0.13.46",
     date: "2026-09-28",
     summary:

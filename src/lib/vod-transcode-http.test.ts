@@ -3,6 +3,7 @@ import { isRetryableVodTranscodeHttpStatus } from "@/lib/vod-transcode-http";
 
 describe("isRetryableVodTranscodeHttpStatus", () => {
   it("retries Cloudflare 524 and other gateway / still-encoding statuses", () => {
+    expect(isRetryableVodTranscodeHttpStatus(502)).toBe(true);
     expect(isRetryableVodTranscodeHttpStatus(503)).toBe(true);
     expect(isRetryableVodTranscodeHttpStatus(504)).toBe(true);
     expect(isRetryableVodTranscodeHttpStatus(524)).toBe(true);

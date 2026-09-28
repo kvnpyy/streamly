@@ -256,6 +256,22 @@ export function disableVodTranscodeGapSeek(hls: {
   gap._tryNudgeBuffer = () => 0;
 }
 
+/**
+ * EVENT transcode playlists look live to hls.js. When a segment 502s and the
+ * playhead falls outside the published window, `synchronizeToLiveEdge` seeks
+ * to the live-sync point — the start of a short or refreshed playlist.
+ * Leave the playhead where it is and let the fragment retry land.
+ */
+export function disableVodTranscodeLiveEdgeSeek(hls: {
+  streamController?: {
+    synchronizeToLiveEdge?: (...args: unknown[]) => void;
+  };
+}): void {
+  const stream = hls.streamController;
+  if (!stream?.synchronizeToLiveEdge) return;
+  stream.synchronizeToLiveEdge = () => {};
+}
+
 /** iPhone/iPad live via hls.js — calmer live-edge sync than default mobile config. */
 export function buildAppleMobileLiveHlsConfig() {
   const base = buildIptvHlsJsConfig({ isLive: true, mobileLike: true });

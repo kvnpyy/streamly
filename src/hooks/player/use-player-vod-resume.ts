@@ -13,6 +13,7 @@ import {
 } from "@/lib/player-vod-resume";
 import { shouldSuppressVodTipPersist } from "@/lib/player-vod-seek-land";
 import { playbackUrlUsesVodTranscode } from "@/lib/vod-transcode-url";
+import { voidSafeVideoPlay } from "@/lib/video-play";
 import type { PlayerSource } from "@/store/player";
 import { browseAccountKey, usePrefs } from "@/store/preferences";
 
@@ -131,11 +132,7 @@ export function usePlayerVodResume(p: UsePlayerVodResumeParams) {
         } catch {
           /* noop */
         }
-        try {
-          void video.play();
-        } catch {
-          /* autoplay policy — tap-to-play UI handles it */
-        }
+        voidSafeVideoPlay(video);
         // Lock only once the element time reflects the resume target.
         const landed = off + (Number.isFinite(video.currentTime) ? video.currentTime : 0);
         if (Math.abs(landed - absolute) < 20) {

@@ -101,6 +101,24 @@ export function shouldTreatTranscodeAsEnded(
   return false;
 }
 
+/**
+ * Where to keep loading after a stall. A collapse toward the opening while
+ * the episode was already underway is an HLS snap, not a real restart.
+ */
+export function vodTranscodeRecoveryPlayhead(opts: {
+  currentRel: number;
+  highWaterRel: number;
+}): number {
+  const current = Number.isFinite(opts.currentRel)
+    ? Math.max(0, opts.currentRel)
+    : 0;
+  const high = Number.isFinite(opts.highWaterRel)
+    ? Math.max(0, opts.highWaterRel)
+    : 0;
+  if (detectTranscodeBackwardSnap(current, high)) return high;
+  return current;
+}
+
 /** HLS snap-back near the finale — mid-episode snaps are recovery, not ended. */
 export function shouldTreatTranscodeSnapAsEnded(
   currentRel: number,

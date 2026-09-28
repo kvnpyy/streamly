@@ -23,6 +23,16 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.13.48] — 2026-09-28
+
+A VOD episode that hits a brief server error keeps playing instead of jumping back to the start.
+
+### Fixed
+- When a segment fails to load, playback retries that moment instead of restarting the episode.
+- If the playhead still snaps to the opening, it is put back where you were.
+
+---
+
 ## [0.13.46] — 2026-09-28
 
 Next episode and skip intro show up during series, timed to the credits and the opening.

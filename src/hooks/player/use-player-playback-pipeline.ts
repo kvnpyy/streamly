@@ -32,6 +32,7 @@ import {
   buildIptvHlsJsConfig,
   buildVodTranscodeHlsJsConfig,
   disableVodTranscodeGapSeek,
+  disableVodTranscodeLiveEdgeSeek,
   levelsListKey,
 } from "@/lib/iptv-hls-config";
 import { playbackUrlIsHls } from "@/lib/playback-url";
@@ -46,6 +47,7 @@ import {
 import { isAmazonSilkUserAgent, isTvClassUserAgent, isTvOrSilkUserAgent } from "@/lib/tv-user-agent";
 import { humanizePlaybackErrorResponse } from "@/lib/playback-error-message";
 import { isRetryableVodTranscodeHttpStatus } from "@/lib/vod-transcode-http";
+import { vodTranscodeRecoveryPlayhead } from "@/lib/player-transcode-playback-end";
 import {
   destroyHlsInstance,
   pauseVideoElement,
@@ -146,6 +148,11 @@ export type UsePlayerPlaybackPipelineParams = {
   vodResumeLockedRef?: RefObject<boolean>;
   /** While scrubbing/landing, do not tip-reinforce via frag-error startLoad. */
   vodScrubbingRef?: RefObject<boolean>;
+  /**
+   * Furthest relative playhead this episode. Fragment 502s must resume here
+   * instead of the opening after hls.js collapses `currentTime`.
+   */
+  vodPlayheadHighWaterRef?: RefObject<number>;
   /** Wall-clock: skip tip resume writes after an intentional scrub. */
   vodSeekSuppressTipPersistUntilRef?: RefObject<number>;
 };
@@ -209,6 +216,7 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
     vodTimelineHoldRef,
     vodResumeLockedRef,
     vodScrubbingRef,
+    vodPlayheadHighWaterRef,
     vodSeekSuppressTipPersistUntilRef,
   } = p;
 
@@ -222,6 +230,13 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
 
     const timelineHold = vodTimelineHoldRef.current;
     const pendingAbsoluteSeekSec = timelineHold?.absoluteTimeSec ?? null;
+    if (vodPlayheadHighWaterRef && pendingAbsoluteSeekSec != null) {
+      const holdOff = Math.max(0, timelineHold?.startOffsetSec ?? 0);
+      vodPlayheadHighWaterRef.current = Math.max(
+        0,
+        pendingAbsoluteSeekSec - holdOff
+      );
+    }
     // Do not lock resume here — MANIFEST_PARSED / resume hook must keep
     // retrying until the playhead actually lands near the target.
 
@@ -745,9 +760,12 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
       };
       const hls = new Hls(hlsConfig);
       if (vodTranscodeHls) {
-        disableVodTranscodeGapSeek(
-          hls as unknown as Parameters<typeof disableVodTranscodeGapSeek>[0]
-        );
+        const vodHls = hls as unknown as Parameters<
+          typeof disableVodTranscodeGapSeek
+        >[0] &
+          Parameters<typeof disableVodTranscodeLiveEdgeSeek>[0];
+        disableVodTranscodeGapSeek(vodHls);
+        disableVodTranscodeLiveEdgeSeek(vodHls);
       }
       hlsRef.current = hls;
       hls.loadSource(url);
@@ -1051,11 +1069,11 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
                 typeof data.response?.code === "number"
                   ? data.response.code
                   : 0;
-              // 503 = segment still encoding — hls.js retries; restarting load jumps buffer holes.
+              // 502/503/504/524 = segment still encoding or a brief gateway
+              // blip. hls.js retries in place. startLoad() aborts that retry
+              // and, on an EVENT playlist, restarts at the opening.
               if (
-                httpCode === 503 ||
-                httpCode === 524 ||
-                httpCode === 504 ||
+                isRetryableVodTranscodeHttpStatus(httpCode) ||
                 data.details === Hls.ErrorDetails.FRAG_LOAD_TIMEOUT
               ) {
                 return;
@@ -1065,10 +1083,13 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
               lastTranscodeFragRestartAt = now;
             }
             try {
-              const pos =
-                vodTranscodeHls && vv && Number.isFinite(vv.currentTime)
-                  ? Math.max(0, vv.currentTime)
-                  : -1;
+              const pos = vodTranscodeHls
+                ? vodTranscodeRecoveryPlayhead({
+                    currentRel:
+                      vv && Number.isFinite(vv.currentTime) ? vv.currentTime : 0,
+                    highWaterRel: vodPlayheadHighWaterRef?.current ?? 0,
+                  })
+                : -1;
               hls.startLoad(pos);
             } catch {
               /* noop */
@@ -1117,10 +1138,18 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
               }
               try {
                 const vv = videoRef.current;
-                const pos =
-                  vv && Number.isFinite(vv.currentTime)
-                    ? Math.max(0, vv.currentTime)
-                    : 0;
+                const pos = vodTranscodeRecoveryPlayhead({
+                  currentRel:
+                    vv && Number.isFinite(vv.currentTime) ? vv.currentTime : 0,
+                  highWaterRel: vodPlayheadHighWaterRef?.current ?? 0,
+                });
+                if (vv && Math.abs((vv.currentTime || 0) - pos) > 0.75) {
+                  try {
+                    vv.currentTime = pos;
+                  } catch {
+                    /* noop */
+                  }
+                }
                 hls.startLoad(pos);
               } catch {
                 /* noop */
@@ -1159,12 +1188,21 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
                   const vv = videoRef.current;
                   if (isLive) {
                     hls.startLoad();
-                  } else if (
-                    vodTranscodeHls &&
-                    vv &&
-                    Number.isFinite(vv.currentTime)
-                  ) {
-                    hls.startLoad(Math.max(0, vv.currentTime));
+                  } else if (vodTranscodeHls && vv) {
+                    const pos = vodTranscodeRecoveryPlayhead({
+                      currentRel: Number.isFinite(vv.currentTime)
+                        ? vv.currentTime
+                        : 0,
+                      highWaterRel: vodPlayheadHighWaterRef?.current ?? 0,
+                    });
+                    if (Math.abs((vv.currentTime || 0) - pos) > 0.75) {
+                      try {
+                        vv.currentTime = pos;
+                      } catch {
+                        /* seek lands once the retried segment arrives */
+                      }
+                    }
+                    hls.startLoad(pos);
                   } else {
                     hls.startLoad(-1);
                   }
@@ -1405,6 +1443,7 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
     vodTimelineHoldRef,
     vodResumeLockedRef,
     vodScrubbingRef,
+    vodPlayheadHighWaterRef,
     playbackRetryKey,
     chromiumDesktopClient,
     tvBrowser,

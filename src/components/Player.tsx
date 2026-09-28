@@ -326,6 +326,8 @@ export function PlayerOverlay() {
   const vodDurationHintRef = useRef(0);
   /** Absolute timeline: where the current HLS playlist begins in the source file. */
   const vodStartOffsetRef = useRef(0);
+  /** Furthest relative playhead — kept across a 502 so a snap cannot restart at 0. */
+  const vodPlayheadHighWaterRef = useRef(0);
   /** How many seconds of media exist in the current transcode playlist. */
   const vodEncodedSecRef = useRef(0);
   const vodSeekRestartTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
@@ -662,6 +664,7 @@ export function PlayerOverlay() {
     vodResumeLockedRef.current = false;
     vodStartOffsetRef.current = 0;
     vodEncodedSecRef.current = 0;
+    vodPlayheadHighWaterRef.current = 0;
     setMediaClockSec(0);
 
     // Seed resume hold synchronously before the playback pipeline effect runs.
@@ -686,6 +689,7 @@ export function PlayerOverlay() {
           absoluteTimeSec: playable,
           startOffsetSec: 0,
         };
+        vodPlayheadHighWaterRef.current = playable;
       }
     }
     vodTimelineHoldRef.current = resumeHold;
@@ -1159,6 +1163,7 @@ export function PlayerOverlay() {
     vodTimelineHoldRef,
     vodResumeLockedRef,
     vodScrubbingRef,
+    vodPlayheadHighWaterRef,
     vodSeekSuppressTipPersistUntilRef,
   });
 
@@ -1311,6 +1316,7 @@ export function PlayerOverlay() {
     vodStartOffsetRef,
     vodEncodedSecRef,
     vodScrubbingRef,
+    vodPlayheadHighWaterRef,
     mobileLikeViewport,
     chromiumDesktopClient,
     cancelLiveMediaErrorDeferRef,

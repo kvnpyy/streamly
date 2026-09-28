@@ -25,6 +25,7 @@ import {
   shouldTreatTranscodeAsEnded,
   shouldTreatTranscodeSnapAsEnded,
   signalTranscodePlaybackEnded,
+  vodTranscodeRecoveryPlayhead,
 } from "@/lib/player-transcode-playback-end";
 
 function isBraveOnAppleMobile(): boolean {
@@ -45,6 +46,8 @@ export type UsePlayerVideoEventsParams = {
   vodStartOffsetRef: RefObject<number>;
   vodEncodedSecRef: RefObject<number>;
   vodScrubbingRef: RefObject<boolean>;
+  /** Furthest relative playhead. Restored when a stall snaps playback to the opening. */
+  vodPlayheadHighWaterRef: RefObject<number>;
   mobileLikeViewport: boolean;
   chromiumDesktopClient: boolean;
   cancelLiveMediaErrorDeferRef: RefObject<() => void>;
@@ -80,6 +83,7 @@ export function usePlayerVideoEvents(p: UsePlayerVideoEventsParams) {
     vodStartOffsetRef,
     vodEncodedSecRef,
     vodScrubbingRef,
+    vodPlayheadHighWaterRef,
     mobileLikeViewport,
     chromiumDesktopClient,
     cancelLiveMediaErrorDeferRef,
@@ -130,8 +134,9 @@ export function usePlayerVideoEvents(p: UsePlayerVideoEventsParams) {
     let vodSilentAudioResolved = false;
     let liveNoPictureRecoveries = 0;
     let lastNoPictureRecoveryMs = 0;
-    let maxTranscodeRelSeen = 0;
+    let maxTranscodeRelSeen = vodPlayheadHighWaterRef.current;
     let transcodeEndedSignaled = false;
+    let lastSnapRestoreMs = 0;
 
     const cancelLiveKickTimer = () => {
       if (liveKickTimer) {
@@ -344,6 +349,49 @@ export function usePlayerVideoEvents(p: UsePlayerVideoEventsParams) {
         if (nowUi - lastMarkPictureMs >= 450) {
           lastMarkPictureMs = nowUi;
           markPictureReady();
+        }
+        if (vodScrubbingRef.current) {
+          const rel = v.currentTime;
+          if (Number.isFinite(rel) && rel >= 0) {
+            maxTranscodeRelSeen = rel;
+            vodPlayheadHighWaterRef.current = rel;
+          }
+        } else if (!v.paused) {
+          const relNow = v.currentTime;
+          const refHigh = vodPlayheadHighWaterRef.current;
+          // A seek restart writes the ref before the element lands. Follow it
+          // so an older high-water mark cannot pull the playhead back.
+          if (
+            Number.isFinite(relNow) &&
+            refHigh + 1 < maxTranscodeRelSeen &&
+            Math.abs(relNow - refHigh) < 20
+          ) {
+            maxTranscodeRelSeen = refHigh;
+          }
+          const rel = v.currentTime;
+          if (rel > maxTranscodeRelSeen) {
+            maxTranscodeRelSeen = rel;
+            vodPlayheadHighWaterRef.current = rel;
+          } else if (!transcodeEndedSignaled) {
+            const restore = vodTranscodeRecoveryPlayhead({
+              currentRel: rel,
+              highWaterRel: maxTranscodeRelSeen,
+            });
+            if (restore > rel + 0.75 && nowUi - lastSnapRestoreMs > 1_500) {
+              lastSnapRestoreMs = nowUi;
+              try {
+                v.currentTime = restore;
+              } catch {
+                /* buffer may still be filling at the previous playhead */
+              }
+              try {
+                hlsRef.current?.startLoad(restore);
+              } catch {
+                /* noop */
+              }
+              return;
+            }
+          }
         }
         if (!transcodeEndedSignaled && !v.paused && !vodScrubbingRef.current) {
           const rel = v.currentTime;
@@ -709,6 +757,7 @@ export function usePlayerVideoEvents(p: UsePlayerVideoEventsParams) {
     vodStartOffsetRef,
     vodEncodedSecRef,
     vodScrubbingRef,
+    vodPlayheadHighWaterRef,
     cancelLiveMediaErrorDeferRef,
     livePlaybackErrorSuppressUntilRef,
     requestVodTranscodeFallbackRef,
