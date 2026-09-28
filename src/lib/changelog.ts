@@ -11,7 +11,7 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
-    version: "0.13.45",
+    version: "0.13.46",
     date: "2026-09-28",
     summary:
       "Next episode and skip intro show up during series, timed to the credits and the opening.",
@@ -1065,4 +1065,48 @@ export function getLatestChangelogEntry(): ChangelogEntry {
 
 export function formatChangelogVersion(version: string): string {
   return version.startsWith("v") ? version : `v${version}`;
+}
+
+/** Recent releases stay expanded. Older notes stay in the HTML, grouped by month. */
+export const CHANGELOG_RECENT_VISIBLE = 15;
+
+export type ChangelogMonthGroup = {
+  key: string;
+  label: string;
+  entries: ChangelogEntry[];
+};
+
+export function changelogMonthKey(date: string): string {
+  return date.slice(0, 7);
+}
+
+export function formatChangelogMonth(monthKey: string): string {
+  const [year, month] = monthKey.split("-").map(Number);
+  if (!year || !month) return monthKey;
+  return new Date(Date.UTC(year, month - 1, 1)).toLocaleDateString("en-US", {
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}
+
+/** Preserves newest-first order. Consecutive entries in the same month share a group. */
+export function groupChangelogByMonth(
+  entries: readonly ChangelogEntry[]
+): ChangelogMonthGroup[] {
+  const groups: ChangelogMonthGroup[] = [];
+  for (const entry of entries) {
+    const key = changelogMonthKey(entry.date);
+    const last = groups[groups.length - 1];
+    if (last && last.key === key) {
+      last.entries.push(entry);
+    } else {
+      groups.push({
+        key,
+        label: formatChangelogMonth(key),
+        entries: [entry],
+      });
+    }
+  }
+  return groups;
 }
