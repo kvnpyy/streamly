@@ -1,10 +1,10 @@
 import type { PlayerPlaylist, PlayerSource } from "@/store/player";
 
-/** Show the next-episode UI when this many seconds remain (Netflix-style pre-credits window). */
+/** Legacy end-window used when no credit mark is available. Prefer stored credit times. */
 export const AUTOPLAY_TRIGGER_REMAINING_SEC = 15;
 
-/** Countdown length before auto-advancing to the next episode. */
-export const AUTOPLAY_COUNTDOWN_SEC = 5;
+/** Countdown length before auto-advancing once the credits card is on screen. */
+export const AUTOPLAY_COUNTDOWN_SEC = 10;
 
 /** Ignore autoplay on clips shorter than this (seconds). */
 export const AUTOPLAY_MIN_EPISODE_DURATION_SEC = 30;
@@ -45,28 +45,29 @@ export type AutoplayNextGateParams = {
   kind: PlayerSource["kind"] | undefined;
   playlist: PlayerPlaylist | null;
   index: number;
-  durationSec: number;
   currentTimeSec: number;
+  /** Absolute time when the credits card should appear. Null until duration is known. */
+  creditsStartSec: number | null;
+  /** Transcode playback reached the finale before the card was shown. */
+  endedLatch: boolean;
+  seeking: boolean;
   dismissedForEpisode: boolean;
   watchCreditsForEpisode: boolean;
   hasNextEpisode: boolean;
 };
 
 export function shouldOfferAutoplayNext(params: AutoplayNextGateParams): boolean {
-  if (!params.open) return false;
+  if (!params.open || params.seeking) return false;
   if (params.dismissedForEpisode || params.watchCreditsForEpisode) return false;
   if (params.kind !== "series") return false;
   if (!params.playlist || params.playlist.kind !== "series") return false;
   if (params.index < 0 || !params.hasNextEpisode) return false;
-
-  const trigger = autoplayTriggerRemainingSec(params.durationSec);
-  if (trigger <= 0) return false;
-
-  const remaining = remainingPlaybackSec(
-    params.durationSec,
-    params.currentTimeSec
-  );
-  return remaining > 0 && remaining <= trigger;
+  if (params.endedLatch) return true;
+  if (params.creditsStartSec == null || !Number.isFinite(params.creditsStartSec)) {
+    return false;
+  }
+  if (!Number.isFinite(params.currentTimeSec)) return false;
+  return params.currentTimeSec >= params.creditsStartSec;
 }
 
 export type AutoplayCountdownTickResult = {

@@ -30,9 +30,16 @@ import {
   playbackUrlUsesVodTranscode,
   vodNeedsServerTranscodePrep,
   warmVodTranscodePlay,
+  warmSeriesPlaylistNeighbor,
+  releaseVodTranscodeWarm,
 } from "@/lib/vod-transcode-url";
 import { transcodeSeekNeedsServerRestart as transcodeSeekNeedsServerRestartPolicy } from "@/lib/vod-transcode-seek-policy";
 import { resolveEffectiveVodDuration } from "@/lib/vod-seek-scrub";
+import { nextEpisodeWarmAllowed } from "@/lib/vod-next-warm";
+import {
+  sameChapterMarkers,
+  type ParsedVodChapters,
+} from "@/lib/vod-chapter-markers";
 import { humanizePlaybackErrorResponse } from "@/lib/playback-error-message";
 import { waitForVodTranscodePlaylistReady } from "@/lib/vod-transcode-http";
 import { TvPlayerRemoteHints } from "@/components/TvPlayerRemoteHints";
@@ -70,6 +77,7 @@ import { usePlayerVideoEvents } from "@/hooks/player/use-player-video-events";
 import { useTvLiveFreezeWatchdog } from "@/hooks/player/use-tv-live-freeze-watchdog";
 import { usePlayerVodResume } from "@/hooks/player/use-player-vod-resume";
 import { usePlayerAutoplayNext } from "@/hooks/player/use-player-autoplay-next";
+import { usePlayerVodCues } from "@/hooks/player/use-player-vod-cues";
 import type { PlayerAudioTrack } from "@/lib/player-audio-tracks";
 import {
   normalizePlaybackSpeed,
@@ -77,6 +85,7 @@ import {
   writePreferredPlaybackSpeed,
 } from "@/lib/player-playback-speed";
 import { PlayerAutoplayNextOverlay } from "@/components/player/PlayerAutoplayNextOverlay";
+import { PlayerSkipIntroButton } from "@/components/player/PlayerSkipIntroButton";
 import { PlayerSeekBar } from "@/components/player/PlayerSeekBar";
 import { PlayerStallOverlay } from "@/components/player/PlayerStallOverlay";
 import { AnimatePresence, motion, useIsPresent } from "framer-motion";
@@ -356,6 +365,17 @@ export function PlayerOverlay() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [duration, setDuration] = useState(0);
   const [time, setTime] = useState(0);
+  const [vodChapterMarkers, setVodChapterMarkers] = useState<{
+    key: string;
+    markers: ParsedVodChapters;
+  } | null>(null);
+  const vodChapterMarkersRef = useRef<(markers: ParsedVodChapters) => void>(
+    () => {}
+  );
+  /** Latest source-cache percent for the episode on screen. Null if the header never arrived. */
+  const vodSourcePctRef = useRef<number | null>(null);
+  const warmedNextUrlRef = useRef<string | null>(null);
+  const warmStartedForRef = useRef<string | null>(null);
   useEffect(() => {
     playbackTimeRef.current = time;
   }, [time]);
@@ -1059,6 +1079,28 @@ export function PlayerOverlay() {
     v.setAttribute("x-webkit-airplay", "allow");
   }, [open, current]);
 
+  const vodCueKey =
+    current && current.kind !== "live"
+      ? `${current.kind}:${current.id}:${current.streamId ?? ""}:${current.url}`
+      : "";
+  const vodCueKeyRef = useRef(vodCueKey);
+  useEffect(() => {
+    vodCueKeyRef.current = vodCueKey;
+    vodChapterMarkersRef.current = (markers) => {
+      const key = vodCueKeyRef.current;
+      if (!key) return;
+      setVodChapterMarkers((prev) =>
+        prev && prev.key === key && sameChapterMarkers(prev.markers, markers)
+          ? prev
+          : { key, markers }
+      );
+    };
+  }, [vodCueKey]);
+  const chapterMarkers =
+    vodChapterMarkers && vodChapterMarkers.key === vodCueKey
+      ? vodChapterMarkers.markers
+      : null;
+
   usePlayerPlaybackPipeline({
     open,
     current,
@@ -1112,6 +1154,8 @@ export function PlayerOverlay() {
     setVodPrepProgress,
     applyVodDurationHint,
     applyVodTranscodeTimelineHints,
+    onVodChapterMarkersRef: vodChapterMarkersRef,
+    vodSourcePctRef,
     vodTimelineHoldRef,
     vodResumeLockedRef,
     vodScrubbingRef,
@@ -1612,16 +1656,26 @@ export function PlayerOverlay() {
     [isLive]
   );
 
+  const vodCues = usePlayerVodCues({
+    open,
+    current,
+    timeSec: time,
+    titleDurationSec: vodTotalSec,
+    seeking: vodSeekInFlight,
+    chapterMarkers,
+  });
+
   const onSeekCommit = useCallback(
     (targetSec: number) => {
       if (isLive) return;
       if (!Number.isFinite(targetSec) || targetSec < 0) return;
+      vodCues.rememberManualSeek(getPlaybackTimeNow(), targetSec);
       // Keep scrubbing gate through async land — clearing here lets timeupdate
       // snap the UI back to the tip before MSE finishes seeking.
       vodScrubbingRef.current = true;
       seekVideoTo(targetSec);
     },
-    [isLive, seekVideoTo]
+    [isLive, seekVideoTo, getPlaybackTimeNow, vodCues.rememberManualSeek]
   );
 
   const onScrubCancel = useCallback(() => {
@@ -2428,10 +2482,87 @@ export function PlayerOverlay() {
     playlist,
     index,
     timeSec: time,
-    durationSec: effectiveVodDuration,
+    durationSec: vodTotalSec,
+    creditsStartSec: vodCues.creditsStartSec,
+    creditsExact: vodCues.creditsExact,
+    seeking: vodSeekInFlight,
     videoRef,
     onPlayNext: playNextEpisode,
   });
+
+  const nextEpisodeUrl = autoplayNext.nextEpisode?.url ?? null;
+  useEffect(() => {
+    const next = autoplayNext.nextEpisode;
+    if (!open || !autoplayNext.visible || !next) return;
+    let stopped = false;
+    const tryWarm = () => {
+      if (stopped || warmStartedForRef.current === next.url) return;
+      const durationSec =
+        vodDurationHintRef.current > 1
+          ? vodDurationHintRef.current
+          : vodTotalSec;
+      if (
+        !nextEpisodeWarmAllowed({
+          sourcePct: vodSourcePctRef.current,
+          encodedAbsSec: vodStartOffsetRef.current + vodEncodedSecRef.current,
+          durationSec,
+        })
+      ) {
+        return;
+      }
+      warmStartedForRef.current = next.url;
+      warmedNextUrlRef.current = next.url;
+      warmSeriesPlaylistNeighbor(next, {
+        compatMse: tvBrowser || silkLikeClient,
+      });
+    };
+    const startId = window.setTimeout(tryWarm, 1200);
+    const pollId = window.setInterval(tryWarm, 4000);
+    return () => {
+      stopped = true;
+      window.clearTimeout(startId);
+      window.clearInterval(pollId);
+    };
+  }, [
+    open,
+    autoplayNext.visible,
+    nextEpisodeUrl,
+    autoplayNext.nextEpisode,
+    vodTotalSec,
+    tvBrowser,
+    silkLikeClient,
+  ]);
+
+  useEffect(() => {
+    const warmed = warmedNextUrlRef.current;
+    if (!warmed) return;
+    if (current?.url === warmed) {
+      warmedNextUrlRef.current = null;
+      warmStartedForRef.current = null;
+      return;
+    }
+    if (!autoplayNext.dismissed) return;
+    warmedNextUrlRef.current = null;
+    warmStartedForRef.current = null;
+    releaseVodTranscodeWarm(warmed);
+  }, [autoplayNext.dismissed, current?.url]);
+
+  useEffect(() => {
+    if (open) return;
+    const warmed = warmedNextUrlRef.current;
+    if (!warmed) return;
+    warmedNextUrlRef.current = null;
+    warmStartedForRef.current = null;
+    releaseVodTranscodeWarm(warmed);
+  }, [open]);
+
+  const skipIntro = useCallback(() => {
+    const cue = vodCues.skipIntro;
+    if (!cue) return;
+    vodCues.rememberIntro(cue.span);
+    vodCues.dismissSkipIntro();
+    seekVideoTo(cue.targetSec);
+  }, [vodCues, seekVideoTo]);
 
   const progress =
     effectiveVodDuration > 0 ? (time / effectiveVodDuration) * 100 : 0;
@@ -3151,10 +3282,17 @@ export function PlayerOverlay() {
               )}
             </AnimatePresence>
 
+            <PlayerSkipIntroButton
+              visible={!!vodCues.skipIntro && !autoplayNext.visible}
+              label={vodCues.skipIntro?.label ?? "Skip intro"}
+              onSkip={skipIntro}
+            />
+
             <PlayerAutoplayNextOverlay
               visible={autoplayNext.visible}
               nextEpisode={autoplayNext.nextEpisode}
               countdownSec={autoplayNext.countdownSec}
+              countdownTotalSec={autoplayNext.countdownTotalSec}
               onPlayNextNow={autoplayNext.playNextNow}
               onCancel={autoplayNext.cancelAutoplay}
               onWatchCredits={autoplayNext.watchCredits}
@@ -3203,6 +3341,19 @@ export function PlayerOverlay() {
                       bufferedProgress={bufferedProgress}
                       playbackUrl={activePlaybackUrl}
                       poster={posterSrc}
+                      cueMarks={[
+                        ...(vodCues.introEndSec != null
+                          ? [{ atSec: vodCues.introEndSec, label: "Intro" }]
+                          : []),
+                        ...(vodCues.creditsExact && vodCues.creditsStartSec != null
+                          ? [
+                              {
+                                atSec: vodCues.creditsStartSec,
+                                label: "Credits",
+                              },
+                            ]
+                          : []),
+                      ]}
                       onScrubStart={onScrubStart}
                       onScrubPreview={onScrubPreview}
                       onSeekCommit={onSeekCommit}

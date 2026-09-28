@@ -43,14 +43,16 @@ const playlist: PlayerPlaylist = { kind: "series", items: [ep1, ep2] };
 
 // 1. Autoplay gate
 check(
-  "autoplay offers in last 15s with next episode",
+  "autoplay offers at the credit mark with a next episode",
   shouldOfferAutoplayNext({
     open: true,
     kind: "series",
     playlist,
     index: 0,
-    durationSec: 3600,
-    currentTimeSec: 3590,
+    currentTimeSec: 3530,
+    creditsStartSec: 3525,
+    endedLatch: false,
+    seeking: false,
     dismissedForEpisode: false,
     watchCreditsForEpisode: false,
     hasNextEpisode: true,
@@ -64,8 +66,10 @@ check(
     kind: "series",
     playlist,
     index: 0,
-    durationSec: 3600,
-    currentTimeSec: 3590,
+    currentTimeSec: 3530,
+    creditsStartSec: 3525,
+    endedLatch: false,
+    seeking: false,
     dismissedForEpisode: true,
     watchCreditsForEpisode: false,
     hasNextEpisode: true,
@@ -79,8 +83,10 @@ check(
     kind: "series",
     playlist,
     index: 0,
-    durationSec: 3600,
-    currentTimeSec: 3590,
+    currentTimeSec: 3530,
+    creditsStartSec: 3525,
+    endedLatch: false,
+    seeking: false,
     dismissedForEpisode: false,
     watchCreditsForEpisode: true,
     hasNextEpisode: true,
@@ -94,8 +100,10 @@ check(
     kind: "series",
     playlist,
     index: 1,
-    durationSec: 3600,
-    currentTimeSec: 3590,
+    currentTimeSec: 3530,
+    creditsStartSec: 3525,
+    endedLatch: false,
+    seeking: false,
     dismissedForEpisode: false,
     watchCreditsForEpisode: false,
     hasNextEpisode: false,
@@ -110,7 +118,7 @@ while (countdown != null) {
   if (tick.shouldAdvance) advances += 1;
   countdown = tick.next;
 }
-check("countdown advances exactly once after 5 ticks", advances === 1);
+check("countdown advances exactly once", advances === 1);
 
 // 3. Player store flip (autoplay path)
 usePlayer.setState({ current: null, open: false, playlist: null, index: -1 });

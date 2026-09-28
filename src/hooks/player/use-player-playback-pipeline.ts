@@ -59,6 +59,10 @@ import {
   xhrTextBody,
 } from "@/lib/vod-transcode-manifest";
 import {
+  chapterMarkersFromHeaders,
+  type ParsedVodChapters,
+} from "@/lib/vod-chapter-markers";
+import {
   playbackUrlUsesVodTranscode,
   releaseVodTranscodePlayback,
 } from "@/lib/vod-transcode-url";
@@ -133,6 +137,10 @@ export type UsePlayerPlaybackPipelineParams = {
     startOffset?: number;
     encoded?: number;
   }) => void;
+  /** Chapter marks from the transcode playlist. Must be a stable ref. */
+  onVodChapterMarkersRef?: RefObject<(markers: ParsedVodChapters) => void>;
+  /** Latest `x-vod-source-pct` for the episode on screen. */
+  vodSourcePctRef?: RefObject<number | null>;
   vodTimelineHoldRef: RefObject<VodTimelineHold | null>;
   /** Locks one-shot resume when the pipeline already applied a hold seek. */
   vodResumeLockedRef?: RefObject<boolean>;
@@ -196,6 +204,8 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
     setVodPrepProgress,
     applyVodDurationHint,
     applyVodTranscodeTimelineHints,
+    onVodChapterMarkersRef,
+    vodSourcePctRef,
     vodTimelineHoldRef,
     vodResumeLockedRef,
     vodScrubbingRef,
@@ -239,6 +249,7 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
       vodDurationHintRef.current = 0;
       vodStartOffsetRef.current = 0;
       vodEncodedSecRef.current = 0;
+      if (vodSourcePctRef) vodSourcePctRef.current = null;
     }
     const catalogDur = current.durationSec;
     if (
@@ -708,6 +719,20 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
               );
               if (hint != null && hint > 1) {
                 applyVodDurationHint(hint);
+              }
+              const chapterMarkers = chapterMarkersFromHeaders({
+                introStart: xhr.getResponseHeader("x-vod-intro-start"),
+                introEnd: xhr.getResponseHeader("x-vod-intro-end"),
+                introKind: xhr.getResponseHeader("x-vod-intro-kind"),
+                creditsStart: xhr.getResponseHeader("x-vod-credits-start"),
+              });
+              if (chapterMarkers) {
+                onVodChapterMarkersRef?.current(chapterMarkers);
+              }
+              if (vodSourcePctRef) {
+                const srcNow = xhr.getResponseHeader("x-vod-source-pct");
+                const pct = srcNow ? parseFloat(srcNow) : NaN;
+                if (Number.isFinite(pct)) vodSourcePctRef.current = pct;
               }
               if (Number.isFinite(enc) && enc > 2) {
                 setVodPrepProgress((p) => Math.max(p, 90));
@@ -1375,6 +1400,8 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
     onLiveRemuxFailed,
     applyVodDurationHint,
     applyVodTranscodeTimelineHints,
+    onVodChapterMarkersRef,
+    vodSourcePctRef,
     vodTimelineHoldRef,
     vodResumeLockedRef,
     vodScrubbingRef,

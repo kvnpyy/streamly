@@ -54,21 +54,38 @@ describe("shouldOfferAutoplayNext", () => {
     kind: "series" as const,
     playlist,
     index: 0,
-    durationSec: 3600,
-    currentTimeSec: 3588,
+    currentTimeSec: 3530,
+    creditsStartSec: 3525,
+    endedLatch: false,
+    seeking: false,
     dismissedForEpisode: false,
     watchCreditsForEpisode: false,
     hasNextEpisode: true,
   };
 
-  it("offers autoplay inside the trigger window", () => {
+  it("offers autoplay once credits start, even with more than 15s left", () => {
     expect(shouldOfferAutoplayNext(base)).toBe(true);
   });
 
-  it("does not offer autoplay too early", () => {
+  it("does not offer autoplay before the credit mark", () => {
     expect(
-      shouldOfferAutoplayNext({ ...base, currentTimeSec: 3500 })
+      shouldOfferAutoplayNext({ ...base, currentTimeSec: 3400 })
     ).toBe(false);
+  });
+
+  it("offers autoplay when transcode playback ends early", () => {
+    expect(
+      shouldOfferAutoplayNext({
+        ...base,
+        currentTimeSec: 1800,
+        creditsStartSec: null,
+        endedLatch: true,
+      })
+    ).toBe(true);
+  });
+
+  it("hides the card while a transcode seek is in flight", () => {
+    expect(shouldOfferAutoplayNext({ ...base, seeking: true })).toBe(false);
   });
 
   it("does not offer autoplay when dismissed", () => {
@@ -89,6 +106,7 @@ describe("shouldOfferAutoplayNext", () => {
         ...base,
         index: 1,
         hasNextEpisode: false,
+        endedLatch: false,
       })
     ).toBe(false);
   });
@@ -100,6 +118,7 @@ describe("shouldOfferAutoplayNext", () => {
         kind: "movie",
         playlist: null,
         hasNextEpisode: false,
+        endedLatch: false,
       })
     ).toBe(false);
   });
@@ -163,18 +182,18 @@ describe("AUTOPLAY_COUNTDOWN_SEC", () => {
 });
 
 describe("autoplayDisplayCountdownSec", () => {
-  it("counts down from 5 inside the trigger window", () => {
+  it("counts down from the credits window", () => {
     expect(
       autoplayDisplayCountdownSec({
         durationSec: 3600,
         currentTimeSec: 3585,
         shouldOffer: true,
       })
-    ).toBe(5);
+    ).toBe(AUTOPLAY_COUNTDOWN_SEC);
     expect(
       autoplayDisplayCountdownSec({
         durationSec: 3600,
-        currentTimeSec: 3590,
+        currentTimeSec: 3596,
         shouldOffer: true,
       })
     ).toBe(0);

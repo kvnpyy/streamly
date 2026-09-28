@@ -31,6 +31,7 @@ import {
   handleVodTranscodeRequest,
   isVodTranscodeEnabledServer,
   releaseVodTranscodeJobs,
+  abandonVodTranscodeWarm,
   upstreamEligibleForVodTranscode,
 } from "@/lib/vod-transcode";
 import {
@@ -244,6 +245,31 @@ async function handle(req: NextRequest, head: boolean) {
       );
     }
     releaseVodTranscodeJobs(target);
+    return respondShort(
+      new Response(null, {
+        status: 204,
+        headers: corsHeaders(undefined, requestId),
+      })
+    );
+  }
+  if (transcodeMode === "release-warm") {
+    if (!isVodTranscodeEnabledServer()) {
+      return respondShort(
+        new Response("VOD transcode is not enabled.", {
+          status: 503,
+          headers: corsHeaders({ "content-type": "text/plain" }, requestId),
+        })
+      );
+    }
+    if (!upstreamEligibleForVodTranscode(target)) {
+      return respondShort(
+        new Response("URL is not eligible for VOD transcode.", {
+          status: 400,
+          headers: corsHeaders({ "content-type": "text/plain" }, requestId),
+        })
+      );
+    }
+    abandonVodTranscodeWarm(target);
     return respondShort(
       new Response(null, {
         status: 204,

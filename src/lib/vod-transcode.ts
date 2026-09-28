@@ -31,6 +31,12 @@ import {
   pickBestAudioStreamIndex,
   type ProbedAudioStream,
 } from "@/lib/vod-transcode-audio";
+import {
+  chapterMarkerResponseHeaders,
+  parseFfprobeChapterDump,
+  type ParsedVodChapters,
+} from "@/lib/vod-chapter-markers";
+import { warmWouldStealProviderDownload, sameProviderDownloadSlot } from "@/lib/vod-next-warm";
 import { spawn, type ChildProcess } from "child_process";
 import crypto from "crypto";
 import fs from "fs";
@@ -535,6 +541,10 @@ type JobMeta = {
   startOffsetSec?: number;
   audioStreamIndex?: number | null;
   encodeRev?: number;
+  /** Chapter intro/credits. Absent until a local probe finishes. */
+  chapterMarkers?: ParsedVodChapters | null;
+  /** True once the local source was complete (or markers were found). */
+  chapterProbeComplete?: boolean;
 };
 
 async function probeDurationSec(input: string): Promise<number | null> {
@@ -568,6 +578,112 @@ async function probeDurationSec(input: string): Promise<number | null> {
       resolve(Number.isFinite(n) && n > 1 ? n : null);
     });
   });
+}
+
+/**
+ * Read container chapters from the local source cache only.
+ * Never opens a second connection to the provider while ffmpeg is downloading.
+ */
+function probeLocalChapterMarkers(
+  filePath: string,
+  durationSec: number | null
+): Promise<ParsedVodChapters | null> {
+  const args = [
+    "-hide_banner",
+    "-loglevel",
+    "error",
+    "-probesize",
+    "2M",
+    "-analyzeduration",
+    "1M",
+    "-show_chapters",
+    "-print_format",
+    "json",
+    filePath,
+  ];
+  return new Promise((resolve) => {
+    const proc = spawn(ffprobeBinary(), args, {
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let out = "";
+    const timer = setTimeout(() => {
+      proc.kill("SIGKILL");
+      resolve(null);
+    }, 8_000);
+    proc.stdout?.on("data", (c: Buffer) => {
+      out += c.toString();
+    });
+    proc.on("error", () => {
+      clearTimeout(timer);
+      resolve(null);
+    });
+    proc.on("close", () => {
+      clearTimeout(timer);
+      try {
+        resolve(parseFfprobeChapterDump(JSON.parse(out), durationSec));
+      } catch {
+        resolve(null);
+      }
+    });
+  });
+}
+
+function scheduleVodChapterProbe(job: TranscodeJob): void {
+  if (job.chapterProbeState === "running" || job.chapterProbeState === "done") {
+    return;
+  }
+  const now = Date.now();
+  if ((job.chapterProbeNotBefore ?? 0) > now) return;
+  if (!isVodSourceCacheEnabled()) {
+    job.chapterProbeState = "done";
+    return;
+  }
+  job.chapterProbeState = "running";
+  void runVodChapterProbe(job);
+}
+
+async function runVodChapterProbe(job: TranscodeJob): Promise<void> {
+  try {
+    const existing = await readJobMeta(job.dir);
+    if (existing?.chapterProbeComplete) {
+      job.chapterProbeState = "done";
+      return;
+    }
+    const status = await getVodSourceStatus(job.upstream);
+    if (!status || isHttpInput(status.path) || status.bytes < 8_000_000) {
+      job.chapterProbeState = "idle";
+      job.chapterProbeNotBefore = Date.now() + 20_000;
+      return;
+    }
+    if (!status.complete && job.chapterProbeBytes === status.bytes) {
+      job.chapterProbeState = "idle";
+      job.chapterProbeNotBefore = Date.now() + 30_000;
+      return;
+    }
+    job.chapterProbeBytes = status.bytes;
+    const durationSec = job.durationSec ?? existing?.durationSec ?? null;
+    const parsed = await probeLocalChapterMarkers(status.path, durationSec);
+    const found = !!(parsed?.intro || parsed?.creditsStartSec != null);
+    const latest = (await readJobMeta(job.dir)) ??
+      existing ?? {
+        plan: planFromProbeCodecs(null, null, {
+          maxHeight: transcodeMaxHeight(),
+        }),
+        durationSec,
+      };
+    if (parsed && found) latest.chapterMarkers = parsed;
+    if (status.complete || found) latest.chapterProbeComplete = true;
+    if (latest.chapterProbeComplete) {
+      await writeJobMeta(job.dir, latest);
+      job.chapterProbeState = "done";
+      return;
+    }
+    job.chapterProbeState = "idle";
+    job.chapterProbeNotBefore = Date.now() + 45_000;
+  } catch {
+    job.chapterProbeState = "idle";
+    job.chapterProbeNotBefore = Date.now() + 45_000;
+  }
 }
 
 async function readJobMeta(dir: string): Promise<JobMeta | null> {
@@ -732,6 +848,13 @@ type TranscodeJob = {
   lastSegmentGrowthAt: number;
   /** Last manifest/segment GET from a player (0 = explicitly released). */
   lastViewerAt: number;
+  /** Real playback requested the manifest — not a credits-card warm. */
+  hasPlayerViewer?: boolean;
+  /** Started from the next-episode card. Abandoned warms must not stop a real play. */
+  backgroundWarm?: boolean;
+  chapterProbeState?: "idle" | "running" | "done";
+  chapterProbeNotBefore?: number;
+  chapterProbeBytes?: number;
 };
 
 const jobs = new Map<string, TranscodeJob>();
@@ -754,17 +877,27 @@ function touchTranscodeViewerByUpstream(
     quantizeTranscodeSeekSec(startOffsetSec)
   );
   const job = jobs.get(key);
-  if (job) job.lastViewerAt = Date.now();
+  if (job) {
+    job.lastViewerAt = Date.now();
+    job.hasPlayerViewer = true;
+    job.backgroundWarm = false;
+  }
   // Tip seeks often reuse the from-0 job — keep that viewer warm too.
   if (startOffsetSec > 0) {
     const base = jobs.get(cacheKeyForUpstream(upstream, 0));
-    if (base) base.lastViewerAt = Date.now();
+    if (base) {
+      base.lastViewerAt = Date.now();
+      base.hasPlayerViewer = true;
+      base.backgroundWarm = false;
+    }
   }
   ensureIdleSweepRunning();
 }
 
 function noteTranscodeViewer(job: TranscodeJob): void {
   job.lastViewerAt = Date.now();
+  job.hasPlayerViewer = true;
+  job.backgroundWarm = false;
   touchVodSource(job.upstream);
   ensureIdleSweepRunning();
 }
@@ -912,9 +1045,52 @@ export function releaseVodTranscodeJobs(upstream: string): number {
   for (const job of jobs.values()) {
     if (job.upstream !== upstream) continue;
     job.lastViewerAt = 0;
+    job.backgroundWarm = false;
+    job.hasPlayerViewer = true;
     n += 1;
   }
   return n;
+}
+
+/**
+ * Drop a next-episode warm the viewer dismissed. Real playback clears
+ * `backgroundWarm`, so this does not stop an episode that already started.
+ */
+export function abandonVodTranscodeWarm(upstream: string): boolean {
+  let abandoned = false;
+  for (const job of jobs.values()) {
+    if (job.upstream !== upstream || !job.backgroundWarm) continue;
+    job.backgroundWarm = false;
+    job.lastViewerAt = 0;
+    stopTranscodeProcOnly(job);
+    abandoned = true;
+  }
+  if (abandoned) releaseVodSourceDownload(upstream);
+  return abandoned;
+}
+
+/** True when a HEAD warm would open a second provider download. */
+async function warmBlocksOnActiveDownload(nextUpstream: string): Promise<boolean> {
+  for (const job of jobs.values()) {
+    if (job.upstream === nextUpstream) continue;
+    if (!sameProviderDownloadSlot(job.upstream, nextUpstream)) continue;
+    if (!jobViewerActive(job) && !job.hasPlayerViewer) continue;
+    let otherSourceComplete: boolean | null = null;
+    if (isVodSourceCacheEnabled()) {
+      const st = await getVodSourceStatus(job.upstream);
+      otherSourceComplete = st?.complete === true;
+    }
+    if (
+      warmWouldStealProviderDownload({
+        otherViewerActive: true,
+        otherSourceComplete,
+        otherFfmpegRunning: !!(job.proc && job.proc.exitCode == null),
+      })
+    ) {
+      return true;
+    }
+  }
+  return false;
 }
 
 /** Free a slot by stopping the oldest encode that has no viewer. Cache stays on disk. */
@@ -1979,7 +2155,7 @@ async function findReusableTranscodeJob(
 
 async function ensureJobLocked(
   upstream: string,
-  opts?: { resetCache?: boolean; seekSec?: number }
+  opts?: { resetCache?: boolean; seekSec?: number; backgroundWarm?: boolean }
 ): Promise<TranscodeJob> {
   const requestedSeek = Math.max(0, Math.floor(opts?.seekSec ?? 0));
 
@@ -1998,7 +2174,7 @@ async function ensureJobLocked(
 
   if (startOffsetSec > 0) {
     await cancelSiblingTranscodeJobs(upstream, key);
-  } else {
+  } else if (!opts?.backgroundWarm) {
     await cancelOtherUpstreamTranscodeJobs(upstream, key);
   }
 
@@ -2104,7 +2280,7 @@ async function ensureJobLocked(
 
 async function ensureJob(
   upstream: string,
-  opts?: { resetCache?: boolean; seekSec?: number }
+  opts?: { resetCache?: boolean; seekSec?: number; backgroundWarm?: boolean }
 ): Promise<TranscodeJob> {
   // One flight chain per upstream — tip seeks cannot race a from-0 create and
   // fork a second ffmpeg job before reuse logic sees the first.
@@ -2268,6 +2444,14 @@ export async function handleVodTranscodeRequest(opts: {
     return { status: 400, errorText: "URL is not eligible for VOD transcode." };
   }
 
+  if (opts.head && (await warmBlocksOnActiveDownload(opts.upstream))) {
+    return {
+      status: 202,
+      contentType: "application/vnd.apple.mpegurl",
+      extraHeaders: { "retry-after": "3" },
+    };
+  }
+
   if (!(await ffmpegAvailable())) {
     return {
       status: 503,
@@ -2287,7 +2471,11 @@ export async function handleVodTranscodeRequest(opts: {
   const job = await ensureJob(opts.upstream, {
     resetCache: opts.resetCache,
     seekSec: opts.seekSec,
+    backgroundWarm: opts.head && !(opts.seekSec && opts.seekSec > 0),
   });
+  if (opts.head && !job.hasPlayerViewer) {
+    job.backgroundWarm = true;
+  }
   if (!opts.head) {
     noteTranscodeViewer(job);
   }
@@ -2301,6 +2489,7 @@ export async function handleVodTranscodeRequest(opts: {
   }
 
   if (media === MANIFEST_NAME) {
+    scheduleVodChapterProbe(job);
     // Contiguity heal is awaited below before serve — do not fire-and-forget
     // a parallel heal that races stop/rewrite with ffmpeg append_list.
     void ensureEncodingContinues(job);
@@ -2378,8 +2567,8 @@ export async function handleVodTranscodeRequest(opts: {
         ),
       };
     }
-    const durationSec =
-      job.durationSec ?? (await readJobMeta(job.dir))?.durationSec ?? null;
+    const jobMeta = await readJobMeta(job.dir);
+    const durationSec = job.durationSec ?? jobMeta?.durationSec ?? null;
     if (!durationSec || durationSec <= 0) {
       const probeInput = await resolveProbeInput(job);
       void probeDurationSec(probeInput).then(async (probed) => {
@@ -2476,6 +2665,12 @@ export async function handleVodTranscodeRequest(opts: {
     if (trimmedEncodedSec > 0) {
       durationHeader["x-vod-encoded-sec"] = String(
         trimmedEncodedSec.toFixed(3)
+      );
+    }
+    if (jobMeta?.chapterMarkers) {
+      Object.assign(
+        durationHeader,
+        chapterMarkerResponseHeaders(jobMeta.chapterMarkers)
       );
     }
     const extraDurationHeaders =

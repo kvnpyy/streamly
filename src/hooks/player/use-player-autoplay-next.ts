@@ -1,7 +1,7 @@
 "use client";
 
 import {
-  autoplayDisplayCountdownSec,
+  AUTOPLAY_COUNTDOWN_SEC,
   episodeAutoplayKey,
   getSeriesNextEpisode,
   shouldAutoplayOnEnded,
@@ -23,7 +23,12 @@ export type UsePlayerAutoplayNextParams = {
   playlist: PlayerPlaylist | null;
   index: number;
   timeSec: number;
+  /** Full title length. Used so a guessed credit window does not auto-skip early. */
   durationSec: number;
+  /** Absolute credits start. Null until the title duration is known. */
+  creditsStartSec: number | null;
+  creditsExact: boolean;
+  seeking: boolean;
   videoRef: RefObject<HTMLVideoElement | null>;
   onPlayNext: () => void;
 };
@@ -32,6 +37,9 @@ export type UsePlayerAutoplayNextResult = {
   visible: boolean;
   nextEpisode: PlayerSource | null;
   countdownSec: number | null;
+  countdownTotalSec: number;
+  /** Viewer chose cancel or watch credits — drop a next-episode warm. */
+  dismissed: boolean;
   cancelAutoplay: () => void;
   playNextNow: () => void;
   watchCredits: () => void;
@@ -47,6 +55,9 @@ export function usePlayerAutoplayNext(
     index,
     timeSec,
     durationSec,
+    creditsStartSec,
+    creditsExact,
+    seeking,
     videoRef,
     onPlayNext,
   } = p;
@@ -60,43 +71,85 @@ export function usePlayerAutoplayNext(
 
   const [dismissedKey, setDismissedKey] = useState<string | null>(null);
   const [watchCreditsKey, setWatchCreditsKey] = useState<string | null>(null);
+  const [stickyKey, setStickyKey] = useState<string | null>(null);
+  const [endedLatch, setEndedLatch] = useState(false);
+  const [countdownSec, setCountdownSec] = useState<number | null>(null);
+  const [trackedEpisode, setTrackedEpisode] = useState(episodeKey);
   const advancedRef = useRef(false);
   const onPlayNextRef = useRef(onPlayNext);
+  const endedLatchRef = useRef(false);
 
   useEffect(() => {
     onPlayNextRef.current = onPlayNext;
-  }, [onPlayNext]);
+    endedLatchRef.current = endedLatch;
+  }, [onPlayNext, endedLatch]);
 
   useEffect(() => {
     advancedRef.current = false;
   }, [episodeKey]);
+
+  if (episodeKey !== trackedEpisode) {
+    setTrackedEpisode(episodeKey);
+    setEndedLatch(false);
+    setStickyKey(null);
+    setCountdownSec(null);
+  }
 
   const dismissedForEpisode =
     episodeKey != null && dismissedKey === episodeKey;
   const watchCreditsForEpisode =
     episodeKey != null && watchCreditsKey === episodeKey;
 
-  const shouldOffer = shouldOfferAutoplayNext({
+  const offer = shouldOfferAutoplayNext({
     open,
     kind: current?.kind,
     playlist,
     index,
-    durationSec,
     currentTimeSec: timeSec,
+    creditsStartSec,
+    endedLatch: episodeKey === trackedEpisode ? endedLatch : false,
+    seeking,
     dismissedForEpisode,
     watchCreditsForEpisode,
     hasNextEpisode,
   });
 
-  const positionCountdownSec = useMemo(
-    () =>
-      autoplayDisplayCountdownSec({
-        durationSec,
-        currentTimeSec: timeSec,
-        shouldOffer,
-      }),
-    [durationSec, timeSec, shouldOffer]
-  );
+  if (offer && episodeKey && stickyKey !== episodeKey) {
+    setStickyKey(episodeKey);
+  }
+  if (
+    stickyKey === episodeKey &&
+    episodeKey != null &&
+    creditsStartSec != null &&
+    !endedLatch &&
+    timeSec < creditsStartSec - 20
+  ) {
+    setStickyKey(null);
+    setCountdownSec(null);
+  }
+
+  const sticky = episodeKey != null && stickyKey === episodeKey;
+  const visible =
+    open &&
+    hasNextEpisode &&
+    !seeking &&
+    !dismissedForEpisode &&
+    !watchCreditsForEpisode &&
+    (offer || sticky || (endedLatch && episodeKey === trackedEpisode));
+
+  const remainingSec =
+    Number.isFinite(durationSec) && durationSec > 0
+      ? Math.max(0, durationSec - timeSec)
+      : Number.POSITIVE_INFINITY;
+  const countdownArmed =
+    visible &&
+    (endedLatch ||
+      creditsExact ||
+      remainingSec <= AUTOPLAY_COUNTDOWN_SEC + 0.4);
+
+  if (countdownArmed && countdownSec == null) {
+    setCountdownSec(AUTOPLAY_COUNTDOWN_SEC);
+  }
 
   const advanceToNext = useCallback(() => {
     if (advancedRef.current || !hasNextEpisode) return;
@@ -105,18 +158,32 @@ export function usePlayerAutoplayNext(
   }, [hasNextEpisode]);
 
   useEffect(() => {
-    if (positionCountdownSec !== 0) return;
+    if (!visible || !countdownArmed) return;
+    const id = window.setInterval(() => {
+      const v = videoRef.current;
+      const ended = endedLatchRef.current || !!v?.ended;
+      if (v?.paused && !ended) return;
+      setCountdownSec((c) => {
+        if (c == null) return AUTOPLAY_COUNTDOWN_SEC;
+        return c <= 1 ? 0 : c - 1;
+      });
+    }, 1000);
+    return () => window.clearInterval(id);
+  }, [visible, countdownArmed, videoRef]);
+
+  useEffect(() => {
+    if (countdownSec !== 0 || !countdownArmed) return;
     const v = videoRef.current;
-    if (v?.paused) return;
+    const ended = endedLatchRef.current || !!v?.ended;
+    if (v?.paused && !ended) return;
     advanceToNext();
-  }, [positionCountdownSec, advanceToNext, videoRef]);
+  }, [countdownSec, countdownArmed, advanceToNext, videoRef]);
 
   useEffect(() => {
     const v = videoRef.current;
     if (!v || !open) return;
 
     const onEnded = () => {
-      if (v.paused && !v.ended) return;
       if (
         !shouldAutoplayOnEnded({
           kind: current?.kind,
@@ -129,7 +196,9 @@ export function usePlayerAutoplayNext(
       ) {
         return;
       }
-      advanceToNext();
+      // Transcode playback pauses, then dispatches `ended` itself — `video.ended`
+      // stays false. Still show the card instead of skipping straight through.
+      setEndedLatch(true);
     };
 
     v.addEventListener("ended", onEnded);
@@ -143,14 +212,16 @@ export function usePlayerAutoplayNext(
     dismissedForEpisode,
     watchCreditsForEpisode,
     hasNextEpisode,
-    advanceToNext,
   ]);
 
   const cancelAutoplay = useCallback(() => {
+    setCountdownSec(null);
     if (episodeKey) setDismissedKey(episodeKey);
   }, [episodeKey]);
 
   const watchCredits = useCallback(() => {
+    setCountdownSec(null);
+    setEndedLatch(false);
     if (episodeKey) setWatchCreditsKey(episodeKey);
   }, [episodeKey]);
 
@@ -158,20 +229,12 @@ export function usePlayerAutoplayNext(
     advanceToNext();
   }, [advanceToNext]);
 
-  const visibleCountdown =
-    positionCountdownSec != null && positionCountdownSec > 0
-      ? positionCountdownSec
-      : null;
-
   return {
-    visible:
-      hasNextEpisode &&
-      !dismissedForEpisode &&
-      !watchCreditsForEpisode &&
-      shouldOffer &&
-      visibleCountdown != null,
+    visible,
     nextEpisode,
-    countdownSec: visibleCountdown,
+    countdownSec: visible && countdownArmed ? countdownSec : null,
+    countdownTotalSec: AUTOPLAY_COUNTDOWN_SEC,
+    dismissed: dismissedForEpisode || watchCreditsForEpisode,
     cancelAutoplay,
     playNextNow,
     watchCredits,

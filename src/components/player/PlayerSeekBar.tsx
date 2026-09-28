@@ -17,6 +17,7 @@ type PlayerSeekBarProps = {
   bufferedProgress: number;
   playbackUrl: string;
   poster?: string;
+  cueMarks?: { atSec: number; label: string }[];
   onScrubStart?: () => void;
   onScrubPreview: (targetSec: number) => void;
   onSeekCommit: (targetSec: number) => void;
@@ -31,6 +32,7 @@ export function PlayerSeekBar({
   bufferedProgress,
   playbackUrl,
   poster,
+  cueMarks,
   onScrubStart,
   onScrubPreview,
   onSeekCommit,
@@ -225,6 +227,21 @@ export function PlayerSeekBar({
           style={{ width: `${sliderProgress}%` }}
         />
       </div>
+      {duration > 1 &&
+        cueMarks?.map((mark) => {
+          if (!Number.isFinite(mark.atSec) || mark.atSec <= 0 || mark.atSec >= duration) {
+            return null;
+          }
+          const pct = (mark.atSec / duration) * 100;
+          return (
+            <div
+              key={`${mark.label}-${Math.round(mark.atSec)}`}
+              className="pointer-events-none absolute top-1/2 z-[1] h-3 w-0.5 -translate-y-1/2 rounded-full bg-white/80"
+              style={{ left: `${pct}%` }}
+              title={mark.label}
+            />
+          );
+        })}
       <input
         type="range"
         min={0}

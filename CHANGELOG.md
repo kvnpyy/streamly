@@ -23,6 +23,18 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.13.44] — 2026-09-28
+
+Next episode and skip intro show up during series, timed to the credits and the opening.
+
+### Added
+- **Next episode** — the card appears when the credits start, then plays the next episode after a short countdown. Watch credits stays on the ending.
+- **Skip intro** — when a file has chapter marks, or after you skip an opening once, later episodes of that show reuse the same timing.
+- Intro and credit times are saved per episode, so the buttons do not depend on the last few seconds of a transcode.
+- While the next-episode card is up, the following episode starts encoding from the beginning, only after this episode has finished downloading.
+
+---
+
 ## [0.13.43] — 2026-09-27
 
 iPhone playback controls stay tappable while a channel is playing, including mute.

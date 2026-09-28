@@ -205,6 +205,18 @@ const warmLastAt = new Map<string, number>();
 
 /** Tell the server to stop ffmpeg for this title when the player closes. */
 export function releaseVodTranscodePlayback(proxyUrl: string): void {
+  beaconTranscodeRelease(proxyUrl, "release");
+}
+
+/** Stop a next-episode warm the viewer dismissed. A real play is left running. */
+export function releaseVodTranscodeWarm(proxyUrl: string): void {
+  beaconTranscodeRelease(proxyUrl, "release-warm");
+}
+
+function beaconTranscodeRelease(
+  proxyUrl: string,
+  mode: "release" | "release-warm"
+): void {
   if (!isVodTranscodeEnabledClient()) return;
   if (typeof window === "undefined") return;
   try {
@@ -213,7 +225,7 @@ export function releaseVodTranscodePlayback(proxyUrl: string): void {
     const upstream = parsed.searchParams.get("u");
     if (!upstream) return;
     const releaseUrl = new URL("/api/stream", origin);
-    releaseUrl.searchParams.set("transcode", "release");
+    releaseUrl.searchParams.set("transcode", mode);
     releaseUrl.searchParams.set("u", upstream);
     const beaconUrl = releaseUrl.toString();
     if (typeof navigator.sendBeacon === "function") {

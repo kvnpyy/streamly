@@ -11,6 +11,18 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.13.44",
+    date: "2026-09-28",
+    summary:
+      "Next episode and skip intro show up during series, timed to the credits and the opening.",
+    highlights: [
+      "The next-episode card appears when the credits start, then plays the next episode after a short countdown. Watch credits stays on the ending.",
+      "Skip intro shows when the file has chapter marks, or after you skip an opening once. Later episodes of that show reuse the same timing.",
+      "Those times are saved per episode, so the buttons do not depend on the last few seconds of a transcode.",
+      "While the next-episode card is up, the following episode starts encoding from the beginning — only after this episode has finished downloading.",
+    ],
+  },
+  {
     version: "0.13.43",
     date: "2026-09-27",
     summary:
