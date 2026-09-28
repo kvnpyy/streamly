@@ -11,7 +11,7 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
-    version: "0.13.44",
+    version: "0.13.45",
     date: "2026-09-28",
     summary:
       "Next episode and skip intro show up during series, timed to the credits and the opening.",

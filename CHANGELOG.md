@@ -23,7 +23,7 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
-## [0.13.44] — 2026-09-28
+## [0.13.45] — 2026-09-28
 
 Next episode and skip intro show up during series, timed to the credits and the opening.
 
