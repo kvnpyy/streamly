@@ -4,7 +4,11 @@ import { CommunityDiscordLink } from "@/components/CommunityDiscordLink";
 import { CommunityGitHubLink } from "@/components/CommunityGitHubLink";
 import { scheduleWhenIdle } from "@/lib/defer-idle";
 import { notifyChromeLayoutShift } from "@/lib/shell-layout";
-import { discordInviteUrl, SITE_NAME } from "@/lib/site-brand";
+import {
+  DISCORD_STRIP_DISMISS_KEY,
+  discordInviteUrl,
+  SITE_NAME,
+} from "@/lib/site-brand";
 import { useLiveBrowseUi } from "@/store/live-browse-ui";
 import { cn } from "@/lib/utils";
 import { X } from "lucide-react";
@@ -16,7 +20,6 @@ import {
   type SyntheticEvent,
 } from "react";
 
-const DISMISS_KEY = "streamly-discord-strip-dismissed-v1";
 const COLLAPSE_MS = 220;
 
 type StripPhase = "pending" | "open" | "closing" | "gone";
@@ -24,7 +27,7 @@ type StripPhase = "pending" | "open" | "closing" | "gone";
 function persistDismiss() {
   scheduleWhenIdle(() => {
     try {
-      localStorage.setItem(DISMISS_KEY, "1");
+      localStorage.setItem(DISCORD_STRIP_DISMISS_KEY, "1");
     } catch {
       /* quota / private mode */
     }
@@ -40,7 +43,7 @@ export function CommunityDiscordStrip({ className }: { className?: string }) {
 
   useEffect(() => {
     try {
-      const hidden = localStorage.getItem(DISMISS_KEY) === "1";
+      const hidden = localStorage.getItem(DISCORD_STRIP_DISMISS_KEY) === "1";
       queueMicrotask(() => setPhase(hidden ? "gone" : "open"));
     } catch {
       queueMicrotask(() => setPhase("open"));

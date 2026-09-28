@@ -1,6 +1,6 @@
 "use client";
 
-import { KOFI_SUPPORT_URL, SITE_NAME } from "@/lib/site-brand";
+import { KOFI_SUPPORT_URL } from "@/lib/site-brand";
 import { cn } from "@/lib/utils";
 import { Coffee } from "lucide-react";
 
@@ -20,8 +20,8 @@ export function CommunityKofiSidebarLink({
       target="_blank"
       rel="noopener noreferrer"
       onClick={onNavigate}
-      title={collapsed ? "Support on Ko-fi" : undefined}
-      aria-label={`Support ${SITE_NAME} on Ko-fi (opens in a new tab)`}
+      title={collapsed ? "Support us" : undefined}
+      aria-label="Support us on Ko-fi (opens in a new tab)"
       className={cn(
         "flex w-full items-center rounded-xl text-sm transition-colors",
         collapsed
@@ -31,7 +31,7 @@ export function CommunityKofiSidebarLink({
       )}
     >
       <Coffee className="size-[18px] shrink-0" />
-      {!collapsed && "Support"}
+      {!collapsed && "Support us"}
     </a>
   );
 }

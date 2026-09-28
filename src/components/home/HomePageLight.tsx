@@ -1,6 +1,7 @@
 "use client";
 
 import { HomeRecentTile } from "@/components/home/HomeRecentTile";
+import { LibraryDiscordNudge } from "@/components/LibraryDiscordNudge";
 import { TvHomeLight } from "@/components/home/TvHomeLight";
 import { useContinueRecentPlay } from "@/hooks/use-continue-recent-play";
 import {
@@ -101,6 +102,7 @@ export function HomePageLight({
 
   return (
     <div className="space-y-10">
+      <LibraryDiscordNudge />
       {spotlight && spotlightRecent ? (
         <FeaturedSpotlightHero
           spotlight={spotlight}

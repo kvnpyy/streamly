@@ -23,6 +23,9 @@ export const GITHUB_DISCUSSIONS_FEEDBACK_URL =
   process.env.NEXT_PUBLIC_GITHUB_DISCUSSIONS_FEEDBACK_URL?.trim() ||
   "https://github.com/kvnpyy/streamly/discussions/7";
 
+/** Set when the logged-in Discord strip has been dismissed. */
+export const DISCORD_STRIP_DISMISS_KEY = "streamly-discord-strip-dismissed-v1";
+
 const DEFAULT_DISCORD_INVITE_URL = "https://discord.gg/QGFKJt9t7A";
 
 /** Public Discord invite — set empty in env to hide community links. */
