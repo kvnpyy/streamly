@@ -14,9 +14,10 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const NOTES_URL = "https://iptvwebplayer.org/changelog";
-const TRY_URL = "https://iptvwebplayer.org";
 const MAX_BULLETS = 4;
 const MAX_LINE = 180;
+/** Streamly purple (--brand). Discord wants a decimal color. */
+const EMBED_COLOR = 0x7c5cff;
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -52,13 +53,23 @@ function clip(text) {
   return `${text.slice(0, MAX_LINE - 1).trimEnd()}…`;
 }
 
+/** @returns {{ label: string, detail: string }} */
 export function shortenBullet(raw) {
   const text = cleanMarkdown(raw);
   const dash = text.match(/^(.+?)\s+[—–-]\s+([\s\S]+)$/);
   if (dash) {
-    return clip(`${dash[1].trim()} — ${firstSentence(dash[2].trim())}`);
+    return { label: dash[1].trim(), detail: clip(firstSentence(dash[2].trim())) };
   }
-  return clip(firstSentence(text));
+  return { label: "", detail: clip(firstSentence(text)) };
+}
+
+function bulletPlain(bullet) {
+  return bullet.label ? `${bullet.label} ${bullet.detail}` : bullet.detail;
+}
+
+function formatBullet(bullet) {
+  if (!bullet.label) return `- ${bullet.detail}`;
+  return `- **${bullet.label}** — ${bullet.detail}`;
 }
 
 export function parseChangelogEntry(markdown, version) {
@@ -67,6 +78,7 @@ export function parseChangelogEntry(markdown, version) {
   const lines = markdown.split(/\r?\n/);
   const header = lines.findIndex((line) => line.startsWith(`## [${ver}]`));
   if (header < 0) return null;
+  const date = lines[header].match(/(\d{4}-\d{2}-\d{2})\s*$/)?.[1] ?? "";
 
   const summary = [];
   const bullets = [];
@@ -90,20 +102,23 @@ export function parseChangelogEntry(markdown, version) {
 
   return {
     version: ver,
+    date,
     summary: cleanMarkdown(summary.join(" ")),
     bullets,
   };
 }
 
 /**
- * @returns {{ skip: true, reason: string } | { skip: false, content: string, payload: { content: string, allowed_mentions: { parse: string[] }, username: string } }}
+ * Version title links to the changelog. @here stays outside the embed so a test
+ * can post the same card without pinging the channel.
+ *
+ * @returns {{ skip: true, reason: string } | { skip: false, content: string, payload: { content?: string, allowed_mentions: { parse: string[] }, embeds: object[] } }}
  */
 export function buildChangelogAnnouncement({
   markdown,
   version,
   mentionHere,
   notesUrl = NOTES_URL,
-  tryUrl = TRY_URL,
 }) {
   const entry = parseChangelogEntry(markdown, version);
   if (!entry) {
@@ -116,7 +131,7 @@ export function buildChangelogAnnouncement({
   const summary = entry.summary && !isInternal(entry.summary) ? clip(firstSentence(entry.summary)) : "";
   const bullets = entry.bullets
     .map(shortenBullet)
-    .filter((line) => line && !isInternal(line))
+    .filter((bullet) => bullet.detail && !isInternal(bulletPlain(bullet)))
     .slice(0, MAX_BULLETS);
 
   if (!summary && bullets.length === 0) {
@@ -127,23 +142,27 @@ export function buildChangelogAnnouncement({
   }
 
   const versionLabel = `v${entry.version}`;
-  const lines = [];
-  if (mentionHere) lines.push("@here");
-  lines.push(versionLabel);
-  if (summary) lines.push(summary);
-  lines.push(...bullets);
-  lines.push(`Full notes: ${notesUrl}#${versionLabel}`);
-  lines.push("");
-  lines.push(`Try it: ${tryUrl}`);
+  const parts = [];
+  if (summary) parts.push(`*${summary}*`);
+  if (bullets.length > 0) parts.push(bullets.map(formatBullet).join("\n"));
+  const description = parts.join("\n\n");
 
-  const content = lines.join("\n");
+  /** @type {{ title: string, url: string, description: string, color: number, timestamp?: string }} */
+  const embed = {
+    title: versionLabel,
+    url: `${notesUrl}#${versionLabel}`,
+    description,
+    color: EMBED_COLOR,
+  };
+  if (entry.date) embed.timestamp = `${entry.date}T12:00:00.000Z`;
+
   return {
     skip: false,
-    content,
+    content: description,
     payload: {
-      content,
-      username: "Streamly",
+      ...(mentionHere ? { content: "@here" } : {}),
       allowed_mentions: { parse: mentionHere ? ["everyone"] : [] },
+      embeds: [embed],
     },
   };
 }

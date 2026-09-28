@@ -46,20 +46,21 @@ describe("discord changelog", () => {
     expect(announced.skip).toBe(false);
     if (announced.skip) return;
 
-    expect(announced.content).toBe(
+    const embed = announced.payload.embeds[0];
+    expect(embed.title).toBe("v0.4.0");
+    expect(embed.url).toBe("https://iptvwebplayer.org/changelog#v0.4.0");
+    expect(embed.description).toBe(
       [
-        "@here",
-        "v0.4.0",
-        "TV pairing is faster, and the guide still loads when the provider feed fails.",
-        "TV pairing — pairing finishes sooner on the TV browser.",
-        "EPG — the guide loads if the provider one fails.",
-        "Series resume — resume works again on mobile.",
-        "Full notes: https://iptvwebplayer.org/changelog#v0.4.0",
+        "*TV pairing is faster, and the guide still loads when the provider feed fails.*",
         "",
-        "Try it: https://iptvwebplayer.org",
+        "- **TV pairing** — pairing finishes sooner on the TV browser.",
+        "- **EPG** — the guide loads if the provider one fails.",
+        "- **Series resume** — resume works again on mobile.",
       ].join("\n")
     );
-    expect(announced.content).not.toMatch(/Next\.js|refactor/);
+    expect(embed.timestamp).toBe("2026-09-28T12:00:00.000Z");
+    expect(JSON.stringify(announced.payload)).not.toMatch(/Try it|iptvwebplayer\.org\/(?!changelog)|Next\.js|refactor/);
+    expect(announced.payload.content).toBe("@here");
     expect(announced.payload.allowed_mentions.parse).toEqual(["everyone"]);
   });
 
@@ -72,7 +73,7 @@ describe("discord changelog", () => {
     expect(announced.skip).toBe(false);
     if (announced.skip) return;
 
-    expect(announced.content.startsWith("v0.4.0")).toBe(true);
+    expect(announced.payload.content).toBeUndefined();
     expect(announced.content).not.toContain("@here");
     expect(announced.payload.allowed_mentions.parse).toEqual([]);
   });
