@@ -1,0 +1,50 @@
+# Posts to Discord #changelog when a GitHub Release is published.
+# Pushes to main do not run this. Day-to-day deploys stay quiet.
+#
+# One-time setup:
+#   1. Discord → #changelog → Integrations → Webhooks → New Webhook. Copy the URL.
+#   2. GitHub → Settings → Secrets and variables → Actions →
+#      New repository secret: DISCORD_CHANGELOG_WEBHOOK = that URL.
+#
+# @here is on for a published release, off for a prerelease, and off for a manual test
+# unless you check "mention_here".
+
+name: Discord changelog
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version already in CHANGELOG.md, e.g. v0.13.46"
+        required: true
+        type: string
+      mention_here:
+        description: "Ping @here (leave off for a test)"
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    steps:
+      # Release events use the workflow on the default branch. Check that out so this
+      # script exists even when the tag was cut earlier. The post looks up RELEASE_TAG
+      # in CHANGELOG.md, so the notes need to be on this branch before you publish.
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Post changelog
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_CHANGELOG_WEBHOOK }}
+          RELEASE_TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.version }}
+          MENTION_HERE: ${{ github.event_name == 'release' && (github.event.release.prerelease && 'false' || 'true') || (inputs.mention_here && 'true' || 'false') }}
+        run: node scripts/discord-changelog.mjs
