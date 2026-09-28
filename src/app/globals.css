@@ -266,8 +266,41 @@ html.stream-silk-hint .guide-no-epg-play {
 }
 
 /* Hide native video controls inside our player */
-video::-webkit-media-controls {
+video::-webkit-media-controls,
+video::-webkit-media-controls-panel,
+video::-webkit-media-controls-play-button,
+video::-webkit-media-controls-start-playback-button,
+video::-webkit-media-controls-overlay-play-button {
   display: none !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+  -webkit-appearance: none;
+}
+
+/*
+ * iPhone/iPad: a transformed ancestor promotes <video> into a layer that paints
+ * above the controls and eats every tap while the stream keeps playing.
+ * Flatten that transform and let the chrome sit on its own layer.
+ */
+.player-ios-surface {
+  transform: none !important;
+  -webkit-transform: none !important;
+  will-change: auto !important;
+}
+.player-ios-surface video {
+  position: relative;
+  z-index: 0;
+  transform: none !important;
+  -webkit-transform: none !important;
+  pointer-events: none !important;
+}
+.player-ios-surface [data-player-controls] {
+  z-index: 30;
+  pointer-events: auto;
+  touch-action: manipulation;
+  /* Keep a layer above the video compositor after the show/hide motion ends. */
+  -webkit-transform: translate3d(0, 0, 0) !important;
+  transform: translate3d(0, 0, 0) !important;
 }
 
 /* Make in-band / sidecar cues readable over dark video */

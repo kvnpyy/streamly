@@ -23,6 +23,16 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.13.43] — 2026-09-27
+
+iPhone playback controls stay tappable while a channel is playing, including mute.
+
+### Fixed
+- **iPhone player** — buttons receive taps instead of the video layer, so pause, close, and mute work while the stream keeps playing.
+- **Mute** — the icon follows the real muted state. A saved volume no longer shows muted while iPhone audio is actually on.
+
+---
+
 ## [0.13.42] — 2026-09-26
 
 Marking an episode watched stays on that season, watched episodes follow your account, and a live channel that keeps freezing is restabilized.

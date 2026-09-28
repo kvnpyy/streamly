@@ -11,6 +11,16 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.13.43",
+    date: "2026-09-27",
+    summary:
+      "iPhone playback controls stay tappable while a channel is playing, including mute.",
+    highlights: [
+      "Player buttons receive taps on iPhone instead of the video layer, so pause, close, and mute work while the stream keeps playing.",
+      "The mute icon follows the real muted state. A saved volume no longer shows muted while iPhone audio is actually on.",
+    ],
+  },
+  {
     version: "0.13.42",
     date: "2026-09-26",
     summary:

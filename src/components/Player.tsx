@@ -88,6 +88,10 @@ import {
   isChromiumBasedDesktopBrowser,
 } from "@/lib/browser";
 import {
+  applyElementMuted,
+  playerChromeShowsMuted,
+} from "@/lib/player-element-mute";
+import {
   applyGentleLiveHlsRecovery,
   applySoftLiveHlsRecovery,
   applyTvLiveFreezeAction,
@@ -287,6 +291,11 @@ export function PlayerOverlay() {
     if (typeof navigator === "undefined") return false;
     return isChromiumBasedDesktopBrowser();
   }, []);
+  /**
+   * iPhone/iPad: element volume is hardware-owned, and a transformed ancestor
+   * lets the `<video>` compositor sit above the controls and swallow taps.
+   */
+  const appleMobileWebKit = useMemo(() => isAppleMobileWebKitDevice(), []);
   const canFlip = !!playlist && playlist.items.length > 1;
   /** Live channel flip or series episode flip (↑/↓ and toolbar buttons). */
   const flipWithArrowKeys =
@@ -1571,7 +1580,17 @@ export function PlayerOverlay() {
   const setMute = useCallback((m: boolean) => {
     const v = videoRef.current;
     if (!v) return;
-    v.muted = m;
+    applyElementMuted(v, m);
+    setMuted(m);
+    if (!m && v.volume === 0 && !isAppleMobileWebKitDevice()) {
+      v.volume = 1;
+      setVolume(1);
+    }
+    // iOS applies unmute to an already-playing HLS element only if play()
+    // runs again inside the same tap.
+    if (!m && isAppleMobileWebKitDevice() && !v.paused) {
+      void v.play().catch(() => {});
+    }
   }, []);
 
   const setVol = useCallback((val: number) => {
@@ -2068,6 +2087,29 @@ export function PlayerOverlay() {
     pointerWakeGateRef.current = now;
     wakeControls();
   }, [chromiumDesktopClient, scheduleControlsHide, wakeControls]);
+
+  /**
+   * iOS: the video is `pointer-events: none` so taps reach this shell instead of
+   * the compositor. A tap on empty video toggles play; taps on buttons do not.
+   */
+  const onPlayerSurfaceClick = useCallback(
+    (e: React.MouseEvent<HTMLDivElement>) => {
+      onPlayerPointerActivity();
+      if (!appleMobileWebKit) return;
+      const t = e.target as HTMLElement | null;
+      if (
+        t &&
+        t !== e.currentTarget &&
+        t.closest(
+          "button, a, input, textarea, select, label, [data-player-controls]"
+        )
+      ) {
+        return;
+      }
+      togglePlay();
+    },
+    [appleMobileWebKit, onPlayerPointerActivity, togglePlay]
+  );
 
   /** Series/movies often start playing after the first hide timer (loading, MKV probe). */
   useEffect(() => {
@@ -2636,21 +2678,28 @@ export function PlayerOverlay() {
 
   const instantPlayerTransition =
     quickVodPlayerOpen || mobileLikeViewport || chromiumDesktopClient;
+  const shownMuted = playerChromeShowsMuted({
+    muted,
+    volume,
+    volumeControllable: !appleMobileWebKit,
+  });
 
   return (
     <AnimatePresence>
       {open && current && (
         <PlayerBackdrop
           key="player"
-          instantTransition={instantPlayerTransition}
+          instantTransition={instantPlayerTransition || appleMobileWebKit}
         >
           <motion.div
             initial={
-              instantPlayerTransition
+              instantPlayerTransition || appleMobileWebKit
                 ? false
                 : { scale: 0.96, y: 20 }
             }
-            animate={{ scale: 1, y: 0 }}
+            animate={
+              appleMobileWebKit ? { opacity: 1 } : { scale: 1, y: 0 }
+            }
             exit={
               instantPlayerTransition
                 ? undefined
@@ -2662,11 +2711,12 @@ export function PlayerOverlay() {
             }}
             ref={containerRef}
             onMouseMove={onPlayerPointerActivity}
-            onClick={onPlayerPointerActivity}
+            onClick={onPlayerSurfaceClick}
             className={cn(
               "relative isolate bg-black w-full max-w-[1400px] flex-1 min-h-0 sm:flex-none sm:aspect-video max-h-[100dvh] sm:max-h-[calc(100vh-3rem)] rounded-none sm:rounded-2xl overflow-hidden border border-white/10 shadow-[0_40px_120px_rgba(0,0,0,0.7)]",
               "select-none",
               chromiumDesktopClient && "player-chromium-live-surface",
+              appleMobileWebKit && "player-ios-surface",
               playerImmersive && (tvBrowser || silkLikeClient) && "player-immersive-surface"
             )}
           >
@@ -2716,13 +2766,15 @@ export function PlayerOverlay() {
               ref={videoRef}
               poster={isLive || showVodPrepare ? undefined : posterSrc}
               playsInline
+              controls={false}
               preload={silkLikeClient ? "metadata" : "auto"}
               autoPlay
-              onClick={togglePlay}
+              onClick={appleMobileWebKit ? undefined : togglePlay}
               className={cn(
                 "size-full max-h-[100dvh] object-contain bg-black",
                 showVodPrepare && "opacity-0 transition-opacity duration-300",
                 !showVodPrepare && "opacity-100",
+                appleMobileWebKit && "pointer-events-none",
                 playerImmersive && (tvBrowser || silkLikeClient)
                   ? "cursor-none"
                   : "cursor-pointer"
@@ -2818,24 +2870,24 @@ export function PlayerOverlay() {
                   e.stopPropagation();
                   const v = videoRef.current;
                   if (!v) return;
-                  v.muted = false;
+                  applyElementMuted(v, false);
+                  setMuted(false);
                   try {
                     await safeVideoPlay(v);
                     setNeedsTapToPlay(false);
-                    setMuted(false);
                   } catch {
                     // Last resort: keep muted but force play
-                    v.muted = true;
+                    applyElementMuted(v, true);
+                    setMuted(true);
                     try {
                       await safeVideoPlay(v);
                     } catch {
                       /* noop */
                     }
                     setNeedsTapToPlay(false);
-                    setMuted(true);
                   }
                 }}
-                className="absolute inset-0 grid place-items-center bg-black/55"
+                className="absolute inset-0 z-[7] grid place-items-center bg-black/55"
               >
                 <div className="text-center px-6">
                   <div className="size-16 rounded-full btn-brand grid place-items-center mx-auto mb-3 shadow-[0_20px_60px_rgba(124,92,255,0.4)]">
@@ -2887,7 +2939,7 @@ export function PlayerOverlay() {
 
             {/* Error state */}
             {error && (
-              <div className="absolute inset-0 grid place-items-center bg-black/70">
+              <div className="absolute inset-0 z-[7] grid place-items-center bg-black/70">
                 <div className="max-w-md text-center px-6">
                   <div className="text-red-400 text-sm mb-2">
                     Unable to play
@@ -3198,11 +3250,15 @@ export function PlayerOverlay() {
 
                     <div className="flex items-center gap-2 ml-1 group/vol">
                       <button
-                        onClick={() => setMute(!muted)}
-                        aria-label={muted ? "Unmute" : "Mute"}
-                        className="size-9 grid place-items-center rounded-lg hover:bg-white/10"
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setMute(!shownMuted);
+                        }}
+                        aria-label={shownMuted ? "Unmute" : "Mute"}
+                        className="size-9 grid place-items-center rounded-lg hover:bg-white/10 touch-manipulation"
                       >
-                        {muted || volume === 0 ? (
+                        {shownMuted ? (
                           <VolumeX className="size-4" />
                         ) : (
                           <Volume2 className="size-4" />

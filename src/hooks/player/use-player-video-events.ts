@@ -3,6 +3,7 @@
 import { useEffect, type Dispatch, type RefObject, type SetStateAction } from "react";
 import type Hls from "hls.js";
 import { isAppleMobileWebKitDevice } from "@/lib/browser";
+import { writePreferredPlayerVolume } from "@/lib/player-volume-pref";
 import { isTvOrSilkUserAgent } from "@/lib/tv-user-agent";
 import {
   applyGentleLiveHlsRecovery,
@@ -15,7 +16,6 @@ import {
 import { playbackUrlIsHls } from "@/lib/playback-url";
 import { withLiveHlsCompatMse } from "@/lib/stream-url";
 import { voidSafeVideoPlay } from "@/lib/video-play";
-import { writePreferredPlayerVolume } from "@/lib/player-volume-pref";
 import { videoLikelyMissingDecodableAudio } from "@/lib/vod-silent-audio";
 import {
   isVodTranscodeEnabledClient,
@@ -538,6 +538,9 @@ export function usePlayerVideoEvents(p: UsePlayerVideoEventsParams) {
     };
     const onVol = () => {
       setMuted(v.muted);
+      // iOS reports element volume as 1 and does not honor script writes.
+      // Persisting it would wipe a desktop volume preference.
+      if (isAppleMobileWebKitDevice()) return;
       setVolume(v.volume);
       schedulePersistPreferredVolume(v.volume);
     };

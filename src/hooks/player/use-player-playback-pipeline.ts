@@ -52,6 +52,7 @@ import {
   scheduleDeferredPlayerTeardown,
 } from "@/lib/player-teardown";
 import { detachVideoElement, safeVideoPlay, voidSafeVideoPlay } from "@/lib/video-play";
+import { applyElementMuted } from "@/lib/player-element-mute";
 import {
   durationHintFromTranscodePlaylistResponse,
   parseStreamlyDurationSec,
@@ -295,7 +296,9 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
     setLoading(!vodTranscodeHls);
 
     const preferredVol = readPreferredPlayerVolume();
-    if (preferredVol != null) {
+    // iOS ignores element volume (always the hardware level). Applying a saved
+    // 0 paints the mute icon while audio keeps playing, and unmute is a no-op.
+    if (preferredVol != null && !isAppleMobileWebKitDevice()) {
       video.volume = preferredVol;
       queueMicrotask(() => setVolume(preferredVol));
     }
@@ -329,7 +332,7 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
         // Autoplay rejected (usually because audio isn't allowed).
         // Try muted autoplay as a fallback.
         try {
-          video.muted = true;
+          applyElementMuted(video, true);
           await safeVideoPlay(video);
           // Show a hint so the user can tap to unmute.
           setNeedsTapToPlay(true);
