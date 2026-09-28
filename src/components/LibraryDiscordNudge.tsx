@@ -71,7 +71,7 @@ export function LibraryDiscordNudge() {
       }
     }
 
-    setShow(decision.show);
+    queueMicrotask(() => setShow(decision.show));
   }, [href]);
 
   if (!href || !show) return null;
