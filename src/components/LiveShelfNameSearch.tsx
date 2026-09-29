@@ -10,6 +10,7 @@ import { LIVE_LIST_MAX_CHANNELS } from "@/lib/live-guide-limits";
 import type { TvRegion } from "@/lib/geo-continent";
 import { MIN_SEARCH_QUERY_LEN } from "@/lib/search-normalize";
 import type { LiveStream, XtreamCredentials } from "@/lib/xtream-types";
+import { usePrefs } from "@/store/preferences";
 import { useQuery } from "@tanstack/react-query";
 import { SkeletonGrid } from "@/components/SectionHeader";
 import { useMemo } from "react";
@@ -32,6 +33,8 @@ export function LiveShelfNameSearch({
   isFavorite: (id: number) => boolean;
   onToggleFavorite: (c: LiveStream) => void;
 }) {
+  const hideAdult = usePrefs((s) => s.hideAdult);
+  const parentalUnlocked = usePrefs((s) => s.parentalUnlocked);
   const programmeSearchOn = isLiveProgrammeSearchEnabled();
   const searchEnabled = qLower.trim().length >= MIN_SEARCH_QUERY_LEN;
 
@@ -41,7 +44,8 @@ export function LiveShelfNameSearch({
       qLower,
       "all",
       tvRegion,
-      searchEnabled
+      searchEnabled,
+      hideAdult && !parentalUnlocked
     )
   );
 

@@ -17,6 +17,7 @@ const MAX_PER_SHELF = 12;
 
 import type { ShelfBatchItem } from "@/lib/live-catalog-shelf-batch";
 import { requireIptvCredsFromRequest } from "@/lib/iptv-request-creds";
+import { looksAdult } from "@/lib/utils";
 
 /**
  * One request per "Show more" — next category page + shelf previews.
@@ -41,6 +42,7 @@ export async function GET(req: NextRequest) {
     MAX_PER_SHELF,
     Math.max(1, Number.isFinite(limitRaw) ? limitRaw : 7)
   );
+  const hideAdult = req.nextUrl.searchParams.get("safe") === "1";
 
   try {
     const { bundle, index, streamById } = await getCachedLiveCatalogEntry(creds);
@@ -52,6 +54,9 @@ export async function GET(req: NextRequest) {
       bundle.categories,
       counts,
       index
+    ).filter(
+      (category) =>
+        !hideAdult || !looksAdult({ category_name: category.category_name })
     );
 
     const page = filtered.slice(offset, offset + count);
@@ -70,6 +75,14 @@ export async function GET(req: NextRequest) {
         category.category_name,
         region,
         limit
+      ).filter(
+        (stream) =>
+          !hideAdult ||
+          !looksAdult({
+            category_name: category.category_name,
+            name: stream.name,
+            is_adult: stream.is_adult,
+          })
       );
       if (preview.length === 0) continue;
 

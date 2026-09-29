@@ -129,6 +129,30 @@ describe("streamMatchesRegion", () => {
     ).toBe(true);
   });
 
+  it("keeps Chile and Dominican Republic out of North America", () => {
+    expect(categoryMatchesRegion("Chile", "North America")).toBe(false);
+    expect(categoryMatchesRegion("Dominican Republic", "North America")).toBe(
+      false
+    );
+    expect(categoryMatchesRegion("24/7 Chile", "North America")).toBe(false);
+    expect(
+      categoryMatchesRegion("|AM| DOMINICAN REPUBLIC", "North America")
+    ).toBe(false);
+    expect(
+      streamMatchesRegion(
+        "[EN] DOMINICAN REPUBLIC 24/7",
+        "24/7 ENGLISH",
+        "North America"
+      )
+    ).toBe(false);
+    expect(
+      streamMatchesRegion("[EN] CHILEVISION", "24/7 ENGLISH", "North America")
+    ).toBe(false);
+    expect(
+      streamMatchesRegion("[EN] COBRA KAI", "24/7 ENGLISH", "North America")
+    ).toBe(true);
+  });
+
   it("filters Arabic and Argentina channels out of North America generic shelves", () => {
     expect(
       streamMatchesRegion("beIN Sports HD 1", "Sports", "North America")

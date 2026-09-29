@@ -6,19 +6,12 @@ import { TvSpatialGrid } from "@/components/TvSpatialGrid";
 import { useTvBrowser } from "@/components/TvBrowserProvider";
 import { useContinueRecentPlay } from "@/hooks/use-continue-recent-play";
 import { continueDetailHref } from "@/lib/continue-watching";
-import { recentResumeStorageKey } from "@/lib/continue-watching";
 import { useAuth } from "@/store/auth";
 import { usePlayer } from "@/store/player";
-import {
-  browseAccountKey,
-  usePrefs,
-  type RecentItem,
-} from "@/store/preferences";
+import { usePrefs, type RecentItem } from "@/store/preferences";
 import { SITE_NAME } from "@/lib/site-brand";
-import { Trash2 } from "lucide-react";
 import { useSession } from "next-auth/react";
 import Link from "next/link";
-import { useMemo } from "react";
 
 export default function ContinueWatchingPage() {
   const creds = useAuth((s) => s.creds)!;
@@ -27,13 +20,10 @@ export default function ContinueWatchingPage() {
   const streamSignedIn = streamStatus === "authenticated";
   const { play } = usePlayer();
   const recents = usePrefs((s) => s.recents);
-  const removeRecent = usePrefs((s) => s.removeRecent);
   const clearRecents = usePrefs((s) => s.clearRecents);
   const isFavorite = usePrefs((s) => s.isFavorite);
   const toggleFavorite = usePrefs((s) => s.toggleFavorite);
   const addRecent = usePrefs((s) => s.addRecent);
-  const clearVodResume = usePrefs((s) => s.clearVodResume);
-  const accountKey = useMemo(() => browseAccountKey(creds), [creds]);
 
   const { playRecent, progressPctFor } = useContinueRecentPlay(
     creds,
@@ -41,12 +31,6 @@ export default function ContinueWatchingPage() {
     play,
     addRecent
   );
-
-  const onRemove = (recent: RecentItem) => {
-    removeRecent(recent.kind, recent.id);
-    const key = recentResumeStorageKey(accountKey, recent);
-    if (key) clearVodResume(key);
-  };
 
   const badgeFor = (r: RecentItem) =>
     r.kind === "live" ? "Live" : r.kind === "movie" ? "Movie" : "Series";
@@ -60,7 +44,7 @@ export default function ContinueWatchingPage() {
       }
     >
       {recents.map((r) => (
-        <div key={`${r.kind}-${r.id}`} className="relative group min-w-0">
+        <div key={`${r.kind}-${r.id}`} className="min-w-0">
           <HomeRecentTile
             recent={r}
             badge={badgeFor(r)}
@@ -78,14 +62,6 @@ export default function ContinueWatchingPage() {
               })
             }
           />
-          <button
-            type="button"
-            aria-label={`Remove ${r.name} from continue watching`}
-            onClick={() => onRemove(r)}
-            className="absolute bottom-10 right-2 z-10 size-8 rounded-lg bg-black/55 text-white/90 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 hover:bg-black/70 grid place-items-center transition-opacity"
-          >
-            <Trash2 className="size-3.5" />
-          </button>
         </div>
       ))}
     </div>
@@ -97,7 +73,7 @@ export default function ContinueWatchingPage() {
         <SectionHeader
           eyebrow="Pick up where you left off"
           title="Continue watching"
-          description="Resume movies, series, and live channels you've watched recently."
+          description="Resume movies, series, and live channels you've watched recently. Remove a title if you share this account."
         />
         {recents.length > 0 && (
           <button

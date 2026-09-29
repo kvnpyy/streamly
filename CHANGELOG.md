@@ -19,6 +19,23 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.13.52] — 2026-09-29
+
+Search lists every matching channel, episode rows use the real titles, and North America leaves out Chile and the Dominican Republic.
+
+### Added
+- Continue Watching tiles have a remove button, including on Home. Removing a title, or clearing the list, also drops it from the other devices on that account.
+- Episode lists show the real episode name, matched by season and episode number, instead of the filename a provider attached.
+
+### Fixed
+- The top search bar was returning a single channel for every query.
+- North America was still listing Chile and the Dominican Republic, including 24/7 loops whose titles name those places.
+- Adult and XXX categories were still showing on Live TV while adult filtering was on.
+- An episode could start with the picture moving and no sound, and the tap-for-sound prompt disappeared immediately.
+- A live channel could fail to start because a second download was opened while the first was still loading.
+
+---
+
 ## [0.13.51] — 2026-09-29
 
 Episode soundtracks that are surround play in the browser.

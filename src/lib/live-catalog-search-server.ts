@@ -7,10 +7,46 @@ import {
   textMatchesSearch,
 } from "@/lib/search-normalize";
 import type { LiveStream } from "@/lib/xtream-types";
+import { looksAdult } from "@/lib/utils";
 import type { LiveCatalogBundle } from "@/lib/xtream";
 
 export const LIVE_SEARCH_MATCH_LIMIT = 96;
 export const LIVE_SEARCH_SCAN_POOL_LIMIT = 480;
+
+/**
+ * Query params are omitted on the normal live search request. `Number(null)`
+ * is 0, and treating that as a real limit collapsed every search to one channel.
+ */
+export function resolveLiveSearchLimits(
+  matchLimitRaw: string | null,
+  scanLimitRaw: string | null
+): { matchLimit: number; scanPoolLimit: number } {
+  const matchLimit = positiveSearchLimit(
+    matchLimitRaw,
+    LIVE_SEARCH_MATCH_LIMIT,
+    LIVE_SEARCH_MATCH_LIMIT
+  );
+  const scanPoolLimit = positiveSearchLimit(
+    scanLimitRaw,
+    LIVE_SEARCH_SCAN_POOL_LIMIT,
+    LIVE_SEARCH_SCAN_POOL_LIMIT
+  );
+  return {
+    matchLimit,
+    scanPoolLimit: Math.max(matchLimit, scanPoolLimit),
+  };
+}
+
+function positiveSearchLimit(
+  raw: string | null,
+  fallback: number,
+  max: number
+): number {
+  if (raw == null || raw.trim() === "") return fallback;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n < 1) return fallback;
+  return Math.min(max, Math.floor(n));
+}
 
 export type LiveCatalogSearchOpts = {
   q: string;
@@ -18,6 +54,8 @@ export type LiveCatalogSearchOpts = {
   tvRegion?: TvRegion;
   matchLimit?: number;
   scanPoolLimit?: number;
+  /** Drop adult categories and channels. */
+  hideAdult?: boolean;
 };
 
 export type LiveCatalogSearchResult = {
@@ -114,13 +152,21 @@ export function searchLiveCatalog(
     opts.scanPoolLimit ?? LIVE_SEARCH_SCAN_POOL_LIMIT
   );
 
+  const catNames = categoryNameById(bundle.categories);
   const inScope = streamsInScope(
     bundle,
     index,
     streamById,
     categoryId,
     tvRegion
-  );
+  ).filter((stream) => {
+    if (!opts.hideAdult) return true;
+    return !looksAdult({
+      category_name: catNames.get(String(stream.category_id)),
+      name: stream.name,
+      is_adult: stream.is_adult,
+    });
+  });
 
   const nameHits: LiveStream[] = [];
   for (const s of inScope) {

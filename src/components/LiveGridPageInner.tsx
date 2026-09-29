@@ -228,7 +228,8 @@ export function LiveGridPageInner({ shell }: { shell: LivePageShell }) {
       qLower,
       deferredSelected,
       tvRegionForChannels,
-      shouldLoadChannelList && liveSearchActive
+      shouldLoadChannelList && liveSearchActive,
+      hideAdult && !parentalUnlocked
     )
   );
 

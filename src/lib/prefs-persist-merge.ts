@@ -1,5 +1,7 @@
 import { mergeFavorites } from "@/lib/favorites-sync";
 import {
+  applyRecentDismissals,
+  mergeRecentDismissals,
   mergeRecents,
   mergeVodResumeSnapshots,
   sanitizeRecents,
@@ -17,6 +19,7 @@ type PersistedPrefsSlice = Pick<
   | "comfortTvBrowsing"
   | "vodResumeSec"
   | "vodResumeWriteAt"
+  | "recentDismissedAt"
   | "activeSavedProviderAccountId"
   | "tvRegionFilter"
 >;
@@ -45,6 +48,13 @@ export function mergePersistedPrefs(
     mergedBrowse[key] = { ...mergedBrowse[key], ...value };
   }
 
+  const recentDismissedAt = mergeRecentDismissals(
+    currentState.recentDismissedAt ?? {},
+    p.recentDismissedAt && typeof p.recentDismissedAt === "object"
+      ? p.recentDismissedAt
+      : {}
+  );
+
   const resume = mergeVodResumeSnapshots(
     {
       sec: currentState.vodResumeSec,
@@ -69,13 +79,17 @@ export function mergePersistedPrefs(
       Array.isArray(p.favorites) ? p.favorites : []
     ),
     recents: sanitizeRecents(
-      mergeRecents(
-        currentState.recents,
-        Array.isArray(p.recents) ? p.recents : []
+      applyRecentDismissals(
+        mergeRecents(
+          currentState.recents,
+          Array.isArray(p.recents) ? p.recents : []
+        ),
+        recentDismissedAt
       )
     ),
     vodResumeSec: resume.sec,
     vodResumeWriteAt: resume.writeAt,
+    recentDismissedAt,
     browseByAccount: mergedBrowse,
     hideAdult:
       typeof p.hideAdult === "boolean" ? p.hideAdult : currentState.hideAdult,

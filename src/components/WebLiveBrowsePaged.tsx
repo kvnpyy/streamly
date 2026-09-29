@@ -62,6 +62,8 @@ function WebLiveBrowsePagedInner({
   const setShelfEpgHints = useLiveBrowseUi((s) => s.setShelfEpgHints);
 
   const region: TvRegion = coerceTvRegion(storedRegion) ?? detectRegionFromTimezone();
+  const hideAdult = usePrefs((s) => s.hideAdult);
+  const parentalUnlocked = usePrefs((s) => s.parentalUnlocked);
 
   const maxPerShelf = tvLivingRoom ? MAX_PER_SHELF_TV : MAX_PER_SHELF_WEB;
   const initialVisible = tvLivingRoom
@@ -91,6 +93,7 @@ function WebLiveBrowsePagedInner({
     loadIncrement,
     enabled: true,
     bootstrapIdleMs: tvLivingRoom ? 0 : undefined,
+    hideAdult: hideAdult && !parentalUnlocked,
   });
 
   const handleRegionChange = useCallback(

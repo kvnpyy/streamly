@@ -179,6 +179,9 @@ export type SeriesInfo = {
     youtube_trailer?: string;
     episode_run_time?: string;
     category_id?: string;
+    /** Present on many panels. Used to look up real episode titles. */
+    tmdb_id?: string;
+    imdb_id?: string;
   };
   episodes: Record<string, SeriesEpisode[]>;
 };

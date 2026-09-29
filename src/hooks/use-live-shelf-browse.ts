@@ -29,6 +29,8 @@ export type UseLiveShelfBrowseOptions = {
   enabled?: boolean;
   /** Idle wait before first shelf-batch request (TV: 0 for snappy navigation). */
   bootstrapIdleMs?: number;
+  /** Drop adult and XXX categories and channels. */
+  hideAdult?: boolean;
 };
 
 /**
@@ -43,6 +45,7 @@ export function useLiveShelfBrowse({
   loadIncrement,
   enabled = true,
   bootstrapIdleMs = 120,
+  hideAdult = false,
 }: UseLiveShelfBrowseOptions) {
   const previewLimit = maxPerShelf + 1;
 
@@ -85,6 +88,7 @@ export function useLiveShelfBrowse({
         offset,
         count,
         limitPerShelf: previewLimit,
+        hideAdult,
         signal,
       });
       if (res.catalogUnavailable) {
@@ -99,7 +103,7 @@ export function useLiveShelfBrowse({
       }
       return shelfBatchToMeta(res.shelves);
     },
-    [creds, previewLimit]
+    [creds, previewLimit, hideAdult]
   );
 
   const prefetchNext = useCallback(() => {
@@ -202,6 +206,7 @@ export function useLiveShelfBrowse({
     fetchBatch,
     prefetchNext,
     bootstrapIdleMs,
+    hideAdult,
   ]);
 
   /** Reveal every category already fetched (avoids dozens of "Show more" clicks). */

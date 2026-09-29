@@ -3,10 +3,14 @@ import { getDb } from "@/db";
 import { userProviderWatchState } from "@/db/schema";
 import { isValidProviderAccountKey } from "@/lib/favorites-sync";
 import {
+  applyRecentDismissals,
+  mergeRecentDismissals,
   mergeRecents,
   mergeVodResumeSnapshots,
+  parseStoredRecentDismissals,
   parseStoredVodResume,
   sanitizeRecents,
+  sanitizeRecentDismissals,
   sanitizeVodResumeSec,
   sanitizeVodResumeWriteAt,
   serializeVodResume,
@@ -39,7 +43,11 @@ function isForeignKeyError(err: unknown): boolean {
 function parseStoredWatch(row: {
   recentsJson: string;
   vodResumeJson: string;
-}): { recents: RecentItem[]; resume: VodResumeSnapshot } {
+}): {
+  recents: RecentItem[];
+  resume: VodResumeSnapshot;
+  dismissed: Record<string, number>;
+} {
   let recentsParsed: unknown;
   let vodParsed: unknown;
   try {
@@ -55,6 +63,7 @@ function parseStoredWatch(row: {
   return {
     recents: sanitizeRecents(recentsParsed),
     resume: parseStoredVodResume(vodParsed),
+    dismissed: parseStoredRecentDismissals(vodParsed),
   };
 }
 
@@ -88,6 +97,7 @@ export async function GET(req: NextRequest) {
       recents: [] as RecentItem[],
       vodResumeSec: {} as Record<string, number>,
       vodResumeWriteAt: {} as Record<string, number>,
+      recentDismissedAt: {} as Record<string, number>,
     });
   }
 
@@ -96,6 +106,7 @@ export async function GET(req: NextRequest) {
     recents: parsed.recents,
     vodResumeSec: parsed.resume.sec,
     vodResumeWriteAt: parsed.resume.writeAt,
+    recentDismissedAt: parsed.dismissed,
   });
 }
 
@@ -116,6 +127,7 @@ export async function PUT(req: NextRequest) {
     recents?: unknown;
     vodResumeSec?: unknown;
     vodResumeWriteAt?: unknown;
+    recentDismissedAt?: unknown;
   };
   const accountKey =
     typeof b.accountKey === "string" ? b.accountKey.trim() : "";
@@ -149,10 +161,18 @@ export async function PUT(req: NextRequest) {
     : {
         recents: [] as RecentItem[],
         resume: { sec: {}, writeAt: {} } as VodResumeSnapshot,
+        dismissed: {} as Record<string, number>,
       };
 
+  const dismissed = mergeRecentDismissals(
+    stored.dismissed,
+    sanitizeRecentDismissals(b.recentDismissedAt)
+  );
   const recents = sanitizeRecents(
-    mergeRecents(stored.recents, incomingRecents)
+    applyRecentDismissals(
+      mergeRecents(stored.recents, incomingRecents),
+      dismissed
+    )
   );
   const resume = mergeVodResumeSnapshots(stored.resume, incomingResume);
   const now = new Date();
@@ -164,7 +184,7 @@ export async function PUT(req: NextRequest) {
         userId: uid,
         providerAccountKey: accountKey,
         recentsJson: JSON.stringify(recents),
-        vodResumeJson: serializeVodResume(resume),
+        vodResumeJson: serializeVodResume(resume, dismissed),
         updatedAt: now,
       })
       .onConflictDoUpdate({
@@ -174,7 +194,7 @@ export async function PUT(req: NextRequest) {
         ],
         set: {
           recentsJson: JSON.stringify(recents),
-          vodResumeJson: serializeVodResume(resume),
+          vodResumeJson: serializeVodResume(resume, dismissed),
           updatedAt: now,
         },
       });
@@ -193,5 +213,6 @@ export async function PUT(req: NextRequest) {
     recents,
     vodResumeSec: resume.sec,
     vodResumeWriteAt: resume.writeAt,
+    recentDismissedAt: dismissed,
   });
 }

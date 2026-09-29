@@ -271,7 +271,9 @@ export function usePlayerVideoEvents(p: UsePlayerVideoEventsParams) {
       setIsPlaying(true);
       if (!usesTranscodePlayback) setLoading(false);
       else markPictureReady();
-      setNeedsTapToPlay(false);
+      // Muted autoplay fires `play` immediately. Clearing the prompt here left
+      // the episode running with no sound and no way to turn it on.
+      if (!v.muted) setNeedsTapToPlay(false);
       if (!usesTranscodePlayback) setStalled(false);
       stripPosterForWebKit();
       if (v.videoWidth > 0) setLiveAudioNoPicture(false);

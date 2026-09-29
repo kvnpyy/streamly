@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  applyRecentDismissals,
+  mergeRecentDismissals,
   mergeRecents,
   mergeVodResumeSec,
   mergeVodResumeSnapshots,
+  parseStoredRecentDismissals,
   sanitizeRecents,
   sanitizeVodResumeSec,
   VOD_RESUME_KEYS_MAX,
@@ -39,6 +42,55 @@ describe("watch-state-sync", () => {
     const merged = mergeRecents(local, remote);
     expect(merged).toHaveLength(2);
     expect(merged.find((r) => r.id === 1)?.lastAt).toBe(500);
+  });
+
+  it("applyRecentDismissals hides a title removed after it was watched", () => {
+    const recents = [
+      {
+        kind: "movie" as const,
+        id: 1,
+        name: "A",
+        addedAt: 100,
+        lastAt: 200,
+      },
+      {
+        kind: "series" as const,
+        id: 2,
+        name: "B",
+        addedAt: 100,
+        lastAt: 900,
+      },
+    ];
+    const hidden = applyRecentDismissals(recents, { "movie:1": 500 });
+    expect(hidden.map((r) => r.id)).toEqual([2]);
+  });
+
+  it("applyRecentDismissals keeps a title watched again after removal", () => {
+    const kept = applyRecentDismissals(
+      [
+        {
+          kind: "movie" as const,
+          id: 1,
+          name: "A",
+          addedAt: 100,
+          lastAt: 800,
+        },
+      ],
+      { "movie:1": 500 }
+    );
+    expect(kept).toHaveLength(1);
+  });
+
+  it("mergeRecentDismissals keeps the newer removal", () => {
+    expect(
+      mergeRecentDismissals({ "movie:1": 100 }, { "movie:1": 400, "live:2": 50 })
+    ).toEqual({ "movie:1": 400, "live:2": 50 });
+  });
+
+  it("parseStoredRecentDismissals reads the resume blob", () => {
+    expect(
+      parseStoredRecentDismissals({ sec: {}, at: {}, dismissed: { "series:9": 12 } })
+    ).toEqual({ "series:9": 12 });
   });
 
   it("mergeVodResumeSec keeps max seconds per key", () => {

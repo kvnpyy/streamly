@@ -35,6 +35,90 @@ export function mergeRecents(
     .slice(0, RECENTS_MAX);
 }
 
+/** Kept so a removed Continue Watching title does not return from another device. */
+export const RECENT_DISMISSALS_MAX = 200;
+
+const RECENT_DISMISSAL_KEY = /^(live|movie|series):[1-9]\d*$/;
+
+export function sanitizeRecentDismissals(
+  raw: unknown
+): Record<string, number> {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  const maxAt = Date.now() + 86_400_000;
+  const out: Record<string, number> = {};
+  for (const [key, val] of Object.entries(raw as Record<string, unknown>)) {
+    if (!RECENT_DISMISSAL_KEY.test(key)) continue;
+    if (typeof val !== "number" || !Number.isFinite(val) || val <= 0 || val > maxAt) {
+      continue;
+    }
+    out[key] = Math.floor(val);
+  }
+  return trimRecentDismissals(out);
+}
+
+export function trimRecentDismissals(
+  map: Record<string, number>
+): Record<string, number> {
+  const keys = Object.keys(map);
+  if (keys.length <= RECENT_DISMISSALS_MAX) return map;
+  const keep = keys
+    .sort((a, b) => (map[b] ?? 0) - (map[a] ?? 0))
+    .slice(0, RECENT_DISMISSALS_MAX);
+  const out: Record<string, number> = {};
+  for (const key of keep) out[key] = map[key]!;
+  return out;
+}
+
+/** Newer removal wins, so an older device cannot restore a title someone deleted. */
+export function mergeRecentDismissals(
+  local: Record<string, number>,
+  remote: Record<string, number>
+): Record<string, number> {
+  const merged: Record<string, number> = {
+    ...sanitizeRecentDismissals(remote),
+  };
+  for (const [key, at] of Object.entries(sanitizeRecentDismissals(local))) {
+    merged[key] = Math.max(merged[key] ?? 0, at);
+  }
+  return trimRecentDismissals(merged);
+}
+
+export function recentDismissalsEqual(
+  a: Record<string, number>,
+  b: Record<string, number>
+): boolean {
+  const aKeys = Object.keys(a);
+  const bKeys = Object.keys(b);
+  if (aKeys.length !== bKeys.length) return false;
+  for (const key of aKeys) {
+    if (a[key] !== b[key]) return false;
+  }
+  return true;
+}
+
+/**
+ * Drop a title whose last watch is older than the removal.
+ * Watching it again sets a newer `lastAt` and it can return.
+ */
+export function applyRecentDismissals(
+  recents: RecentItem[],
+  dismissed: Record<string, number>
+): RecentItem[] {
+  if (Object.keys(dismissed).length === 0) return recents;
+  return recents.filter((recent) => {
+    const at = dismissed[favoriteKey(recent)];
+    if (at == null) return true;
+    return recent.lastAt > at;
+  });
+}
+
+export function parseStoredRecentDismissals(raw: unknown): Record<string, number> {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  return sanitizeRecentDismissals(
+    (raw as { dismissed?: unknown }).dismissed
+  );
+}
+
 export function sanitizeRecents(raw: unknown): RecentItem[] {
   if (!Array.isArray(raw)) return [];
   const out: RecentItem[] = [];
@@ -274,6 +358,13 @@ export function parseStoredVodResume(raw: unknown): VodResumeSnapshot {
   });
 }
 
-export function serializeVodResume(snapshot: VodResumeSnapshot): string {
-  return JSON.stringify({ sec: snapshot.sec, at: snapshot.writeAt });
+export function serializeVodResume(
+  snapshot: VodResumeSnapshot,
+  dismissed: Record<string, number> = {}
+): string {
+  return JSON.stringify({
+    sec: snapshot.sec,
+    at: snapshot.writeAt,
+    dismissed,
+  });
 }

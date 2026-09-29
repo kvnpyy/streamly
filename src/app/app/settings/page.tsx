@@ -143,6 +143,10 @@ export default function SettingsPage() {
         <div className="text-sm text-(--text-dim)">
           {favorites.length} in My List · {recents.length} in continue watching
         </div>
+        <p className="text-xs text-(--text-muted) mt-2 leading-relaxed">
+          Clearing continue watching removes those titles from this account on
+          your other devices.
+        </p>
         <div className="flex flex-wrap gap-2 mt-4">
           <button
             type="button"

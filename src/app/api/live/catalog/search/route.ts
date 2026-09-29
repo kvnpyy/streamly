@@ -1,8 +1,7 @@
 import { parseTvRegion } from "@/lib/geo-continent";
 import { getCachedLiveCatalogEntry } from "@/lib/live-catalog-server-cache";
 import {
-  LIVE_SEARCH_MATCH_LIMIT,
-  LIVE_SEARCH_SCAN_POOL_LIMIT,
+  resolveLiveSearchLimits,
   searchLiveCatalog,
 } from "@/lib/live-catalog-search-server";
 import { MIN_SEARCH_QUERY_LEN } from "@/lib/search-normalize";
@@ -30,17 +29,11 @@ export async function GET(req: NextRequest) {
 
   const categoryId = req.nextUrl.searchParams.get("categoryId")?.trim() || "all";
   const tvRegion = parseTvRegion(req.nextUrl.searchParams.get("region"));
-  const matchLimitRaw = Number(req.nextUrl.searchParams.get("matchLimit"));
-  const scanLimitRaw = Number(req.nextUrl.searchParams.get("scanLimit"));
-  const matchLimit = Number.isFinite(matchLimitRaw)
-    ? Math.min(LIVE_SEARCH_MATCH_LIMIT, Math.max(1, matchLimitRaw))
-    : LIVE_SEARCH_MATCH_LIMIT;
-  const scanPoolLimit = Number.isFinite(scanLimitRaw)
-    ? Math.min(
-        LIVE_SEARCH_SCAN_POOL_LIMIT,
-        Math.max(matchLimit, scanLimitRaw)
-      )
-    : LIVE_SEARCH_SCAN_POOL_LIMIT;
+  const { matchLimit, scanPoolLimit } = resolveLiveSearchLimits(
+    req.nextUrl.searchParams.get("matchLimit"),
+    req.nextUrl.searchParams.get("scanLimit")
+  );
+  const hideAdult = req.nextUrl.searchParams.get("safe") === "1";
 
   try {
     const { bundle, index, streamById } = await getCachedLiveCatalogEntry(creds);
@@ -50,6 +43,7 @@ export async function GET(req: NextRequest) {
       tvRegion,
       matchLimit,
       scanPoolLimit,
+      hideAdult,
     });
     return NextResponse.json(result);
   } catch {

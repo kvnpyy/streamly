@@ -21,6 +21,7 @@ export async function fetchLiveChannelSearch(
     q: string;
     categoryId?: string | "all";
     tvRegion?: TvRegion;
+    hideAdult?: boolean;
     signal?: AbortSignal;
   }
 ): Promise<LiveCatalogSearchResult> {
@@ -38,6 +39,10 @@ export async function fetchLiveChannelSearch(
   if (opts.tvRegion && opts.tvRegion !== "All") {
     url.searchParams.set("region", opts.tvRegion);
   }
+  // Same caps as the server. Sending them avoids a missing limit being read as 1.
+  url.searchParams.set("matchLimit", "96");
+  url.searchParams.set("scanLimit", "480");
+  if (opts.hideAdult) url.searchParams.set("safe", "1");
 
   const res = await fetch(url.toString(), {
     method: "GET",
@@ -61,7 +66,8 @@ export function liveChannelSearchQueryOptions(
   q: string,
   categoryId: string | "all",
   tvRegion: TvRegion | undefined,
-  enabled: boolean
+  enabled: boolean,
+  hideAdult = false
 ): UseQueryOptions<LiveCatalogSearchResult, Error> {
   const needle = q.trim().toLowerCase();
   const regionKey = tvRegion && tvRegion !== "All" ? tvRegion : "";
@@ -72,12 +78,14 @@ export function liveChannelSearchQueryOptions(
       categoryId,
       regionKey,
       needle,
+      hideAdult ? "safe" : "open",
     ] as const,
     queryFn: ({ signal }) =>
       fetchLiveChannelSearch(creds, {
         q: needle,
         categoryId,
         tvRegion,
+        hideAdult,
         signal,
       }),
     enabled: enabled && needle.length >= MIN_SEARCH_QUERY_LEN,

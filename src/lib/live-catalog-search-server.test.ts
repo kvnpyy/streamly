@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { searchLiveCatalog } from "@/lib/live-catalog-search-server";
+import {
+  resolveLiveSearchLimits,
+  searchLiveCatalog,
+} from "@/lib/live-catalog-search-server";
 import type { LiveStream } from "@/lib/xtream-types";
 import type { LiveCatalogBundle } from "@/lib/xtream";
 
@@ -43,6 +46,22 @@ function bundle(streams: LiveStream[]): {
     streamById,
   };
 }
+
+describe("resolveLiveSearchLimits", () => {
+  it("uses the full result window when the client omits the limits", () => {
+    expect(resolveLiveSearchLimits(null, null)).toEqual({
+      matchLimit: 96,
+      scanPoolLimit: 480,
+    });
+  });
+
+  it("does not treat a blank or zero limit as one result", () => {
+    expect(resolveLiveSearchLimits("", "0")).toEqual({
+      matchLimit: 96,
+      scanPoolLimit: 480,
+    });
+  });
+});
 
 describe("searchLiveCatalog", () => {
   it("finds channels by name across the full catalog, not just the first sample", () => {

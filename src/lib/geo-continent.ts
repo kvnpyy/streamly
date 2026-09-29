@@ -569,7 +569,7 @@ const PAN_REGION_SIGNALS: ReadonlyArray<{ pattern: RegExp; region: TvRegion }> =
     },
     {
       pattern:
-        /\b(ARGENTINA|ARGENTINO|URUGUAY|PARAGUAY|CHILEAN?|COLOMBIA|VENEZUELA|ECUADOR|BOLIVIA|BRASIL|BRAZIL|MEXICO|LATINO|LATAM|TELEFE|TYC\s*SPORTS|DIRECTV\s*LAT|CARACOL|GLOBO|CLARO\s*SPORTS)\b/i,
+        /\b(ARGENTINA|ARGENTINO|URUGUAY|PARAGUAY|CHILE\w*|COLOMBIA|VENEZUELA|ECUADOR|BOLIVIA|BRASIL|BRAZIL|MEXICO|LATINO|LATAM|TELEFE|TYC\s*SPORTS|DIRECTV\s*LAT|CARACOL|GLOBO|CLARO\s*SPORTS|DOMINICAN\w*|REP(?:U|Ú)BLICA\s+DOMINICANA|PERU|CUBA|PANAMA|COSTA\s*RICA|GUATEMALA|HONDURAS|NICARAGUA|EL\s*SALVADOR|PUERTO\s*RICO|JAMAICA|HAITI)\b/i,
       region: "Latin America",
     },
     {
@@ -628,13 +628,11 @@ export function categoryMatchesRegion(
   region: TvRegion
 ): boolean {
   if (region === "All") return true;
-  if (region === "North America" && categoryHas24_7(categoryName)) {
-    const iso = getCategoryCountryIso(categoryName);
-    if (iso === null || iso === "US" || iso === "CA") return true;
-  }
+  // A country named in the title wins, including on 24/7 and loop rows.
   const catRegion = getCategoryRegion(categoryName);
-  if (catRegion === null) return true;
-  return catRegion === region;
+  if (catRegion !== null) return catRegion === region;
+  if (region === "North America" && categoryHas24_7(categoryName)) return true;
+  return true;
 }
 
 /**
@@ -647,6 +645,11 @@ export function streamMatchesRegion(
 ): boolean {
   if (region === "All") return true;
 
+  // The channel title decides when it names a place. A language tag like
+  // [EN] does not keep a Chile or Dominican Republic loop in North America.
+  const streamRegion = getStreamRegion(channelName);
+  if (streamRegion !== null) return streamRegion === region;
+
   const rawStreamPrefix = extractCountryCode(channelName);
   if (
     region === "North America" &&
@@ -657,13 +660,8 @@ export function streamMatchesRegion(
   }
 
   const catRegion = getCategoryRegion(categoryName);
-  if (catRegion !== null) {
-    return catRegion === region;
-  }
-
-  const streamRegion = getStreamRegion(channelName);
-  if (streamRegion === null) return true;
-  return streamRegion === region;
+  if (catRegion !== null) return catRegion === region;
+  return true;
 }
 
 /**

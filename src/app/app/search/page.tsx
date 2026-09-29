@@ -56,7 +56,8 @@ function SearchInner() {
       f,
       "all",
       undefined,
-      searchEnabled
+      searchEnabled,
+      safe
     )
   );
   const vodSearch = useQuery(

@@ -11,6 +11,18 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.13.52",
+    date: "2026-09-29",
+    summary:
+      "Search lists every matching channel, episode rows use the real titles, and North America leaves out Chile and the Dominican Republic.",
+    highlights: [
+      "Continue Watching can be removed from Home or the full list, including on other devices that share the account.",
+      "Episode lists show the real episode name instead of the filename a provider attached.",
+      "The top search bar lists every matching channel, not just one.",
+      "North America no longer includes Chile or the Dominican Republic, including 24/7 loops named for those places. Adult and XXX categories stay hidden while that filter is on.",
+    ],
+  },
+  {
     version: "0.13.51",
     date: "2026-09-29",
     summary: "Episode soundtracks that are surround play in the browser.",

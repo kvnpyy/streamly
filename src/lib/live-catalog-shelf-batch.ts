@@ -43,6 +43,7 @@ export async function fetchLiveShelfBatch(
     offset: number;
     count: number;
     limitPerShelf: number;
+    hideAdult?: boolean;
     signal?: AbortSignal;
   }
 ): Promise<ShelfBatchResponse> {
@@ -53,6 +54,7 @@ export async function fetchLiveShelfBatch(
   url.searchParams.set("offset", String(opts.offset));
   url.searchParams.set("count", String(opts.count));
   url.searchParams.set("limit", String(opts.limitPerShelf));
+  if (opts.hideAdult) url.searchParams.set("safe", "1");
 
   for (let attempt = 0; attempt < 3; attempt++) {
     if (opts.signal?.aborted) {

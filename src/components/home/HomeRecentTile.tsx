@@ -1,10 +1,13 @@
 "use client";
 
+import { recentResumeStorageKey } from "@/lib/continue-watching";
 import { buildImageProxy } from "@/lib/xtream";
-import type { RecentItem } from "@/store/preferences";
+import { useAuth } from "@/store/auth";
+import { browseAccountKey, usePrefs, type RecentItem } from "@/store/preferences";
 import { cn } from "@/lib/utils";
-import { Heart, Info, Play } from "lucide-react";
+import { Heart, Info, Play, Trash2 } from "lucide-react";
 import Link from "next/link";
+import type { ReactNode } from "react";
 
 type HomeRecentTileProps = {
   recent: RecentItem;
@@ -31,9 +34,38 @@ export function HomeRecentTile({
   onToggleFavorite,
   progressPct,
 }: HomeRecentTileProps) {
+  const creds = useAuth((s) => s.creds);
+  const removeRecent = usePrefs((s) => s.removeRecent);
+  const clearVodResume = usePrefs((s) => s.clearVodResume);
   const poster = recent.icon ? buildImageProxy(recent.icon) : undefined;
   const showProgress = progressPct != null && progressPct > 0;
   const infoHref = detailHref ?? (onPlay ? undefined : href);
+
+  const removeFromContinue = () => {
+    removeRecent(recent.kind, recent.id);
+    if (!creds) return;
+    const key = recentResumeStorageKey(browseAccountKey(creds), recent);
+    if (key) clearVodResume(key);
+  };
+
+  const withRemove = (node: ReactNode) => (
+    <div className="relative min-w-0">
+      {node}
+      <button
+        type="button"
+        data-tv-card-root
+        aria-label={`Remove ${recent.name} from continue watching`}
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          removeFromContinue();
+        }}
+        className="absolute top-12 right-2 z-20 size-8 rounded-lg bg-black/70 text-white grid place-items-center hover:bg-black/85 focus-ring"
+      >
+        <Trash2 className="size-3.5" aria-hidden />
+      </button>
+    </div>
+  );
 
   const inner = (
     <div className="group relative aspect-[2/3] rounded-xl overflow-hidden bg-(--bg-3) border border-(--line) hover:border-(--line-2) transition-colors focus-within:border-(--brand)/50">
@@ -113,7 +145,7 @@ export function HomeRecentTile({
   );
 
   if (onPlay) {
-    return (
+    return withRemove(
       <button
         type="button"
         data-tv-card-root
@@ -133,7 +165,7 @@ export function HomeRecentTile({
   }
 
   if (href) {
-    return (
+    return withRemove(
       <Link
         href={href}
         data-tv-card-root
@@ -145,5 +177,5 @@ export function HomeRecentTile({
     );
   }
 
-  return <div className="block min-w-0">{inner}</div>;
+  return withRemove(<div className="block min-w-0">{inner}</div>);
 }

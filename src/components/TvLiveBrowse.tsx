@@ -100,6 +100,8 @@ function TvLiveBrowsePaged({
 
   const region: TvRegion =
     coerceTvRegion(storedRegion) ?? detectRegionFromTimezone();
+  const hideAdultShelves = usePrefs((s) => s.hideAdult);
+  const parentalUnlockedShelves = usePrefs((s) => s.parentalUnlocked);
 
   const {
     allShelves,
@@ -119,6 +121,7 @@ function TvLiveBrowsePaged({
     initialVisible: INITIAL_SHELF_COUNT,
     loadIncrement: SHELF_LOAD_INCREMENT,
     enabled: true,
+    hideAdult: hideAdultShelves && !parentalUnlockedShelves,
   });
 
   const handleRegionChange = useCallback(

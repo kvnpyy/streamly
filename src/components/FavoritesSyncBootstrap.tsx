@@ -6,8 +6,11 @@ import {
   prefsHasHydrated,
 } from "@/lib/prefs-persist-api";
 import {
+  applyRecentDismissals,
+  mergeRecentDismissals,
   mergeRecents,
   mergeVodResumeSnapshots,
+  recentDismissalsEqual,
   sanitizeRecents,
   vodResumeSnapshotsEqual,
   type VodResumeSnapshot,
@@ -93,6 +96,7 @@ async function pushFavorites(
 type RemoteWatchState = {
   recents: RecentItem[];
   resume: VodResumeSnapshot;
+  dismissed: Record<string, number>;
 };
 
 async function fetchRemoteWatchState(
@@ -111,6 +115,7 @@ async function fetchRemoteWatchState(
       recents?: RecentItem[];
       vodResumeSec?: Record<string, number>;
       vodResumeWriteAt?: Record<string, number>;
+      recentDismissedAt?: Record<string, number>;
     };
     return {
       recents: Array.isArray(data.recents) ? data.recents : [],
@@ -124,6 +129,10 @@ async function fetchRemoteWatchState(
             ? data.vodResumeWriteAt
             : {},
       },
+      dismissed:
+        data.recentDismissedAt && typeof data.recentDismissedAt === "object"
+          ? data.recentDismissedAt
+          : {},
     };
   } catch {
     return null;
@@ -134,6 +143,7 @@ async function pushWatchState(
   accountKey: string,
   recents: RecentItem[],
   resume: VodResumeSnapshot,
+  dismissed: Record<string, number>,
   opts?: { onStaleSession?: () => void }
 ): Promise<boolean> {
   try {
@@ -146,6 +156,7 @@ async function pushWatchState(
         recents,
         vodResumeSec: resume.sec,
         vodResumeWriteAt: resume.writeAt,
+        recentDismissedAt: dismissed,
       }),
     });
     if (res.status === 409) {
@@ -251,8 +262,15 @@ export function FavoritesSyncBootstrap({ children }: { children: ReactNode }) {
           sec: usePrefs.getState().vodResumeSec,
           writeAt: usePrefs.getState().vodResumeWriteAt,
         };
+        const dismissed = mergeRecentDismissals(
+          usePrefs.getState().recentDismissedAt,
+          remoteWatch.dismissed
+        );
         const mergedRecents = sanitizeRecents(
-          mergeRecents(localRecents, remoteWatch.recents)
+          applyRecentDismissals(
+            mergeRecents(localRecents, remoteWatch.recents),
+            dismissed
+          )
         );
         const mergedResume = mergeVodResumeSnapshots(
           localResume,
@@ -260,17 +278,19 @@ export function FavoritesSyncBootstrap({ children }: { children: ReactNode }) {
         );
         if (cancelled || activePullKeyRef.current !== key) return;
         skipNextWatchPushRef.current = true;
-        usePrefs.getState().setRecents(mergedRecents);
-        usePrefs.getState().setVodResumeSec(
+        usePrefs.getState().setSyncedWatch(
+          mergedRecents,
           mergedResume.sec,
-          mergedResume.writeAt
+          mergedResume.writeAt,
+          dismissed
         );
 
         if (
           mergedRecents.length !== remoteWatch.recents.length ||
-          !vodResumeSnapshotsEqual(mergedResume, remoteWatch.resume)
+          !vodResumeSnapshotsEqual(mergedResume, remoteWatch.resume) ||
+          !recentDismissalsEqual(dismissed, remoteWatch.dismissed)
         ) {
-          await pushWatchState(key, mergedRecents, mergedResume, {
+          await pushWatchState(key, mergedRecents, mergedResume, dismissed, {
             onStaleSession: onStaleCloudSession,
           });
         }
@@ -317,7 +337,8 @@ export function FavoritesSyncBootstrap({ children }: { children: ReactNode }) {
       const watchChanged =
         state.recents !== prev.recents ||
         state.vodResumeSec !== prev.vodResumeSec ||
-        state.vodResumeWriteAt !== prev.vodResumeWriteAt;
+        state.vodResumeWriteAt !== prev.vodResumeWriteAt ||
+        state.recentDismissedAt !== prev.recentDismissedAt;
       if (watchChanged) {
         if (skipNextWatchPushRef.current) {
           skipNextWatchPushRef.current = false;
@@ -329,12 +350,13 @@ export function FavoritesSyncBootstrap({ children }: { children: ReactNode }) {
             watchPushTimerRef.current = null;
             if (watchPushingRef.current || cloudSyncBlockedRef.current) return;
             watchPushingRef.current = true;
-            const { recents, vodResumeSec, vodResumeWriteAt } =
+            const { recents, vodResumeSec, vodResumeWriteAt, recentDismissedAt } =
               usePrefs.getState();
             void pushWatchState(
               key,
               recents,
               { sec: vodResumeSec, writeAt: vodResumeWriteAt },
+              recentDismissedAt,
               { onStaleSession: onStaleCloudSession }
             ).finally(() => {
               watchPushingRef.current = false;

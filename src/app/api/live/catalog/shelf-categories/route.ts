@@ -5,6 +5,7 @@ import { liveCatalogDiskKey } from "@/lib/xtream-catalog-disk-cache";
 import type { Category } from "@/lib/xtream-types";
 import { NextRequest, NextResponse } from "next/server";
 import { requireIptvCredsFromRequest } from "@/lib/iptv-request-creds";
+import { looksAdult } from "@/lib/utils";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -29,6 +30,7 @@ export async function GET(req: NextRequest) {
     MAX_LIMIT,
     Math.max(1, Number.isFinite(limitRaw) ? limitRaw : 32)
   );
+  const hideAdult = req.nextUrl.searchParams.get("safe") === "1";
 
   try {
     const { bundle, index } = await getCachedLiveCatalogEntry(creds);
@@ -39,6 +41,9 @@ export async function GET(req: NextRequest) {
       bundle.categories,
       counts,
       index
+    ).filter(
+      (category) =>
+        !hideAdult || !looksAdult({ category_name: category.category_name })
     );
 
     const page = filtered.slice(offset, offset + limit);

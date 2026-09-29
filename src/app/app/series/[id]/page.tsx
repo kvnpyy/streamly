@@ -23,6 +23,8 @@ import { buildImageProxy, buildSeriesEpisodePlayUrl, xtream } from "@/lib/xtream
 import { resolveSeriesEpisodePlayUrl } from "@/lib/vod-format-probe";
 import { inferVodContainerExtFromProxyUrl, warmVodTranscodePlay } from "@/lib/vod-transcode-url";
 import { lockedSeriesSeason, sortSeriesEpisodes } from "@/lib/series-episodes";
+import { seriesExternalIds } from "@/lib/tmdb-episode-titles";
+import { useSeriesEpisodeTitles } from "@/hooks/use-series-episode-titles";
 import type { SeriesEpisode } from "@/lib/xtream-types";
 import { useAuth } from "@/store/auth";
 import { usePlayer, type PlayerPlaylist } from "@/store/player";
@@ -133,6 +135,17 @@ export default function SeriesDetail() {
     );
   }, [info.data]);
 
+  const showInfo = info.data?.info;
+  const externalIds = seriesExternalIds(showInfo ?? null);
+  const episodeTitleFor = useSeriesEpisodeTitles({
+    title: showInfo?.name,
+    year: showInfo?.releaseDate || showInfo?.release_date,
+    tmdbId: externalIds.tmdbId,
+    imdbId: externalIds.imdbId,
+    seasons,
+    seriesName: showInfo?.name,
+  });
+
   const [watchedToggles, setWatchedToggles] = useState<Record<string, boolean>>(
     {}
   );
@@ -219,7 +232,7 @@ export default function SeriesDetail() {
         id: seriesId,
         streamId: parseInt(ep.id, 10),
         title: show.name,
-        subtitle: `S${season} · E${ep.episode_num} — ${ep.title}`,
+        subtitle: `S${season} · E${ep.episode_num} — ${episodeTitleFor(season, ep.episode_num, ep.title)}`,
         poster: buildImageProxy(ep.info?.movie_image || show.cover),
         url: playUrl,
         containerExt: ext,
@@ -227,7 +240,7 @@ export default function SeriesDetail() {
       };
     });
     return { kind: "series", items };
-  }, [info.data, orderedEpisodes, seriesId, creds]);
+  }, [info.data, orderedEpisodes, seriesId, creds, episodeTitleFor]);
 
   const playEpisode = useCallback(
     (season: string, ep: SeriesEpisode) => {
@@ -246,7 +259,7 @@ export default function SeriesDetail() {
             id: seriesId,
             streamId: parseInt(ep.id, 10),
             title: show.name,
-            subtitle: `S${season} · E${ep.episode_num} — ${ep.title}`,
+            subtitle: `S${season} · E${ep.episode_num} — ${episodeTitleFor(season, ep.episode_num, ep.title)}`,
             poster: buildImageProxy(ep.info?.movie_image || show.cover),
             url: proxyUrl,
             containerExt,
@@ -263,7 +276,7 @@ export default function SeriesDetail() {
         });
       })();
     },
-    [creds, seriesId, info.data, play, episodePlaylist, addRecent, tvBrowser]
+    [creds, seriesId, info.data, play, episodePlaylist, addRecent, tvBrowser, episodeTitleFor]
   );
 
   const toggleEpisodeWatched = useCallback(
@@ -697,7 +710,9 @@ export default function SeriesDetail() {
                     </span>
                   </div>
                   <div className="font-medium text-(--text) truncate">
-                    {ep.title}
+                    {activeSeason
+                      ? episodeTitleFor(activeSeason, ep.episode_num, ep.title)
+                      : ep.title}
                   </div>
                   {isResumeEpisode &&
                     remainingSec != null &&

@@ -158,7 +158,10 @@ export function buildIptvHlsJsConfig(opts: {
     manifestLoadingMaxRetry: manifestRetry,
     levelLoadingMaxRetry: manifestRetry,
     fragLoadingMaxRetry: fragRetry,
-    startFragPrefetch: !silkLike && !tvLivingRoomLive,
+    // Live providers often allow one connection. Prefetching the next
+    // segment opens a second download and the CDN answers 402/502, so the
+    // channel never starts. A direct browser player does not do that.
+    startFragPrefetch: isLive ? false : !silkLike,
     liveSyncDurationCount: liveSyncCount,
     ...(silkLike ? { maxFragLookUpTolerance: 0.48 } : {}),
     ...(isLive
