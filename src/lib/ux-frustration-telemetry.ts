@@ -15,7 +15,7 @@ import {
 
 const tracker = new UxFrustrationTracker();
 const RELOAD_KEY = "ux-reload-v1";
-let seekExpireTimer: ReturnType<typeof setTimeout> | null = null;
+let seekExpireTimer: number | null = null;
 
 function deviceClass(): string {
   if (typeof navigator === "undefined") return "unknown";
