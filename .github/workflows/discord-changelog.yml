@@ -36,11 +36,11 @@ jobs:
   post:
     runs-on: ubuntu-latest
     steps:
-      # The post reads CHANGELOG.md at this commit. Fetch the previous commit
-      # too so a version push can be told apart from any other push to main.
+      # The post reads CHANGELOG.md at this commit. A version push can include
+      # more than one commit, so the previous tip has to be in the clone.
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 2
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
