@@ -11,6 +11,15 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.13.57",
+    date: "2026-09-29",
+    summary:
+      "Episode picture no longer repeats itself while the soundtrack plays.",
+    highlights: [
+      "After sound came back, the picture looped for about a second at a time and then carried on. Playback now stays smooth and keeps the stereo soundtrack.",
+    ],
+  },
+  {
     version: "0.13.56",
     date: "2026-09-29",
     summary:

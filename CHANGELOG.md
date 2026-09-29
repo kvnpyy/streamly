@@ -19,6 +19,15 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.13.57] — 2026-09-29
+
+Episode picture no longer repeats itself while the soundtrack plays.
+
+### Fixed
+- After sound came back, the picture looped for about a second at a time and then carried on. Playback now stays smooth and keeps the stereo soundtrack.
+
+---
+
 ## [0.13.56] — 2026-09-29
 
 Episodes play with sound, including ones opened from a plain link.
