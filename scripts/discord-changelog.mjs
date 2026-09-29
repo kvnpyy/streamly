@@ -2,7 +2,9 @@
  * Build and post a short #changelog note when a GitHub Release is published.
  *
  * Source of truth is CHANGELOG.md (the same notes as iptvwebplayer.org/changelog).
- * Push-to-main deploys do not call this. A published release does.
+ * A push to main that changes package.json posts the new version. A published
+ * GitHub Release does too. Notes that are only internal, or that contain
+ * secrets, are left out.
  *
  *   DISCORD_WEBHOOK_URL  webhook for #changelog (repo secret)
  *   RELEASE_TAG          v0.4.0
@@ -53,6 +55,54 @@ function clip(text) {
   return `${text.slice(0, MAX_LINE - 1).trimEnd()}…`;
 }
 
+/** Drop a line rather than post an address, login, or key. */
+function isSecret(text) {
+  return (
+    /\b(?:\d{1,3}\.){3}\d{1,3}\b/.test(text) ||
+    /[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/i.test(text) ||
+    /:\/\/[^\s/]*:[^\s/]*@/.test(text) ||
+    /\b(password|passwd|secret|api[_ -]?key|webhook|token|credential|private key)\b/i.test(
+      text
+    ) ||
+    /\b[A-Z][A-Z0-9]+(?:_[A-Z0-9]+){1,}\b/.test(text) ||
+    /\/opt\/|\/Users\/|ubuntu@|\.env\b/.test(text)
+  );
+}
+
+function sentenceCase(text) {
+  const trimmed = text.trim();
+  if (!trimmed) return "";
+  const cased = trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
+  return /[.!?]$/.test(cased) ? cased : `${cased}.`;
+}
+
+/** How the app was built, not what a viewer gained. Drop the line. */
+function isImplementation(text) {
+  return (
+    /\b(ac-?3|e-?ac-?3|eac3|aac|dts|hevc|h\.?26[45]|ffmpeg|m3u8|hls\.js|transcod\w*|re-?encod\w*|playhead|vps|sentry|webhook|5xx|50[0-9]|40[0-9]|encode slot|segments?|stub)\b/i.test(
+      text
+    ) ||
+    /\b(api health|raw counters?|support message|stream address|account details)\b/i.test(
+      text
+    )
+  );
+}
+
+/**
+ * A short line a viewer can read. Implementation detail and secrets are
+ * omitted instead of being edited into broken sentences.
+ */
+export function toPublicCopy(text, opts = {}) {
+  if (!text || isSecret(text) || isImplementation(text)) return "";
+  const line = cleanMarkdown(text);
+  if (!line || isSecret(line) || isInternal(line) || isImplementation(line)) return "";
+  if (/src\/|\.tsx?\b|\/api\/|console\.|\bfunction\s/.test(line)) return "";
+
+  const body = opts.full ? line : firstSentence(line);
+  if (body.length < 12) return "";
+  return clip(sentenceCase(body));
+}
+
 /** @returns {{ label: string, detail: string }} */
 export function shortenBullet(raw) {
   const text = cleanMarkdown(raw);
@@ -65,11 +115,6 @@ export function shortenBullet(raw) {
 
 function bulletPlain(bullet) {
   return bullet.label ? `${bullet.label} ${bullet.detail}` : bullet.detail;
-}
-
-function formatBullet(bullet) {
-  if (!bullet.label) return `- ${bullet.detail}`;
-  return `- **${bullet.label}** — ${bullet.detail}`;
 }
 
 export function parseChangelogEntry(markdown, version) {
@@ -128,11 +173,24 @@ export function buildChangelogAnnouncement({
     };
   }
 
-  const summary = entry.summary && !isInternal(entry.summary) ? clip(firstSentence(entry.summary)) : "";
-  const bullets = entry.bullets
-    .map(shortenBullet)
-    .filter((bullet) => bullet.detail && !isInternal(bulletPlain(bullet)))
-    .slice(0, MAX_BULLETS);
+  const summary =
+    entry.summary && !isInternal(entry.summary)
+      ? toPublicCopy(entry.summary, { full: true })
+      : "";
+  const seen = new Set();
+  if (summary) seen.add(summary.toLowerCase());
+  const bullets = [];
+  for (const raw of entry.bullets) {
+    if (isSecret(raw) || isInternal(raw) || isImplementation(raw)) continue;
+    const shortened = shortenBullet(raw);
+    const source = shortened.detail || shortened.label;
+    if (!source || isInternal(bulletPlain(shortened))) continue;
+    const line = toPublicCopy(source);
+    if (!line || seen.has(line.toLowerCase())) continue;
+    seen.add(line.toLowerCase());
+    bullets.push(line);
+    if (bullets.length >= MAX_BULLETS) break;
+  }
 
   if (!summary && bullets.length === 0) {
     return {
@@ -143,13 +201,13 @@ export function buildChangelogAnnouncement({
 
   const versionLabel = `v${entry.version}`;
   const parts = [];
-  if (summary) parts.push(`*${summary}*`);
-  if (bullets.length > 0) parts.push(bullets.map(formatBullet).join("\n"));
+  if (summary) parts.push(summary);
+  if (bullets.length > 0) parts.push(bullets.map((line) => `- ${line}`).join("\n"));
   const description = parts.join("\n\n");
 
   /** @type {{ title: string, url: string, description: string, color: number, timestamp?: string }} */
   const embed = {
-    title: versionLabel,
+    title: `Streamly ${entry.version}`,
     url: `${notesUrl}#${versionLabel}`,
     description,
     color: EMBED_COLOR,
