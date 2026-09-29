@@ -28,8 +28,10 @@ import {
 } from "@/lib/vod-transcode-plan";
 import {
   pickBestAudioStreamIndex,
+  shouldDeferSilentAudioEncode,
   type ProbedAudioStream,
 } from "@/lib/vod-transcode-audio";
+import { upstreamIsHlsMediaPlaylist } from "@/lib/vod-transcode-url";
 import {
   chapterMarkerResponseHeaders,
   parseFfprobeChapterDump,
@@ -536,7 +538,7 @@ async function probeStreamCodecs(input: string): Promise<ProbedCodecs> {
 }
 
 /** Bump when segment packaging changes. Older caches are discarded on the next play. */
-const TRANSCODE_ENCODE_REV = 6;
+const TRANSCODE_ENCODE_REV = 7;
 
 type JobMeta = {
   plan: VodTranscodePlan;
@@ -711,6 +713,8 @@ async function writeJobMeta(dir: string, meta: JobMeta): Promise<void> {
 }
 
 async function resolveProbeInput(job: TranscodeJob): Promise<string> {
+  // A downloaded m3u8 is the playlist text, not the episode. Probe the URL.
+  if (upstreamIsHlsMediaPlaylist(job.upstream)) return job.upstream;
   if (isVodSourceCacheEnabled()) {
     const st = await getVodSourceStatus(job.upstream);
     if (st && st.bytes >= Math.min(1_000_000, vodSourceStartBytes())) {
@@ -720,7 +724,35 @@ async function resolveProbeInput(job: TranscodeJob): Promise<string> {
   return job.upstream;
 }
 
-async function resolveJobMeta(job: TranscodeJob): Promise<JobMeta> {
+async function sourceDownloadComplete(upstream: string): Promise<boolean> {
+  if (!isVodSourceCacheEnabled() || upstreamIsHlsMediaPlaylist(upstream)) {
+    return true;
+  }
+  const source = await getVodSourceStatus(upstream);
+  return !!source?.complete;
+}
+
+type ResolvedJobMeta = JobMeta & { audioDeferred?: boolean };
+
+async function deferIfAudioHidden(
+  job: TranscodeJob,
+  meta: JobMeta
+): Promise<ResolvedJobMeta> {
+  if (meta.audioStreamIndex != null) return meta;
+  if (upstreamIsHlsMediaPlaylist(job.upstream)) return meta;
+  const complete = await sourceDownloadComplete(job.upstream);
+  if (
+    shouldDeferSilentAudioEncode({
+      audioStreamCount: 0,
+      sourceComplete: complete,
+    })
+  ) {
+    return { ...meta, audioDeferred: true };
+  }
+  return meta;
+}
+
+async function resolveJobMeta(job: TranscodeJob): Promise<ResolvedJobMeta> {
   const cached = await readJobMeta(job.dir);
   let probeInput = await resolveProbeInput(job);
 
@@ -728,6 +760,7 @@ async function resolveJobMeta(job: TranscodeJob): Promise<JobMeta> {
   // encode buffer before locking codec meta (even when already on a local path).
   if (
     isVodSourceCacheEnabled() &&
+    !upstreamIsHlsMediaPlaylist(job.upstream) &&
     (cached?.audioStreamIndex == null || !cached)
   ) {
     try {
@@ -759,7 +792,7 @@ async function resolveJobMeta(job: TranscodeJob): Promise<JobMeta> {
         await writeJobMeta(job.dir, cached);
       }
     }
-    return cached;
+    return deferIfAudioHidden(job, cached);
   }
   if (cached && cached.durationSec == null) {
     const durationSec = await probeDurationSec(probeInput);
@@ -779,7 +812,7 @@ async function resolveJobMeta(job: TranscodeJob): Promise<JobMeta> {
         await writeJobMeta(job.dir, cached);
       }
     }
-    return cached;
+    return deferIfAudioHidden(job, cached);
   }
 
   const { video: videoCodec, audio: audioCodec, audioStreamIndex, audioStreamCount } =
@@ -787,27 +820,30 @@ async function resolveJobMeta(job: TranscodeJob): Promise<JobMeta> {
   const plan = planFromProbeCodecs(videoCodec, audioCodec, {
     maxHeight: transcodeMaxHeight(),
   });
-  if (audioStreamCount === 0) {
-    const source = isVodSourceCacheEnabled()
-      ? await getVodSourceStatus(job.upstream)
-      : null;
-    // A missing cache row is not "the file has no audio". Partial downloads
-    // also hide the real mix until more of the file is on disk.
-    const sourceReady =
-      !!source &&
-      (source.complete || source.bytes >= vodSourceEncodeStartBytes());
-    if (!sourceReady) {
+  if (audioStreamCount === 0 && !upstreamIsHlsMediaPlaylist(job.upstream)) {
+    const complete = await sourceDownloadComplete(job.upstream);
+    // A partial MP4/MKV hides the audio header. Do not start ffmpeg, and do
+    // not cache "no audio", until the download has finished.
+    if (
+      shouldDeferSilentAudioEncode({
+        audioStreamCount,
+        sourceComplete: complete,
+      })
+    ) {
       return {
         plan,
         durationSec: null,
         startOffsetSec: job.startOffsetSec,
         audioStreamIndex: null,
         encodeRev: TRANSCODE_ENCODE_REV,
+        audioDeferred: true,
       };
     }
     console.warn(
       `[vod-transcode] no audio streams in upstream (key=${job.key})`
     );
+  } else if (audioStreamIndex == null && audioStreamCount === 0) {
+    /* HLS playlists are mapped by ffmpeg; a short probe can miss the track. */
   } else if (audioStreamIndex == null) {
     console.warn(
       `[vod-transcode] could not pick audio stream (key=${job.key}, tracks=${audioStreamCount})`
@@ -1478,6 +1514,7 @@ async function resumeTranscodeJob(job: TranscodeJob): Promise<void> {
     // Heal may write ENDLIST at the completeness floor — strip before append_list.
     await stripEndlistFromDiskManifest(job.dir);
     const meta = await resolveJobMeta(job);
+    if (meta.audioDeferred) return;
     job.durationSec = meta.durationSec ?? job.durationSec;
     const raw = await fsp.readFile(path.join(job.dir, MANIFEST_NAME), "utf8");
     const onDisk = await listSegmentFiles(job.dir);
@@ -1491,10 +1528,12 @@ async function resumeTranscodeJob(job: TranscodeJob): Promise<void> {
     });
     let outputTsOffsetSec = seekInSourceSec;
     if (prefixForSeek > 0) {
-      const lastSeg = path.join(
-        job.dir,
-        `seg_${String(prefixForSeek - 1).padStart(5, "0")}.m4s`
-      );
+      const seqName = `seg_${String(prefixForSeek - 1).padStart(5, "0")}`;
+      const lastSeg =
+        [".ts", ".m4s"]
+          .map((ext) => path.join(job.dir, `${seqName}${ext}`))
+          .find((candidate) => fs.existsSync(candidate)) ??
+        path.join(job.dir, `${seqName}.ts`);
       const lastPts = await probeTsLastVideoPtsSec(lastSeg);
       // Continue just after the last packet so the join is contiguous.
       if (lastPts != null && lastPts > 0) {
@@ -1781,7 +1820,10 @@ async function spawnFfmpegLocked(
 
   let inputPath = job.upstream;
   let useLocalSource = false;
-  if (isVodSourceCacheEnabled()) {
+  if (
+    isVodSourceCacheEnabled() &&
+    !upstreamIsHlsMediaPlaylist(job.upstream)
+  ) {
     const st = await getVodSourceStatus(job.upstream);
     if (st && st.bytes > 0) {
       inputPath = st.path;
@@ -1807,7 +1849,7 @@ async function spawnFfmpegLocked(
       ? Math.max(0, resume.outputTsOffsetSec ?? seekSec)
       : seekSec;
 
-  const segPattern = path.join(job.dir, "seg_%05d.m4s");
+  const segPattern = path.join(job.dir, "seg_%05d.ts");
   const outManifest = path.join(job.dir, MANIFEST_NAME);
   const args = [
     "-nostdin",
@@ -1825,22 +1867,24 @@ async function spawnFfmpegLocked(
     "-map",
     "0:v:0?",
     "-map",
-    audioStreamIndex != null ? `0:${audioStreamIndex}?` : "0:a:0?",
+    // Required audio map. The optional `?` form drops the track and still
+    // exits 0, which is a silent picture.
+    audioStreamIndex != null ? `0:${audioStreamIndex}` : "0:a:0",
   ];
 
+  // Already-TS episode playlists must not be forced through the MP4 annex-B
+  // filter; that filter drops or garbles them. MP4/MKV still need it.
+  const annexBFilter = upstreamIsHlsMediaPlaylist(upstreamUrl)
+    ? []
+    : ["-bsf:v", "h264_mp4toannexb"];
+
   if (plan.mode === "copy") {
-    args.push(
-      "-c",
-      "copy",
-      "-bsf:v",
-      "h264_mp4toannexb"
-    );
+    args.push("-c", "copy", ...annexBFilter);
   } else if (plan.mode === "copyVideo") {
     args.push(
       "-c:v",
       "copy",
-      "-bsf:v",
-      "h264_mp4toannexb",
+      ...annexBFilter,
       "-c:a",
       "aac",
       "-b:a",
@@ -1898,16 +1942,10 @@ async function spawnFfmpegLocked(
     // freezes mid-film scrub.
     "-hls_flags",
     "independent_segments+temp_file+append_list",
-    // fMP4 does not repeat the boundary frame the way MPEG-TS does. That
-    // one-frame overlap was the remaining slight skip every segment.
+    // MPEG-TS, same package as live TV. Fragmented MP4 kept a loud AAC track
+    // in the file and Chrome still played a silent picture.
     "-hls_segment_type",
-    "fmp4",
-    // Chrome plays the picture and drops the soundtrack when the audio track
-    // carries an edit list. VLC still hears it. Omit the edit list.
-    "-hls_segment_options",
-    "use_editlist=0",
-    "-hls_fmp4_init_filename",
-    "init.mp4",
+    "mpegts",
     "-hls_segment_filename",
     segPattern,
   );
@@ -2350,7 +2388,10 @@ async function beginTranscodeJob(job: TranscodeJob): Promise<void> {
       return;
     }
 
-    if (isVodSourceCacheEnabled()) {
+    if (
+      isVodSourceCacheEnabled() &&
+      !upstreamIsHlsMediaPlaylist(job.upstream)
+    ) {
       try {
         await waitForVodSourceBytes(job.upstream, vodSourceEncodeStartBytes(), {
           timeoutMs: Math.min(waitForPlaylistMs(), 180_000),
@@ -2369,9 +2410,26 @@ async function beginTranscodeJob(job: TranscodeJob): Promise<void> {
       }
     }
 
-    const meta = await resolveJobMeta(job);
+    let meta = await resolveJobMeta(job);
+    if (meta.audioDeferred) {
+      const deadline = Date.now() + 12_000;
+      while (meta.audioDeferred && Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, 1500));
+        meta = await resolveJobMeta(job);
+      }
+    }
+    if (meta.audioDeferred) {
+      // Download is still hiding the audio header. Caller retries; do not
+      // start a video-only encode.
+      job.state = "starting";
+      return;
+    }
 
-    if (isVodSourceCacheEnabled() && job.startOffsetSec > 0) {
+    if (
+      isVodSourceCacheEnabled() &&
+      !upstreamIsHlsMediaPlaylist(job.upstream) &&
+      job.startOffsetSec > 0
+    ) {
       try {
         await waitForVodSourceForSeek(job.upstream, job.startOffsetSec, {
           durationSec: meta.durationSec ?? job.durationSec,
@@ -2488,8 +2546,15 @@ export async function handleVodTranscodeRequest(opts: {
       opts.upstream,
       Math.max(0, Math.floor(opts.seekSec ?? 0))
     );
-    touchVodSource(opts.upstream);
-    if (isVodSourceCacheEnabled()) ensureVodSource(opts.upstream);
+    if (!upstreamIsHlsMediaPlaylist(opts.upstream)) {
+      touchVodSource(opts.upstream);
+    }
+    if (
+      isVodSourceCacheEnabled() &&
+      !upstreamIsHlsMediaPlaylist(opts.upstream)
+    ) {
+      ensureVodSource(opts.upstream);
+    }
   }
 
   const job = await ensureJob(opts.upstream, {
@@ -2520,7 +2585,12 @@ export async function handleVodTranscodeRequest(opts: {
     void ensureEncodingContinues(job);
     /** Warm requests (HEAD) must not block — kick ffmpeg and return immediately. */
     if (opts.head) {
-      if (isVodSourceCacheEnabled()) ensureVodSource(opts.upstream);
+      if (
+        isVodSourceCacheEnabled() &&
+        !upstreamIsHlsMediaPlaylist(opts.upstream)
+      ) {
+        ensureVodSource(opts.upstream);
+      }
       return {
         status: 202,
         contentType: "application/vnd.apple.mpegurl",

@@ -49,3 +49,17 @@ export function pickBestAudioStreamIndex(
 
   return best.index;
 }
+
+/**
+ * A growing download often has no audio header yet. Starting ffmpeg then
+ * locks in a video-only encode, which plays as a silent picture.
+ * Wait until the file is complete (or a later probe sees a track).
+ * HLS playlists are probed from the URL, so they are not deferred.
+ */
+export function shouldDeferSilentAudioEncode(opts: {
+  audioStreamCount: number;
+  sourceComplete: boolean;
+}): boolean {
+  if (opts.audioStreamCount > 0) return false;
+  return !opts.sourceComplete;
+}

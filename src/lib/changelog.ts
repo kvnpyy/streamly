@@ -11,6 +11,15 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.13.55",
+    date: "2026-09-29",
+    summary:
+      "Episodes play with sound, including ones that arrive as a playlist.",
+    highlights: [
+      "Episodes still played the picture with no sound. Playlist episodes and MP4 files now get a stereo soundtrack the browser can play.",
+    ],
+  },
+  {
     version: "0.13.54",
     date: "2026-09-29",
     summary:

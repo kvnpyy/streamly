@@ -44,6 +44,12 @@ describe("vod-transcode-url", () => {
           "&type=hls"
       )
     ).toBe(false);
+    const episodePlaylist =
+      "/api/stream?u=" +
+      encodeURIComponent("http://cdn.example/vod/episode/index.m3u8") +
+      "&type=hls";
+    expect(canVodTranscodeProxyUrl(episodePlaylist)).toBe(true);
+    expect(vodNeedsServerTranscodePrep("m3u8", episodePlaylist)).toBe(true);
   });
 
   it("sends MP4 episodes through server prep so the browser gets playable audio", () => {

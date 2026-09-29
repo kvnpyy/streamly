@@ -28,16 +28,18 @@ export function canVodTranscodeProxyUrl(proxyUrl: string): boolean {
     const parsed = new URL(proxyUrl, origin);
     if (parsed.searchParams.get("transcode") === "hls") return false;
     const type = parsed.searchParams.get("type") || "vod";
-    if (type === "hls") return false;
     const upstream = parsed.searchParams.get("u");
     if (!upstream) return false;
     const up = new URL(upstream);
     const p = up.pathname.toLowerCase();
     if (p.includes("/live/")) return false;
+    // Episode playlists are often m3u8. Chrome plays the picture and drops
+    // AC-3. Those still go through the server. Live URLs stay on the live path.
+    if (type === "hls") return p.includes(".m3u8");
     return (
       p.includes("/movie/") ||
       p.includes("/series/") ||
-      /\.(mkv|avi|mp4|mov|wmv|flv|ts|m2ts|mpeg|mpg|webm)($|\?)/i.test(p)
+      /\.(mkv|avi|mp4|mov|wmv|flv|ts|m2ts|mpeg|mpg|webm|m3u8)($|\?)/i.test(p)
     );
   } catch {
     return false;
@@ -135,14 +137,23 @@ export function shouldPreferVodTranscodeOnTv(
   return vodContainerNeedsServerPrep(containerExt);
 }
 
+/** Provider episode playlists. These are not a local movie file. */
+export function upstreamIsHlsMediaPlaylist(upstream: string): boolean {
+  return upstream.split(/[?#]/)[0].toLowerCase().includes(".m3u8");
+}
+
 /** MKV/AVI/etc. — show prep UI and prefer server transcode when enabled. */
 export function vodContainerNeedsServerPrep(
   containerExt: string | undefined
 ): boolean {
+  const ext = normalizeContainerExt(containerExt);
+  // An episode m3u8 often carries AC-3. The browser shows the picture and
+  // stays silent, same as MP4 and MKV.
+  if (ext === "m3u8" || ext === "m3u") return true;
   const hint = vodContainerUiHint(containerExt);
   // MP4 often carries surround or AC-3. The browser shows the picture and
   // stays silent, so it takes the same server path as MKV.
-  return hint === "risky" || hint === "mp4" || normalizeContainerExt(containerExt) === "unknown";
+  return hint === "risky" || hint === "mp4" || ext === "unknown";
 }
 
 /** Extension from proxied upstream `u=` (panels often mislabel MKV as MP4). */

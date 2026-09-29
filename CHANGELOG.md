@@ -19,6 +19,15 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.13.55] — 2026-09-29
+
+Episodes play with sound, including ones that arrive as a playlist.
+
+### Fixed
+- Episodes still played the picture with no sound. Playlist episodes and MP4 files now get a stereo soundtrack the browser can play.
+
+---
+
 ## [0.13.54] — 2026-09-29
 
 Episodes play with sound, including MP4, and each playlist keeps its own Continue Watching.

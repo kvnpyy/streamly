@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   pickBestAudioStreamIndex,
+  shouldDeferSilentAudioEncode,
   type ProbedAudioStream,
 } from "./vod-transcode-audio";
 
@@ -47,5 +48,31 @@ describe("pickBestAudioStreamIndex", () => {
       { index: 4, codec: "aac", channels: 2 },
     ];
     expect(pickBestAudioStreamIndex(streams)).toBe(4);
+  });
+});
+
+describe("shouldDeferSilentAudioEncode", () => {
+  it("waits while a partial file still shows no audio", () => {
+    expect(
+      shouldDeferSilentAudioEncode({
+        audioStreamCount: 0,
+        sourceComplete: false,
+      })
+    ).toBe(true);
+  });
+
+  it("encodes once a track is visible or the download is finished", () => {
+    expect(
+      shouldDeferSilentAudioEncode({
+        audioStreamCount: 2,
+        sourceComplete: false,
+      })
+    ).toBe(false);
+    expect(
+      shouldDeferSilentAudioEncode({
+        audioStreamCount: 0,
+        sourceComplete: true,
+      })
+    ).toBe(false);
   });
 });
