@@ -41,6 +41,24 @@ export function nextEpisodeWarmAllowed(opts: {
  * `otherSourceComplete === null` means there is no local source cache, so
  * ffmpeg itself is the download.
  */
+/**
+ * A background warm must not count as someone watching. New jobs stamp
+ * `lastViewerAt` at creation, which kept the warm's ffmpeg in a slot for the
+ * idle window. Real episode plays then sat in the queue and the player logged
+ * 503 until the warm expired.
+ */
+export function warmEncodeHoldsViewerSlot(opts: {
+  backgroundWarm: boolean;
+  hasPlayerViewer: boolean;
+  lastViewerAt: number;
+  now: number;
+  idleMs: number;
+}): boolean {
+  if (opts.backgroundWarm && !opts.hasPlayerViewer) return false;
+  if (!(opts.lastViewerAt > 0)) return false;
+  return opts.now - opts.lastViewerAt < opts.idleMs;
+}
+
 export function warmWouldStealProviderDownload(opts: {
   otherViewerActive: boolean;
   otherSourceComplete: boolean | null;

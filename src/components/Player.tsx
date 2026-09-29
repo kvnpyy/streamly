@@ -79,6 +79,7 @@ import { usePlayerVideoEvents } from "@/hooks/player/use-player-video-events";
 import { useTvLiveFreezeWatchdog } from "@/hooks/player/use-tv-live-freeze-watchdog";
 import { usePlayerVodResume } from "@/hooks/player/use-player-vod-resume";
 import { usePlayerAutoplayNext } from "@/hooks/player/use-player-autoplay-next";
+import { getSeriesNextEpisode } from "@/lib/player-autoplay-next";
 import { usePlayerVodCues } from "@/hooks/player/use-player-vod-cues";
 import type { PlayerAudioTrack } from "@/lib/player-audio-tracks";
 import {
@@ -119,6 +120,12 @@ import {
   endLivePlaybackSession,
   playbackBreadcrumb,
 } from "@/lib/playback-telemetry";
+import {
+  bufferBucketForVideo,
+  reportUxPlayPause,
+  reportUxSeekOutcome,
+  reportUxSeekStart,
+} from "@/lib/ux-frustration-telemetry";
 import { detachVideoElement, resetVideoElement, safeVideoPlay, voidSafeVideoPlay } from "@/lib/video-play";
 import { pauseVideoElement } from "@/lib/player-teardown";
 import { isAmazonSilkUserAgent, isTvOrSilkUserAgent } from "@/lib/tv-user-agent";
@@ -330,6 +337,11 @@ export function PlayerOverlay() {
   const vodStartOffsetRef = useRef(0);
   /** Furthest relative playhead — kept across a 502 so a snap cannot restart at 0. */
   const vodPlayheadHighWaterRef = useRef(0);
+  /**
+   * Title just changed. `<video>.currentTime` can still be the previous episode
+   * until the next file loads; snap-restore must not seek that clock.
+   */
+  const vodOutgoingPlayheadRef = useRef(false);
   /** How many seconds of media exist in the current transcode playlist. */
   const vodEncodedSecRef = useRef(0);
   const vodSeekRestartTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
@@ -663,6 +675,7 @@ export function PlayerOverlay() {
     }
     if (episodeIdentityRef.current === episodeIdentity) return;
     episodeIdentityRef.current = episodeIdentity;
+    vodOutgoingPlayheadRef.current = true;
     vodResumeLockedRef.current = false;
     vodStartOffsetRef.current = 0;
     vodEncodedSecRef.current = 0;
@@ -897,19 +910,39 @@ export function PlayerOverlay() {
 
   useEffect(() => {
     if (!vodSeekInFlight) return;
+    const target = vodSeekTargetSec;
+    const el = videoRef.current;
+    const off = usesTranscodePlayback ? vodStartOffsetRef.current : 0;
+    const mediaSec =
+      el && Number.isFinite(el.currentTime) ? off + el.currentTime : time;
     if (error) {
+      if (target != null) {
+        reportUxSeekOutcome({
+          targetSec: target,
+          landedSec: mediaSec,
+          stillSeeking: true,
+        });
+      }
       queueMicrotask(() => {
         setVodSeekInFlight(false);
         setVodSeekTargetSec(null);
       });
       return;
     }
-    const target = vodSeekTargetSec;
     const nearTarget =
       target != null &&
       Number.isFinite(time) &&
       Math.abs(time - target) < 3 &&
       time > 1;
+    const mediaNear =
+      target != null && Math.abs(mediaSec - target) <= 12 && mediaSec > 1;
+    if (mediaNear) {
+      reportUxSeekOutcome({
+        targetSec: target,
+        landedSec: mediaSec,
+        stillSeeking: false,
+      });
+    }
     if (videoHasFrame || nearTarget) {
       queueMicrotask(() => {
         setVodSeekInFlight(false);
@@ -917,7 +950,7 @@ export function PlayerOverlay() {
         setLoading(false);
       });
     }
-  }, [vodSeekInFlight, videoHasFrame, error, time, vodSeekTargetSec]);
+  }, [vodSeekInFlight, videoHasFrame, error, time, vodSeekTargetSec, usesTranscodePlayback]);
 
   const retryPlayback = useCallback(() => {
     setError(null);
@@ -1166,6 +1199,7 @@ export function PlayerOverlay() {
     vodResumeLockedRef,
     vodScrubbingRef,
     vodPlayheadHighWaterRef,
+    vodOutgoingPlayheadRef,
     vodSeekSuppressTipPersistUntilRef,
   });
 
@@ -1319,6 +1353,7 @@ export function PlayerOverlay() {
     vodEncodedSecRef,
     vodScrubbingRef,
     vodPlayheadHighWaterRef,
+    vodOutgoingPlayheadRef,
     mobileLikeViewport,
     chromiumDesktopClient,
     cancelLiveMediaErrorDeferRef,
@@ -1419,13 +1454,6 @@ export function PlayerOverlay() {
     };
   }, [open, current]);
 
-  const togglePlay = useCallback(() => {
-    const v = videoRef.current;
-    if (!v) return;
-    if (v.paused) voidSafeVideoPlay(v, () => setNeedsTapToPlay(true));
-    else v.pause();
-  }, []);
-
   const getPlaybackDuration = useCallback(() => {
     const v = videoRef.current;
     const vd = v?.duration;
@@ -1446,6 +1474,33 @@ export function PlayerOverlay() {
     return playbackTimeRef.current;
   }, [usesTranscodePlayback]);
 
+  const togglePlay = useCallback(() => {
+    const v = videoRef.current;
+    if (!v) return;
+    const intent = v.paused ? "play" : "pause";
+    const startSec = getPlaybackTimeNow();
+    const kind = current?.kind;
+    if (intent === "play") voidSafeVideoPlay(v, () => setNeedsTapToPlay(true));
+    else v.pause();
+    if (kind !== "live" && kind !== "movie" && kind !== "series") return;
+    window.setTimeout(() => {
+      const el = videoRef.current;
+      if (!el) return;
+      const detail = el.error?.message ?? null;
+      reportUxPlayPause({
+        intent,
+        followed: intent === "play" ? !el.paused : el.paused,
+        playheadDeltaSec: Math.abs(getPlaybackTimeNow() - startSec),
+        readyState: el.readyState,
+        hasError: Boolean(el.error),
+        seeking: el.seeking || vodScrubbingRef.current,
+        buffer: bufferBucketForVideo(el),
+        kind,
+        detail,
+      });
+    }, 800);
+  }, [current?.kind, getPlaybackTimeNow]);
+
   const seekVideoTo = useCallback(
     (absoluteSeconds: number) => {
       const v = videoRef.current;
@@ -1456,6 +1511,14 @@ export function PlayerOverlay() {
       if (!dur || !Number.isFinite(dur)) return;
 
       const absolute = Math.max(0, Math.min(dur - 0.25, absoluteSeconds));
+      if (current?.kind === "movie" || current?.kind === "series") {
+        reportUxSeekStart({
+          kind: current.kind,
+          fromSec: getPlaybackTimeNow(),
+          targetSec: absolute,
+          transcode: usesTranscodePlayback,
+        });
+      }
       vodResumeLockedRef.current = true;
       vodScrubbingRef.current = true;
       vodSeekSuppressTipPersistUntilRef.current =
@@ -1513,6 +1576,12 @@ export function PlayerOverlay() {
       const finishLanded = () => {
         if (landGen !== vodSeekLandGenRef.current) return;
         setTime(absolute);
+        const landedSec = getPlaybackTimeNow();
+        reportUxSeekOutcome({
+          targetSec: absolute,
+          landedSec: landedSec,
+          stillSeeking: Math.abs(landedSec - absolute) > 12,
+        });
         persistIfLanded();
         clearScrubGate();
       };
@@ -1584,6 +1653,11 @@ export function PlayerOverlay() {
           }
           // Give up quietly — keep tip-persist suppressed; do not bookmark tip.
           v.removeEventListener("seeked", onSeeked);
+          reportUxSeekOutcome({
+            targetSec: absolute,
+            landedSec: getPlaybackTimeNow(),
+            stillSeeking: true,
+          });
           clearScrubGate();
         };
         window.setTimeout(verifyLanded, VOD_SEEK_LAND_RETRY_MS);
@@ -2203,6 +2277,14 @@ export function PlayerOverlay() {
       const v = videoRef.current;
       const strip = vodGestureStripRef.current;
       if (!v || !strip) return;
+      const stack = document.elementsFromPoint(e.clientX, e.clientY);
+      const chrome = stack.some(
+        (el) =>
+          el !== strip &&
+          el instanceof Element &&
+          !!el.closest("[data-player-controls], button, a, input")
+      );
+      if (chrome) return;
       const dur = getPlaybackDuration();
       if (!dur || !Number.isFinite(dur) || dur < 2) return;
       strip.setPointerCapture(e.pointerId);
@@ -2513,6 +2595,14 @@ export function PlayerOverlay() {
 
   const playNextTitle = useCallback(() => {
     if (current?.kind === "series") {
+      const next = getSeriesNextEpisode(playlist, index);
+      if (next && playlist) {
+        play(next, { playlist });
+        setFlipPing((n) => n + 1);
+        if (flipOverlayTimer.current) clearTimeout(flipOverlayTimer.current);
+        flipOverlayTimer.current = setTimeout(() => setFlipPing(0), 1400);
+        return;
+      }
       doFlip(1, true);
       return;
     }
@@ -2527,7 +2617,7 @@ export function PlayerOverlay() {
         ? { containerExt: nextMovieSource.containerExt }
         : undefined,
     });
-  }, [current?.kind, doFlip, nextMovieSource, nextMovieIcon, play]);
+  }, [current?.kind, doFlip, playlist, index, nextMovieSource, nextMovieIcon, play]);
 
   const autoplayNext = usePlayerAutoplayNext({
     open,
@@ -3011,7 +3101,7 @@ export function PlayerOverlay() {
               effectiveVodDuration > 2 && (
                 <div
                   ref={vodGestureStripRef}
-                  className="absolute bottom-0 left-0 right-0 z-[3] h-[30%] max-h-52 cursor-ew-resize touch-none select-none"
+                  className="absolute bottom-0 left-0 right-0 z-[1] h-[30%] max-h-52 cursor-ew-resize touch-none select-none"
                   style={{ touchAction: "none" }}
                   aria-hidden
                   onPointerDown={onVodGesturePointerDown}

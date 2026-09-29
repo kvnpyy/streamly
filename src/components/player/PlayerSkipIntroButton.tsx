@@ -23,8 +23,9 @@ export function PlayerSkipIntroButton({
           animate={{ opacity: 1, x: 0 }}
           exit={{ opacity: 0, x: -12 }}
           transition={{ duration: 0.22, ease: [0.2, 0.8, 0.2, 1] }}
-          className="absolute bottom-36 sm:bottom-40 left-3 sm:left-6 z-[14] pointer-events-auto"
+          className="absolute bottom-44 sm:bottom-48 left-3 sm:left-6 z-[40] pointer-events-auto"
           data-player-controls=""
+          data-binge-overlay=""
           onPointerDown={(e) => e.stopPropagation()}
           onClick={(e) => e.stopPropagation()}
         >

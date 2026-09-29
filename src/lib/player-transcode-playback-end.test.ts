@@ -6,6 +6,7 @@ import {
   isNearEpisodeEnd,
   shouldTreatTranscodeAsEnded,
   shouldTreatTranscodeSnapAsEnded,
+  shouldIgnoreOutgoingTranscodeClock,
   vodTranscodeRecoveryPlayhead,
 } from "./player-transcode-playback-end";
 
@@ -147,6 +148,38 @@ describe("vodTranscodeRecoveryPlayhead", () => {
     expect(
       vodTranscodeRecoveryPlayhead({ currentRel: 0.2, highWaterRel: 2410 })
     ).toBe(2410);
+  });
+});
+
+describe("shouldIgnoreOutgoingTranscodeClock", () => {
+  it("ignores the previous episode clock after next-episode resets the high-water mark", () => {
+    expect(
+      shouldIgnoreOutgoingTranscodeClock({
+        holdOutgoing: true,
+        currentRel: 3520,
+        highWaterRel: 0,
+      })
+    ).toBe(true);
+  });
+
+  it("accepts the new episode once its clock is near the reset mark", () => {
+    expect(
+      shouldIgnoreOutgoingTranscodeClock({
+        holdOutgoing: true,
+        currentRel: 1.2,
+        highWaterRel: 0,
+      })
+    ).toBe(false);
+  });
+
+  it("does not ignore a normal playhead when no title change is in flight", () => {
+    expect(
+      shouldIgnoreOutgoingTranscodeClock({
+        holdOutgoing: false,
+        currentRel: 3520,
+        highWaterRel: 0,
+      })
+    ).toBe(false);
   });
 });
 

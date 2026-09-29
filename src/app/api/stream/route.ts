@@ -314,6 +314,12 @@ async function handle(req: NextRequest, head: boolean) {
     );
     const tcStatus = coerceHttpResponseStatus(tc.status);
     if (tc.errorText) {
+      if (
+        tcStatus === 503 &&
+        /busy|too many/i.test(tc.errorText)
+      ) {
+        recordIptvApiError("vod_transcode_busy");
+      }
       return respondShort(
         new Response(tc.errorText, { status: tcStatus, headers: tcHeaders })
       );

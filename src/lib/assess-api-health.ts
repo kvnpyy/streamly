@@ -84,6 +84,24 @@ const RULES: Rule[] = [
     detail:
       "Xtream catalog fetches are failing (502). VPS may not reach providers or panels are down.",
   },
+  {
+    id: "stream_upstream_5xx",
+    category: "stream_upstream_5xx",
+    watchAt: 20,
+    alertAt: 60,
+    title: "Providers returning server errors on playback",
+    detail:
+      "Upstream IPTV servers are answering 5xx through the stream proxy. Channels and direct files fail even when Streamly itself is up.",
+  },
+  {
+    id: "vod_transcode_busy",
+    category: "vod_transcode_busy",
+    watchAt: 12,
+    alertAt: 40,
+    title: "Episodes not starting — encode slots full",
+    detail:
+      "Players are getting 503 because ffmpeg is busy, often a next-episode warm holding a slot. The browser console fills with 503 and the episode never starts. Real playback should evict those warms.",
+  },
 ];
 
 export function assessApiHealth(metrics: IptvApiErrorMetrics): {

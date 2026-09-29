@@ -23,6 +23,20 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.13.50] — 2026-09-29
+
+Next episode during the credits advances, and an episode can start while another title is warming.
+
+### Added
+- Repeated play/pause taps, seeks that do not land, and reloading the same page are reported so a stuck control can be traced without a support message. Stream addresses and account details are not included.
+- The API health watch mail names encode slots that are full, and provider 5xx responses, instead of only listing them as raw counters.
+
+### Fixed
+- Play next during the credits stayed on the current episode and rewound it a little. The leftover playhead from the episode being left is ignored until the next title is actually on screen.
+- Episodes were stuck on 503 while a next-episode warm held an encode slot. That warm no longer counts as a viewer, so a real play can take the slot. Playback also starts from the first ready segment instead of waiting through a string of 503s.
+
+---
+
 ## [0.13.49] — 2026-09-29
 
 Skip intro shows during series openings, and movies in a series can be flipped from the info page or the credits.

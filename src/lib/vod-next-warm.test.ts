@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   nextEpisodeWarmAllowed,
   sameProviderDownloadSlot,
+  warmEncodeHoldsViewerSlot,
   warmWouldStealProviderDownload,
 } from "./vod-next-warm";
 
@@ -77,6 +78,34 @@ describe("warmWouldStealProviderDownload", () => {
         otherFfmpegRunning: false,
       })
     ).toBe(false);
+  });
+});
+
+describe("warmEncodeHoldsViewerSlot", () => {
+  it("does not treat a next-episode warm as someone watching", () => {
+    const now = 1_000_000;
+    expect(
+      warmEncodeHoldsViewerSlot({
+        backgroundWarm: true,
+        hasPlayerViewer: false,
+        lastViewerAt: now,
+        now,
+        idleMs: 60_000,
+      })
+    ).toBe(false);
+  });
+
+  it("keeps a real viewer in the slot", () => {
+    const now = 1_000_000;
+    expect(
+      warmEncodeHoldsViewerSlot({
+        backgroundWarm: false,
+        hasPlayerViewer: true,
+        lastViewerAt: now - 1_000,
+        now,
+        idleMs: 60_000,
+      })
+    ).toBe(true);
   });
 });
 

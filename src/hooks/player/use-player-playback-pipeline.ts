@@ -47,7 +47,10 @@ import {
 import { isAmazonSilkUserAgent, isTvClassUserAgent, isTvOrSilkUserAgent } from "@/lib/tv-user-agent";
 import { humanizePlaybackErrorResponse } from "@/lib/playback-error-message";
 import { isRetryableVodTranscodeHttpStatus } from "@/lib/vod-transcode-http";
-import { vodTranscodeRecoveryPlayhead } from "@/lib/player-transcode-playback-end";
+import {
+  shouldIgnoreOutgoingTranscodeClock,
+  vodTranscodeRecoveryPlayhead,
+} from "@/lib/player-transcode-playback-end";
 import {
   destroyHlsInstance,
   pauseVideoElement,
@@ -154,6 +157,11 @@ export type UsePlayerPlaybackPipelineParams = {
    * instead of the opening after hls.js collapses `currentTime`.
    */
   vodPlayheadHighWaterRef?: RefObject<number>;
+  /**
+   * Title change in flight. The element may still report the previous episode;
+   * fragment recovery must not seek that clock.
+   */
+  vodOutgoingPlayheadRef?: RefObject<boolean>;
   /** Wall-clock: skip tip resume writes after an intentional scrub. */
   vodSeekSuppressTipPersistUntilRef?: RefObject<number>;
 };
@@ -218,6 +226,7 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
     vodResumeLockedRef,
     vodScrubbingRef,
     vodPlayheadHighWaterRef,
+    vodOutgoingPlayheadRef,
     vodSeekSuppressTipPersistUntilRef,
   } = p;
 
@@ -1088,10 +1097,21 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
               lastTranscodeFragRestartAt = now;
             }
             try {
+              const currentRel =
+                vv && Number.isFinite(vv.currentTime) ? vv.currentTime : 0;
+              if (
+                vodTranscodeHls &&
+                shouldIgnoreOutgoingTranscodeClock({
+                  holdOutgoing: !!vodOutgoingPlayheadRef?.current,
+                  currentRel,
+                  highWaterRel: vodPlayheadHighWaterRef?.current ?? 0,
+                })
+              ) {
+                return;
+              }
               const pos = vodTranscodeHls
                 ? vodTranscodeRecoveryPlayhead({
-                    currentRel:
-                      vv && Number.isFinite(vv.currentTime) ? vv.currentTime : 0,
+                    currentRel,
                     highWaterRel: vodPlayheadHighWaterRef?.current ?? 0,
                   })
                 : -1;
@@ -1143,9 +1163,19 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
               }
               try {
                 const vv = videoRef.current;
+                const currentRel =
+                  vv && Number.isFinite(vv.currentTime) ? vv.currentTime : 0;
+                if (
+                  shouldIgnoreOutgoingTranscodeClock({
+                    holdOutgoing: !!vodOutgoingPlayheadRef?.current,
+                    currentRel,
+                    highWaterRel: vodPlayheadHighWaterRef?.current ?? 0,
+                  })
+                ) {
+                  break;
+                }
                 const pos = vodTranscodeRecoveryPlayhead({
-                  currentRel:
-                    vv && Number.isFinite(vv.currentTime) ? vv.currentTime : 0,
+                  currentRel,
                   highWaterRel: vodPlayheadHighWaterRef?.current ?? 0,
                 });
                 if (vv && Math.abs((vv.currentTime || 0) - pos) > 0.75) {
@@ -1194,10 +1224,20 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
                   if (isLive) {
                     hls.startLoad();
                   } else if (vodTranscodeHls && vv) {
+                    const currentRel = Number.isFinite(vv.currentTime)
+                      ? vv.currentTime
+                      : 0;
+                    if (
+                      shouldIgnoreOutgoingTranscodeClock({
+                        holdOutgoing: !!vodOutgoingPlayheadRef?.current,
+                        currentRel,
+                        highWaterRel: vodPlayheadHighWaterRef?.current ?? 0,
+                      })
+                    ) {
+                      break;
+                    }
                     const pos = vodTranscodeRecoveryPlayhead({
-                      currentRel: Number.isFinite(vv.currentTime)
-                        ? vv.currentTime
-                        : 0,
+                      currentRel,
                       highWaterRel: vodPlayheadHighWaterRef?.current ?? 0,
                     });
                     if (Math.abs((vv.currentTime || 0) - pos) > 0.75) {
@@ -1449,6 +1489,7 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
     vodResumeLockedRef,
     vodScrubbingRef,
     vodPlayheadHighWaterRef,
+    vodOutgoingPlayheadRef,
     playbackRetryKey,
     chromiumDesktopClient,
     tvBrowser,

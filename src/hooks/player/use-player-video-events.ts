@@ -22,6 +22,7 @@ import {
 } from "@/lib/vod-transcode-url";
 import type { PlayerSource } from "@/store/player";
 import {
+  shouldIgnoreOutgoingTranscodeClock,
   shouldTreatTranscodeAsEnded,
   shouldTreatTranscodeSnapAsEnded,
   signalTranscodePlaybackEnded,
@@ -48,6 +49,11 @@ export type UsePlayerVideoEventsParams = {
   vodScrubbingRef: RefObject<boolean>;
   /** Furthest relative playhead. Restored when a stall snaps playback to the opening. */
   vodPlayheadHighWaterRef: RefObject<number>;
+  /**
+   * Set when the title changes. The element can still report the previous
+   * episode until the next media loads — do not seek that clock.
+   */
+  vodOutgoingPlayheadRef: RefObject<boolean>;
   mobileLikeViewport: boolean;
   chromiumDesktopClient: boolean;
   cancelLiveMediaErrorDeferRef: RefObject<() => void>;
@@ -84,6 +90,7 @@ export function usePlayerVideoEvents(p: UsePlayerVideoEventsParams) {
     vodEncodedSecRef,
     vodScrubbingRef,
     vodPlayheadHighWaterRef,
+    vodOutgoingPlayheadRef,
     mobileLikeViewport,
     chromiumDesktopClient,
     cancelLiveMediaErrorDeferRef,
@@ -137,6 +144,9 @@ export function usePlayerVideoEvents(p: UsePlayerVideoEventsParams) {
     let maxTranscodeRelSeen = vodPlayheadHighWaterRef.current;
     let transcodeEndedSignaled = false;
     let lastSnapRestoreMs = 0;
+    let sawNewMetadata = false;
+    const armedSrc = v.currentSrc;
+    const outgoingArmAt = performance.now();
 
     const cancelLiveKickTimer = () => {
       if (liveKickTimer) {
@@ -313,6 +323,29 @@ export function usePlayerVideoEvents(p: UsePlayerVideoEventsParams) {
         : 220;
 
       const nowUi = performance.now();
+      if (usesTranscodePlayback && vodOutgoingPlayheadRef.current) {
+        const rel = Number.isFinite(v.currentTime) ? v.currentTime : 0;
+        const ignore = shouldIgnoreOutgoingTranscodeClock({
+          holdOutgoing: true,
+          currentRel: rel,
+          highWaterRel: vodPlayheadHighWaterRef.current,
+        });
+        const newMedia =
+          sawNewMetadata ||
+          v.currentSrc !== armedSrc ||
+          performance.now() - outgoingArmAt > 1200;
+        if (!ignore && newMedia) {
+          vodOutgoingPlayheadRef.current = false;
+          maxTranscodeRelSeen = Math.max(
+            rel,
+            vodPlayheadHighWaterRef.current
+          );
+        } else {
+          // Previous episode is still on the element. Publishing or restoring
+          // that clock rewinds it instead of starting the next title.
+          return;
+        }
+      }
       if (nowUi - lastUiFlushMs >= uiFlushMs) {
         lastUiFlushMs = nowUi;
         const off = usesTranscodePlayback ? vodStartOffsetRef.current : 0;
@@ -552,6 +585,17 @@ export function usePlayerVideoEvents(p: UsePlayerVideoEventsParams) {
     };
 
     const onMeta = () => {
+      const rel = Number.isFinite(v.currentTime) ? v.currentTime : 0;
+      if (
+        v.currentSrc !== armedSrc ||
+        !shouldIgnoreOutgoingTranscodeClock({
+          holdOutgoing: vodOutgoingPlayheadRef.current,
+          currentRel: rel,
+          highWaterRel: vodPlayheadHighWaterRef.current,
+        })
+      ) {
+        sawNewMetadata = true;
+      }
       noteMediaClock();
       const hint = vodDurationHintRef.current || vodTotalSec;
       if (usesTranscodePlayback) {
@@ -758,6 +802,7 @@ export function usePlayerVideoEvents(p: UsePlayerVideoEventsParams) {
     vodEncodedSecRef,
     vodScrubbingRef,
     vodPlayheadHighWaterRef,
+    vodOutgoingPlayheadRef,
     cancelLiveMediaErrorDeferRef,
     livePlaybackErrorSuppressUntilRef,
     requestVodTranscodeFallbackRef,

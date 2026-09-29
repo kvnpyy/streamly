@@ -43,11 +43,12 @@ export function PlayerAutoplayNextOverlay({
           animate={{ opacity: 1, y: 0, scale: 1 }}
           exit={{ opacity: 0, y: 10, scale: 0.98 }}
           transition={{ duration: 0.28, ease: [0.2, 0.8, 0.2, 1] }}
-          className="absolute bottom-36 sm:bottom-40 right-3 sm:right-6 z-[14] w-[min(100%,22rem)] pointer-events-auto"
+          className="absolute bottom-44 sm:bottom-48 right-3 sm:right-6 z-[40] w-[min(100%,22rem)] pointer-events-auto"
           role="dialog"
           aria-label={eyebrow}
           aria-live="polite"
           data-player-controls=""
+          data-binge-overlay=""
           onPointerDown={(e) => e.stopPropagation()}
           onClick={(e) => e.stopPropagation()}
         >

@@ -11,7 +11,8 @@ export type IptvApiErrorCategory =
   | "catalog_upstream_error"
   | "stream_upstream_4xx"
   | "stream_upstream_5xx"
-  | "stream_rate_limited";
+  | "stream_rate_limited"
+  | "vod_transcode_busy";
 
 const CATEGORIES: IptvApiErrorCategory[] = [
   "missing_credentials",
@@ -22,6 +23,7 @@ const CATEGORIES: IptvApiErrorCategory[] = [
   "stream_upstream_4xx",
   "stream_upstream_5xx",
   "stream_rate_limited",
+  "vod_transcode_busy",
 ];
 
 type MinuteBucket = Partial<Record<IptvApiErrorCategory, number>>;

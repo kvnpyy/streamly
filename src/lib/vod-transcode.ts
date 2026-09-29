@@ -17,7 +17,6 @@ import {
   prepareManifestForPlayback,
   rewriteTranscodeManifest,
   sumExtinfDurationSec,
-  MIN_PUBLISHED_IN_PROGRESS_SEGMENTS,
   VOD_TRANSCODE_SEGMENT_RE as SEGMENT_RE,
 } from "@/lib/vod-transcode-manifest";
 import { transcodeManifestWaitMs } from "@/lib/vod-transcode-wait";
@@ -36,7 +35,11 @@ import {
   parseFfprobeChapterDump,
   type ParsedVodChapters,
 } from "@/lib/vod-chapter-markers";
-import { warmWouldStealProviderDownload, sameProviderDownloadSlot } from "@/lib/vod-next-warm";
+import {
+  sameProviderDownloadSlot,
+  warmEncodeHoldsViewerSlot,
+  warmWouldStealProviderDownload,
+} from "@/lib/vod-next-warm";
 import { spawn, type ChildProcess } from "child_process";
 import crypto from "crypto";
 import fs from "fs";
@@ -1101,7 +1104,17 @@ async function evictIdleTranscodeSlot(
   for (const job of jobs.values()) {
     if (exceptKey && job.key === exceptKey) continue;
     if (!job.proc || job.proc.exitCode != null) continue;
-    if (jobViewerActive(job)) continue;
+    if (
+      warmEncodeHoldsViewerSlot({
+        backgroundWarm: !!job.backgroundWarm,
+        hasPlayerViewer: !!job.hasPlayerViewer,
+        lastViewerAt: job.lastViewerAt,
+        now: Date.now(),
+        idleMs: transcodeIdleMs(),
+      })
+    ) {
+      continue;
+    }
     if (!oldest || job.lastViewerAt < oldest.lastViewerAt) oldest = job;
   }
   if (!oldest) return false;
@@ -1604,7 +1617,9 @@ async function inProgressPlaylistHasStartupBuffer(
     job.proc == null && (await isPlaylistFullyEncoded(job, manifestText));
   if (playlistComplete) return true;
   const trimmed = prepareManifestForPlayback(manifestText, false, onDisk);
-  return countManifestSegments(trimmed) >= MIN_PUBLISHED_IN_PROGRESS_SEGMENTS;
+  // One published segment is enough to start. Waiting for three meant the
+  // player polled 503 until the holdback tail had filled.
+  return countManifestSegments(trimmed) >= 1;
 }
 
 async function waitForReady(
@@ -2266,7 +2281,8 @@ async function ensureJobLocked(
     waiters: [],
     lastSegmentCount: 0,
     lastSegmentGrowthAt: Date.now(),
-    lastViewerAt: Date.now(),
+    lastViewerAt: opts?.backgroundWarm ? 0 : Date.now(),
+    backgroundWarm: !!opts?.backgroundWarm,
   };
   jobs.set(key, job);
   if (manifest) {
@@ -2475,6 +2491,7 @@ export async function handleVodTranscodeRequest(opts: {
   });
   if (opts.head && !job.hasPlayerViewer) {
     job.backgroundWarm = true;
+    job.lastViewerAt = 0;
   }
   if (!opts.head) {
     noteTranscodeViewer(job);
@@ -2626,10 +2643,7 @@ export async function handleVodTranscodeRequest(opts: {
       playlistComplete,
       onDiskAfter
     );
-    if (
-      !playlistComplete &&
-      countManifestSegments(trimmed) < MIN_PUBLISHED_IN_PROGRESS_SEGMENTS
-    ) {
+    if (!playlistComplete && countManifestSegments(trimmed) < 1) {
       return {
         status: 503,
         errorText: "First video segment is still being prepared. Retry in a few seconds.",

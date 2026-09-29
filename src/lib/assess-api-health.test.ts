@@ -26,6 +26,18 @@ describe("assessApiHealth", () => {
     );
   });
 
+  it("watches when episode encodes are busy", () => {
+    resetIptvApiErrorMetricsForTests();
+    for (let i = 0; i < 12; i++) {
+      recordIptvApiError("vod_transcode_busy");
+    }
+    const health = assessApiHealth(getIptvApiErrorMetrics());
+    expect(health.overall).toBe("watch");
+    expect(health.findings.some((f) => f.id === "vod_transcode_busy")).toBe(
+      true
+    );
+  });
+
   it("watches on moderate turnstile_required", () => {
     resetIptvApiErrorMetricsForTests();
     for (let i = 0; i < 20; i++) {

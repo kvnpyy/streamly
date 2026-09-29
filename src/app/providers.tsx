@@ -3,6 +3,7 @@
 import { AuthSessionBootstrap } from "@/components/AuthSessionBootstrap";
 import { CatalogPrefetch } from "@/components/CatalogPrefetch";
 import { ChunkLoadRecovery } from "@/components/ChunkLoadRecovery";
+import { UxFrustrationMonitor } from "@/components/UxFrustrationMonitor";
 import { FavoritesSyncBootstrap } from "@/components/FavoritesSyncBootstrap";
 import { PrefsRehydrateBootstrap } from "@/components/PrefsRehydrateBootstrap";
 import { CookieConsentBar } from "@/components/CookieConsentBar";
@@ -82,6 +83,7 @@ export function Providers({
                 <LivingRoomBootstrap />
                 <QueryClientProvider client={client}>
                   <ChunkLoadRecovery />
+                  <UxFrustrationMonitor />
                   <TvLeanBootstraps />
                   {children}
                   <TvLeanChrome />

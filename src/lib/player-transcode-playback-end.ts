@@ -119,6 +119,24 @@ export function vodTranscodeRecoveryPlayhead(opts: {
   return current;
 }
 
+/**
+ * True while a title change has reset the high-water mark but `<video>` still
+ * reports the previous episode. Treating that clock as a stall seeks backward
+ * inside the episode the viewer is leaving — Next episode then appears to rewind.
+ */
+export function shouldIgnoreOutgoingTranscodeClock(opts: {
+  holdOutgoing: boolean;
+  currentRel: number;
+  highWaterRel: number;
+}): boolean {
+  if (!opts.holdOutgoing) return false;
+  const current = Number.isFinite(opts.currentRel) ? opts.currentRel : 0;
+  const high = Number.isFinite(opts.highWaterRel)
+    ? Math.max(0, opts.highWaterRel)
+    : 0;
+  return current > high + 15;
+}
+
 /** HLS snap-back near the finale — mid-episode snaps are recovery, not ended. */
 export function shouldTreatTranscodeSnapAsEnded(
   currentRel: number,

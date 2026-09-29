@@ -302,6 +302,11 @@ video::-webkit-media-controls-overlay-play-button {
   -webkit-transform: translate3d(0, 0, 0) !important;
   transform: translate3d(0, 0, 0) !important;
 }
+/* Credits / skip-intro cards must stay above the seek bar. The rule above
+   flattens every control to the same layer, and the bar is later in the DOM. */
+.player-ios-surface [data-binge-overlay] {
+  z-index: 46;
+}
 
 /* Make in-band / sidecar cues readable over dark video */
 video::cue {
