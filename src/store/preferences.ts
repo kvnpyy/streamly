@@ -4,6 +4,7 @@ import { browsePrefPatchIsNoop } from "@/lib/browse-pref-patch";
 import { favoriteKey } from "@/lib/favorites-sync";
 import { dispatchMyListToggle } from "@/lib/my-list";
 import { mergePersistedPrefs } from "@/lib/prefs-persist-merge";
+import { swapAccountLibrary } from "@/lib/library-by-account";
 import {
   applyRecentDismissals,
   sanitizeRecents,
@@ -82,6 +83,7 @@ type PersistedPrefsV8 = Pick<
   | "vodResumeSec"
   | "vodResumeWriteAt"
   | "recentDismissedAt"
+  | "libraryByAccount"
   | "activeSavedProviderAccountId"
   | "tvRegionFilter"
 >;
@@ -143,6 +145,19 @@ export type PrefsState = {
   vodResumeWriteAt: Record<string, number>;
   /** Epoch ms a Continue Watching title was removed, keyed `kind:id`. */
   recentDismissedAt: Record<string, number>;
+  /**
+   * Continue Watching and My List saved per provider login, so switching
+   * playlists does not show the previous provider's titles.
+   */
+  libraryByAccount: Record<
+    string,
+    {
+      favorites: Favorite[];
+      recents: RecentItem[];
+      recentDismissedAt: Record<string, number>;
+    }
+  >;
+  swapActiveLibrary: (fromKey: string | null, toKey: string) => void;
   saveVodResume: (storageKey: string, seconds: number) => void;
   getVodResume: (storageKey: string) => number | undefined;
   clearVodResume: (storageKey: string) => void;
@@ -280,6 +295,9 @@ export const usePrefs = create<PrefsState>()(
       vodResumeSec: {},
       vodResumeWriteAt: {},
       recentDismissedAt: {},
+      libraryByAccount: {},
+      swapActiveLibrary: (fromKey, toKey) =>
+        set((state) => swapAccountLibrary(state, fromKey, toKey)),
       saveVodResume: (storageKey, seconds) => {
         if (!storageKey || !Number.isFinite(seconds) || seconds < 12) return;
         const now = Date.now();
@@ -325,6 +343,7 @@ export const usePrefs = create<PrefsState>()(
           vodResumeSec: {},
           vodResumeWriteAt: {},
           recentDismissedAt: {},
+          libraryByAccount: {},
           activeSavedProviderAccountId: null,
         }),
       sidebarCollapsed: false,
@@ -351,6 +370,7 @@ export const usePrefs = create<PrefsState>()(
         vodResumeSec: s.vodResumeSec,
         vodResumeWriteAt: s.vodResumeWriteAt,
         recentDismissedAt: s.recentDismissedAt,
+        libraryByAccount: s.libraryByAccount,
         activeSavedProviderAccountId: s.activeSavedProviderAccountId,
         tvRegionFilter: s.tvRegionFilter,
       }),
@@ -390,6 +410,10 @@ export const usePrefs = create<PrefsState>()(
           recentDismissedAt:
             p.recentDismissedAt && typeof p.recentDismissedAt === "object"
               ? p.recentDismissedAt
+              : {},
+          libraryByAccount:
+            p.libraryByAccount && typeof p.libraryByAccount === "object"
+              ? p.libraryByAccount
               : {},
           activeSavedProviderAccountId:
             typeof p.activeSavedProviderAccountId === "string"

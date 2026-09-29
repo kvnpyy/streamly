@@ -139,7 +139,10 @@ export function shouldPreferVodTranscodeOnTv(
 export function vodContainerNeedsServerPrep(
   containerExt: string | undefined
 ): boolean {
-  return vodContainerUiHint(containerExt) === "risky";
+  const hint = vodContainerUiHint(containerExt);
+  // MP4 often carries surround or AC-3. The browser shows the picture and
+  // stays silent, so it takes the same server path as MKV.
+  return hint === "risky" || hint === "mp4" || normalizeContainerExt(containerExt) === "unknown";
 }
 
 /** Extension from proxied upstream `u=` (panels often mislabel MKV as MP4). */

@@ -34,6 +34,8 @@ function basePrefs(overrides: Partial<PrefsState> = {}): PrefsState {
     vodResumeSec: {},
     vodResumeWriteAt: {},
     recentDismissedAt: {},
+    libraryByAccount: {},
+    swapActiveLibrary: () => {},
     saveVodResume: () => {},
     getVodResume: () => undefined,
     clearVodResume: () => {},

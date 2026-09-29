@@ -7,8 +7,6 @@ export type VodTranscodePlan = {
   maxHeight: number;
 };
 
-const BROWSER_AUDIO = new Set(["aac", "mp3", "mp4a"]);
-
 export function clampTranscodeMaxHeight(maxHeight: number): number {
   return Number.isFinite(maxHeight) && maxHeight >= 360 && maxHeight <= 1080
     ? Math.round(maxHeight)
@@ -71,12 +69,11 @@ export function shouldIdleStopFfmpeg(opts: {
 
 export function planFromProbeCodecs(
   videoCodec: string | null | undefined,
-  audioCodec: string | null | undefined,
+  _audioCodec?: string | null,
   opts?: { maxHeight?: number }
 ): VodTranscodePlan {
   const maxHeight = opts?.maxHeight ?? 720;
   const v = (videoCodec ?? "").toLowerCase().trim();
-  const a = (audioCodec ?? "").toLowerCase().trim();
 
   const h264 =
     v === "h264" ||
@@ -90,9 +87,8 @@ export function planFromProbeCodecs(
     v === "hev1" ||
     v.startsWith("hevc");
 
-  if (h264 && BROWSER_AUDIO.has(a)) {
-    return { mode: "copy", maxHeight };
-  }
+  // Always re-encode audio to stereo AAC. Copying the source track kept
+  // surround AAC and AC-3, which Chrome plays as a silent picture.
   if (h264 && !hevc) {
     return { mode: "copyVideo", maxHeight };
   }

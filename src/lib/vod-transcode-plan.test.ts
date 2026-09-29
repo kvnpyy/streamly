@@ -7,8 +7,8 @@ import {
 } from "./vod-transcode-plan";
 
 describe("planFromProbeCodecs", () => {
-  it("copy when h264 + aac", () => {
-    expect(planFromProbeCodecs("h264", "aac").mode).toBe("copy");
+  it("re-encodes audio even when the source is AAC", () => {
+    expect(planFromProbeCodecs("h264", "aac").mode).toBe("copyVideo");
   });
 
   it("copyVideo when h264 + ac3", () => {

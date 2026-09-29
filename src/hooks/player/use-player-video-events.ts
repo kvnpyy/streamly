@@ -370,12 +370,12 @@ export function usePlayerVideoEvents(p: UsePlayerVideoEventsParams) {
         v.currentTime >= 2.5
       ) {
         const missing = videoLikelyMissingDecodableAudio(v);
-        if (missing === true) {
+        if (missing === true || (missing === "unknown" && v.currentTime >= 3)) {
           vodSilentAudioResolved = true;
           if (requestVodTranscodeFallbackRef.current()) {
             return;
           }
-        } else if (missing === false || v.currentTime >= 8) {
+        } else if (missing === false) {
           vodSilentAudioResolved = true;
         }
       }

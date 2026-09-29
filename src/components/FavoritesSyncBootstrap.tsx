@@ -9,9 +9,10 @@ import {
   applyRecentDismissals,
   mergeRecentDismissals,
   mergeRecents,
-  mergeVodResumeSnapshots,
+  mergeVodResumeForAccount,
   recentDismissalsEqual,
   sanitizeRecents,
+  vodResumeSnapshotForAccount,
   vodResumeSnapshotsEqual,
   type VodResumeSnapshot,
 } from "@/lib/watch-state-sync";
@@ -187,6 +188,7 @@ export function FavoritesSyncBootstrap({ children }: { children: ReactNode }) {
     () => false
   );
   const pullDoneForKeyRef = useRef<string | null>(null);
+  const activeLibraryKeyRef = useRef<string | null>(null);
   const activePullKeyRef = useRef<string | null>(null);
   const favPushTimerRef = useRef<number | null>(null);
   const watchPushTimerRef = useRef<number | null>(null);
@@ -199,6 +201,24 @@ export function FavoritesSyncBootstrap({ children }: { children: ReactNode }) {
   const onStaleCloudSession = useCallback(() => {
     cloudSyncBlockedRef.current = true;
   }, []);
+
+  useEffect(() => {
+    if (!accountKey || !prefsHydrated) return;
+    const previous = activeLibraryKeyRef.current;
+    if (previous === accountKey) return;
+    skipNextFavPushRef.current = true;
+    skipNextWatchPushRef.current = true;
+    if (favPushTimerRef.current !== null) {
+      window.clearTimeout(favPushTimerRef.current);
+      favPushTimerRef.current = null;
+    }
+    if (watchPushTimerRef.current !== null) {
+      window.clearTimeout(watchPushTimerRef.current);
+      watchPushTimerRef.current = null;
+    }
+    usePrefs.getState().swapActiveLibrary(previous, accountKey);
+    activeLibraryKeyRef.current = accountKey;
+  }, [accountKey, prefsHydrated]);
 
   useEffect(() => {
     if (!streamSignedIn || !accountKey || !prefsHydrated) return;
@@ -272,9 +292,10 @@ export function FavoritesSyncBootstrap({ children }: { children: ReactNode }) {
             dismissed
           )
         );
-        const mergedResume = mergeVodResumeSnapshots(
+        const mergedResume = mergeVodResumeForAccount(
           localResume,
-          remoteWatch.resume
+          remoteWatch.resume,
+          key
         );
         if (cancelled || activePullKeyRef.current !== key) return;
         skipNextWatchPushRef.current = true;
@@ -355,7 +376,10 @@ export function FavoritesSyncBootstrap({ children }: { children: ReactNode }) {
             void pushWatchState(
               key,
               recents,
-              { sec: vodResumeSec, writeAt: vodResumeWriteAt },
+              vodResumeSnapshotForAccount(
+                { sec: vodResumeSec, writeAt: vodResumeWriteAt },
+                key
+              ),
               recentDismissedAt,
               { onStaleSession: onStaleCloudSession }
             ).finally(() => {

@@ -239,6 +239,9 @@ export function buildVodTranscodeHlsJsConfig() {
     nudgeOnVideoHole: false,
     highBufferWatchdogPeriod: 8,
     startPosition: 0,
+    // The demux worker has dropped fMP4 audio in desktop Chrome while the
+    // picture kept playing.
+    enableWorker: false,
   };
 }
 

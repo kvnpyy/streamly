@@ -237,6 +237,53 @@ export function trimVodResumeSnapshot(
   return { sec: nextSec, writeAt: nextAt };
 }
 
+function resumeForAccount(
+  snapshot: VodResumeSnapshot,
+  accountKey: string
+): VodResumeSnapshot {
+  const prefix = `${accountKey}|`;
+  const sec: Record<string, number> = {};
+  const writeAt: Record<string, number> = {};
+  for (const [key, value] of Object.entries(snapshot.sec)) {
+    if (key.startsWith(prefix)) sec[key] = value;
+  }
+  for (const [key, value] of Object.entries(snapshot.writeAt)) {
+    if (key.startsWith(prefix)) writeAt[key] = value;
+  }
+  return { sec, writeAt };
+}
+
+/** Merge one provider's resume without dropping another provider's saved positions. */
+export function mergeVodResumeForAccount(
+  local: VodResumeSnapshot,
+  remote: VodResumeSnapshot,
+  accountKey: string
+): VodResumeSnapshot {
+  const prefix = `${accountKey}|`;
+  const other: VodResumeSnapshot = { sec: {}, writeAt: {} };
+  for (const [key, value] of Object.entries(local.sec)) {
+    if (!key.startsWith(prefix)) other.sec[key] = value;
+  }
+  for (const [key, value] of Object.entries(local.writeAt)) {
+    if (!key.startsWith(prefix)) other.writeAt[key] = value;
+  }
+  const merged = mergeVodResumeSnapshots(
+    resumeForAccount(local, accountKey),
+    resumeForAccount(remote, accountKey)
+  );
+  return {
+    sec: { ...other.sec, ...merged.sec },
+    writeAt: { ...other.writeAt, ...merged.writeAt },
+  };
+}
+
+export function vodResumeSnapshotForAccount(
+  snapshot: VodResumeSnapshot,
+  accountKey: string
+): VodResumeSnapshot {
+  return resumeForAccount(snapshot, accountKey);
+}
+
 function usableResumeSec(sec: number | undefined): number | undefined {
   if (sec == null || !Number.isFinite(sec) || sec < 12) return undefined;
   return sec >= VOD_RESUME_WATCHED_SENTINEL

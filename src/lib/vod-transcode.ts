@@ -536,7 +536,7 @@ async function probeStreamCodecs(input: string): Promise<ProbedCodecs> {
 }
 
 /** Bump when segment packaging changes. Older caches are discarded on the next play. */
-const TRANSCODE_ENCODE_REV = 5;
+const TRANSCODE_ENCODE_REV = 6;
 
 type JobMeta = {
   plan: VodTranscodePlan;

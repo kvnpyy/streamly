@@ -46,6 +46,14 @@ describe("vod-transcode-url", () => {
     ).toBe(false);
   });
 
+  it("sends MP4 episodes through server prep so the browser gets playable audio", () => {
+    const movie =
+      "/api/stream?u=" +
+      encodeURIComponent("http://panel.example/series/u/p/12.mp4") +
+      "&type=vod";
+    expect(vodNeedsServerTranscodePrep("mp4", movie)).toBe(true);
+  });
+
   it("infers MKV from upstream URL when panel metadata says mp4", () => {
     const series =
       "/api/stream?u=" +

@@ -11,6 +11,16 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.13.54",
+    date: "2026-09-29",
+    summary:
+      "Episodes play with sound, including MP4, and each playlist keeps its own Continue Watching.",
+    highlights: [
+      "Episodes still played the picture with no sound, including MP4 files. Those files now get a stereo soundtrack the browser can play.",
+      "Switching playlists no longer leaves the previous provider's Continue Watching and My List on screen. Each playlist keeps its own list, including the episode you were on.",
+    ],
+  },
+  {
     version: "0.13.53",
     date: "2026-09-29",
     summary:

@@ -20,6 +20,7 @@ type PersistedPrefsSlice = Pick<
   | "vodResumeSec"
   | "vodResumeWriteAt"
   | "recentDismissedAt"
+  | "libraryByAccount"
   | "activeSavedProviderAccountId"
   | "tvRegionFilter"
 >;
@@ -90,6 +91,10 @@ export function mergePersistedPrefs(
     vodResumeSec: resume.sec,
     vodResumeWriteAt: resume.writeAt,
     recentDismissedAt,
+    libraryByAccount:
+      p.libraryByAccount && typeof p.libraryByAccount === "object"
+        ? { ...currentState.libraryByAccount, ...p.libraryByAccount }
+        : currentState.libraryByAccount,
     browseByAccount: mergedBrowse,
     hideAdult:
       typeof p.hideAdult === "boolean" ? p.hideAdult : currentState.hideAdult,
