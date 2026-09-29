@@ -25,6 +25,22 @@ describe("pickBestAudioStreamIndex", () => {
     expect(pickBestAudioStreamIndex(streams)).toBe(2);
   });
 
+  it("prefers a real AC-3 mix over an AAC stub with no channel count", () => {
+    const streams: ProbedAudioStream[] = [
+      { index: 1, codec: "aac", channels: 0 },
+      { index: 2, codec: "ac3", channels: 6 },
+    ];
+    expect(pickBestAudioStreamIndex(streams)).toBe(2);
+  });
+
+  it("prefers surround AC-3 over a mono AAC commentary", () => {
+    const streams: ProbedAudioStream[] = [
+      { index: 1, codec: "aac", channels: 1 },
+      { index: 2, codec: "eac3", channels: 6 },
+    ];
+    expect(pickBestAudioStreamIndex(streams)).toBe(2);
+  });
+
   it("skips to second track when first has no codec metadata", () => {
     const streams: ProbedAudioStream[] = [
       { index: 1, codec: null, channels: 0 },

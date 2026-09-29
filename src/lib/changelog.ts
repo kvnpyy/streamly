@@ -11,6 +11,14 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.13.51",
+    date: "2026-09-29",
+    summary: "Episode soundtracks that are surround play in the browser.",
+    highlights: [
+      "Episode files whose real soundtrack is surround (AC-3) were copying a stub AAC track the browser plays as silence. That mix is re-encoded to AAC instead.",
+    ],
+  },
+  {
     version: "0.13.50",
     date: "2026-09-29",
     summary:

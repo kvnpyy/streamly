@@ -536,7 +536,7 @@ async function probeStreamCodecs(input: string): Promise<ProbedCodecs> {
 }
 
 /** Bump when segment packaging changes. Older caches are discarded on the next play. */
-const TRANSCODE_ENCODE_REV = 3;
+const TRANSCODE_ENCODE_REV = 4;
 
 type JobMeta = {
   plan: VodTranscodePlan;
@@ -791,7 +791,11 @@ async function resolveJobMeta(job: TranscodeJob): Promise<JobMeta> {
     const source = isVodSourceCacheEnabled()
       ? await getVodSourceStatus(job.upstream)
       : null;
-    const sourceReady = !source || source.complete || source.bytes > 8_000_000;
+    // A missing cache row is not "the file has no audio". Partial downloads
+    // also hide the real mix until more of the file is on disk.
+    const sourceReady =
+      !!source &&
+      (source.complete || source.bytes >= vodSourceEncodeStartBytes());
     if (!sourceReady) {
       return {
         plan,

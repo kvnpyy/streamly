@@ -19,7 +19,12 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
-## [Unreleased]
+## [0.13.51] — 2026-09-29
+
+Episode soundtracks that are surround play in the browser.
+
+### Fixed
+- Episode files whose real soundtrack is surround (AC-3) were copying a stub AAC track the browser plays as silence. That mix is re-encoded to AAC instead.
 
 ---
 

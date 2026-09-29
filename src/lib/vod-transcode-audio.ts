@@ -22,9 +22,12 @@ export function scoreAudioStream(codec: string | null, channels: number): number
   else if (c.includes("opus")) codecRank = 2;
 
   const ch = channels > 0 ? channels : 0;
-  // Prefer stereo/main mixes; penalize missing channel metadata slightly.
-  const channelPenalty = ch === 0 ? 2 : ch >= 2 ? 0 : 1;
-  return codecRank * 10 + channelPenalty;
+  // IPTV files often list a stub AAC (no channel count, or a mono commentary)
+  // ahead of the real AC-3 mix. Chrome plays the stub as silence. A real
+  // surround track is re-encoded to AAC, which is what the browser can hear.
+  if (ch === 0) return 100 + codecRank;
+  if (ch < 2) return 40 + codecRank;
+  return codecRank * 10;
 }
 
 /** Pick the ffmpeg stream index most likely to carry audible program audio. */
