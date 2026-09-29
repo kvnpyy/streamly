@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   buildChangelogAnnouncement,
+  buildWeeklyAnnouncement,
   parseChangelogEntry,
+  weeklyWindow,
 } from "../../scripts/discord-changelog.mjs";
 
 const SAMPLE = `# Changelog
@@ -100,6 +102,54 @@ Episode soundtracks that are surround play in the browser.
       "Episode soundtracks that are surround play in the browser."
     );
     expect(description).not.toMatch(/AC-3|AAC|re-encoded|141\.227|password|\.env/i);
+  });
+
+  it("rolls a week of updates into one note", () => {
+    const markdown = `## [0.5.0] — 2026-10-02
+
+Search lists every matching channel.
+
+### Fixed
+- North America leaves out Chile.
+
+## [0.4.1] — 2026-09-30
+
+Episode rows use the real titles.
+
+## [0.4.0] — 2026-09-29
+
+Already posted as its own note.
+`;
+    const announced = buildWeeklyAnnouncement({
+      markdown,
+      since: "2026-09-25",
+      until: "2026-10-02",
+      mentionHere: false,
+    });
+    expect(announced.skip).toBe(false);
+    if (announced.skip) return;
+    const embed = announced.payload.embeds[0];
+    expect(embed.title).toBe("This week on Streamly");
+    expect(embed.description).toMatch(/Search lists every matching channel/);
+    expect(embed.description).toMatch(/Episode rows use the real titles/);
+    expect(embed.description).toMatch(/North America leaves out Chile/);
+    expect(embed.description).not.toMatch(/Already posted/);
+    expect(announced.payload.content).toBeUndefined();
+  });
+
+  it("stays quiet when the week has no new notes", () => {
+    const announced = buildWeeklyAnnouncement({
+      markdown: SAMPLE,
+      since: "2026-10-03",
+      until: "2026-10-09",
+      mentionHere: false,
+    });
+    expect(announced.skip).toBe(true);
+  });
+
+  it("covers the seven days before the Friday post", () => {
+    const window = weeklyWindow(new Date("2026-10-02T16:00:00.000Z"));
+    expect(window).toEqual({ since: "2026-09-25", until: "2026-10-02" });
   });
 
   it("skips a release that is only dependency noise", () => {

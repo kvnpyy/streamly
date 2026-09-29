@@ -1,30 +1,26 @@
-# Posts to Discord #changelog when a shipped version lands on main.
-# A VPS deploy pushes the new package.json version. That push is the signal.
-# A published GitHub Release still posts too, and pings @here.
+# One #changelog note each Friday at noon Eastern.
+# Deploys during the week are collected into that single card.
+# A quiet week posts nothing.
+#
+# Friday 16:00 UTC is noon Eastern during daylight time, 11:00 AM in winter.
 #
 # One-time setup:
 #   1. Discord → #changelog → Integrations → Webhooks → New Webhook. Copy the URL.
 #   2. GitHub → Settings → Secrets and variables → Actions →
 #      New repository secret: DISCORD_CHANGELOG_WEBHOOK = that URL.
 #
-# @here is on for a published release, off for a version push, and off for a
-# manual test unless you check "mention_here".
+# A manual run sends the same weekly note early. It does not ping @here
+# unless you check "mention_here".
 
 name: Discord changelog
 
 on:
-  push:
-    branches: [main]
-  release:
-    types: [published]
+  schedule:
+    - cron: "0 16 * * 5"
   workflow_dispatch:
     inputs:
-      version:
-        description: "Version already in CHANGELOG.md, e.g. v0.13.51"
-        required: true
-        type: string
       mention_here:
-        description: "Ping @here (leave off for a test)"
+        description: "Ping @here (leave off)"
         required: false
         type: boolean
         default: false
@@ -36,64 +32,15 @@ jobs:
   post:
     runs-on: ubuntu-latest
     steps:
-      # The post reads CHANGELOG.md at this commit. A version push can include
-      # more than one commit, so the previous tip has to be in the clone.
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
 
-      - name: Choose the version to announce
-        id: version
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          BEFORE_SHA: ${{ github.event.before }}
-          RELEASE_TAG_NAME: ${{ github.event.release.tag_name }}
-          RELEASE_PRERELEASE: ${{ github.event.release.prerelease }}
-          INPUT_VERSION: ${{ inputs.version }}
-          INPUT_MENTION: ${{ inputs.mention_here }}
-        run: |
-          set -euo pipefail
-          tag=""
-          mention="false"
-          if [ "$EVENT_NAME" = "release" ]; then
-            tag="$RELEASE_TAG_NAME"
-            if [ "$RELEASE_PRERELEASE" = "true" ]; then
-              mention="false"
-            else
-              mention="true"
-            fi
-          elif [ "$EVENT_NAME" = "workflow_dispatch" ]; then
-            tag="$INPUT_VERSION"
-            if [ "$INPUT_MENTION" = "true" ]; then
-              mention="true"
-            fi
-          else
-            if [ "$BEFORE_SHA" = "0000000000000000000000000000000000000000" ]; then
-              echo "First push of this branch. No Discord post."
-            elif ! git cat-file -e "${BEFORE_SHA}^{commit}" 2>/dev/null; then
-              echo "Previous commit is not available. No Discord post."
-            else
-              old="$(git show "${BEFORE_SHA}:package.json" | node -e "let s='';process.stdin.on('data',d=>s+=d);process.stdin.on('end',()=>{try{process.stdout.write(JSON.parse(s).version||'')}catch{process.stdout.write('')}})")"
-              new="$(node -e "process.stdout.write(require('./package.json').version)")"
-              if [ -n "$new" ] && [ "$old" != "$new" ]; then
-                tag="v$new"
-                echo "Version $old → $new"
-              else
-                echo "Version unchanged (${new:-unknown}). No Discord post."
-              fi
-            fi
-          fi
-          echo "tag=$tag" >> "$GITHUB_OUTPUT"
-          echo "mention=$mention" >> "$GITHUB_OUTPUT"
-
-      - name: Post changelog
-        if: steps.version.outputs.tag != ''
+      - name: Post the week's changelog
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_CHANGELOG_WEBHOOK }}
-          RELEASE_TAG: ${{ steps.version.outputs.tag }}
-          MENTION_HERE: ${{ steps.version.outputs.mention }}
+          WEEKLY: "true"
+          MENTION_HERE: ${{ github.event_name == 'workflow_dispatch' && inputs.mention_here && 'true' || 'false' }}
         run: node scripts/discord-changelog.mjs

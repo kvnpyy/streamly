@@ -1,14 +1,14 @@
 /**
- * Build and post a short #changelog note when a GitHub Release is published.
+ * Build and post one #changelog note per week.
  *
  * Source of truth is CHANGELOG.md (the same notes as iptvwebplayer.org/changelog).
- * A push to main that changes package.json posts the new version. A published
- * GitHub Release does too. Notes that are only internal, or that contain
- * secrets, are left out.
+ * Deploys during the week are collected. Friday's job posts them as a single
+ * card. Notes that are only internal, or that contain secrets, are left out.
  *
  *   DISCORD_WEBHOOK_URL  webhook for #changelog (repo secret)
- *   RELEASE_TAG          v0.4.0
- *   MENTION_HERE         "true" only for a real release, never a test ping
+ *   WEEKLY               "true" posts the rolling week (the scheduled job)
+ *   RELEASE_TAG          optional single version, for a manual one-off
+ *   MENTION_HERE         "true" only when someone asks to ping
  *   DRY_RUN              "true" prints the message and does not post
  */
 import { readFileSync } from "node:fs";
@@ -17,7 +17,13 @@ import { fileURLToPath } from "node:url";
 
 const NOTES_URL = "https://iptvwebplayer.org/changelog";
 const MAX_BULLETS = 4;
+const MAX_WEEKLY_LINES = 8;
 const MAX_LINE = 180;
+/**
+ * Versions dated on or before this day were already posted one at a time.
+ * The weekly note starts with the next day so Friday does not repeat them.
+ */
+const ALREADY_POSTED_THROUGH = "2026-09-29";
 /** Streamly purple (--brand). Discord wants a decimal color. */
 const EMBED_COLOR = 0x7c5cff;
 
@@ -153,6 +159,67 @@ export function parseChangelogEntry(markdown, version) {
   };
 }
 
+/** Every dated release, newest first, skipping Unreleased. */
+export function parseChangelogEntries(markdown) {
+  const versions = [];
+  for (const line of markdown.split(/\r?\n/)) {
+    const match = line.match(/^## \[([^\]]+)\]/);
+    if (!match || match[1] === "Unreleased") continue;
+    versions.push(match[1]);
+  }
+  return versions
+    .map((version) => parseChangelogEntry(markdown, version))
+    .filter((entry) => entry != null);
+}
+
+/**
+ * Inclusive end, exclusive start. A Friday note covers the seven days after
+ * the previous Friday, so that day's note is not posted again.
+ */
+export function weeklyWindow(now = new Date()) {
+  const untilDate = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())
+  );
+  const sinceDate = new Date(untilDate);
+  sinceDate.setUTCDate(sinceDate.getUTCDate() - 7);
+  return {
+    since: sinceDate.toISOString().slice(0, 10),
+    until: untilDate.toISOString().slice(0, 10),
+  };
+}
+
+export function changelogEntriesInDigest(entries, since, until) {
+  const floor =
+    ALREADY_POSTED_THROUGH > since ? ALREADY_POSTED_THROUGH : since;
+  return entries.filter(
+    (entry) => entry.date && entry.date > floor && entry.date <= until
+  );
+}
+
+function publicLinesForEntry(entry, seen, limit) {
+  const lines = [];
+  const summary =
+    entry.summary && !isInternal(entry.summary)
+      ? toPublicCopy(entry.summary, { full: true })
+      : "";
+  if (summary && !seen.has(summary.toLowerCase())) {
+    seen.add(summary.toLowerCase());
+    lines.push(summary);
+  }
+  for (const raw of entry.bullets) {
+    if (lines.length >= limit) break;
+    if (isSecret(raw) || isInternal(raw) || isImplementation(raw)) continue;
+    const shortened = shortenBullet(raw);
+    const source = shortened.detail || shortened.label;
+    if (!source || isInternal(bulletPlain(shortened))) continue;
+    const line = toPublicCopy(source);
+    if (!line || seen.has(line.toLowerCase())) continue;
+    seen.add(line.toLowerCase());
+    lines.push(line);
+  }
+  return lines;
+}
+
 /**
  * Version title links to the changelog. @here stays outside the embed so a test
  * can post the same card without pinging the channel.
@@ -225,23 +292,74 @@ export function buildChangelogAnnouncement({
   };
 }
 
+/** One card for every viewer-facing change dated inside the week. */
+export function buildWeeklyAnnouncement({
+  markdown,
+  since,
+  until,
+  mentionHere,
+  notesUrl = NOTES_URL,
+}) {
+  const entries = changelogEntriesInDigest(
+    parseChangelogEntries(markdown),
+    since,
+    until
+  );
+  const seen = new Set();
+  const lines = [];
+  for (const entry of entries) {
+    if (lines.length >= MAX_WEEKLY_LINES) break;
+    lines.push(
+      ...publicLinesForEntry(entry, seen, MAX_WEEKLY_LINES - lines.length)
+    );
+  }
+
+  if (lines.length === 0) {
+    return {
+      skip: true,
+      reason: `No viewer-facing updates between ${since} and ${until}. Skipping Discord.`,
+    };
+  }
+
+  const description = lines.map((line) => `- ${line}`).join("\n");
+  const embed = {
+    title: "This week on Streamly",
+    url: notesUrl,
+    description,
+    color: EMBED_COLOR,
+    timestamp: `${until}T16:00:00.000Z`,
+  };
+
+  return {
+    skip: false,
+    content: description,
+    payload: {
+      ...(mentionHere ? { content: "@here" } : {}),
+      allowed_mentions: { parse: mentionHere ? ["everyone"] : [] },
+      embeds: [embed],
+    },
+  };
+}
+
 function readChangelog() {
   return readFileSync(path.join(__dirname, "..", "CHANGELOG.md"), "utf8");
 }
 
 async function main() {
-  const tag = process.env.RELEASE_TAG?.trim();
-  if (!tag) {
-    console.error("RELEASE_TAG is required (example: v0.4.0).");
-    process.exit(1);
-  }
-
   const mentionHere = process.env.MENTION_HERE === "true";
-  const announcement = buildChangelogAnnouncement({
-    markdown: readChangelog(),
-    version: tag,
-    mentionHere,
-  });
+  const weekly = process.env.WEEKLY === "true" || !process.env.RELEASE_TAG?.trim();
+  const markdown = readChangelog();
+  const announcement = weekly
+    ? buildWeeklyAnnouncement({
+        markdown,
+        ...weeklyWindow(new Date()),
+        mentionHere,
+      })
+    : buildChangelogAnnouncement({
+        markdown,
+        version: process.env.RELEASE_TAG.trim(),
+        mentionHere,
+      });
 
   if (announcement.skip) {
     console.log(announcement.reason);
