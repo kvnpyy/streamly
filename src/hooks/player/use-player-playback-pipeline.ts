@@ -873,6 +873,24 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
           ]);
           hls.subtitleTrack = -1;
         }
+        const browserAudio = (hls.levels ?? []).some((level) => {
+          const codec = (level.audioCodec ?? "").toLowerCase();
+          return (
+            codec.includes("mp4a") ||
+            codec.includes("aac") ||
+            codec.includes("opus") ||
+            codec.includes("mp3")
+          );
+        });
+        // Provider playlists often omit the codec or ship AC-3. The picture
+        // still plays. Hand the episode to the server before that happens.
+        if (
+          !isLive &&
+          !browserAudio &&
+          requestVodTranscodeFallbackRef.current()
+        ) {
+          return;
+        }
         void tryAutoplay();
       });
 

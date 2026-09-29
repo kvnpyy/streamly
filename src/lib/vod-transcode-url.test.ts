@@ -50,6 +50,11 @@ describe("vod-transcode-url", () => {
       "&type=hls";
     expect(canVodTranscodeProxyUrl(episodePlaylist)).toBe(true);
     expect(vodNeedsServerTranscodePrep("m3u8", episodePlaylist)).toBe(true);
+    const plainLink =
+      "/api/stream?u=" +
+      encodeURIComponent("http://cdn.example/play/abc123") +
+      "&type=hls";
+    expect(canVodTranscodeProxyUrl(plainLink)).toBe(true);
   });
 
   it("sends MP4 episodes through server prep so the browser gets playable audio", () => {
@@ -101,6 +106,16 @@ describe("vod-transcode-url", () => {
       kindIsLive: false,
     });
     expect(out).toContain("transcode=hls");
+    const plainLink =
+      "/api/stream?u=" +
+      encodeURIComponent("http://cdn.example/play/abc123") +
+      "&type=hls";
+    expect(
+      resolveVodPlaybackUrl(null, plainLink, {
+        containerExt: "mp4",
+        kindIsLive: false,
+      })
+    ).toContain("transcode=hls");
     vi.unstubAllEnvs();
   });
 

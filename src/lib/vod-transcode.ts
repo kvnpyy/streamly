@@ -2579,6 +2579,11 @@ export async function handleVodTranscodeRequest(opts: {
   }
 
   if (media === MANIFEST_NAME) {
+    if (!opts.head) {
+      console.info(
+        `[vod-transcode] play key=${job.key.slice(0, 12)} input=${upstreamIsHlsMediaPlaylist(opts.upstream) ? "playlist" : "file"}`
+      );
+    }
     scheduleVodChapterProbe(job);
     // Contiguity heal is awaited below before serve — do not fire-and-forget
     // a parallel heal that races stop/rewrite with ffmpeg append_list.

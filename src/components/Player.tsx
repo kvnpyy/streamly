@@ -3151,7 +3151,8 @@ export function PlayerOverlay() {
                     await safeVideoPlay(v);
                     setNeedsTapToPlay(false);
                   } catch {
-                    // Last resort: keep muted but force play
+                    // Unmute was rejected. Leave the prompt up so playback
+                    // does not continue with the soundtrack forced off.
                     applyElementMuted(v, true);
                     setMuted(true);
                     try {
@@ -3159,7 +3160,6 @@ export function PlayerOverlay() {
                     } catch {
                       /* noop */
                     }
-                    setNeedsTapToPlay(false);
                   }
                 }}
                 className="absolute inset-0 z-[7] grid place-items-center bg-black/55"
