@@ -11,6 +11,7 @@ import {
   MAX_IN_PROGRESS_PLAYLIST_DURATION_SEC,
   MAX_IN_PROGRESS_PLAYLIST_SEGMENTS,
   maxInProgressPlaylistSegments,
+  chapterMarkersFromTranscodePlaylist,
   durationHintFromTranscodePlaylistResponse,
   parseStreamlyDurationSec,
   xhrTextBody,
@@ -346,6 +347,26 @@ describe("rewriteTranscodeManifest", () => {
     expect(inProgress).toContain("#EXT-X-PLAYLIST-TYPE:EVENT");
     expect(inProgress).not.toContain("#EXT-X-PLAYLIST-TYPE:VOD");
     expect(parseStreamlyDurationSec(inProgress)).toBe(7200.5);
+  });
+
+  it("round-trips intro and credits marks inside the playlist", () => {
+    const out = rewriteTranscodeManifest(
+      "#EXTM3U\n#EXTINF:6,\nseg_00000.ts\n",
+      "http://x/m.mkv",
+      false,
+      {
+        durationSec: 2500,
+        playlistComplete: false,
+        chapterMarkers: {
+          intro: { startSec: 12, endSec: 88, kind: "intro" },
+          creditsStartSec: 2400,
+        },
+      }
+    );
+    expect(chapterMarkersFromTranscodePlaylist(out)).toEqual({
+      intro: { startSec: 12, endSec: 88, kind: "intro" },
+      creditsStartSec: 2400,
+    });
   });
 
   it("reads title duration from the header or the playlist tag", () => {

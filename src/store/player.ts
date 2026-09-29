@@ -15,6 +15,8 @@ export type PlayerSource = {
   containerExt?: string;
   /** Catalog / Xtream runtime — seeds the seek bar before ffprobe. */
   durationSec?: number;
+  /** TMDB movie id when the panel or collection lookup already knows it. */
+  tmdbId?: string;
 };
 
 function sourcesMatchInPlaylist(needle: PlayerSource, item: PlayerSource): boolean {

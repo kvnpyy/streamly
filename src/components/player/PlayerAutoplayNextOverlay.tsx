@@ -13,6 +13,8 @@ export type PlayerAutoplayNextOverlayProps = {
   onCancel: () => void;
   onWatchCredits?: () => void;
   showWatchCredits?: boolean;
+  /** Card heading. Series uses "Next episode"; movies use "Next movie". */
+  eyebrow?: string;
 };
 
 /** Credits card — stays up for the ending, then plays the next episode. */
@@ -25,6 +27,7 @@ export function PlayerAutoplayNextOverlay({
   onCancel,
   onWatchCredits,
   showWatchCredits = false,
+  eyebrow = "Next episode",
 }: PlayerAutoplayNextOverlayProps) {
   const total = Math.max(1, countdownTotalSec);
   const remaining = countdownSec != null ? Math.max(0, countdownSec) : null;
@@ -42,7 +45,7 @@ export function PlayerAutoplayNextOverlay({
           transition={{ duration: 0.28, ease: [0.2, 0.8, 0.2, 1] }}
           className="absolute bottom-36 sm:bottom-40 right-3 sm:right-6 z-[14] w-[min(100%,22rem)] pointer-events-auto"
           role="dialog"
-          aria-label="Next episode"
+          aria-label={eyebrow}
           aria-live="polite"
           data-player-controls=""
           onPointerDown={(e) => e.stopPropagation()}
@@ -72,7 +75,7 @@ export function PlayerAutoplayNextOverlay({
               )}
               <div className="min-w-0 flex-1 pt-0.5">
                 <div className="text-[10px] uppercase tracking-[0.14em] text-white/50">
-                  Next episode
+                  {eyebrow}
                 </div>
                 <div className="text-white text-sm sm:text-[15px] font-semibold truncate mt-0.5">
                   {nextEpisode.title}

@@ -46,6 +46,8 @@ import { TvPlayerRemoteHints } from "@/components/TvPlayerRemoteHints";
 import { VodPrepareOverlay } from "@/components/VodPrepareOverlay";
 import { useTvBrowser } from "@/components/TvBrowserProvider";
 import { useAuth } from "@/store/auth";
+import { useMovieCollection } from "@/hooks/use-movie-collection";
+import { buildMoviePlayUrl } from "@/lib/xtream";
 import { usePlayer, type PlayerSource } from "@/store/player";
 import {
   applyVodResumePersist,
@@ -280,7 +282,7 @@ function PlayerBackdrop({
 }
 
 export function PlayerOverlay() {
-  const { current, open, close, flip, playlist, index } = usePlayer();
+  const { current, open, close, flip, play, playlist, index } = usePlayer();
   const hlsRuntime = useHlsRuntime(open);
   const tvBrowser = useTvBrowser();
   const livingRoomPlayback = useMemo(() => {
@@ -2478,9 +2480,54 @@ export function PlayerOverlay() {
     mediaClockSec,
   });
 
-  const playNextEpisode = useCallback(() => {
-    doFlip(1, true);
-  }, [doFlip]);
+  const hideAdult = usePrefs((s) => s.hideAdult);
+  const parentalUnlocked = usePrefs((s) => s.parentalUnlocked);
+  const movieCollection = useMovieCollection({
+    enabled: open && current?.kind === "movie",
+    creds,
+    title: current?.kind === "movie" ? current.title : "",
+    year: current?.kind === "movie" ? current.subtitle : undefined,
+    tmdbId: current?.kind === "movie" ? current.tmdbId : undefined,
+    streamId: current?.kind === "movie" ? current.id : undefined,
+    safe: hideAdult && !parentalUnlocked,
+  });
+  const nextMovieSource = useMemo((): PlayerSource | null => {
+    const next = movieCollection.next;
+    if (!creds || current?.kind !== "movie" || !next) return null;
+    return {
+      kind: "movie",
+      id: next.streamId,
+      title: next.catalogName,
+      subtitle: next.year,
+      poster: buildImageProxy(next.catalogIcon || next.posterUrl || undefined),
+      url: buildMoviePlayUrl(creds, {
+        stream_id: next.streamId,
+        container_extension: next.containerExtension,
+        direct_source: next.directSource,
+      }),
+      containerExt: next.containerExtension,
+      tmdbId: String(next.tmdbId),
+    };
+  }, [movieCollection.next, creds, current?.kind]);
+  const nextMovieIcon = movieCollection.next?.catalogIcon;
+
+  const playNextTitle = useCallback(() => {
+    if (current?.kind === "series") {
+      doFlip(1, true);
+      return;
+    }
+    if (!nextMovieSource) return;
+    play(nextMovieSource);
+    usePrefs.getState().addRecent({
+      kind: "movie",
+      id: nextMovieSource.id,
+      name: nextMovieSource.title,
+      icon: nextMovieIcon,
+      meta: nextMovieSource.containerExt
+        ? { containerExt: nextMovieSource.containerExt }
+        : undefined,
+    });
+  }, [current?.kind, doFlip, nextMovieSource, nextMovieIcon, play]);
 
   const autoplayNext = usePlayerAutoplayNext({
     open,
@@ -2493,7 +2540,8 @@ export function PlayerOverlay() {
     creditsExact: vodCues.creditsExact,
     seeking: vodSeekInFlight,
     videoRef,
-    onPlayNext: playNextEpisode,
+    onPlayNext: playNextTitle,
+    nextSource: nextMovieSource,
   });
 
   const nextEpisodeUrl = autoplayNext.nextEpisode?.url ?? null;
@@ -3303,6 +3351,7 @@ export function PlayerOverlay() {
               onCancel={autoplayNext.cancelAutoplay}
               onWatchCredits={autoplayNext.watchCredits}
               showWatchCredits
+              eyebrow={current?.kind === "movie" ? "Next movie" : "Next episode"}
             />
 
             {/* EPG drawer — code-split until user opens schedule */}

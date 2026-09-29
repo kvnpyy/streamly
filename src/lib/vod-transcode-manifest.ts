@@ -1,3 +1,8 @@
+import {
+  chapterMarkersFromHeaders,
+  type ParsedVodChapters,
+} from "@/lib/vod-chapter-markers";
+
 export const VOD_TRANSCODE_SEGMENT_RE = /^seg_\d+\.(?:ts|m4s)$/i;
 export const VOD_TRANSCODE_INIT_NAME = "init.mp4";
 
@@ -5,6 +10,10 @@ const DURATION_TAG_RE = /^#EXT-X-STREAMLY-DURATION-SEC:([\d.]+)/im;
 const START_OFFSET_TAG_RE = /^#EXT-X-STREAMLY-START-OFFSET-SEC:([\d.]+)/im;
 const ENCODED_DURATION_TAG_RE =
   /^#EXT-X-STREAMLY-ENCODED-DURATION-SEC:([\d.]+)/im;
+const INTRO_START_TAG_RE = /^#EXT-X-STREAMLY-INTRO-START:([\d.]+)/im;
+const INTRO_END_TAG_RE = /^#EXT-X-STREAMLY-INTRO-END:([\d.]+)/im;
+const INTRO_KIND_TAG_RE = /^#EXT-X-STREAMLY-INTRO-KIND:(intro|recap)/im;
+const CREDITS_START_TAG_RE = /^#EXT-X-STREAMLY-CREDITS-START:([\d.]+)/im;
 
 /** While ffmpeg is still running, cap playlist size so Safari/hls.js don't choke on huge m3u8. */
 /**
@@ -495,6 +504,24 @@ export function parseStreamlyEncodedDurationSec(
   return n != null && n > 0 ? n : null;
 }
 
+function tagValue(text: string, re: RegExp): string | null {
+  const m = text.match(re);
+  return m?.[1] ?? null;
+}
+
+/** Intro and credits baked into the playlist when response headers are stripped. */
+export function chapterMarkersFromTranscodePlaylist(
+  playlistText: string
+): ParsedVodChapters | null {
+  if (!playlistText) return null;
+  return chapterMarkersFromHeaders({
+    introStart: tagValue(playlistText, INTRO_START_TAG_RE),
+    introEnd: tagValue(playlistText, INTRO_END_TAG_RE),
+    introKind: tagValue(playlistText, INTRO_KIND_TAG_RE),
+    creditsStart: tagValue(playlistText, CREDITS_START_TAG_RE),
+  });
+}
+
 /**
  * Title duration for the VOD seek bar. Prefer the proxy header; fall back to
  * the playlist tag so a stripped Access-Control-Expose-Headers still works.
@@ -537,6 +564,7 @@ export function rewriteTranscodeManifest(
     encodedDurationSec?: number | null;
     forCast?: boolean;
     proxyOrigin?: string;
+    chapterMarkers?: ParsedVodChapters | null;
   }
 ): string {
   const compatQs = compatMse ? "&compat=mse" : "";
@@ -564,6 +592,21 @@ export function rewriteTranscodeManifest(
   const enc = opts?.encodedDurationSec;
   if (enc != null && enc > 0) {
     streamlyTags.push(`#EXT-X-STREAMLY-ENCODED-DURATION-SEC:${enc.toFixed(3)}`);
+  }
+  const markers = opts?.chapterMarkers;
+  if (markers?.intro) {
+    streamlyTags.push(
+      `#EXT-X-STREAMLY-INTRO-START:${markers.intro.startSec.toFixed(3)}`
+    );
+    streamlyTags.push(
+      `#EXT-X-STREAMLY-INTRO-END:${markers.intro.endSec.toFixed(3)}`
+    );
+    streamlyTags.push(`#EXT-X-STREAMLY-INTRO-KIND:${markers.intro.kind}`);
+  }
+  if (markers?.creditsStartSec != null) {
+    streamlyTags.push(
+      `#EXT-X-STREAMLY-CREDITS-START:${markers.creditsStartSec.toFixed(3)}`
+    );
   }
   const body = text
     .split(/\r?\n/)

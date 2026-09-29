@@ -111,7 +111,7 @@ describe("shouldOfferAutoplayNext", () => {
     ).toBe(false);
   });
 
-  it("does not offer autoplay for movies", () => {
+  it("does not offer autoplay for a movie with no sequel", () => {
     expect(
       shouldOfferAutoplayNext({
         ...base,
@@ -122,6 +122,18 @@ describe("shouldOfferAutoplayNext", () => {
       })
     ).toBe(false);
   });
+
+  it("offers the next movie once credits start", () => {
+    expect(
+      shouldOfferAutoplayNext({
+        ...base,
+        kind: "movie",
+        playlist: null,
+        index: -1,
+        hasNextEpisode: true,
+      })
+    ).toBe(true);
+  });
 });
 
 describe("shouldAutoplayOnEnded", () => {
@@ -131,6 +143,19 @@ describe("shouldAutoplayOnEnded", () => {
         kind: "series",
         playlist,
         index: 0,
+        dismissedForEpisode: false,
+        watchCreditsForEpisode: false,
+        hasNextEpisode: true,
+      })
+    ).toBe(true);
+  });
+
+  it("advances a movie when a sequel is queued", () => {
+    expect(
+      shouldAutoplayOnEnded({
+        kind: "movie",
+        playlist: null,
+        index: -1,
         dismissedForEpisode: false,
         watchCreditsForEpisode: false,
         hasNextEpisode: true,

@@ -56,6 +56,7 @@ import {
 import { detachVideoElement, safeVideoPlay, voidSafeVideoPlay } from "@/lib/video-play";
 import { applyElementMuted } from "@/lib/player-element-mute";
 import {
+  chapterMarkersFromTranscodePlaylist,
   durationHintFromTranscodePlaylistResponse,
   parseStreamlyDurationSec,
   xhrTextBody,
@@ -735,12 +736,16 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
               if (hint != null && hint > 1) {
                 applyVodDurationHint(hint);
               }
-              const chapterMarkers = chapterMarkersFromHeaders({
-                introStart: xhr.getResponseHeader("x-vod-intro-start"),
-                introEnd: xhr.getResponseHeader("x-vod-intro-end"),
-                introKind: xhr.getResponseHeader("x-vod-intro-kind"),
-                creditsStart: xhr.getResponseHeader("x-vod-credits-start"),
-              });
+              const chapterMarkers =
+                chapterMarkersFromHeaders({
+                  introStart: xhr.getResponseHeader("x-vod-intro-start"),
+                  introEnd: xhr.getResponseHeader("x-vod-intro-end"),
+                  introKind: xhr.getResponseHeader("x-vod-intro-kind"),
+                  creditsStart: xhr.getResponseHeader("x-vod-credits-start"),
+                }) ??
+                (isPlaylist
+                  ? chapterMarkersFromTranscodePlaylist(xhrTextBody(xhr))
+                  : null);
               if (chapterMarkers) {
                 onVodChapterMarkersRef?.current(chapterMarkers);
               }

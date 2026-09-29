@@ -59,9 +59,13 @@ export type AutoplayNextGateParams = {
 export function shouldOfferAutoplayNext(params: AutoplayNextGateParams): boolean {
   if (!params.open || params.seeking) return false;
   if (params.dismissedForEpisode || params.watchCreditsForEpisode) return false;
-  if (params.kind !== "series") return false;
-  if (!params.playlist || params.playlist.kind !== "series") return false;
-  if (params.index < 0 || !params.hasNextEpisode) return false;
+  if (!params.hasNextEpisode) return false;
+  const seriesQueue =
+    params.kind === "series" &&
+    params.playlist?.kind === "series" &&
+    params.index >= 0;
+  const movieQueue = params.kind === "movie";
+  if (!seriesQueue && !movieQueue) return false;
   if (params.endedLatch) return true;
   if (params.creditsStartSec == null || !Number.isFinite(params.creditsStartSec)) {
     return false;
@@ -112,8 +116,12 @@ export function shouldAutoplayOnEnded(params: {
   hasNextEpisode: boolean;
 }): boolean {
   if (params.dismissedForEpisode || params.watchCreditsForEpisode) return false;
-  if (params.kind !== "series") return false;
-  if (!params.playlist || params.playlist.kind !== "series") return false;
-  if (params.index < 0 || !params.hasNextEpisode) return false;
+  if (!params.hasNextEpisode) return false;
+  const seriesQueue =
+    params.kind === "series" &&
+    params.playlist?.kind === "series" &&
+    params.index >= 0;
+  const movieQueue = params.kind === "movie";
+  if (!seriesQueue && !movieQueue) return false;
   return true;
 }

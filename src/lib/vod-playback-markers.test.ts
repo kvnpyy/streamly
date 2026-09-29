@@ -4,7 +4,9 @@ import {
   applyLearnedIntro,
   creditsFromEndSec,
   cueTitleDurationSec,
+  defaultSeriesIntroSpan,
   emptyVodMarkerDb,
+  seriesDefaultIntroAllowed,
   introSpanFromManualSeek,
   resolveCreditsStartSec,
   resolveIntroSpan,
@@ -123,6 +125,29 @@ describe("skip intro", () => {
     ).toBeNull();
     expect(
       skipIntroCue({ timeSec: 12, span, dismissed: true, seeking: false })
+    ).toBeNull();
+  });
+
+  it("offers a standard opening on series before any chapter mark exists", () => {
+    expect(seriesDefaultIntroAllowed(0)).toBe(true);
+    expect(seriesDefaultIntroAllowed(2400)).toBe(true);
+    expect(seriesDefaultIntroAllowed(90)).toBe(false);
+    const span = defaultSeriesIntroSpan();
+    expect(
+      skipIntroCue({
+        timeSec: 8,
+        span,
+        dismissed: false,
+        seeking: false,
+      })?.label
+    ).toBe("Skip intro");
+    expect(
+      skipIntroCue({
+        timeSec: span.endSec + 1,
+        span,
+        dismissed: false,
+        seeking: false,
+      })
     ).toBeNull();
   });
 

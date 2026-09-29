@@ -31,6 +31,8 @@ export type UsePlayerAutoplayNextParams = {
   seeking: boolean;
   videoRef: RefObject<HTMLVideoElement | null>;
   onPlayNext: () => void;
+  /** Sequel already resolved for a movie. Series keeps using the episode list. */
+  nextSource?: PlayerSource | null;
 };
 
 export type UsePlayerAutoplayNextResult = {
@@ -60,12 +62,14 @@ export function usePlayerAutoplayNext(
     seeking,
     videoRef,
     onPlayNext,
+    nextSource = null,
   } = p;
 
-  const nextEpisode = useMemo(
+  const seriesNext = useMemo(
     () => getSeriesNextEpisode(playlist, index),
     [playlist, index]
   );
+  const nextEpisode = current?.kind === "movie" ? nextSource : seriesNext;
   const episodeKey = current ? episodeAutoplayKey(current) : null;
   const hasNextEpisode = nextEpisode != null;
 

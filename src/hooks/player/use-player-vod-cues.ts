@@ -5,10 +5,12 @@ import { loadVodMarkerDb, saveVodMarkerDb } from "@/lib/vod-marker-memory";
 import {
   applyChapterMarkers,
   applyLearnedIntro,
+  defaultSeriesIntroSpan,
   episodeMarkerKey,
   introSpanFromManualSeek,
   resolveCreditsStartSec,
   resolveIntroSpan,
+  seriesDefaultIntroAllowed,
   showMarkerKey,
   skipIntroCue,
   type MarkerIdentity,
@@ -94,13 +96,23 @@ export function usePlayerVodCues(p: UsePlayerVodCuesParams): UsePlayerVodCuesRes
     () => (current && current.kind !== "live" ? identityOf(current) : null),
     [current]
   );
-  const intro = useMemo(
+  const storedIntro = useMemo(
     () => (identity ? resolveIntroSpan(db, identity) : null),
     [db, identity]
   );
+  const intro = useMemo(() => {
+    if (storedIntro) return storedIntro;
+    if (
+      current?.kind === "series" &&
+      seriesDefaultIntroAllowed(titleDurationSec)
+    ) {
+      return defaultSeriesIntroSpan();
+    }
+    return null;
+  }, [storedIntro, current?.kind, titleDurationSec]);
 
   const credits = useMemo(() => {
-    if (!identity || current?.kind !== "series") {
+    if (!identity || (current?.kind !== "series" && current?.kind !== "movie")) {
       return { startSec: null as number | null, exact: false };
     }
     const showKey = showMarkerKey(identity);
@@ -141,12 +153,13 @@ export function usePlayerVodCues(p: UsePlayerVodCuesParams): UsePlayerVodCuesRes
 
   const rememberManualSeek = useCallback(
     (fromSec: number, toSec: number) => {
-      if (!current || current.kind === "live" || intro) return;
+      if (!current || current.kind === "live") return;
+      if (storedIntro?.source === "chapter") return;
       const span = introSpanFromManualSeek(fromSec, toSec);
       if (!span) return;
       persist(applyLearnedIntro(db, identityOf(current), span));
     },
-    [current, db, intro, persist]
+    [current, db, storedIntro, persist]
   );
 
   const dismissSkipIntro = useCallback(() => {

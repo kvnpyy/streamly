@@ -11,6 +11,17 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.13.49",
+    date: "2026-09-29",
+    summary:
+      "Skip intro shows during series openings, and movies in a series can be flipped from the info page or the credits.",
+    highlights: [
+      "Skip intro appears in the opening of an episode. Chapter marks are used when the file has them; otherwise a standard opening window is used, and skipping it remembers that timing for the show.",
+      "A movie that belongs to a series lists the prequels and sequels from your library on its info page.",
+      "During the credits, the next movie in that series can start after a short countdown, the same way the next episode does.",
+    ],
+  },
+  {
     version: "0.13.48",
     date: "2026-09-28",
     summary:

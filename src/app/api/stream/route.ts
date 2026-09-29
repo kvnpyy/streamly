@@ -115,7 +115,7 @@ function corsHeaders(extra: HeadersInit = {}, requestId?: string): Headers {
     "Range, Origin, Accept, Accept-Language, Content-Type"
   );
   const baseExpose =
-    "Content-Length, Content-Range, Accept-Ranges, X-Vod-Duration-Sec, X-Vod-Start-Offset-Sec, X-Vod-Encoded-Sec";
+    "Content-Length, Content-Range, Accept-Ranges, X-Vod-Duration-Sec, X-Vod-Start-Offset-Sec, X-Vod-Encoded-Sec, X-Vod-Intro-Start, X-Vod-Intro-End, X-Vod-Intro-Kind, X-Vod-Credits-Start";
   h.set(
     "Access-Control-Expose-Headers",
     requestId ? `${baseExpose}, ${STREAM_PROXY_REQUEST_ID_HEADER}` : baseExpose

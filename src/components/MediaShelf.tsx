@@ -14,6 +14,7 @@ export type MediaShelfItem = {
   title: string;
   subtitle?: string;
   rating?: string;
+  badge?: string;
   categoryId?: string;
   isFavorite?: boolean;
   onToggleFavorite?: () => void;
@@ -58,6 +59,7 @@ function ShelfCards({
             title={item.title}
             subtitle={item.subtitle}
             rating={item.rating}
+            badge={item.badge}
             isFavorite={item.isFavorite}
             onToggleFavorite={item.onToggleFavorite}
           />

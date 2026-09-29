@@ -24,7 +24,7 @@ export function useCatalogPlay() {
             VodStream,
             "stream_icon" | "year" | "rating" | "container_extension" | "direct_source"
           >
-        >
+        > & { tmdbId?: string }
     ) => {
       const mid = parsePositiveRouteId(m.stream_id);
       if (mid == null) return;
@@ -41,6 +41,7 @@ export function useCatalogPlay() {
         poster: m.stream_icon ? buildImageProxy(m.stream_icon) : undefined,
         url: proxyUrl,
         containerExt,
+        ...(m.tmdbId ? { tmdbId: m.tmdbId } : {}),
       });
       addRecent({
         kind: "movie",

@@ -12,6 +12,7 @@ import { browseAccountKey, usePrefs } from "@/store/preferences";
 import { useQuery } from "@tanstack/react-query";
 import { CastGallery } from "@/components/CastGallery";
 import { GenreChips } from "@/components/GenreChips";
+import { MovieCollectionShelf } from "@/components/MovieCollectionShelf";
 import { SimilarTitlesShelf } from "@/components/SimilarTitlesShelf";
 import { vodCategoryPreviewQueryOptions } from "@/lib/catalog-items-search";
 import { pickSimilarMovies } from "@/lib/similar-titles";
@@ -275,6 +276,7 @@ export default function MovieDetail() {
                     poster: buildImageProxy(poster),
                     url: proxyUrl,
                     containerExt,
+                    ...(meta.tmdb_id ? { tmdbId: String(meta.tmdb_id) } : {}),
                   });
                   addRecent({
                     kind: "movie",
@@ -311,6 +313,13 @@ export default function MovieDetail() {
           </div>
         </div>
       </div>
+
+      <MovieCollectionShelf
+        title={meta.name || data.name}
+        year={data.year}
+        tmdbId={meta.tmdb_id}
+        streamId={data.stream_id}
+      />
 
       <div className="mt-12">
         <SimilarTitlesShelf titles={similarMovies} kind="movie" />

@@ -5,6 +5,12 @@ export type { VodIntroSpan };
 /** First-watch credits guess when the file has no chapter mark. */
 export const DEFAULT_CREDITS_FROM_END_SEC = 75;
 
+/**
+ * Opening window used when a series file has no chapter mark and this show
+ * has not been skipped before. Long enough to cover a typical title sequence.
+ */
+export const DEFAULT_SERIES_INTRO_END_SEC = 90;
+
 /** Ignore credits guesses on clips shorter than a typical episode. */
 export const MIN_CUE_TITLE_DURATION_SEC = 8 * 60;
 
@@ -98,6 +104,21 @@ export function resolveCreditsStartSec(opts: {
   const start = dur - fromEnd;
   if (start < dur * 0.5) return null;
   return start;
+}
+
+/** Unknown runtimes still get a skip button. Trailers and clips do not. */
+export function seriesDefaultIntroAllowed(titleDurationSec: number): boolean {
+  if (!(titleDurationSec > 1)) return true;
+  return titleDurationSec >= MIN_CUE_TITLE_DURATION_SEC;
+}
+
+export function defaultSeriesIntroSpan(): StoredIntro {
+  return {
+    startSec: 0,
+    endSec: DEFAULT_SERIES_INTRO_END_SEC,
+    kind: "intro",
+    source: "learned",
+  };
 }
 
 export function resolveIntroSpan(

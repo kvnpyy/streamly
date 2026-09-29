@@ -2649,6 +2649,7 @@ export async function handleVodTranscodeRequest(opts: {
         encodedDurationSec: trimmedEncodedSec,
         forCast: opts.forCast,
         proxyOrigin: opts.proxyOrigin,
+        chapterMarkers: jobMeta?.chapterMarkers,
       }
     );
     const durationHeader: Record<string, string> = {
