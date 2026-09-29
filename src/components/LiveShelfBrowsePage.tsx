@@ -70,6 +70,7 @@ export type LiveShelfBrowsePageProps = {
  */
 export function LiveShelfBrowsePage({
   creds,
+  accountKey,
   catalog,
   sortedFilteredCats,
   countById,
