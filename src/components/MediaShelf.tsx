@@ -18,6 +18,7 @@ export type MediaShelfItem = {
   categoryId?: string;
   isFavorite?: boolean;
   onToggleFavorite?: () => void;
+  onRemove?: () => void;
   /** Primary action — play/resume. When set, card click plays; use `detailHref` for info. */
   onClick?: () => void;
   detailHref?: string;
@@ -62,6 +63,7 @@ function ShelfCards({
             badge={item.badge}
             isFavorite={item.isFavorite}
             onToggleFavorite={item.onToggleFavorite}
+            onRemove={item.onRemove}
           />
         </div>
       ))}

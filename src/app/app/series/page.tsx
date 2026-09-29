@@ -15,6 +15,7 @@ import { SectionHeader, SkeletonGrid } from "@/components/SectionHeader";
 import { useCatalogBrowseSearch } from "@/lib/catalog-browse-search-context";
 import { useSlashFocusSearch } from "@/lib/use-slash-focus-search";
 import { filterCategoriesByVisibility } from "@/lib/category-visibility";
+import { forgetContinueWatching } from "@/lib/continue-watching";
 import { looksAdult, parsePositiveRouteId } from "@/lib/utils";
 import { slimSeriesCatalogQueryOptions } from "@/lib/slim-series-catalog-query";
 import {
@@ -86,6 +87,8 @@ function SeriesPageInner({
     setBrowsePref,
     recents,
     favorites,
+    removeRecent,
+    clearVodResume,
   } = usePrefs();
   const router = useRouter();
   const pathname = usePathname();
@@ -309,10 +312,20 @@ function SeriesPageInner({
           isFavorite: isFavorite("series", sid),
           onToggleFavorite: () =>
             toggleFavorite({ kind: "series", id: sid, name: r.name, icon: r.icon }),
+          onRemove: () =>
+            forgetContinueWatching(r, accountKey, { removeRecent, clearVodResume }),
         };
       })
       .filter((x): x is NonNullable<typeof x> => x !== null);
-  }, [recents, recentSeriesPage.data?.items, isFavorite, toggleFavorite]);
+  }, [
+    recents,
+    recentSeriesPage.data?.items,
+    isFavorite,
+    toggleFavorite,
+    accountKey,
+    removeRecent,
+    clearVodResume,
+  ]);
 
   const toggleFavoriteSeriesItem = useCallback(
     (s: SeriesItem, sid: number) => {

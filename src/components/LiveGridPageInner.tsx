@@ -64,7 +64,8 @@ import { buildLiveRecentStreams } from "@/lib/live-recent-streams";
 import { buildLivePlayUrl } from "@/lib/xtream";
 import { useContinueRecentPlay } from "@/hooks/use-continue-recent-play";
 import { usePlayer } from "@/store/player";
-import { usePrefs } from "@/store/preferences";
+import { forgetContinueWatching } from "@/lib/continue-watching";
+import { browseAccountKey, usePrefs } from "@/store/preferences";
 import { nowPlayingTitleFromListings } from "@/lib/hooks";
 import { buildLiveChannelIndex } from "@/lib/live-channel-index";
 import {
@@ -145,6 +146,8 @@ export function LiveGridPageInner({ shell }: { shell: LivePageShell }) {
   const addRecent = usePrefs((s) => s.addRecent);
   const recents = usePrefs((s) => s.recents);
   const favorites = usePrefs((s) => s.favorites);
+  const removeRecent = usePrefs((s) => s.removeRecent);
+  const clearVodResume = usePrefs((s) => s.clearVodResume);
   const programmeSearchOn = isLiveProgrammeSearchEnabled();
   const [categoryBrowseOpen, setCategoryBrowseOpen] = useState(false);
   const deferredSelected = useDeferredValue(selected);
@@ -917,6 +920,12 @@ export function LiveGridPageInner({ shell }: { shell: LivePageShell }) {
                       id: recent.id,
                       name: recent.name,
                       icon: recent.icon,
+                    })
+                  }
+                  onRemove={() =>
+                    forgetContinueWatching(recent, browseAccountKey(creds), {
+                      removeRecent,
+                      clearVodResume,
                     })
                   }
                 />

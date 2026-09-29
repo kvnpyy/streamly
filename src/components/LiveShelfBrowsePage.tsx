@@ -34,6 +34,7 @@ import { useContinueRecentPlay } from "@/hooks/use-continue-recent-play";
 import { useLiveOpenCategory } from "@/hooks/use-live-open-category";
 import type { Category, LiveStream, XtreamCredentials } from "@/lib/xtream-types";
 import { usePlayer } from "@/store/player";
+import { forgetContinueWatching } from "@/lib/continue-watching";
 import { usePrefs } from "@/store/preferences";
 import { useQuery, type UseQueryResult } from "@tanstack/react-query";
 import { Layers, CalendarDays, LayoutList } from "lucide-react";
@@ -92,6 +93,8 @@ export function LiveShelfBrowsePage({
   const addRecent = usePrefs((s) => s.addRecent);
   const recents = usePrefs((s) => s.recents);
   const favorites = usePrefs((s) => s.favorites);
+  const removeRecent = usePrefs((s) => s.removeRecent);
+  const clearVodResume = usePrefs((s) => s.clearVodResume);
   const storedRegion = usePrefs((s) => s.tvRegionFilter);
   const [categoryBrowseOpen, setCategoryBrowseOpen] = useState(false);
   const [guideReady, setGuideReady] = useState(false);
@@ -328,6 +331,12 @@ export function LiveShelfBrowsePage({
                       id: recent.id,
                       name: recent.name,
                       icon: recent.icon,
+                    })
+                  }
+                  onRemove={() =>
+                    forgetContinueWatching(recent, accountKey, {
+                      removeRecent,
+                      clearVodResume,
                     })
                   }
                 />

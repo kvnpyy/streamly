@@ -11,6 +11,16 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.13.53",
+    date: "2026-09-29",
+    summary:
+      "Episodes play with sound in the browser, and Continue Watching can be removed from Live TV, Movies, and Series.",
+    highlights: [
+      "Episodes played the picture with no sound in the browser, including MP4 files. The soundtrack was in the file; the browser was skipping it.",
+      "Continue Watching on Live TV, Movies, and Series can be removed the same way as on Home.",
+    ],
+  },
+  {
     version: "0.13.52",
     date: "2026-09-29",
     summary:

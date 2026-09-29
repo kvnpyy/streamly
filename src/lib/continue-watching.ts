@@ -142,6 +142,19 @@ export function parseRecentEpisodeMeta(
   return { episodeStreamId, season, episodeNum, containerExt, durationSec };
 }
 
+export function forgetContinueWatching(
+  recent: RecentItem,
+  accountKey: string,
+  actions: {
+    removeRecent: (kind: RecentItem["kind"], id: number) => void;
+    clearVodResume: (storageKey: string) => void;
+  }
+): void {
+  actions.removeRecent(recent.kind, recent.id);
+  const key = recentResumeStorageKey(accountKey, recent);
+  if (key) actions.clearVodResume(key);
+}
+
 export function recentResumeStorageKey(
   accountKey: string,
   recent: RecentItem

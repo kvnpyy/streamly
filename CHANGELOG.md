@@ -19,6 +19,16 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.13.53] — 2026-09-29
+
+Episodes play with sound in the browser, and Continue Watching can be removed from Live TV, Movies, and Series.
+
+### Fixed
+- Episodes played the picture with no sound in the browser, including MP4 files. The soundtrack was in the file; the browser was skipping it.
+- Continue Watching on Live TV, Movies, and Series can be removed the same way as on Home.
+
+---
+
 ## [0.13.52] — 2026-09-29
 
 Search lists every matching channel, episode rows use the real titles, and North America leaves out Chile and the Dominican Republic.

@@ -13,6 +13,7 @@ import { VodGenreBar } from "@/components/VodGenreBar";
 import { VodLanguageFilter } from "@/components/VodLanguageFilter";
 import { MediaCard } from "@/components/MediaCard";
 import { SectionHeader, SkeletonGrid } from "@/components/SectionHeader";
+import { forgetContinueWatching } from "@/lib/continue-watching";
 import { parsePositiveRouteId } from "@/lib/utils";
 import { useCatalogBrowseSearch } from "@/lib/catalog-browse-search-context";
 import { useSlashFocusSearch } from "@/lib/use-slash-focus-search";
@@ -86,6 +87,8 @@ function MoviesPageInner({
     setBrowsePref,
     recents,
     favorites,
+    removeRecent,
+    clearVodResume,
   } = usePrefs();
   const { playMovie, movieDetailHref, enrichMovieShelfItems } = useCatalogPlay();
   const router = useRouter();
@@ -294,10 +297,20 @@ function MoviesPageInner({
           isFavorite: isFavorite("movie", mid),
           onToggleFavorite: () =>
             toggleFavorite({ kind: "movie", id: mid, name: r.name, icon: r.icon }),
+          onRemove: () =>
+            forgetContinueWatching(r, accountKey, { removeRecent, clearVodResume }),
         };
       })
       .filter((x): x is NonNullable<typeof x> => x !== null);
-  }, [recents, recentMoviesPage.data?.items, isFavorite, toggleFavorite]);
+  }, [
+    recents,
+    recentMoviesPage.data?.items,
+    isFavorite,
+    toggleFavorite,
+    accountKey,
+    removeRecent,
+    clearVodResume,
+  ]);
 
   const toggleFavoriteMovie = useCallback(
     (m: VodStream, mid: number) => {

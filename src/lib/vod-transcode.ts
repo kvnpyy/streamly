@@ -536,7 +536,7 @@ async function probeStreamCodecs(input: string): Promise<ProbedCodecs> {
 }
 
 /** Bump when segment packaging changes. Older caches are discarded on the next play. */
-const TRANSCODE_ENCODE_REV = 4;
+const TRANSCODE_ENCODE_REV = 5;
 
 type JobMeta = {
   plan: VodTranscodePlan;
@@ -1902,6 +1902,10 @@ async function spawnFfmpegLocked(
     // one-frame overlap was the remaining slight skip every segment.
     "-hls_segment_type",
     "fmp4",
+    // Chrome plays the picture and drops the soundtrack when the audio track
+    // carries an edit list. VLC still hears it. Omit the edit list.
+    "-hls_segment_options",
+    "use_editlist=0",
     "-hls_fmp4_init_filename",
     "init.mp4",
     "-hls_segment_filename",

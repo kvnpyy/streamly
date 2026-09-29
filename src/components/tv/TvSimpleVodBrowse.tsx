@@ -13,6 +13,7 @@ import {
   attachMovieDiscoveryShelfItems,
   attachSeriesDiscoveryShelfItems,
 } from "@/lib/attach-discovery-shelf-items";
+import { forgetContinueWatching } from "@/lib/continue-watching";
 import { DISCOVERY_SHELF_META, isDiscoveryShelvesEnabled } from "@/lib/discovery";
 import { scheduleWhenIdle } from "@/lib/defer-idle";
 import { filterCategoriesByVisibility } from "@/lib/category-visibility";
@@ -71,6 +72,8 @@ export function TvSimpleVodBrowse({
     setBrowsePref,
     recents,
     favorites,
+    removeRecent,
+    clearVodResume,
   } = usePrefs();
   const { playMovie, movieDetailHref, enrichMovieShelfItems } = useCatalogPlay();
   const catalogReady = useTvCatalogPageReady();
@@ -358,6 +361,8 @@ export function TvSimpleVodBrowse({
             isFavorite: isFavorite("movie", mid),
             onToggleFavorite: () =>
               toggleFavorite({ kind: "movie", id: mid, name: r.name, icon: r.icon }),
+            onRemove: () =>
+              forgetContinueWatching(r, accountKey, { removeRecent, clearVodResume }),
           };
         })
         .filter((x): x is NonNullable<typeof x> => x !== null);
@@ -386,6 +391,8 @@ export function TvSimpleVodBrowse({
           isFavorite: isFavorite("series", sid),
           onToggleFavorite: () =>
             toggleFavorite({ kind: "series", id: sid, name: r.name, icon: r.icon }),
+          onRemove: () =>
+            forgetContinueWatching(r, accountKey, { removeRecent, clearVodResume }),
         };
       })
       .filter((x): x is NonNullable<typeof x> => x !== null);
@@ -396,6 +403,9 @@ export function TvSimpleVodBrowse({
     recentSeriesPage.data?.items,
     isFavorite,
     toggleFavorite,
+    accountKey,
+    removeRecent,
+    clearVodResume,
   ]);
 
   const playableRecentItems = useMemo(

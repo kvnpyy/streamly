@@ -2,8 +2,9 @@
 
 import { cn, safeStr } from "@/lib/utils";
 import { proxiedCssBackground } from "@/lib/image-proxy";
-import { Heart, Info, Play, Star } from "lucide-react";
+import { Heart, Info, Play, Star, Trash2 } from "lucide-react";
 import Link from "next/link";
+import type { ReactNode } from "react";
 
 /** Deterministic 0–359 hue from a string. */
 function titleHue(title: unknown): number {
@@ -38,6 +39,8 @@ export type MediaCardProps = {
   rating?: string | number;
   isFavorite?: boolean;
   onToggleFavorite?: () => void;
+  /** Remove this title from Continue Watching. */
+  onRemove?: () => void;
   badge?: string;
   className?: string;
   /**
@@ -60,6 +63,7 @@ export function MediaCard({
   rating,
   isFavorite,
   onToggleFavorite,
+  onRemove,
   badge,
   className,
   posterFit = "cover",
@@ -76,6 +80,28 @@ export function MediaCard({
   const hue = titleHue(title);
   const initials = titleInitials(title);
   const infoHref = detailHref ?? (onClick ? href : undefined);
+
+  const withRemove = (node: ReactNode) => {
+    if (!onRemove) return node;
+    return (
+      <div className="relative min-w-0">
+        {node}
+        <button
+          type="button"
+          data-tv-card-root
+          aria-label={`Remove ${title} from continue watching`}
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            onRemove();
+          }}
+          className="absolute top-12 right-2 z-20 size-8 rounded-lg bg-black/70 text-white grid place-items-center hover:bg-black/85 focus-ring"
+        >
+          <Trash2 className="size-3.5" aria-hidden />
+        </button>
+      </div>
+    );
+  };
 
   const inner = (
     <div
@@ -188,7 +214,7 @@ export function MediaCard({
   );
 
   if (onClick) {
-    return (
+    return withRemove(
       <button
         type="button"
         data-tv-card-root
@@ -208,7 +234,7 @@ export function MediaCard({
   }
 
   if (href) {
-    return (
+    return withRemove(
       <Link
         href={href}
         prefetch={false}
@@ -221,5 +247,5 @@ export function MediaCard({
     );
   }
 
-  return <div className="block w-full">{inner}</div>;
+  return withRemove(<div className="block w-full">{inner}</div>);
 }
