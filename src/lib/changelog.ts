@@ -11,6 +11,15 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.13.58",
+    date: "2026-09-30",
+    summary:
+      "Episodes play as video again, with sound, and without the short replay.",
+    highlights: [
+      "Episodes were advancing as a series of still pictures. They play as normal video again, keep the stereo soundtrack, and no longer replay about a second of picture as they move forward.",
+    ],
+  },
+  {
     version: "0.13.57",
     date: "2026-09-29",
     summary:

@@ -538,7 +538,7 @@ async function probeStreamCodecs(input: string): Promise<ProbedCodecs> {
 }
 
 /** Bump when segment packaging changes. Older caches are discarded on the next play. */
-const TRANSCODE_ENCODE_REV = 8;
+const TRANSCODE_ENCODE_REV = 9;
 
 type JobMeta = {
   plan: VodTranscodePlan;
@@ -1849,7 +1849,7 @@ async function spawnFfmpegLocked(
       ? Math.max(0, resume.outputTsOffsetSec ?? seekSec)
       : seekSec;
 
-  const segPattern = path.join(job.dir, "seg_%05d.m4s");
+  const segPattern = path.join(job.dir, "seg_%05d.ts");
   const outManifest = path.join(job.dir, MANIFEST_NAME);
   const args = [
     "-nostdin",
@@ -1942,15 +1942,12 @@ async function spawnFfmpegLocked(
     // freezes mid-film scrub.
     "-hls_flags",
     "independent_segments+temp_file+append_list",
-    // MPEG-TS repeats the opening of each segment, which looks like the
-    // picture looping for about a second. Fragmented MP4 does not. Audio
-    // stays stereo AAC, and the edit list is omitted so Chrome keeps it.
+    // Fragmented MP4 kept every frame in the file, and the player still
+    // painted one still every few seconds. MPEG-TS is what actually moves.
+    // Video is re-encoded with a keyframe on each segment so the old
+    // one-second replay at the boundary does not come back.
     "-hls_segment_type",
-    "fmp4",
-    "-hls_segment_options",
-    "use_editlist=0",
-    "-hls_fmp4_init_filename",
-    "init.mp4",
+    "mpegts",
     "-hls_segment_filename",
     segPattern,
   );

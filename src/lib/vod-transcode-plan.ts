@@ -68,32 +68,13 @@ export function shouldIdleStopFfmpeg(opts: {
 }
 
 export function planFromProbeCodecs(
-  videoCodec: string | null | undefined,
+  _videoCodec: string | null | undefined,
   _audioCodec?: string | null,
   opts?: { maxHeight?: number }
 ): VodTranscodePlan {
   const maxHeight = opts?.maxHeight ?? 720;
-  const v = (videoCodec ?? "").toLowerCase().trim();
-
-  const h264 =
-    v === "h264" ||
-    v === "avc" ||
-    v === "avc1" ||
-    v.startsWith("h264");
-  const hevc =
-    v === "hevc" ||
-    v === "h265" ||
-    v === "hvc1" ||
-    v === "hev1" ||
-    v.startsWith("hevc");
-
-  // Always re-encode audio to stereo AAC. Copying the source track kept
-  // surround AAC and AC-3, which Chrome plays as a silent picture.
-  if (h264 && !hevc) {
-    return { mode: "copyVideo", maxHeight };
-  }
-  if (hevc) {
-    return { mode: "transcode", maxHeight };
-  }
+  // Re-encode the picture as well as the audio. Copying H.264 into MPEG-TS
+  // replays about a second of video at every segment. A fresh keyframe on
+  // each segment plays straight through, and the audio is stereo AAC.
   return { mode: "transcode", maxHeight };
 }

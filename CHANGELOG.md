@@ -19,6 +19,15 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.13.58] — 2026-09-29
+
+Episodes play as video again, with sound, and without the short replay.
+
+### Fixed
+- Episodes were advancing as a series of still pictures. They play as normal video again, keep the stereo soundtrack, and no longer replay about a second of picture as they move forward.
+
+---
+
 ## [0.13.57] — 2026-09-29
 
 Episode picture no longer repeats itself while the soundtrack plays.
