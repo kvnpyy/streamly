@@ -320,6 +320,22 @@ export function parseExtinfDurationsBySegment(
   return out;
 }
 
+/** A flushed opening segment is playable even if ffmpeg's playlist is still empty. */
+export const OPENING_SEGMENT_MIN_BYTES = 800;
+
+/**
+ * `temp_file` can leave `index.m3u8` at 0 bytes while seg_00000 is already
+ * on disk. Readiness must follow the segment, or the player polls 503 forever.
+ */
+export function transcodeStartupReady(opts: {
+  manifestText: string | null;
+  openingSegmentBytes: number;
+}): boolean {
+  if (opts.openingSegmentBytes >= OPENING_SEGMENT_MIN_BYTES) return true;
+  const text = opts.manifestText ?? "";
+  return text.includes("#EXTM3U") && countManifestSegments(text) >= 1;
+}
+
 export function countManifestSegments(manifestText: string): number {
   let n = 0;
   for (const line of manifestText.split(/\r?\n/)) {

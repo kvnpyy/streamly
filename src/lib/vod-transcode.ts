@@ -17,6 +17,7 @@ import {
   prepareManifestForPlayback,
   rewriteTranscodeManifest,
   sumExtinfDurationSec,
+  transcodeStartupReady,
   VOD_TRANSCODE_SEGMENT_RE as SEGMENT_RE,
 } from "@/lib/vod-transcode-manifest";
 import { transcodeManifestWaitMs } from "@/lib/vod-transcode-wait";
@@ -1447,10 +1448,17 @@ async function ensureTranscodeJobContiguous(job: TranscodeJob): Promise<number> 
     tipOnlyTail;
   if (!needsHeal) return prefix;
 
-  // Tip-only tails while ffmpeg is still writing: do NOT kill the encoder or
-  // rewrite its live m3u8 — serve-time synthesis rebuilds from disk. Heal the
-  // on-disk playlist only once the process has exited.
-  if (tipOnlyTail && job.proc && job.proc.exitCode == null) {
+  // An empty playlist while ffmpeg is still writing is the temp_file window,
+  // not a broken encode. Killing it here left seg_00000 on disk and a 0-byte
+  // index.m3u8, and every later play returned 503. Serve from the segments.
+  const encoderLive = !!(job.proc && job.proc.exitCode == null);
+  if (
+    encoderLive &&
+    (tipOnlyTail ||
+      (manifestEmpty &&
+        !manifestDiskGap &&
+        !hasOrphanSegmentsBeyondPrefix(onDisk)))
+  ) {
     return prefix;
   }
 
@@ -1619,6 +1627,29 @@ async function ensureEncodingContinues(job: TranscodeJob): Promise<void> {
   }
 }
 
+async function openingSegmentBytes(dir: string): Promise<number> {
+  for (const name of ["seg_00000.ts", "seg_00000.m4s"]) {
+    try {
+      const st = await fsp.stat(path.join(dir, name));
+      if (st.size > 0) return st.size;
+    } catch {
+      /* try the other container */
+    }
+  }
+  return 0;
+}
+
+async function startupSegmentsAreReady(job: TranscodeJob): Promise<boolean> {
+  const text = await fsp
+    .readFile(path.join(job.dir, MANIFEST_NAME), "utf8")
+    .catch(() => null);
+  const opening = await openingSegmentBytes(job.dir);
+  return transcodeStartupReady({
+    manifestText: text,
+    openingSegmentBytes: opening,
+  });
+}
+
 async function readManifestIfReady(dir: string): Promise<string | null> {
   const manifestPath = path.join(dir, MANIFEST_NAME);
   try {
@@ -1672,7 +1703,10 @@ async function waitForReady(
   opts?: { failJobOnTimeout?: boolean }
 ): Promise<boolean> {
   const existing = await readManifestIfReady(job.dir);
-  if (existing && (await inProgressPlaylistHasStartupBuffer(job, existing))) {
+  if (
+    (existing && (await inProgressPlaylistHasStartupBuffer(job, existing))) ||
+    (await startupSegmentsAreReady(job))
+  ) {
     job.state = "ready";
     return true;
   }
@@ -1685,9 +1719,17 @@ async function waitForReady(
       return false;
     }
     if (state === "queued") drainTranscodeQueue();
-    if (signal?.aborted) return !!(await readManifestIfReady(job.dir));
+    if (signal?.aborted) {
+      return (
+        !!(await readManifestIfReady(job.dir)) ||
+        (await startupSegmentsAreReady(job))
+      );
+    }
     const text = await readManifestIfReady(job.dir);
-    if (text && (await inProgressPlaylistHasStartupBuffer(job, text))) {
+    if (
+      (text && (await inProgressPlaylistHasStartupBuffer(job, text))) ||
+      (await startupSegmentsAreReady(job))
+    ) {
       job.state = "ready";
       notifyWaiters(job, true);
       return true;
@@ -1695,7 +1737,10 @@ async function waitForReady(
     await new Promise((r) => setTimeout(r, 100));
   }
   const late = await readManifestIfReady(job.dir);
-  if (late && (await inProgressPlaylistHasStartupBuffer(job, late))) {
+  if (
+    (late && (await inProgressPlaylistHasStartupBuffer(job, late))) ||
+    (await startupSegmentsAreReady(job))
+  ) {
     job.state = "ready";
     notifyWaiters(job, true);
     return true;

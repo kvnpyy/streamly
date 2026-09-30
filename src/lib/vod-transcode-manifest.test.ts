@@ -26,8 +26,41 @@ import {
   resumeSeekSecForDiskPrefix,
   shouldRestartFragmentedTranscode,
   sumExtinfDurationSec,
+  transcodeStartupReady,
 } from "./vod-transcode-manifest";
 import { shouldReuseTranscodeJobForSeek } from "./vod-transcode-seek-policy";
+
+describe("transcodeStartupReady", () => {
+  it("starts when the opening segment is on disk even if the playlist is empty", () => {
+    expect(
+      transcodeStartupReady({
+        manifestText: "",
+        openingSegmentBytes: 3_000_000,
+      })
+    ).toBe(true);
+    expect(
+      transcodeStartupReady({
+        manifestText: null,
+        openingSegmentBytes: 800,
+      })
+    ).toBe(true);
+  });
+
+  it("waits when neither the playlist nor a flushed opening segment exists", () => {
+    expect(
+      transcodeStartupReady({
+        manifestText: "#EXTM3U\n#EXT-X-VERSION:6\n",
+        openingSegmentBytes: 0,
+      })
+    ).toBe(false);
+    expect(
+      transcodeStartupReady({
+        manifestText: "",
+        openingSegmentBytes: 100,
+      })
+    ).toBe(false);
+  });
+});
 
 describe("shouldRestartFragmentedTranscode", () => {
   it("restarts when the init segment or the opening segment is missing", () => {
