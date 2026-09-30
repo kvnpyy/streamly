@@ -21,7 +21,7 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
-## [0.13.60] — 2026-09-30
+## [0.13.61] — 2026-09-30
 
 Movies and episodes start again when the opening segment is already encoded.
 

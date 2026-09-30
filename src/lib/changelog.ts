@@ -11,7 +11,7 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
-    version: "0.13.60",
+    version: "0.13.61",
     date: "2026-09-30",
     summary:
       "Movies and episodes start again when the opening segment is already encoded.",
