@@ -3,6 +3,7 @@ import {
   applySafeLiveAbrCeiling,
   indexOfLowestSafeLevel,
   maxSafeLevelIndex,
+  shouldOfferLiveBrowserTranscode,
   stabilizeBrowserFriendlyCodecs,
 } from "@/lib/live-hls-playback";
 import type { Level } from "hls.js";
@@ -87,5 +88,48 @@ describe("safe live ABR ceiling", () => {
     });
     expect(hls.autoLevelCapping).toBe(maxSafeLevelIndex(hls.levels));
     expect(hls.autoLevelCapping).toBeGreaterThan(indexOfLowestSafeLevel(hls.levels));
+  });
+
+  it("offers a phone-friendly live encode only after a codec rejection", () => {
+    expect(
+      shouldOfferLiveBrowserTranscode({
+        isLive: true,
+        alreadyOnBrowserTranscode: false,
+        gaveUp: false,
+        appleMobile: true,
+        safariFamily: false,
+        mobilePhone: false,
+      })
+    ).toBe(true);
+    expect(
+      shouldOfferLiveBrowserTranscode({
+        isLive: true,
+        alreadyOnBrowserTranscode: false,
+        gaveUp: false,
+        appleMobile: false,
+        safariFamily: false,
+        mobilePhone: true,
+      })
+    ).toBe(true);
+    expect(
+      shouldOfferLiveBrowserTranscode({
+        isLive: true,
+        alreadyOnBrowserTranscode: true,
+        gaveUp: false,
+        appleMobile: true,
+        safariFamily: true,
+        mobilePhone: true,
+      })
+    ).toBe(false);
+    expect(
+      shouldOfferLiveBrowserTranscode({
+        isLive: true,
+        alreadyOnBrowserTranscode: false,
+        gaveUp: false,
+        appleMobile: false,
+        safariFamily: false,
+        mobilePhone: false,
+      })
+    ).toBe(false);
   });
 });

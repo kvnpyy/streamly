@@ -73,6 +73,20 @@ export function playbackUrlUsesLiveRemux(proxyUrl: string): boolean {
   }
 }
 
+/** Server is re-encoding this live channel to H.264 + AAC for the phone. */
+export function playbackUrlUsesLiveBrowserTranscode(proxyUrl: string): boolean {
+  if (!proxyUrl.includes("/api/stream")) return false;
+  try {
+    const base =
+      typeof window !== "undefined"
+        ? window.location.origin
+        : "https://localhost";
+    return new URL(proxyUrl, base).searchParams.get("remux") === "browser";
+  } catch {
+    return /(?:^|[?&])remux=browser(?:&|$)/.test(proxyUrl);
+  }
+}
+
 /**
  * Same proxy URL, served from a server-side copy-remux window after the
  * channel has already failed gentle recovery twice.
@@ -88,6 +102,28 @@ export function withLiveCopyRemux(proxyUrl: string): string | null {
     if (!u.searchParams.get("u")) return null;
     u.searchParams.set("type", "hls");
     u.searchParams.set("remux", "copy");
+    return u.pathname + u.search;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Same proxy URL, served from a server-side H.264 + AAC window after the
+ * phone or Safari rejects the provider codecs.
+ */
+export function withLiveBrowserTranscode(proxyUrl: string): string | null {
+  if (!proxyUrl.includes("/api/stream")) return null;
+  try {
+    const base =
+      typeof window !== "undefined"
+        ? window.location.origin
+        : "https://localhost";
+    const u = new URL(proxyUrl, base);
+    if (!u.searchParams.get("u")) return null;
+    u.searchParams.set("type", "hls");
+    u.searchParams.set("remux", "browser");
+    u.searchParams.delete("compat");
     return u.pathname + u.search;
   } catch {
     return null;

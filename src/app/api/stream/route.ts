@@ -348,12 +348,17 @@ async function handle(req: NextRequest, head: boolean) {
     );
   }
 
-  if (url.searchParams.get("remux") === "copy" && type === "hls") {
+  const liveRemuxMode = url.searchParams.get("remux");
+  if (
+    (liveRemuxMode === "copy" || liveRemuxMode === "browser") &&
+    type === "hls"
+  ) {
     const remux = await handleLiveCopyRemux({
       requestUrl: req.url,
       upstream: target,
       media: url.searchParams.get("media"),
       head,
+      mode: liveRemuxMode,
     });
     const remuxBody =
       remux.body == null || typeof remux.body === "string"
@@ -459,8 +464,11 @@ async function handle(req: NextRequest, head: boolean) {
   // request (see comment near IPTV_UA_HLS / IPTV_UA_VOD).
   // Live cast must use HLS/Smarters UA even if a stale manifest still has
   // type=vod on segments — VLC UA often 403s live CDNs on Chromecast.
+  // type=mpegts is a phone live MPEG-TS passthrough (same providers as HLS).
   const useHlsUa =
-    type === "hls" || (forCast && url.searchParams.get("transcode") !== "hls");
+    type === "hls" ||
+    type === "mpegts" ||
+    (forCast && url.searchParams.get("transcode") !== "hls");
   fwdHeaders.set("user-agent", useHlsUa ? IPTV_UA_HLS : IPTV_UA_VOD);
   // Some providers also check Referer / Origin. Spoof it as the upstream.
   fwdHeaders.set(

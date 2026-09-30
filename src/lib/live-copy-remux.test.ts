@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildLiveBrowserTranscodeArgs,
   buildLiveCopyRemuxArgs,
+  liveRemuxJobHash,
   liveRemuxMediaBasename,
   rewriteLiveRemuxPlaylist,
 } from "./live-copy-remux";
@@ -16,6 +18,21 @@ describe("live copy remux", () => {
     expect(args).toContain("4");
     expect(args).not.toContain("libx264");
     expect(args).toContain("-hls_list_size");
+  });
+
+  it("re-encodes a phone fallback to H.264 baseline and AAC", () => {
+    const args = buildLiveBrowserTranscodeArgs({
+      inputUrl: "https://cdn.example/live.m3u8",
+      outputDir: "/tmp/remux",
+    });
+    expect(args).toContain("libx264");
+    expect(args).toContain("baseline");
+    expect(args).toContain("aac");
+    expect(args).toContain("aac_low");
+    expect(args).not.toContain("copy");
+    expect(liveRemuxJobHash("https://cdn.example/live.m3u8", "browser")).not.toBe(
+      liveRemuxJobHash("https://cdn.example/live.m3u8", "copy")
+    );
   });
 
   it("accepts only generated segment basenames", () => {

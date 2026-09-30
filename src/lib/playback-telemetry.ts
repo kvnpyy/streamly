@@ -17,7 +17,9 @@ export type PlaybackBreadcrumbEvent =
   | "tv_live_freeze_reinit"
   | "tv_live_freeze_play"
   | "tv_live_freeze_media"
-  | "tv_live_freeze_reload";
+  | "tv_live_freeze_reload"
+  | "live_mpegts_start"
+  | "live_mpegts_fallback";
 
 /** Lightweight playback trail for Sentry — no credentials or raw upstream URLs. */
 export function playbackBreadcrumb(

@@ -3,7 +3,9 @@ import {
   appendStreamCompatMse,
   extractStreamProxyUpstream,
   streamProxyTypeIsHls,
+  playbackUrlUsesLiveBrowserTranscode,
   playbackUrlUsesLiveRemux,
+  withLiveBrowserTranscode,
   withLiveCopyRemux,
   withLiveHlsCompatMse,
 } from "./stream-url";
@@ -52,5 +54,19 @@ describe("stream-url", () => {
     expect(playbackUrlUsesLiveRemux(remux!)).toBe(true);
     expect(playbackUrlUsesLiveRemux(base)).toBe(false);
     expect(withLiveCopyRemux("https://cdn.example/live.m3u8")).toBeNull();
+  });
+
+  it("marks a live proxy URL for browser transcode and drops compat", () => {
+    const base =
+      "/api/stream?u=https%3A%2F%2Fpanel.example%2Flive.m3u8&type=hls&compat=mse";
+    const next = withLiveBrowserTranscode(base);
+    expect(next).toContain("remux=browser");
+    expect(next).not.toContain("compat=mse");
+    expect(extractStreamProxyUpstream(next)).toBe(
+      "https://panel.example/live.m3u8"
+    );
+    expect(playbackUrlUsesLiveBrowserTranscode(next!)).toBe(true);
+    expect(playbackUrlUsesLiveRemux(next!)).toBe(false);
+    expect(withLiveBrowserTranscode("https://cdn.example/live.m3u8")).toBeNull();
   });
 });

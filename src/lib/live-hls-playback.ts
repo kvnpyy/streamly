@@ -459,6 +459,26 @@ export function stabilizeBrowserFriendlyCodecs(
   }
 }
 
+/**
+ * Phones and Safari hit this when the provider ladder is Dolby-only or HEVC-only.
+ * Desktop Chromium keeps its own message and is not sent through the live encoder.
+ */
+export function shouldOfferLiveBrowserTranscode(opts: {
+  isLive: boolean;
+  alreadyOnBrowserTranscode: boolean;
+  gaveUp: boolean;
+  appleMobile: boolean;
+  safariFamily: boolean;
+  mobilePhone: boolean;
+}): boolean {
+  if (!opts.isLive || opts.alreadyOnBrowserTranscode || opts.gaveUp) return false;
+  return opts.appleMobile || opts.safariFamily || opts.mobilePhone;
+}
+
+export function liveBrowserTranscodeFailedMessage(): string {
+  return "This channel still isn't playable in this browser after converting the audio and video. Try another listing of the same channel, or your provider's app.";
+}
+
 export function liveCodecUserMessage(): string {
   const onWebKit =
     isSafariFamilyWithoutChromium() || isAppleMobileWebKitDevice();

@@ -9,6 +9,10 @@ const IPTV_UA =
 const SEGMENT_RE = /^seg_\d+\.ts$/;
 const IDLE_MS = 45_000;
 const PLAYLIST_WAIT_MS = 8_000;
+/** First H.264 segment is slower than a copy. */
+const BROWSER_PLAYLIST_WAIT_MS = 15_000;
+
+export type LiveRemuxMode = "copy" | "browser";
 
 export function isLiveCopyRemuxEnabled(): boolean {
   return process.env.STREAM_LIVE_REMUX !== "0";
@@ -26,8 +30,14 @@ function cacheRoot(): string {
   );
 }
 
-export function liveRemuxJobHash(upstream: string): string {
-  return createHash("sha256").update(upstream).digest("hex").slice(0, 24);
+export function liveRemuxJobHash(
+  upstream: string,
+  mode: LiveRemuxMode = "copy"
+): string {
+  return createHash("sha256")
+    .update(`${mode}\n${upstream}`)
+    .digest("hex")
+    .slice(0, 24);
 }
 
 export function liveRemuxMediaBasename(name: string | null | undefined): string | null {
@@ -65,6 +75,91 @@ export function buildLiveCopyRemuxArgs(opts: {
     "4",
     "-hls_list_size",
     "6",
+    "-hls_flags",
+    "delete_segments+append_list+omit_endlist+independent_segments",
+    "-hls_segment_filename",
+    path.join(opts.outputDir, "seg_%05d.ts"),
+    path.join(opts.outputDir, "index.m3u8"),
+  ];
+}
+
+/**
+ * One provider connection, re-encoded to H.264 Baseline + AAC-LC.
+ * Phones and Safari can play this when the source is HEVC, MPEG-2, or Dolby/DTS.
+ */
+export function buildLiveBrowserTranscodeArgs(opts: {
+  inputUrl: string;
+  outputDir: string;
+  userAgent?: string;
+}): string[] {
+  return [
+    "-hide_banner",
+    "-loglevel",
+    "error",
+    "-user_agent",
+    opts.userAgent ?? IPTV_UA,
+    "-reconnect",
+    "1",
+    "-reconnect_streamed",
+    "1",
+    "-reconnect_delay_max",
+    "4",
+    "-rw_timeout",
+    "15000000",
+    "-fflags",
+    "+genpts+discardcorrupt",
+    "-i",
+    opts.inputUrl,
+    "-map",
+    "0:v:0",
+    "-map",
+    "0:a:0?",
+    "-sn",
+    "-dn",
+    "-c:v",
+    "libx264",
+    "-preset",
+    "ultrafast",
+    "-tune",
+    "zerolatency",
+    "-profile:v",
+    "baseline",
+    "-level",
+    "3.1",
+    "-pix_fmt",
+    "yuv420p",
+    "-vf",
+    "scale=w='min(1280,iw)':h=-2",
+    "-b:v",
+    "1400k",
+    "-maxrate",
+    "1800k",
+    "-bufsize",
+    "2800k",
+    "-g",
+    "48",
+    "-keyint_min",
+    "48",
+    "-sc_threshold",
+    "0",
+    "-threads",
+    "2",
+    "-c:a",
+    "aac",
+    "-profile:a",
+    "aac_low",
+    "-ac",
+    "2",
+    "-ar",
+    "48000",
+    "-b:a",
+    "128k",
+    "-f",
+    "hls",
+    "-hls_time",
+    "2",
+    "-hls_list_size",
+    "8",
     "-hls_flags",
     "delete_segments+append_list+omit_endlist+independent_segments",
     "-hls_segment_filename",
@@ -162,9 +257,12 @@ function sweepIdle(now: number): void {
   }
 }
 
-async function ensureJob(upstream: string): Promise<Job | "busy" | "no-ffmpeg"> {
+async function ensureJob(
+  upstream: string,
+  mode: LiveRemuxMode
+): Promise<Job | "busy" | "no-ffmpeg"> {
   sweepIdle(Date.now());
-  const hash = liveRemuxJobHash(upstream);
+  const hash = liveRemuxJobHash(upstream, mode);
   const existing = jobs.get(hash);
   if (existing) {
     existing.lastAccessMs = Date.now();
@@ -175,17 +273,20 @@ async function ensureJob(upstream: string): Promise<Job | "busy" | "no-ffmpeg"> 
   if (!ffmpeg) return "no-ffmpeg";
   const dir = path.join(cacheRoot(), hash);
   await mkdir(dir, { recursive: true });
-  const proc = spawn(
-    ffmpeg,
-    buildLiveCopyRemuxArgs({ inputUrl: upstream, outputDir: dir }),
-    { stdio: "ignore" }
-  );
+  const args =
+    mode === "browser"
+      ? buildLiveBrowserTranscodeArgs({ inputUrl: upstream, outputDir: dir })
+      : buildLiveCopyRemuxArgs({ inputUrl: upstream, outputDir: dir });
+  const proc = spawn(ffmpeg, args, { stdio: "ignore" });
   const job: Job = {
     hash,
     dir,
     proc,
     lastAccessMs: Date.now(),
-    ready: waitForPlaylist(dir, PLAYLIST_WAIT_MS),
+    ready: waitForPlaylist(
+      dir,
+      mode === "browser" ? BROWSER_PLAYLIST_WAIT_MS : PLAYLIST_WAIT_MS
+    ),
   };
   proc.on("error", () => {
     if (jobs.get(hash) === job) killJob(job);
@@ -215,6 +316,7 @@ export async function handleLiveCopyRemux(opts: {
   upstream: string;
   media: string | null;
   head: boolean;
+  mode?: LiveRemuxMode;
 }): Promise<LiveRemuxResult> {
   if (!isLiveCopyRemuxEnabled()) {
     return {
@@ -238,7 +340,7 @@ export async function handleLiveCopyRemux(opts: {
 
   let job: Job | "busy" | "no-ffmpeg";
   try {
-    job = await ensureJob(opts.upstream);
+    job = await ensureJob(opts.upstream, opts.mode === "browser" ? "browser" : "copy");
   } catch {
     return {
       status: 503,

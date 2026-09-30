@@ -16,6 +16,7 @@ import {
   levelDeclaresHevc,
   levelDeclaresNonPreferredChromePackagedAudio,
   livePlaybackStoppedMessage,
+  liveBrowserTranscodeFailedMessage,
   maxSafeLevelIndex,
   preferBrowserFriendlyAudioTrack,
   reloadTvLiveAtPlayhead,
@@ -35,12 +36,15 @@ import {
   disableVodTranscodeLiveEdgeSeek,
   levelsListKey,
 } from "@/lib/iptv-hls-config";
+import { attachPhoneLiveMpegts } from "@/lib/live-mpegts-engine";
+import { isPhoneLiveClient, withLiveMpegtsProxy } from "@/lib/live-web-ts";
 import { playbackUrlIsHls } from "@/lib/playback-url";
 import { resolveVodPlaybackUrl } from "@/lib/vod-transcode-url";
 import {
   readPreferredPlayerVolume,
 } from "@/lib/player-volume-pref";
 import {
+  playbackUrlUsesLiveBrowserTranscode,
   playbackUrlUsesLiveRemux,
   withLiveHlsCompatMse,
 } from "@/lib/stream-url";
@@ -95,6 +99,13 @@ export type UsePlayerPlaybackPipelineParams = {
   /** Live copy-remux proxy URL after two stuck recoveries. Null uses the provider proxy. */
   liveRemuxUrl: string | null;
   onLiveRemuxFailed: () => void;
+  /** Switch a phone/Safari live channel onto the H.264 + AAC window. */
+  requestLiveBrowserTranscodeRef: RefObject<() => boolean>;
+  onLiveBrowserTranscodeFailed: () => void;
+  /** Phone already tried raw MPEG-TS for this channel and fell back to HLS. */
+  skipLiveMpegts: boolean;
+  liveMpegtsActiveRef: RefObject<boolean>;
+  settleLiveMpegtsRef: RefObject<(action: "hls" | "transcode") => void>;
   playbackRetryKey: number;
   chromiumDesktopClient: boolean;
   tvBrowser: boolean;
@@ -175,6 +186,11 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
     vodPlaybackUrl,
     liveRemuxUrl,
     onLiveRemuxFailed,
+    requestLiveBrowserTranscodeRef,
+    onLiveBrowserTranscodeFailed,
+    skipLiveMpegts,
+    liveMpegtsActiveRef,
+    settleLiveMpegtsRef,
     playbackRetryKey,
     chromiumDesktopClient,
     tvBrowser,
@@ -428,6 +444,49 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
     const mobilePhoneLive =
       isLive && mobileLike && !livingRoomLike && !silkLike && !appleMobileLiveMse;
 
+    const phoneLiveMpegts =
+      isLive &&
+      !liveRemuxUrl &&
+      !skipLiveMpegts &&
+      isPhoneLiveClient({
+        appleMobile: isAppleMobileWebKitDevice(),
+        userAgent:
+          typeof navigator !== "undefined" ? navigator.userAgent || "" : "",
+        narrowViewport: mobileLike && !livingRoomLike && !silkLike,
+        tv: livingRoomLike,
+        silk: silkLike,
+      });
+    const mpegtsProxyUrl = phoneLiveMpegts
+      ? withLiveMpegtsProxy(providerUrl)
+      : null;
+    if (mpegtsProxyUrl) {
+      const handle = attachPhoneLiveMpegts({
+        url: mpegtsProxyUrl,
+        video,
+        appleMobile: isAppleMobileWebKitDevice(),
+        isCancelled: () => cancelled,
+        onAttached: () => {
+          if (!cancelled) liveMpegtsActiveRef.current = true;
+        },
+        onNeedsTap: () => {
+          if (!cancelled) setNeedsTapToPlay(true);
+        },
+        onSettle: (action) => {
+          if (cancelled) return;
+          settleLiveMpegtsRef.current(action);
+        },
+      });
+      return () => {
+        cancelled = true;
+        liveMpegtsActiveRef.current = false;
+        handle.dispose();
+        pauseVideoElement(video);
+        probeFetchRef.current?.abort();
+        if (stallTimer.current) clearTimeout(stallTimer.current);
+        detachVideoElement(video);
+      };
+    }
+
     const unsupportedBrowserAudioMsg = livingRoomLike || silkLike
       ? "This channel’s audio (often AC-3/E-AC-3) isn’t supported in the Amazon Silk / TV browser player. Try another channel, use Chromecast, or watch with a native IPTV app on the same device if available."
       : isSafariFamilyWithoutChromium() || isAppleMobileWebKitDevice()
@@ -601,6 +660,10 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
           });
           if (playbackUrlUsesLiveRemux(url)) {
             onLiveRemuxFailed();
+            return;
+          }
+          if (playbackUrlUsesLiveBrowserTranscode(url)) {
+            onLiveBrowserTranscodeFailed();
             return;
           }
         }
@@ -1319,9 +1382,14 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
               if (!isLive && requestVodTranscodeFallbackRef.current()) {
                 break;
               }
+              if (isLive && requestLiveBrowserTranscodeRef.current()) {
+                break;
+              }
               surfacePlaybackError(
                 isLive
-                  ? livePlaybackStoppedMessage(livePlaybackHealthy)
+                  ? playbackUrlUsesLiveBrowserTranscode(url)
+                    ? liveBrowserTranscodeFailedMessage()
+                    : livePlaybackStoppedMessage(livePlaybackHealthy)
                   : unsupportedBrowserAudioMsg
               );
               break;
@@ -1499,6 +1567,11 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
     vodPlaybackUrl,
     liveRemuxUrl,
     onLiveRemuxFailed,
+    requestLiveBrowserTranscodeRef,
+    onLiveBrowserTranscodeFailed,
+    skipLiveMpegts,
+    liveMpegtsActiveRef,
+    settleLiveMpegtsRef,
     applyVodDurationHint,
     applyVodTranscodeTimelineHints,
     onVodChapterMarkersRef,

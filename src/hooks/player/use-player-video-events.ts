@@ -11,10 +11,11 @@ import {
   LIVE_PLAYBACK_ERROR_GRACE_MS,
   LIVE_VIDEO_ERROR_DEFER_MS,
   liveCodecUserMessage,
+  liveBrowserTranscodeFailedMessage,
   recoverTvLiveMedia,
 } from "@/lib/live-hls-playback";
 import { playbackUrlIsHls } from "@/lib/playback-url";
-import { withLiveHlsCompatMse } from "@/lib/stream-url";
+import { playbackUrlUsesLiveBrowserTranscode, withLiveHlsCompatMse } from "@/lib/stream-url";
 import { voidSafeVideoPlay } from "@/lib/video-play";
 import { videoLikelyMissingDecodableAudio } from "@/lib/vod-silent-audio";
 import {
@@ -59,6 +60,11 @@ export type UsePlayerVideoEventsParams = {
   cancelLiveMediaErrorDeferRef: RefObject<() => void>;
   livePlaybackErrorSuppressUntilRef: RefObject<number>;
   requestVodTranscodeFallbackRef: RefObject<() => boolean>;
+  requestLiveBrowserTranscodeRef: RefObject<() => boolean>;
+  liveBrowserPendingRef: RefObject<boolean>;
+  /** Raw MPEG-TS (mpegts.js) currently owns the media element. */
+  liveMpegtsActiveRef: RefObject<boolean>;
+  settleLiveMpegtsRef: RefObject<(action: "hls" | "transcode") => void>;
   setIsPlaying: Dispatch<SetStateAction<boolean>>;
   setNeedsTapToPlay: Dispatch<SetStateAction<boolean>>;
   setLoading: Dispatch<SetStateAction<boolean>>;
@@ -96,6 +102,10 @@ export function usePlayerVideoEvents(p: UsePlayerVideoEventsParams) {
     cancelLiveMediaErrorDeferRef,
     livePlaybackErrorSuppressUntilRef,
     requestVodTranscodeFallbackRef,
+    requestLiveBrowserTranscodeRef,
+    liveBrowserPendingRef,
+    liveMpegtsActiveRef,
+    settleLiveMpegtsRef,
     setIsPlaying,
     setNeedsTapToPlay,
     setLoading,
@@ -190,6 +200,7 @@ export function usePlayerVideoEvents(p: UsePlayerVideoEventsParams) {
     };
 
     const reloadNativeLiveSource = () => {
+      if (liveMpegtsActiveRef.current) return;
       const vv = videoRef.current;
       const url =
         current?.url && current.kind === "live"
@@ -301,6 +312,7 @@ export function usePlayerVideoEvents(p: UsePlayerVideoEventsParams) {
       cancelLiveKickTimer();
       cancelLiveMediaErrorDefer();
       if (isLiveStream) {
+        liveBrowserPendingRef.current = false;
         livePlaybackErrorSuppressUntilRef.current =
           performance.now() + LIVE_PLAYBACK_ERROR_GRACE_MS;
         setError(null);
@@ -641,6 +653,18 @@ export function usePlayerVideoEvents(p: UsePlayerVideoEventsParams) {
     const onErr = () => {
       if (!v.error) return;
       const code = v.error.code;
+      if (
+        isLiveStream &&
+        liveMpegtsActiveRef.current &&
+        (code === 2 || code === 3 || code === 4)
+      ) {
+        if (code === 3 && !isAppleMobileWebKitDevice()) {
+          settleLiveMpegtsRef.current("transcode");
+        } else {
+          settleLiveMpegtsRef.current("hls");
+        }
+        return;
+      }
       const vodProgressive =
         current &&
         (current.kind === "movie" || current.kind === "series") &&
@@ -672,6 +696,18 @@ export function usePlayerVideoEvents(p: UsePlayerVideoEventsParams) {
           : current?.kind === "live"
             ? liveCodecUserMessage()
             : `This stream uses a format or codec your browser can't play here.${liveMidPlayHint}`,
+      };
+
+      const offerPhoneFriendlyLive = (): boolean => {
+        if (!isLiveStream || (code !== 3 && code !== 4)) return false;
+        const src = v.currentSrc || v.src || "";
+        if (playbackUrlUsesLiveBrowserTranscode(src)) {
+          setLoading(false);
+          setStalled(false);
+          setError(liveBrowserTranscodeFailedMessage());
+          return true;
+        }
+        return requestLiveBrowserTranscodeRef.current();
       };
 
       const hlsNow = hlsRef.current;
@@ -738,6 +774,12 @@ export function usePlayerVideoEvents(p: UsePlayerVideoEventsParams) {
               scheduleDeferCheck(LIVE_VIDEO_ERROR_DEFER_MS);
               return;
             }
+            if (
+              (persistedCode === 3 || persistedCode === 4) &&
+              offerPhoneFriendlyLive()
+            ) {
+              return;
+            }
             setError(map[persistedCode] || `Playback error (${persistedCode}).`);
           }, delayMs);
         };
@@ -749,6 +791,13 @@ export function usePlayerVideoEvents(p: UsePlayerVideoEventsParams) {
         vodProgressive &&
         (code === 3 || code === 4) &&
         requestVodTranscodeFallbackRef.current()
+      ) {
+        return;
+      }
+
+      if (
+        (code === 3 || code === 4) &&
+        offerPhoneFriendlyLive()
       ) {
         return;
       }
@@ -808,6 +857,10 @@ export function usePlayerVideoEvents(p: UsePlayerVideoEventsParams) {
     cancelLiveMediaErrorDeferRef,
     livePlaybackErrorSuppressUntilRef,
     requestVodTranscodeFallbackRef,
+    requestLiveBrowserTranscodeRef,
+    liveBrowserPendingRef,
+    liveMpegtsActiveRef,
+    settleLiveMpegtsRef,
     setIsPlaying,
     setNeedsTapToPlay,
     setLoading,

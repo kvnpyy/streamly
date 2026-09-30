@@ -17,9 +17,12 @@ import {
 } from "@/lib/cast-media-url";
 import {
   extractStreamProxyUpstream,
+  playbackUrlUsesLiveBrowserTranscode,
+  withLiveBrowserTranscode,
   withLiveCopyRemux,
   withLiveHlsCompatMse,
 } from "@/lib/stream-url";
+import { isPhoneLiveClient } from "@/lib/live-web-ts";
 import {
   appendVodTranscodeHls,
   buildInitialVodPlaybackUrl,
@@ -98,6 +101,7 @@ import {
   chromiumWalletExtensionPlaybackHint,
   isAppleMobileWebKitDevice,
   isChromiumBasedDesktopBrowser,
+  isSafariFamilyWithoutChromium,
 } from "@/lib/browser";
 import {
   applyElementMuted,
@@ -108,8 +112,10 @@ import {
   applySoftLiveHlsRecovery,
   applyTvLiveFreezeAction,
   hlsRenditionLabel,
+  liveBrowserTranscodeFailedMessage,
   maxSafeLevelIndex,
   reloadTvLiveAtPlayhead,
+  shouldOfferLiveBrowserTranscode,
 } from "@/lib/live-hls-playback";
 import {
   isPictureInPictureSupported,
@@ -422,10 +428,17 @@ export function PlayerOverlay() {
     url: string;
   } | null>(null);
   const liveRemuxGaveUpRef = useRef(false);
+  const liveBrowserGaveUpRef = useRef(false);
+  const liveBrowserPendingRef = useRef(false);
+  const liveMpegtsActiveRef = useRef(false);
+  const liveMpegtsSettledRef = useRef(false);
+  const [mpegtsSkipKey, setMpegtsSkipKey] = useState<string | null>(null);
   const liveChannelKey =
     current?.kind === "live" ? String(current.id) : "";
   const liveRemuxUrl =
     remuxForChannel?.key === liveChannelKey ? remuxForChannel.url : null;
+  const skipLiveMpegts =
+    mpegtsSkipKey != null && mpegtsSkipKey === liveChannelKey;
   const [vodTranscodeBoost, setVodTranscodeBoost] = useState(false);
   const [videoHasFrame, setVideoHasFrame] = useState(false);
   const [vodPrepStartedAt, setVodPrepStartedAt] = useState<number | null>(null);
@@ -1140,6 +1153,81 @@ export function PlayerOverlay() {
       ? vodChapterMarkers.markers
       : null;
 
+  const failLiveBrowserTranscode = useCallback(() => {
+    liveBrowserGaveUpRef.current = true;
+    liveBrowserPendingRef.current = false;
+    setLoading(false);
+    setStalled(false);
+    setError(liveBrowserTranscodeFailedMessage());
+  }, []);
+
+  const requestLiveBrowserTranscode = useCallback(() => {
+    if (liveBrowserGaveUpRef.current) return false;
+    const elementSrc =
+      videoRef.current?.currentSrc || videoRef.current?.src || "";
+    if (playbackUrlUsesLiveBrowserTranscode(elementSrc)) return false;
+    if (liveBrowserPendingRef.current) return true;
+    if (!current || current.kind !== "live") return false;
+    const already = playbackUrlUsesLiveBrowserTranscode(liveRemuxUrl ?? "");
+    const narrow =
+      typeof window !== "undefined" &&
+      window.matchMedia("(max-width: 768px)").matches;
+    const phone = isPhoneLiveClient({
+      appleMobile: isAppleMobileWebKitDevice(),
+      userAgent:
+        typeof navigator !== "undefined" ? navigator.userAgent || "" : "",
+      narrowViewport: narrow,
+      tv: tvBrowser,
+      silk: silkLikeClient,
+    });
+    if (
+      !shouldOfferLiveBrowserTranscode({
+        isLive: true,
+        alreadyOnBrowserTranscode: already,
+        gaveUp: false,
+        appleMobile: isAppleMobileWebKitDevice(),
+        safariFamily: isSafariFamilyWithoutChromium(),
+        mobilePhone: phone || (narrow && !tvBrowser && !silkLikeClient),
+      })
+    ) {
+      return false;
+    }
+    const next = withLiveBrowserTranscode(current.url);
+    if (!next) return false;
+    liveBrowserPendingRef.current = true;
+    setRemuxForChannel({ key: String(current.id), url: next });
+    setError(null);
+    setStalled(false);
+    setLoading(true);
+    setPlaybackRetryKey((k) => k + 1);
+    return true;
+  }, [current, liveRemuxUrl, silkLikeClient, tvBrowser]);
+
+  const requestLiveBrowserTranscodeRef = useRef(requestLiveBrowserTranscode);
+  useEffect(() => {
+    requestLiveBrowserTranscodeRef.current = requestLiveBrowserTranscode;
+  }, [requestLiveBrowserTranscode]);
+
+  const settleLiveMpegts = useCallback(
+    (action: "hls" | "transcode") => {
+      if (liveMpegtsSettledRef.current) return;
+      liveMpegtsSettledRef.current = true;
+      liveMpegtsActiveRef.current = false;
+      if (action === "transcode" && requestLiveBrowserTranscode()) return;
+      if (!liveChannelKey) return;
+      setMpegtsSkipKey(liveChannelKey);
+      setError(null);
+      setStalled(false);
+      setLoading(true);
+      setPlaybackRetryKey((k) => k + 1);
+    },
+    [liveChannelKey, requestLiveBrowserTranscode]
+  );
+  const settleLiveMpegtsRef = useRef(settleLiveMpegts);
+  useEffect(() => {
+    settleLiveMpegtsRef.current = settleLiveMpegts;
+  }, [settleLiveMpegts]);
+
   usePlayerPlaybackPipeline({
     open,
     current,
@@ -1148,6 +1236,11 @@ export function PlayerOverlay() {
     vodPlaybackUrl,
     liveRemuxUrl,
     onLiveRemuxFailed: failLiveRemux,
+    requestLiveBrowserTranscodeRef,
+    onLiveBrowserTranscodeFailed: failLiveBrowserTranscode,
+    skipLiveMpegts,
+    liveMpegtsActiveRef,
+    settleLiveMpegtsRef,
     playbackRetryKey,
     chromiumDesktopClient,
     tvBrowser,
@@ -1359,6 +1452,10 @@ export function PlayerOverlay() {
     cancelLiveMediaErrorDeferRef,
     livePlaybackErrorSuppressUntilRef,
     requestVodTranscodeFallbackRef,
+    requestLiveBrowserTranscodeRef,
+    liveBrowserPendingRef,
+    liveMpegtsActiveRef,
+    settleLiveMpegtsRef,
     setIsPlaying,
     setNeedsTapToPlay,
     setLoading,
@@ -1378,6 +1475,9 @@ export function PlayerOverlay() {
 
   useEffect(() => {
     liveRemuxGaveUpRef.current = false;
+    liveBrowserGaveUpRef.current = false;
+    liveBrowserPendingRef.current = false;
+    liveMpegtsSettledRef.current = false;
   }, [liveChannelKey]);
 
   useEffect(() => {
@@ -2822,6 +2922,11 @@ export function PlayerOverlay() {
   const reloadLiveStream = useCallback(() => {
     if (current?.kind !== "live") return;
     const el = videoRef.current;
+    if (liveMpegtsActiveRef.current) {
+      setLoading(true);
+      setPlaybackRetryKey((k) => k + 1);
+      return;
+    }
     const url = withLiveHlsCompatMse(current.url, true);
     if (!el || !url) return;
     const hls = hlsRef.current;
@@ -3132,7 +3237,14 @@ export function PlayerOverlay() {
                   exit={{ opacity: 0 }}
                   className="pointer-events-none absolute inset-0 grid place-items-center"
                 >
-                  <div className="size-12 border-2 border-white/20 border-t-(--brand-2) rounded-full animate-spin" />
+                  <div className="flex flex-col items-center gap-3">
+                    <div className="size-12 border-2 border-white/20 border-t-(--brand-2) rounded-full animate-spin" />
+                    {playbackUrlUsesLiveBrowserTranscode(liveRemuxUrl ?? "") ? (
+                      <p className="max-w-xs px-6 text-center text-sm text-white/80">
+                        Making this channel playable on your phone…
+                      </p>
+                    ) : null}
+                  </div>
                 </motion.div>
               )}
             </AnimatePresence>
