@@ -11,6 +11,23 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.13.60",
+    date: "2026-09-30",
+    summary:
+      "Movies and episodes start again when the opening segment is already encoded.",
+    highlights: [
+      "Playback was stuck on “first video segment still being prepared” with a 503, even after the video file had been created. A blank playlist no longer blocks a segment that is ready to play.",
+    ],
+  },
+  {
+    version: "0.13.59",
+    date: "2026-09-30",
+    summary: "Phones try the raw live stream before re-encoding a channel.",
+    highlights: [
+      "On a phone, live TV opens the provider’s MPEG-TS stream directly. The server only re-encodes to H.264 and AAC when the phone still cannot decode the channel.",
+    ],
+  },
+  {
     version: "0.13.58",
     date: "2026-09-30",
     summary:

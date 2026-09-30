@@ -19,6 +19,22 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+---
+
+## [0.13.60] — 2026-09-30
+
+Movies and episodes start again when the opening segment is already encoded.
+
+### Fixed
+- Playback was stuck on “first video segment still being prepared” with a 503, even after the video file had been created. A blank playlist no longer blocks a segment that is ready to play.
+
+## [0.13.59] — 2026-09-30
+
+Phones try the raw live stream before re-encoding a channel.
+
+### Fixed
+- On a phone, live TV opens the provider’s MPEG-TS stream directly. The server only re-encodes to H.264 and AAC when the phone still cannot decode the channel.
+
 ## [0.13.58] — 2026-09-29
 
 Episodes play as video again, with sound, and without the short replay.
