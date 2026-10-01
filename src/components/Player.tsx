@@ -1642,17 +1642,18 @@ export function PlayerOverlay() {
         vodScrubbingRef.current = false;
       };
 
-      // Large backward jumps (e.g. 1h45 → start) often fail stopLoad/startLoad land
-      // while MSE still holds the tip — rebuild the pipeline at the target instead.
+      // Backward scrubs into media already in this playlist stay here.
+      // Restarting the server encode kept the old picture playing, and the
+      // playing-only snap recovery pulled the playhead back to the tip.
       const nowAbs = getPlaybackTimeNow();
-      const largeBackwardScrub =
+      const backwardScrub =
         usesTranscodePlayback &&
         Number.isFinite(nowAbs) &&
-        nowAbs - absolute >= 90;
+        absolute + 0.75 < nowAbs;
 
       if (
         usesTranscodePlayback &&
-        (transcodeSeekNeedsServerRestart(absolute) || largeBackwardScrub)
+        transcodeSeekNeedsServerRestart(absolute)
       ) {
         if (vodSeekRestartTimerRef.current) {
           clearTimeout(vodSeekRestartTimerRef.current);
@@ -1670,6 +1671,11 @@ export function PlayerOverlay() {
       const relative = usesTranscodePlayback
         ? Math.max(0, absolute - off)
         : absolute;
+      if (usesTranscodePlayback) {
+        // Drop the tip watermark before the element moves. Otherwise the
+        // playing-only snap recovery treats the rewind as a glitch.
+        vodPlayheadHighWaterRef.current = relative;
+      }
       const hls = hlsRef.current;
       setTime(absolute);
 
@@ -1693,6 +1699,16 @@ export function PlayerOverlay() {
           const h = hlsRef.current;
           const el = videoRef.current;
           if (!h || !el || landGen !== vodSeekLandGenRef.current) return;
+          // hls.js drops a backward currentTime while the element is playing
+          // and keeps the old tip. Pause first — the same thing viewers do
+          // by hand — then seek, then resume.
+          if (backwardScrub) {
+            try {
+              el.pause();
+            } catch {
+              /* noop */
+            }
+          }
           try {
             h.stopLoad();
           } catch {
@@ -1753,6 +1769,14 @@ export function PlayerOverlay() {
           }
           // Give up quietly — keep tip-persist suppressed; do not bookmark tip.
           v.removeEventListener("seeked", onSeeked);
+          const stuck = videoRef.current;
+          if (
+            stuck &&
+            !vodSeekPlayheadLanded(stuck.currentTime, relative) &&
+            usesTranscodePlayback
+          ) {
+            vodPlayheadHighWaterRef.current = stuck.currentTime;
+          }
           reportUxSeekOutcome({
             targetSec: absolute,
             landedSec: getPlaybackTimeNow(),
@@ -1766,6 +1790,7 @@ export function PlayerOverlay() {
       }
 
       try {
+        if (backwardScrub) v.pause();
         v.currentTime = relative;
       } catch {
         /* noop */

@@ -8,6 +8,7 @@ import {
   shouldTreatTranscodeSnapAsEnded,
   shouldIgnoreOutgoingTranscodeClock,
   vodTranscodeRecoveryPlayhead,
+  shouldHoldTranscodeSeekTarget,
 } from "./player-transcode-playback-end";
 
 function mockVideo(opts: {
@@ -148,6 +149,28 @@ describe("vodTranscodeRecoveryPlayhead", () => {
     expect(
       vodTranscodeRecoveryPlayhead({ currentRel: 0.2, highWaterRel: 2410 })
     ).toBe(2410);
+  });
+});
+
+describe("shouldHoldTranscodeSeekTarget", () => {
+  it("holds a backward scrub while the playhead is still at the old tip", () => {
+    expect(
+      shouldHoldTranscodeSeekTarget({
+        currentRel: 3600,
+        maxSeenRel: 3600,
+        watermarkRel: 600,
+      })
+    ).toBe(true);
+  });
+
+  it("releases once the playhead has reached the scrub target", () => {
+    expect(
+      shouldHoldTranscodeSeekTarget({
+        currentRel: 600.4,
+        maxSeenRel: 3600,
+        watermarkRel: 600,
+      })
+    ).toBe(false);
   });
 });
 

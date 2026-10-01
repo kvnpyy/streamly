@@ -28,6 +28,7 @@ import {
   shouldTreatTranscodeSnapAsEnded,
   signalTranscodePlaybackEnded,
   vodTranscodeRecoveryPlayhead,
+  shouldHoldTranscodeSeekTarget,
 } from "@/lib/player-transcode-playback-end";
 
 function isBraveOnAppleMobile(): boolean {
@@ -397,8 +398,35 @@ export function usePlayerVideoEvents(p: UsePlayerVideoEventsParams) {
           lastMarkPictureMs = nowUi;
           markPictureReady();
         }
-        if (vodScrubbingRef.current) {
+        if (vodScrubbingRef.current || shouldHoldTranscodeSeekTarget({
+          currentRel: v.currentTime,
+          maxSeenRel: maxTranscodeRelSeen,
+          watermarkRel: vodPlayheadHighWaterRef.current,
+        })) {
           const rel = v.currentTime;
+          const cap = vodPlayheadHighWaterRef.current;
+          const holding = shouldHoldTranscodeSeekTarget({
+            currentRel: rel,
+            maxSeenRel: maxTranscodeRelSeen,
+            watermarkRel: cap,
+          });
+          if (holding) {
+            maxTranscodeRelSeen = cap;
+            if (nowUi - lastSnapRestoreMs > 400) {
+              lastSnapRestoreMs = nowUi;
+              try {
+                v.currentTime = cap;
+              } catch {
+                /* seek lands once the target fragment is buffered */
+              }
+              try {
+                hlsRef.current?.startLoad(cap);
+              } catch {
+                /* noop */
+              }
+            }
+            return;
+          }
           if (Number.isFinite(rel) && rel >= 0) {
             maxTranscodeRelSeen = rel;
             vodPlayheadHighWaterRef.current = rel;
@@ -406,12 +434,13 @@ export function usePlayerVideoEvents(p: UsePlayerVideoEventsParams) {
         } else if (!v.paused) {
           const relNow = v.currentTime;
           const refHigh = vodPlayheadHighWaterRef.current;
-          // A seek restart writes the ref before the element lands. Follow it
-          // so an older high-water mark cannot pull the playhead back.
+          // A backward scrub writes the watermark before the element lands.
+          // Follow it across a long jump — a 20s window left hour-long rewinds
+          // looking like an HLS snap, and playing episodes jumped back to the tip.
           if (
             Number.isFinite(relNow) &&
-            refHigh + 1 < maxTranscodeRelSeen &&
-            Math.abs(relNow - refHigh) < 20
+            Number.isFinite(refHigh) &&
+            refHigh + 1 < maxTranscodeRelSeen
           ) {
             maxTranscodeRelSeen = refHigh;
           }

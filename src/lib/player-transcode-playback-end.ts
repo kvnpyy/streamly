@@ -60,6 +60,24 @@ export function detectTranscodeBackwardSnap(
   );
 }
 
+/**
+ * The viewer scrubbed backward. The playhead is still at the old tip, so
+ * snap-recovery must not treat that rewind as an HLS glitch and yank it forward.
+ * This only runs while playing — a paused scrub never hit the recovery path.
+ */
+export function shouldHoldTranscodeSeekTarget(opts: {
+  currentRel: number;
+  maxSeenRel: number;
+  watermarkRel: number;
+}): boolean {
+  if (!Number.isFinite(opts.watermarkRel) || !Number.isFinite(opts.maxSeenRel)) {
+    return false;
+  }
+  if (!Number.isFinite(opts.currentRel)) return false;
+  if (!(opts.watermarkRel + 1 < opts.maxSeenRel)) return false;
+  return opts.currentRel > opts.watermarkRel + 1.25;
+}
+
 export type TranscodePlaybackEndParams = {
   video: HTMLVideoElement;
   startOffsetSec: number;
