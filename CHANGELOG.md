@@ -23,6 +23,15 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+---
+
+## [0.13.63] — 2026-09-30
+
+Scrubbing backward in a movie or episode works while it is playing.
+
+### Fixed
+- Rewinding only stuck if you paused first. A playing episode treated the rewind as a glitch and jumped back to the old spot. The timestamp now stays where you put it.
+
 ## [0.13.62] — 2026-09-30
 
 Movies start encoding as soon as the download has an audio track.

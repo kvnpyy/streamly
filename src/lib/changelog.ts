@@ -11,6 +11,14 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.13.63",
+    date: "2026-09-30",
+    summary: "Scrubbing backward in a movie or episode works while it is playing.",
+    highlights: [
+      "Rewinding only stuck if you paused first. A playing episode treated the rewind as a glitch and jumped back to the old spot. The timestamp now stays where you put it.",
+    ],
+  },
+  {
     version: "0.13.62",
     date: "2026-09-30",
     summary:
