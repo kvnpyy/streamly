@@ -11,6 +11,15 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.13.62",
+    date: "2026-09-30",
+    summary:
+      "Movies start encoding as soon as the download has an audio track.",
+    highlights: [
+      "The audio check was rejecting every file, so playback sat on “first video segment still being prepared” until the entire movie finished downloading. It now sees the audio track and starts.",
+    ],
+  },
+  {
     version: "0.13.61",
     date: "2026-09-30",
     summary:

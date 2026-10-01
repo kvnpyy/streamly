@@ -21,6 +21,15 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+---
+
+## [0.13.62] — 2026-09-30
+
+Movies start encoding as soon as the download has an audio track.
+
+### Fixed
+- The audio check was rejecting every file, so playback sat on “first video segment still being prepared” until the entire movie finished downloading. It now sees the audio track and starts.
+
 ## [0.13.61] — 2026-09-30
 
 Movies and episodes start again when the opening segment is already encoded.
