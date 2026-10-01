@@ -11,6 +11,15 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.13.64",
+    date: "2026-10-01",
+    summary:
+      "Series pages remember your season and can mark a whole season watched.",
+    highlights: [
+      "Opening a show lands on the season and episode you were last on, instead of season 1. Mark season watched checks off every episode in that season in one tap.",
+    ],
+  },
+  {
     version: "0.13.63",
     date: "2026-09-30",
     summary: "Scrubbing backward in a movie or episode works while it is playing.",

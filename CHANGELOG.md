@@ -25,6 +25,15 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+---
+
+## [0.13.64] — 2026-10-01
+
+Series pages remember your season and can mark a whole season watched.
+
+### Added
+- Opening a show lands on the season and episode you were last on, instead of season 1. Mark season watched checks off every episode in that season in one tap.
+
 ## [0.13.63] — 2026-09-30
 
 Scrubbing backward in a movie or episode works while it is playing.
