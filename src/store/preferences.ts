@@ -61,6 +61,13 @@ export type BrowsePrefs = {
   seriesVisibleCategoryIds?: string[];
 };
 
+/** Last season/episode opened for a series. Key: `${accountKey}|series|${seriesId}`. */
+export type SeriesBrowseFocus = {
+  season: string;
+  episodeId: string;
+  at: number;
+};
+
 /** Stable per-account key; must match whatever login stores on `creds`. */
 export function browseAccountKey(creds: {
   server: string;
@@ -86,6 +93,7 @@ type PersistedPrefsV8 = Pick<
   | "libraryByAccount"
   | "activeSavedProviderAccountId"
   | "tvRegionFilter"
+  | "seriesBrowseFocus"
 >;
 
 export type PrefsState = {
@@ -161,6 +169,13 @@ export type PrefsState = {
   saveVodResume: (storageKey: string, seconds: number) => void;
   getVodResume: (storageKey: string) => number | undefined;
   clearVodResume: (storageKey: string) => void;
+  saveVodResumeMany: (
+    entries: { storageKey: string; seconds: number }[]
+  ) => void;
+  clearVodResumeMany: (storageKeys: string[]) => void;
+  /** Last season tab opened per series, so the list does not reset to season 1. */
+  seriesBrowseFocus: Record<string, SeriesBrowseFocus>;
+  rememberSeriesFocus: (storageKey: string, focus: SeriesBrowseFocus) => void;
   /**
    * TV region filter for the live browse layout.
    * null  → auto-detect from timezone on first visit
@@ -330,6 +345,68 @@ export const usePrefs = create<PrefsState>()(
           };
         });
       },
+      saveVodResumeMany: (entries) => {
+        if (!entries.length) return;
+        const now = Date.now();
+        set((state) => {
+          const sec = { ...state.vodResumeSec };
+          const writeAt = { ...state.vodResumeWriteAt };
+          for (const entry of entries) {
+            if (
+              !entry.storageKey ||
+              !Number.isFinite(entry.seconds) ||
+              entry.seconds < 12
+            ) {
+              continue;
+            }
+            sec[entry.storageKey] = entry.seconds;
+            writeAt[entry.storageKey] = now;
+          }
+          const trimmed = trimVodResumeSnapshot({ sec, writeAt });
+          return {
+            vodResumeSec: trimmed.sec,
+            vodResumeWriteAt: trimmed.writeAt,
+          };
+        });
+      },
+      clearVodResumeMany: (storageKeys) => {
+        if (!storageKeys.length) return;
+        const now = Date.now();
+        set((state) => {
+          const sec = { ...state.vodResumeSec };
+          const writeAt = { ...state.vodResumeWriteAt };
+          for (const key of storageKeys) {
+            if (!key) continue;
+            delete sec[key];
+            writeAt[key] = now;
+          }
+          const trimmed = trimVodResumeSnapshot({ sec, writeAt });
+          return {
+            vodResumeSec: trimmed.sec,
+            vodResumeWriteAt: trimmed.writeAt,
+          };
+        });
+      },
+      seriesBrowseFocus: {},
+      rememberSeriesFocus: (storageKey, focus) => {
+        if (!storageKey || !focus.season) return;
+        set((state) => {
+          const next = {
+            ...state.seriesBrowseFocus,
+            [storageKey]: focus,
+          };
+          const keys = Object.keys(next);
+          if (keys.length > 200) {
+            keys
+              .sort((a, b) => (next[a]?.at ?? 0) - (next[b]?.at ?? 0))
+              .slice(0, keys.length - 200)
+              .forEach((key) => {
+                delete next[key];
+              });
+          }
+          return { seriesBrowseFocus: next };
+        });
+      },
       resetAllPrefs: () =>
         set({
           favorites: [],
@@ -373,6 +450,7 @@ export const usePrefs = create<PrefsState>()(
         libraryByAccount: s.libraryByAccount,
         activeSavedProviderAccountId: s.activeSavedProviderAccountId,
         tvRegionFilter: s.tvRegionFilter,
+        seriesBrowseFocus: s.seriesBrowseFocus,
       }),
       migrate: (persisted): PersistedPrefsV8 => {
         const p = persisted as Partial<PersistedPrefsV8>;
@@ -419,6 +497,10 @@ export const usePrefs = create<PrefsState>()(
             typeof p.activeSavedProviderAccountId === "string"
               ? p.activeSavedProviderAccountId
               : null,
+          seriesBrowseFocus:
+            p.seriesBrowseFocus && typeof p.seriesBrowseFocus === "object"
+              ? p.seriesBrowseFocus
+              : {},
           // null = auto-detect on first TV browse visit
           tvRegionFilter: null,
         };

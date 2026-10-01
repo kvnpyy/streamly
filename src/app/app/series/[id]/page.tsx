@@ -14,15 +14,18 @@ import {
   markSeriesEpisodeUnwatched,
   markSeriesEpisodeWatched,
   parseEpisodeDurationSec,
+  parseRecentEpisodeMeta,
   seriesEpisodeRecentMeta,
   seriesEpisodeResumeKey,
   seriesEpisodeWatchState,
+  seriesSeasonResumeKeys,
+  seriesSeasonWatchedWrites,
 } from "@/lib/continue-watching";
 import { MY_LIST_LABEL } from "@/lib/my-list";
 import { buildImageProxy, buildSeriesEpisodePlayUrl, xtream } from "@/lib/xtream";
 import { resolveSeriesEpisodePlayUrl } from "@/lib/vod-format-probe";
 import { inferVodContainerExtFromProxyUrl, warmVodTranscodePlay } from "@/lib/vod-transcode-url";
-import { lockedSeriesSeason, sortSeriesEpisodes } from "@/lib/series-episodes";
+import { lockedSeriesSeason, resolveSeriesListFocus, seriesBrowseFocusStorageKey, sortSeriesEpisodes } from "@/lib/series-episodes";
 import { seriesExternalIds } from "@/lib/tmdb-episode-titles";
 import { useSeriesEpisodeTitles } from "@/hooks/use-series-episode-titles";
 import type { SeriesEpisode } from "@/lib/xtream-types";
@@ -39,6 +42,7 @@ import { pickSimilarSeries } from "@/lib/similar-titles";
 import {
   ArrowLeft,
   Check,
+  CheckCheck,
   CheckCircle2,
   Circle,
   Heart,
@@ -47,7 +51,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 function SeriesDetailSkeleton() {
   return (
@@ -83,6 +87,11 @@ export default function SeriesDetail() {
     clearVodResume,
     hideAdult,
     parentalUnlocked,
+    recents,
+    seriesBrowseFocus,
+    rememberSeriesFocus,
+    saveVodResumeMany,
+    clearVodResumeMany,
   } = usePrefs();
   const [imgErr, setImgErr] = useState(false);
   const accountKey = useMemo(
@@ -197,15 +206,64 @@ export default function SeriesDetail() {
     return out;
   }, [accountKey, seriesId, orderedEpisodes, vodResumeSec]);
 
+  const focusKey =
+    accountKey && seriesId != null
+      ? seriesBrowseFocusStorageKey(accountKey, seriesId)
+      : null;
+  const storedFocus = focusKey ? seriesBrowseFocus[focusKey] : undefined;
+  const recentMeta = useMemo(() => {
+    if (seriesId == null) return null;
+    const recent = recents.find(
+      (item) => item.kind === "series" && item.id === seriesId
+    );
+    return parseRecentEpisodeMeta(recent?.meta);
+  }, [recents, seriesId]);
+
   const activeSeason = useMemo(() => {
-    if (manualSeason != null && seasons.includes(manualSeason)) {
-      return manualSeason;
+    return resolveSeriesListFocus({
+      seasons,
+      manualSeason,
+      storedSeason: storedFocus?.season ?? null,
+      recentSeason: recentMeta?.season ?? null,
+      resumeSeason: resumeTarget?.season ?? null,
+    });
+  }, [seasons, manualSeason, storedFocus?.season, recentMeta?.season, resumeTarget]);
+
+  const focusEpisodeId = useMemo(() => {
+    if (!activeSeason) return null;
+    if (storedFocus?.season === activeSeason && storedFocus.episodeId) {
+      return storedFocus.episodeId;
     }
-    if (resumeTarget && seasons.includes(resumeTarget.season)) {
-      return resumeTarget.season;
+    if (
+      recentMeta?.season === activeSeason &&
+      recentMeta.episodeStreamId > 0
+    ) {
+      return String(recentMeta.episodeStreamId);
     }
-    return seasons[0] ?? null;
-  }, [manualSeason, seasons, resumeTarget]);
+    if (resumeTarget?.season === activeSeason) {
+      return resumeTarget.episode.id;
+    }
+    return null;
+  }, [activeSeason, storedFocus, recentMeta, resumeTarget]);
+
+  const rememberFocus = useCallback(
+    (season: string, episodeId = "") => {
+      if (!focusKey) return;
+      rememberSeriesFocus(focusKey, {
+        season,
+        episodeId,
+        at: Date.now(),
+      });
+    },
+    [focusKey, rememberSeriesFocus]
+  );
+
+  useEffect(() => {
+    if (!activeSeason) return;
+    document
+      .querySelector(`[data-season-tab="${CSS.escape(activeSeason)}"]`)
+      ?.scrollIntoView({ inline: "center", block: "nearest" });
+  }, [activeSeason]);
 
   const activeSeasonEpisodes = useMemo(() => {
     if (!activeSeason) return [] as SeriesEpisode[];
@@ -274,9 +332,10 @@ export default function SeriesDetail() {
           icon: show.cover,
           meta: seriesEpisodeRecentMeta(season, ep),
         });
+        rememberFocus(season, String(ep.id));
       })();
     },
-    [creds, seriesId, info.data, play, episodePlaylist, addRecent, tvBrowser, episodeTitleFor]
+    [creds, seriesId, info.data, play, episodePlaylist, addRecent, tvBrowser, episodeTitleFor, rememberFocus]
   );
 
   const toggleEpisodeWatched = useCallback(
@@ -312,6 +371,68 @@ export default function SeriesDetail() {
       watchedToggles,
       saveVodResume,
       clearVodResume,
+    ]
+  );
+
+  const seasonWatchedCount = useMemo(() => {
+    if (!accountKey || seriesId == null) return 0;
+    let n = 0;
+    for (const ep of activeSeasonEpisodes) {
+      const key = seriesEpisodeResumeKey(accountKey, seriesId, ep);
+      const watch = seriesEpisodeWatchState(
+        accountKey,
+        seriesId,
+        ep,
+        vodResumeSec
+      );
+      const watched =
+        (key != null ? watchedToggles[key] : undefined) ??
+        watch.status === "completed";
+      if (watched) n += 1;
+    }
+    return n;
+  }, [accountKey, seriesId, activeSeasonEpisodes, vodResumeSec, watchedToggles]);
+
+  const markActiveSeasonWatched = useCallback(
+    (watched: boolean) => {
+      if (!accountKey || seriesId == null || !activeSeason) return;
+      setManualSeason(activeSeason);
+      rememberFocus(activeSeason, focusEpisodeId ?? "");
+      if (watched) {
+        const writes = seriesSeasonWatchedWrites(
+          accountKey,
+          seriesId,
+          activeSeasonEpisodes
+        );
+        saveVodResumeMany(writes);
+        setWatchedToggles((prev) => {
+          const next = { ...prev };
+          for (const write of writes) next[write.storageKey] = true;
+          return next;
+        });
+        return;
+      }
+      const keys = seriesSeasonResumeKeys(
+        accountKey,
+        seriesId,
+        activeSeasonEpisodes
+      );
+      clearVodResumeMany(keys);
+      setWatchedToggles((prev) => {
+        const next = { ...prev };
+        for (const key of keys) next[key] = false;
+        return next;
+      });
+    },
+    [
+      accountKey,
+      seriesId,
+      activeSeason,
+      activeSeasonEpisodes,
+      rememberFocus,
+      focusEpisodeId,
+      saveVodResumeMany,
+      clearVodResumeMany,
     ]
   );
 
@@ -520,11 +641,37 @@ export default function SeriesDetail() {
 
       {/* Seasons + Episodes */}
       <div className="mt-10">
-        <div className="flex items-center gap-2 overflow-x-auto pb-2 mb-4">
-          {seasons.map((s) => (
+        <div className="flex items-center gap-2 overflow-x-auto pb-2 mb-3">
+          {seasons.map((s) => {
+            const seasonDone =
+              accountKey &&
+              seriesId != null &&
+              (info.data?.episodes?.[s]?.length ?? 0) > 0 &&
+              (info.data?.episodes?.[s] ?? []).every((ep) => {
+                const key = seriesEpisodeResumeKey(accountKey, seriesId, ep);
+                const watch = seriesEpisodeWatchState(
+                  accountKey,
+                  seriesId,
+                  ep,
+                  vodResumeSec
+                );
+                return (
+                  ((key != null ? watchedToggles[key] : undefined) ??
+                    watch.status === "completed") === true
+                );
+              });
+            return (
             <button
               key={s}
-              onClick={() => setManualSeason(s)}
+              type="button"
+              data-season-tab={s}
+              onClick={() => {
+                setManualSeason(s);
+                rememberFocus(
+                  s,
+                  s === activeSeason ? (focusEpisodeId ?? "") : ""
+                );
+              }}
               className={cn(
                 "h-9 px-4 rounded-xl text-sm whitespace-nowrap transition-colors",
                 activeSeason === s
@@ -534,7 +681,10 @@ export default function SeriesDetail() {
             >
               <span className="inline-flex items-center gap-1.5">
                 Season {s}
-                {seasonsWithProgress.has(s) && activeSeason !== s && (
+                {seasonDone && (
+                  <Check className="size-3.5 text-emerald-200" strokeWidth={2.5} aria-hidden />
+                )}
+                {seasonsWithProgress.has(s) && activeSeason !== s && !seasonDone && (
                   <span
                     className="size-1.5 rounded-full bg-(--danger)"
                     aria-label="In progress"
@@ -542,12 +692,65 @@ export default function SeriesDetail() {
                 )}
               </span>
             </button>
-          ))}
+            );
+          })}
         </div>
+
+        {activeSeason && activeSeasonEpisodes.length > 0 && (
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-(--line) bg-gradient-to-r from-(--bg-2) to-(--bg-3)/80 px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-(--text)">
+                Season {activeSeason}
+                <span className="ml-2 text-xs font-normal text-(--text-dim)">
+                  {seasonWatchedCount} of {activeSeasonEpisodes.length} watched
+                </span>
+              </p>
+              <div
+                className="mt-2 h-1.5 w-44 max-w-full overflow-hidden rounded-full bg-white/10"
+                aria-hidden
+              >
+                <div
+                  className="h-full rounded-full bg-emerald-400 transition-[width] duration-300"
+                  style={{
+                    width: `${Math.round(
+                      (seasonWatchedCount / activeSeasonEpisodes.length) * 100
+                    )}%`,
+                  }}
+                />
+              </div>
+            </div>
+            {seasonWatchedCount < activeSeasonEpisodes.length ? (
+              <button
+                type="button"
+                onClick={() => markActiveSeasonWatched(true)}
+                className="inline-flex h-10 items-center gap-2 rounded-xl bg-emerald-500/15 px-3.5 text-sm font-medium text-emerald-100 border border-emerald-400/35 hover:bg-emerald-500/25 transition-colors"
+              >
+                <CheckCheck className="size-4" />
+                Mark season watched
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => markActiveSeasonWatched(false)}
+                className="inline-flex h-10 items-center gap-2 rounded-xl border border-(--line) bg-(--bg-2) px-3.5 text-sm text-(--text-dim) hover:text-(--text) hover:bg-(--bg-3) transition-colors"
+              >
+                <Circle className="size-4" />
+                Mark season unwatched
+              </button>
+            )}
+          </div>
+        )}
 
         <VirtualEpisodeList
           items={activeSeasonEpisodes}
           itemKey={(ep) => `${ep.id}-${ep.episode_num}`}
+          scrollToIndex={
+            focusEpisodeId
+              ? activeSeasonEpisodes.findIndex(
+                  (item) => String(item.id) === focusEpisodeId
+                )
+              : -1
+          }
           renderItem={(ep) => {
             const extHint = vodContainerUiHint(ep.container_extension);
             const extLabel = normalizeContainerExt(ep.container_extension);
@@ -574,6 +777,10 @@ export default function SeriesDetail() {
               resumeStreamId != null &&
               Number.isFinite(epStreamId) &&
               epStreamId === resumeStreamId;
+            const isLastOpened =
+              !isResumeEpisode &&
+              focusEpisodeId != null &&
+              String(ep.id) === focusEpisodeId;
             const showProgress =
               !isWatched &&
               watch?.progressPct != null &&
@@ -596,8 +803,12 @@ export default function SeriesDetail() {
                   "w-full text-left card p-3 flex items-center gap-4 hover:border-(--line-2) hover:bg-(--bg-3) transition-colors group",
                   isResumeEpisode &&
                     "border-(--brand)/55 bg-(--brand)/10 ring-2 ring-(--brand)/30 border-l-4 border-l-(--brand)",
+                  isLastOpened &&
+                    !isResumeEpisode &&
+                    "border-(--brand)/35 bg-(--brand)/5 border-l-4 border-l-(--brand)/80",
                   isWatched &&
                     !isResumeEpisode &&
+                    !isLastOpened &&
                     "border-l-4 border-l-emerald-500/70"
                 )}
               >
@@ -683,9 +894,14 @@ export default function SeriesDetail() {
                         Continue watching
                       </span>
                     )}
-                    {isWatched && !isResumeEpisode && (
+                    {isWatched && !isResumeEpisode && !isLastOpened && (
                       <span className="text-[11px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded-md border border-emerald-500/45 text-emerald-100 bg-emerald-500/20">
                         Watched
+                      </span>
+                    )}
+                    {isLastOpened && (
+                      <span className="text-[11px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded-md border border-(--brand)/45 text-white bg-(--brand)/25">
+                        {isWatched ? "Last watched" : "Last opened"}
                       </span>
                     )}
                     <span

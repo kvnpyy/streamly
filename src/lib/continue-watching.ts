@@ -406,6 +406,39 @@ export function markSeriesEpisodeUnwatched(
   return true;
 }
 
+/** Resume writes that mark every episode in a season finished. */
+export function seriesSeasonWatchedWrites(
+  accountKey: string,
+  seriesId: number,
+  episodes: SeriesEpisode[]
+): { storageKey: string; seconds: number }[] {
+  const writes: { storageKey: string; seconds: number }[] = [];
+  for (const ep of episodes) {
+    const key = seriesEpisodeResumeKey(accountKey, seriesId, ep);
+    if (!key) continue;
+    const durationSec = parseEpisodeDurationSec(ep);
+    const completedSec = vodResumeCompletedSec(durationSec);
+    writes.push({
+      storageKey: key,
+      seconds: completedSec > 0 ? completedSec : MANUAL_WATCHED_RESUME_SEC,
+    });
+  }
+  return writes;
+}
+
+export function seriesSeasonResumeKeys(
+  accountKey: string,
+  seriesId: number,
+  episodes: SeriesEpisode[]
+): string[] {
+  const keys: string[] = [];
+  for (const ep of episodes) {
+    const key = seriesEpisodeResumeKey(accountKey, seriesId, ep);
+    if (key) keys.push(key);
+  }
+  return keys;
+}
+
 export function seriesEpisodeRecentMeta(
   season: string,
   ep: SeriesEpisode

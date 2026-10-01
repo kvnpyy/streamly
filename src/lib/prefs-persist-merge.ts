@@ -23,6 +23,7 @@ type PersistedPrefsSlice = Pick<
   | "libraryByAccount"
   | "activeSavedProviderAccountId"
   | "tvRegionFilter"
+  | "seriesBrowseFocus"
 >;
 
 /**
@@ -116,5 +117,9 @@ export function mergePersistedPrefs(
         : currentState.activeSavedProviderAccountId,
     tvRegionFilter:
       p.tvRegionFilter !== undefined ? p.tvRegionFilter : currentState.tvRegionFilter,
+    seriesBrowseFocus:
+      p.seriesBrowseFocus && typeof p.seriesBrowseFocus === "object"
+        ? { ...currentState.seriesBrowseFocus, ...p.seriesBrowseFocus }
+        : currentState.seriesBrowseFocus,
   };
 }

@@ -37,6 +37,41 @@ export function lockedSeriesSeason(
   return seasons[0] ?? null;
 }
 
+export type SeriesListFocus = {
+  season: string;
+  episodeId: string;
+};
+
+/**
+ * Which season tab to open. A later season the viewer already opened or
+ * played wins over the default first season.
+ */
+export function resolveSeriesListFocus(opts: {
+  seasons: readonly string[];
+  manualSeason: string | null;
+  storedSeason: string | null;
+  recentSeason: string | null;
+  resumeSeason: string | null;
+}): string | null {
+  const pick = (season: string | null | undefined) =>
+    season && opts.seasons.includes(season) ? season : null;
+  return (
+    pick(opts.manualSeason) ??
+    pick(opts.storedSeason) ??
+    pick(opts.recentSeason) ??
+    pick(opts.resumeSeason) ??
+    opts.seasons[0] ??
+    null
+  );
+}
+
+export function seriesBrowseFocusStorageKey(
+  accountKey: string,
+  seriesId: number
+): string {
+  return `${accountKey}|series|${seriesId}`;
+}
+
 /** Sort episodes within a season by `episode_num`. */
 export function compareSeriesEpisodeNum(
   a: SeriesEpisode,

@@ -5,6 +5,7 @@ import {
   lockedSeriesSeason,
   normalizeSeriesEpisodesMap,
   pickPreferredSeriesEpisode,
+  resolveSeriesListFocus,
   sortSeriesEpisodes,
 } from "./series-episodes";
 
@@ -84,6 +85,46 @@ describe("lockedSeriesSeason", () => {
 
   it("falls back to the first season", () => {
     expect(lockedSeriesSeason(seasons, null, null)).toBe("1");
+  });
+});
+
+describe("resolveSeriesListFocus", () => {
+  const seasons = ["1", "2", "5"];
+
+  it("opens the season last saved for this show", () => {
+    expect(
+      resolveSeriesListFocus({
+        seasons,
+        manualSeason: null,
+        storedSeason: "5",
+        recentSeason: "2",
+        resumeSeason: "1",
+      })
+    ).toBe("5");
+  });
+
+  it("uses the last played season when nothing was saved", () => {
+    expect(
+      resolveSeriesListFocus({
+        seasons,
+        manualSeason: null,
+        storedSeason: null,
+        recentSeason: "5",
+        resumeSeason: null,
+      })
+    ).toBe("5");
+  });
+
+  it("ignores a saved season that this show does not have", () => {
+    expect(
+      resolveSeriesListFocus({
+        seasons,
+        manualSeason: null,
+        storedSeason: "9",
+        recentSeason: null,
+        resumeSeason: null,
+      })
+    ).toBe("1");
   });
 });
 

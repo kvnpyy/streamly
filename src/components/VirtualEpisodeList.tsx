@@ -1,7 +1,7 @@
 "use client";
 
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { useLayoutEffect, useRef, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, type ReactNode } from "react";
 
 const ROW_EST_PX = 108;
 const VIRTUALIZE_MIN = 24;
@@ -10,6 +10,8 @@ export type VirtualEpisodeListProps<T> = {
   items: T[];
   itemKey: (item: T) => string | number;
   renderItem: (item: T) => ReactNode;
+  /** Scroll this row into view when the season opens. */
+  scrollToIndex?: number;
 };
 
 /** Single-column episode list; virtualizes long seasons. */
@@ -17,14 +19,16 @@ export function VirtualEpisodeList<T>({
   items,
   itemKey,
   renderItem,
+  scrollToIndex = -1,
 }: VirtualEpisodeListProps<T>) {
   if (items.length < VIRTUALIZE_MIN) {
     return (
-      <div className="space-y-2">
-        {items.map((item) => (
-          <div key={itemKey(item)}>{renderItem(item)}</div>
-        ))}
-      </div>
+      <ShortEpisodeList
+        items={items}
+        itemKey={itemKey}
+        renderItem={renderItem}
+        scrollToIndex={scrollToIndex}
+      />
     );
   }
 
@@ -33,7 +37,35 @@ export function VirtualEpisodeList<T>({
       items={items}
       itemKey={itemKey}
       renderItem={renderItem}
+      scrollToIndex={scrollToIndex}
     />
+  );
+}
+
+function ShortEpisodeList<T>({
+  items,
+  itemKey,
+  renderItem,
+  scrollToIndex = -1,
+}: VirtualEpisodeListProps<T>) {
+  useEffect(() => {
+    if (scrollToIndex < 0) return;
+    document
+      .querySelector(`[data-episode-index="${scrollToIndex}"]`)
+      ?.scrollIntoView({ block: "nearest" });
+  }, [scrollToIndex]);
+
+  return (
+    <div className="space-y-2">
+      {items.map((item, index) => (
+        <div
+          key={itemKey(item)}
+          data-episode-index={index}
+        >
+          {renderItem(item)}
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -41,6 +73,7 @@ function VirtualEpisodeListInner<T>({
   items,
   itemKey,
   renderItem,
+  scrollToIndex = -1,
 }: VirtualEpisodeListProps<T>) {
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -55,6 +88,11 @@ function VirtualEpisodeListInner<T>({
   useLayoutEffect(() => {
     virtualizer.measure();
   }, [items.length, virtualizer]);
+
+  useEffect(() => {
+    if (scrollToIndex < 0) return;
+    virtualizer.scrollToIndex(scrollToIndex, { align: "center" });
+  }, [scrollToIndex, virtualizer]);
 
   return (
     <div
