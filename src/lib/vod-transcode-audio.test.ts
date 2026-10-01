@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  ffprobeVideoAndAudioSelectArgs,
   pickBestAudioStreamIndex,
   shouldDeferSilentAudioEncode,
   type ProbedAudioStream,
@@ -74,5 +75,18 @@ describe("shouldDeferSilentAudioEncode", () => {
         sourceComplete: true,
       })
     ).toBe(false);
+  });
+});
+
+describe("ffprobeVideoAndAudioSelectArgs", () => {
+  it("asks for video and audio as separate stream selectors", () => {
+    const args = ffprobeVideoAndAudioSelectArgs();
+    expect(args).toEqual([
+      "-select_streams",
+      "v:0",
+      "-select_streams",
+      "a",
+    ]);
+    expect(args.join(" ")).not.toContain("v:0,a");
   });
 });

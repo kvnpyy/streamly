@@ -28,6 +28,7 @@ import {
   type VodTranscodePlan,
 } from "@/lib/vod-transcode-plan";
 import {
+  ffprobeVideoAndAudioSelectArgs,
   pickBestAudioStreamIndex,
   shouldDeferSilentAudioEncode,
   type ProbedAudioStream,
@@ -456,8 +457,7 @@ async function probeStreamCodecs(input: string): Promise<ProbedCodecs> {
   const referer = local ? "" : upstreamReferer(input);
   const args = [
     ...ffprobeInputArgs(referer, true, local),
-    "-select_streams",
-    "v:0,a",
+    ...ffprobeVideoAndAudioSelectArgs(),
     "-show_entries",
     "stream=index,codec_name,codec_type,channels",
     "-of",

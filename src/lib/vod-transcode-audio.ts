@@ -30,6 +30,14 @@ export function scoreAudioStream(codec: string | null, channels: number): number
   return codecRank * 10;
 }
 
+/**
+ * `v:0,a` is not a valid ffprobe specifier and returns no streams, so every
+ * in-progress download looked silent and playback waited for the whole file.
+ */
+export function ffprobeVideoAndAudioSelectArgs(): string[] {
+  return ["-select_streams", "v:0", "-select_streams", "a"];
+}
+
 /** Pick the ffmpeg stream index most likely to carry audible program audio. */
 export function pickBestAudioStreamIndex(
   streams: ProbedAudioStream[]
