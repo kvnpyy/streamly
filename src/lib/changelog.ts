@@ -11,6 +11,15 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.13.65",
+    date: "2026-10-04",
+    summary:
+      "Live channels stay on the current segments when a provider revokes the older ones.",
+    highlights: [
+      "Some live CDNs reject every segment except the newest few. Playback now keeps that live edge instead of requesting the dead window and filling the error log.",
+    ],
+  },
+  {
     version: "0.13.64",
     date: "2026-10-01",
     summary:
