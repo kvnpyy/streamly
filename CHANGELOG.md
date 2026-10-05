@@ -27,6 +27,13 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.13.70] — 2026-10-05
+
+Resuming an episode no longer fails as a missing file.
+
+### Fixed
+- When encoding picked up in the middle, the next piece did not match the opening of the file. That join is labeled now, and a broken piece is left out instead of failing playback.
+
 ## [0.13.69] — 2026-10-05
 
 Pressing play after a pause stays where you left off.

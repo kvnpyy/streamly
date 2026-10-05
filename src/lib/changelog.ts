@@ -11,6 +11,14 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.13.70",
+    date: "2026-10-05",
+    summary: "Resuming an episode no longer fails as a missing file.",
+    highlights: [
+      "When encoding picked up in the middle, the next piece did not match the opening of the file. That join is labeled now, and a broken piece is left out instead of failing playback.",
+    ],
+  },
+  {
     version: "0.13.69",
     date: "2026-10-05",
     summary: "Pressing play after a pause stays where you left off.",
