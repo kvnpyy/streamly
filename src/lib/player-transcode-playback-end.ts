@@ -156,11 +156,12 @@ export function shouldIgnoreOutgoingTranscodeClock(opts: {
 }
 
 /** Largest gap a waiting playhead may cross on its own. */
-export const VOD_WAIT_HOLE_MAX_SEC = 1.25;
+export const VOD_WAIT_HOLE_MAX_SEC = 0.2;
 
 /**
  * Where to put the playhead when Chrome pauses on a segment gap.
- * A manual skip unsticks the same stall; this step stays under the gap.
+ * Only a gap already smaller than a blink is crossed. Stepping through a
+ * buffer that is already ahead skips the episode after a long pause.
  */
 export function vodTranscodeWaitBridgeSec(
   currentTime: number,
@@ -168,20 +169,24 @@ export function vodTranscodeWaitBridgeSec(
   paused: boolean
 ): number | null {
   if (paused || !Number.isFinite(currentTime)) return null;
-  let inside: { start: number; end: number } | null = null;
-  let next: { start: number; end: number } | null = null;
+  let nextStart: number | null = null;
   for (const range of ranges) {
-    if (currentTime >= range.start - 0.05 && currentTime < range.end - 0.08) {
-      inside = range;
-    } else if (range.start > currentTime + 0.02) {
-      if (!next || range.start < next.start) next = range;
+    if (
+      currentTime >= range.start - 0.02 &&
+      currentTime < range.end - 0.3
+    ) {
+      // Plenty of this range is already buffered. Seeking here skips picture.
+      return null;
+    }
+    if (
+      range.start > currentTime + 0.01 &&
+      (nextStart == null || range.start < nextStart)
+    ) {
+      nextStart = range.start;
     }
   }
-  if (next && next.start - currentTime <= VOD_WAIT_HOLE_MAX_SEC) {
-    return next.start + 0.02;
-  }
-  if (inside && inside.end - currentTime > 0.2) {
-    return Math.min(inside.end - 0.05, currentTime + 0.08);
+  if (nextStart != null && nextStart - currentTime <= VOD_WAIT_HOLE_MAX_SEC) {
+    return nextStart + 0.01;
   }
   return null;
 }

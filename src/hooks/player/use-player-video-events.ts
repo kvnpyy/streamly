@@ -291,12 +291,21 @@ export function usePlayerVideoEvents(p: UsePlayerVideoEventsParams) {
       stripPosterForWebKit();
       if (v.videoWidth > 0) setLiveAudioNoPicture(false);
     };
-    const onPause = () => setIsPlaying(false);
     let lastVodBridgeMs = 0;
+    let userPausedAt = 0;
+    let ignoreBridgeUntil = 0;
+    let ignoreSnapUntil = 0;
+    const onPause = () => {
+      setIsPlaying(false);
+      userPausedAt = performance.now();
+    };
     const onWaiting = () => {
       if (!isLiveStream && usesTranscodePlayback) {
         if (v.paused) return;
         const nowWait = performance.now();
+        // Right after a long pause the buffer is full of temporary gaps.
+        // Jumping them looks like the episode fast-forwarding.
+        if (nowWait < ignoreBridgeUntil) return;
         if (nowWait - lastVodBridgeMs < 1_500) return;
         const ranges: Array<{ start: number; end: number }> = [];
         for (let i = 0; i < v.buffered.length; i++) {
@@ -339,6 +348,15 @@ export function usePlayerVideoEvents(p: UsePlayerVideoEventsParams) {
         setError(null);
         liveProgress.lastCt = -1;
         liveProgress.stuckSince = 0;
+      }
+      if (
+        usesTranscodePlayback &&
+        userPausedAt > 0 &&
+        performance.now() - userPausedAt > 2_000
+      ) {
+        const quietUntil = performance.now() + 8_000;
+        ignoreBridgeUntil = quietUntil;
+        ignoreSnapUntil = quietUntil;
       }
     };
     const onTime = () => {
@@ -468,7 +486,7 @@ export function usePlayerVideoEvents(p: UsePlayerVideoEventsParams) {
           if (rel > maxTranscodeRelSeen) {
             maxTranscodeRelSeen = rel;
             vodPlayheadHighWaterRef.current = rel;
-          } else if (!transcodeEndedSignaled) {
+          } else if (!transcodeEndedSignaled && nowUi >= ignoreSnapUntil) {
             const restore = vodTranscodeRecoveryPlayhead({
               currentRel: rel,
               highWaterRel: maxTranscodeRelSeen,

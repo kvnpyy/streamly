@@ -215,18 +215,38 @@ describe("detectTranscodeBackwardSnap", () => {
 });
 
 describe("vodTranscodeWaitBridgeSec", () => {
-  it("steps onto the next buffered range instead of waiting for a manual skip", () => {
+  it("crosses only a blink-sized gap", () => {
     expect(
-      vodTranscodeWaitBridgeSec(10, [{ start: 0, end: 10.05 }, { start: 10.6, end: 20 }], false)
-    ).toBeCloseTo(10.62, 2);
+      vodTranscodeWaitBridgeSec(
+        10,
+        [
+          { start: 0, end: 10.02 },
+          { start: 10.12, end: 20 },
+        ],
+        false
+      )
+    ).toBeCloseTo(10.13, 2);
   });
 
-  it("does not move a paused video or jump a long hole", () => {
+  it("does not walk forward through media that is already buffered", () => {
     expect(
-      vodTranscodeWaitBridgeSec(10, [{ start: 12, end: 20 }], true)
+      vodTranscodeWaitBridgeSec(10, [{ start: 0, end: 40 }], false)
     ).toBeNull();
     expect(
-      vodTranscodeWaitBridgeSec(10, [{ start: 14, end: 20 }], false)
+      vodTranscodeWaitBridgeSec(
+        10,
+        [
+          { start: 0, end: 10.05 },
+          { start: 10.6, end: 20 },
+        ],
+        false
+      )
+    ).toBeNull();
+  });
+
+  it("does not move a paused video", () => {
+    expect(
+      vodTranscodeWaitBridgeSec(10, [{ start: 10.1, end: 20 }], true)
     ).toBeNull();
   });
 });
