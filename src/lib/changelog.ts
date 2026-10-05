@@ -11,6 +11,14 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.13.69",
+    date: "2026-10-05",
+    summary: "Pressing play after a pause stays where you left off.",
+    highlights: [
+      "Coming back to a paused episode was jumping the picture forward over and over. It now continues from the pause.",
+    ],
+  },
+  {
     version: "0.13.68",
     date: "2026-10-05",
     summary:

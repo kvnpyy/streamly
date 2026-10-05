@@ -27,6 +27,13 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.13.69] — 2026-10-05
+
+Pressing play after a pause stays where you left off.
+
+### Fixed
+- Coming back to a paused episode was jumping the picture forward over and over. It now continues from the pause.
+
 ## [0.13.68] — 2026-10-05
 
 Episodes keep playing through short gaps, and Play next starts the following title.
