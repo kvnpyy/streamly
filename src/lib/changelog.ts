@@ -11,6 +11,16 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.13.66",
+    date: "2026-10-05",
+    summary:
+      "Episodes play straight through instead of skipping a second or two.",
+    highlights: [
+      "Each segment had a short gap at the edge, and the browser jumped it. Episodes are one continuous file again, with a fresh picture at the start of every segment so playback does not freeze or skip.",
+      "An episode already encoded on the server is prepared again the next time you play it.",
+    ],
+  },
+  {
     version: "0.13.65",
     date: "2026-10-04",
     summary:

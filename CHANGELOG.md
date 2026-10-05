@@ -27,6 +27,14 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.13.66] — 2026-10-05
+
+Episodes play straight through instead of skipping a second or two.
+
+### Fixed
+- Each segment had a short gap at the edge, and the browser jumped it. Episodes are one continuous file again, with a fresh picture at the start of every segment so playback does not freeze or skip.
+- An episode already encoded on the server is prepared again the next time you play it.
+
 ## [0.13.65] — 2026-10-04
 
 Live channels stay on the current segments when a provider revokes the older ones.
