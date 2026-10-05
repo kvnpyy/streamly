@@ -8,6 +8,7 @@ import {
   shouldTreatTranscodeSnapAsEnded,
   shouldIgnoreOutgoingTranscodeClock,
   vodTranscodeRecoveryPlayhead,
+  vodTranscodeWaitBridgeSec,
   shouldHoldTranscodeSeekTarget,
 } from "./player-transcode-playback-end";
 
@@ -210,5 +211,22 @@ describe("detectTranscodeBackwardSnap", () => {
   it("detects hls snap-back loops", () => {
     expect(detectTranscodeBackwardSnap(12, 580)).toBe(true);
     expect(detectTranscodeBackwardSnap(578, 580)).toBe(false);
+  });
+});
+
+describe("vodTranscodeWaitBridgeSec", () => {
+  it("steps onto the next buffered range instead of waiting for a manual skip", () => {
+    expect(
+      vodTranscodeWaitBridgeSec(10, [{ start: 0, end: 10.05 }, { start: 10.6, end: 20 }], false)
+    ).toBeCloseTo(10.62, 2);
+  });
+
+  it("does not move a paused video or jump a long hole", () => {
+    expect(
+      vodTranscodeWaitBridgeSec(10, [{ start: 12, end: 20 }], true)
+    ).toBeNull();
+    expect(
+      vodTranscodeWaitBridgeSec(10, [{ start: 14, end: 20 }], false)
+    ).toBeNull();
   });
 });

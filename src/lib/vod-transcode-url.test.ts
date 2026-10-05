@@ -11,6 +11,7 @@ import {
   stripVodTranscodeParams,
   vodNeedsServerTranscodePrep,
   vodTranscodeBaseProxyUrl,
+  vodPlaybackOverrideApplies,
 } from "./vod-transcode-url";
 
 describe("vod-transcode-url", () => {
@@ -33,6 +34,20 @@ describe("vod-transcode-url", () => {
     const retry = buildVodTranscodeRetryUrl(transcoded, base, { compatMse: true });
     expect(retry).toContain("tc_reset=");
     expect(retry).toContain("transcode=hls");
+  });
+
+  it("ignores a playback override that still points at the previous episode", () => {
+    const first =
+      "/api/stream?u=" +
+      encodeURIComponent("http://panel.example/series/user/pass/1.mkv") +
+      "&type=vod";
+    const second =
+      "/api/stream?u=" +
+      encodeURIComponent("http://panel.example/series/user/pass/2.mkv") +
+      "&type=vod";
+    const override = appendVodTranscodeHls(first);
+    expect(vodPlaybackOverrideApplies(override, first)).toBe(true);
+    expect(vodPlaybackOverrideApplies(override, second)).toBe(false);
   });
 
   it("allows movie/series proxied vod", () => {

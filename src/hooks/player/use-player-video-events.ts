@@ -28,6 +28,7 @@ import {
   shouldTreatTranscodeSnapAsEnded,
   signalTranscodePlaybackEnded,
   vodTranscodeRecoveryPlayhead,
+  vodTranscodeWaitBridgeSec,
   shouldHoldTranscodeSeekTarget,
 } from "@/lib/player-transcode-playback-end";
 
@@ -291,8 +292,27 @@ export function usePlayerVideoEvents(p: UsePlayerVideoEventsParams) {
       if (v.videoWidth > 0) setLiveAudioNoPicture(false);
     };
     const onPause = () => setIsPlaying(false);
+    let lastVodBridgeMs = 0;
     const onWaiting = () => {
-      if (!isLiveStream && usesTranscodePlayback) return;
+      if (!isLiveStream && usesTranscodePlayback) {
+        if (v.paused) return;
+        const nowWait = performance.now();
+        if (nowWait - lastVodBridgeMs < 1_500) return;
+        const ranges: Array<{ start: number; end: number }> = [];
+        for (let i = 0; i < v.buffered.length; i++) {
+          ranges.push({ start: v.buffered.start(i), end: v.buffered.end(i) });
+        }
+        const bridge = vodTranscodeWaitBridgeSec(v.currentTime, ranges, false);
+        if (bridge != null && bridge > v.currentTime + 0.01) {
+          lastVodBridgeMs = nowWait;
+          try {
+            v.currentTime = bridge;
+          } catch {
+            /* decoder will catch up on the next waiting tick */
+          }
+        }
+        return;
+      }
       setLoading(true);
       if (!isLiveStream) return;
       /** Native iOS + hls.js: let the library rebuffer — edge restarts here cause freeze/pause loops. */

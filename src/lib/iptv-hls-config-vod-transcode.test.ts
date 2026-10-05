@@ -14,14 +14,14 @@ describe("buildVodTranscodeHlsJsConfig", () => {
     // Larger than one frame so tiny tails stretch, smaller than a segment so
     // hls.js does not seek a few seconds before every boundary.
     expect(cfg.maxBufferHole).toBeGreaterThan(0);
-    expect(cfg.maxBufferHole).toBeLessThanOrEqual(0.1);
+    expect(cfg.maxBufferHole).toBeLessThanOrEqual(0.5);
     expect(cfg.liveSyncMode).toBe("buffered");
     expect(cfg.maxBufferLength).toBeGreaterThanOrEqual(40);
     expect(cfg.startFragPrefetch).toBe(true);
     expect(cfg.initialLiveManifestSize).toBeGreaterThanOrEqual(3);
     expect(cfg.nudgeMaxRetry).toBeLessThanOrEqual(4);
     expect(cfg.nudgeOffset).toBeLessThanOrEqual(0.05);
-    expect(cfg.nudgeOnVideoHole).toBe(false);
+    expect(cfg.nudgeOnVideoHole).toBe(true);
     expect(cfg.lowLatencyMode).toBe(false);
     expect(cfg.forceKeyFrameOnDiscontinuity).toBe(false);
     // hls.js throws if count- and duration-based live sync are mixed.

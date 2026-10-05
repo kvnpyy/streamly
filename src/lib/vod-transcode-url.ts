@@ -67,6 +67,27 @@ export function vodTranscodeBaseProxyUrl(proxyUrl: string): string | null {
   }
 }
 
+/** True when a seek/retry override still belongs to the episode on screen. */
+export function vodPlaybackOverrideApplies(
+  overrideUrl: string | null | undefined,
+  sourceUrl: string | null | undefined
+): boolean {
+  if (!overrideUrl || !sourceUrl) return false;
+  const overrideUpstream = streamProxyUpstream(overrideUrl);
+  const sourceUpstream = streamProxyUpstream(sourceUrl);
+  return !!overrideUpstream && overrideUpstream === sourceUpstream;
+}
+
+function streamProxyUpstream(url: string): string | null {
+  try {
+    const origin =
+      typeof window !== "undefined" ? window.location.origin : "http://localhost";
+    return new URL(url, origin).searchParams.get("u");
+  } catch {
+    return null;
+  }
+}
+
 /** Client "Try again" — always adds `tc_reset` so the server kills stale ffmpeg jobs. */
 export function buildVodTranscodeRetryUrl(
   activeUrl: string,

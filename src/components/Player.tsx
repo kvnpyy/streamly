@@ -35,6 +35,7 @@ import {
   warmVodTranscodePlay,
   warmSeriesPlaylistNeighbor,
   releaseVodTranscodeWarm,
+  vodPlaybackOverrideApplies,
 } from "@/lib/vod-transcode-url";
 import { transcodeSeekNeedsServerRestart as transcodeSeekNeedsServerRestartPolicy } from "@/lib/vod-transcode-seek-policy";
 import { resolveEffectiveVodDuration } from "@/lib/vod-seek-scrub";
@@ -549,7 +550,12 @@ export function PlayerOverlay() {
     });
   }, [open, current, creds, tvBrowser, silkLikeClient]);
 
-  const vodPlaybackUrl = vodPlaybackOverride ?? episodeVodUrl;
+  const vodPlaybackUrl = vodPlaybackOverrideApplies(
+    vodPlaybackOverride,
+    current?.url
+  )
+    ? vodPlaybackOverride
+    : episodeVodUrl;
 
   const liveStreamId = isLive ? current?.id : undefined;
   /** Header “Now:” only while player is open — no background EPG when overlay is closed. */

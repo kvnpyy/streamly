@@ -212,7 +212,7 @@ export function buildVodTranscodeHlsJsConfig() {
     // (often 5–10s on copied H.264). Stretch the last video frame across the
     // usual AAC/video tail instead. Larger tip-resume holes are bridged only
     // once the playhead is actually stuck.
-    maxBufferHole: 0.05,
+    maxBufferHole: 0.35,
     maxFragLookUpTolerance: 0.25,
     stretchShortVideoTrack: true,
     startFragPrefetch: true,
@@ -236,7 +236,9 @@ export function buildVodTranscodeHlsJsConfig() {
     // a second or two of picture was gone. Keep each nudge tiny.
     nudgeOffset: 0.05,
     nudgeMaxRetry: 4,
-    nudgeOnVideoHole: false,
+    // A tiny flush when the picture crosses a segment gap. Without it, Chrome
+    // pauses on the hole until the viewer skips ahead.
+    nudgeOnVideoHole: true,
     highBufferWatchdogPeriod: 8,
     startPosition: 0,
     // The demux worker has dropped fMP4 audio in desktop Chrome while the

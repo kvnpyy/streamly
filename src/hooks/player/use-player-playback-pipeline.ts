@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, type Dispatch, type RefObject, type SetStateAction } from "react";
+import { useEffect, useRef, type Dispatch, type RefObject, type SetStateAction } from "react";
 import type Hls from "hls.js";
 import type { ErrorData, Level, MediaPlaylist } from "hls.js";
 import { STREAM_PROXY_REQUEST_ID_HEADER } from "@/lib/request-id";
@@ -246,10 +246,19 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
     vodSeekSuppressTipPersistUntilRef,
   } = p;
 
+  const playbackSourceRef = useRef<string | null>(null);
+
   useEffect(() => {
     if (!open || !current) return;
     const video = videoRef.current;
     if (!video) return;
+
+    const sourceIdentity = `${current.kind}:${current.id}:${current.url}`;
+    const episodeChanged = playbackSourceRef.current !== sourceIdentity;
+    playbackSourceRef.current = sourceIdentity;
+    if (episodeChanged && current.kind !== "live") {
+      detachVideoElement(video);
+    }
 
     deferredTeardownCancelRef.current?.();
     deferredTeardownCancelRef.current = null;
@@ -367,10 +376,10 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
 
     const tryAutoplay = async () => {
       if (cancelled) return;
-      // Respect an explicit user pause after media is actually playing — but do
-      // NOT treat a resume seek (currentTime=40:00 on an empty buffer) as pause.
-      // That skipped play() entirely and left prepare stuck until the 28s timeout.
+      // A pause only counts after this title has started. The previous episode
+      // is left paused at the credits, and that must not block Play next.
       if (
+        !episodeChanged &&
         video.paused &&
         video.currentTime > 0.25 &&
         video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA

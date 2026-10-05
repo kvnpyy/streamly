@@ -155,6 +155,37 @@ export function shouldIgnoreOutgoingTranscodeClock(opts: {
   return current > high + 15;
 }
 
+/** Largest gap a waiting playhead may cross on its own. */
+export const VOD_WAIT_HOLE_MAX_SEC = 1.25;
+
+/**
+ * Where to put the playhead when Chrome pauses on a segment gap.
+ * A manual skip unsticks the same stall; this step stays under the gap.
+ */
+export function vodTranscodeWaitBridgeSec(
+  currentTime: number,
+  ranges: ReadonlyArray<{ start: number; end: number }>,
+  paused: boolean
+): number | null {
+  if (paused || !Number.isFinite(currentTime)) return null;
+  let inside: { start: number; end: number } | null = null;
+  let next: { start: number; end: number } | null = null;
+  for (const range of ranges) {
+    if (currentTime >= range.start - 0.05 && currentTime < range.end - 0.08) {
+      inside = range;
+    } else if (range.start > currentTime + 0.02) {
+      if (!next || range.start < next.start) next = range;
+    }
+  }
+  if (next && next.start - currentTime <= VOD_WAIT_HOLE_MAX_SEC) {
+    return next.start + 0.02;
+  }
+  if (inside && inside.end - currentTime > 0.2) {
+    return Math.min(inside.end - 0.05, currentTime + 0.08);
+  }
+  return null;
+}
+
 /** HLS snap-back near the finale — mid-episode snaps are recovery, not ended. */
 export function shouldTreatTranscodeSnapAsEnded(
   currentRel: number,
