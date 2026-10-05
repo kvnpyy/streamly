@@ -14,6 +14,8 @@ Sentry.init({
   /** IPTV credentials may appear in URLs — keep default PII off. */
   sendDefaultPii: false,
   tracesSampleRate: process.env.NODE_ENV === "development" ? 1.0 : 0.05,
+  /** Don't attach sentry-trace to every HLS segment or poster request. */
+  tracePropagationTargets: [/^\/(?!api\/(?:stream|img)(?:\?|$))/],
   denyUrls: SENTRY_DENY_URLS,
   ignoreErrors: [
     /play\(\) request was interrupted by a call to pause\(\)/i,

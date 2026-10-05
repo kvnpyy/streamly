@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { NextRequest } from "next/server";
-import { middleware } from "@/middleware";
+import { config, middleware } from "@/middleware";
 
 describe("middleware TV landing", () => {
   it("redirects TV user agents from / to /app", () => {
@@ -13,6 +13,11 @@ describe("middleware TV landing", () => {
     const res = middleware(req);
     expect(res.status).toBe(307);
     expect(res.headers.get("location")).toBe("https://iptvwebplayer.org/app");
+  });
+
+  it("does not match API routes", () => {
+    const matcher = String(config.matcher[0]);
+    expect(matcher.startsWith("/((?!api(?:/|$)")).toBe(true);
   });
 
   it("does not redirect desktop browsers on /", () => {

@@ -44,8 +44,11 @@ export function middleware(request: NextRequest) {
 export const config = {
   matcher: [
     /*
-     * Exclude static assets — middleware should not run on chunks/images/fonts.
+     * Document routes only. `/api/*` (stream segments, posters, catalogs) does
+     * not read the TV headers this file sets, and running UA checks on every
+     * segment burns event-loop time.
+     * Also skip static assets — chunks, images, fonts.
      */
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|woff2|css|js)$).*)",
+    "/((?!api(?:/|$)|_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|woff2|css|js)$).*)",
   ],
 };

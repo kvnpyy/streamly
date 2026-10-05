@@ -45,9 +45,10 @@ export function isAllowedStreamProxyUserAgent(
 ): boolean {
   const ua = userAgent.trim();
   if (!ua) return false;
+  // Almost every segment is a browser. Check this before the media-player scan.
+  if (/^Mozilla\//i.test(ua)) return true;
   if (isChromecastReceiverUserAgent(ua)) return true;
   if (isMediaPlayerStreamUserAgent(ua)) return true;
-  if (/^Mozilla\//i.test(ua)) return true;
   const lower = ua.toLowerCase();
   for (const sub of extraSubstrings) {
     const s = sub.trim();

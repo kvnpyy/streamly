@@ -22,6 +22,12 @@ import {
 } from "@/lib/runtime-metrics";
 import { maybeLogStreamUpstreamSlow } from "@/lib/stream-proxy-slow-log";
 import {
+  hostRevokesStaleSegments,
+  isRevokedTokenPayload,
+  noteRevokedSegmentHost,
+  trimLiveMediaPlaylistToEdge,
+} from "@/lib/hls-revoked-edge";
+import {
   isAllowedStreamProxyUserAgent,
   isStreamProxyUaCheckDisabled,
   streamProxyUaAllowExtraFromEnv,
@@ -130,6 +136,33 @@ function isManifest(contentType: string | null, urlPath: string) {
   if (urlPath.toLowerCase().endsWith(".m3u8")) return true;
   if (!contentType) return false;
   return /mpegurl|m3u|x-mpegurl/i.test(contentType);
+}
+
+function responseHostname(upstream: Response, fallback: string): string {
+  try {
+    return new URL(upstream.url).hostname || fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+/**
+ * Token CDNs reject every segment except the live edge with a tiny JSON body.
+ * Remember the host so the next media playlist can drop the dead window.
+ */
+async function rememberRevokedSegmentHost(
+  upstream: Response,
+  fallbackHost: string
+): Promise<void> {
+  const contentType = upstream.headers.get("content-type") ?? "";
+  if (!/json/i.test(contentType)) return;
+  try {
+    const body = await upstream.clone().text();
+    if (!isRevokedTokenPayload(body)) return;
+    noteRevokedSegmentHost(responseHostname(upstream, fallbackHost));
+  } catch {
+    /* Body already consumed — skip the mark rather than failing playback. */
+  }
 }
 
 export async function OPTIONS() {
@@ -455,6 +488,38 @@ async function handle(req: NextRequest, head: boolean) {
     }
   }
 
+  // Must run before the upstream fetch. A cache hit that still GETs the CDN
+  // rotates one-time segment tokens and the player then 403s with "revoked".
+  if (type === "hls" && !head) {
+    const cacheKey = manifestCacheKey({
+      upstream: target,
+      compatMse,
+      forCast,
+    });
+    const cached = getCachedManifest(cacheKey);
+    if (cached != null && liveHlsManifestCacheTtlMs(cached) != null) {
+      let playlistHost = "";
+      try {
+        playlistHost = new URL(target).hostname;
+      } catch {
+        playlistHost = "";
+      }
+      const body = hostRevokesStaleSegments(playlistHost)
+        ? trimLiveMediaPlaylistToEdge(cached)
+        : cached;
+      const hitHeaders = corsHeaders({}, requestId);
+      hitHeaders.set("content-type", "application/vnd.apple.mpegurl");
+      hitHeaders.set("x-stream-manifest-cache", "hit");
+      recordStreamProxyBytes(body.length);
+      return respondShort(
+        new Response(body, {
+          status: 200,
+          headers: hitHeaders,
+        })
+      );
+    }
+  }
+
   const fwdHeaders = new Headers();
   for (const name of FORWARD_REQUEST_HEADERS) {
     const v = req.headers.get(name);
@@ -521,6 +586,9 @@ async function handle(req: NextRequest, head: boolean) {
 
   if (upstream.status >= 400 && upstream.status < 500) {
     recordIptvApiError("stream_upstream_4xx");
+    if (upstream.status === 403 && !head) {
+      await rememberRevokedSegmentHost(upstream, upstreamUrl.hostname);
+    }
     if (forCast || isChromecastReceiverUserAgent(ua)) {
       recordCastMetric("cast_stream_4xx");
     }
@@ -567,19 +635,13 @@ async function handle(req: NextRequest, head: boolean) {
       compatMse,
       forCast: forCastManifest,
     });
-    const cached = getCachedManifest(cacheKey);
-    if (cached != null && liveHlsManifestCacheTtlMs(cached) != null) {
-      responseHeaders.set("content-type", "application/vnd.apple.mpegurl");
-      responseHeaders.set("x-stream-manifest-cache", "hit");
-      responseHeaders.delete("content-length");
-      recordStreamProxyBytes(cached.length);
-      return respondShort(
-        new Response(cached, {
-          status: upstreamResponseStatus,
-          headers: responseHeaders,
-        })
-      );
+    let playlistHost = upstreamUrl.hostname;
+    try {
+      playlistHost = new URL(target).hostname || playlistHost;
+    } catch {
+      /* Relative or malformed `u` — trim only applies to absolute CDN hosts. */
     }
+    const dropRevokedWindow = hostRevokesStaleSegments(playlistHost);
 
     const declaredLen = parseInt(contentLength ?? "", 10);
     if (
@@ -611,6 +673,12 @@ async function handle(req: NextRequest, head: boolean) {
     }
     if (compatMse || forCastManifest) {
       text = sanitizeTvMasterPlaylistIfNeeded(text);
+    }
+    if (
+      dropRevokedWindow ||
+      hostRevokesStaleSegments(finalManifestUrl.hostname)
+    ) {
+      text = trimLiveMediaPlaylistToEdge(text);
     }
     const rewritten = rewriteHlsManifest(text, finalManifestUrl, {
       compatMse,

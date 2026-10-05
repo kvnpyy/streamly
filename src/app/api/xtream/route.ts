@@ -100,6 +100,18 @@ export async function GET(req: NextRequest) {
   if (cacheableUpstream) {
     const hit = getXtreamUpstreamCached(upstreamCacheKey);
     if (hit) {
+      // Catalog and series-info bodies are multi-megabyte. Parse +
+      // NextResponse.json would stringify them again. The cached text was
+      // already validated as JSON on the miss path.
+      if (!epgAction) {
+        const headers = new Headers();
+        if (isXtreamCatalogCacheAction(action)) {
+          headers.set("Cache-Control", xtreamCatalogCacheControlHeader());
+        }
+        headers.set("X-Xtream-Cache", "hit");
+        headers.set("content-type", "application/json; charset=utf-8");
+        return new NextResponse(hit, { status: 200, headers });
+      }
       try {
         const json = JSON.parse(hit);
         if (epgAction && creds) {

@@ -38,8 +38,9 @@ async function fetchOnce(
     const headers: Record<string, string> = {
       "User-Agent": IMAGE_UA,
       Accept: "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
-      "Accept-Encoding": "identity",
     };
+    // Leave Accept-Encoding unset so undici can take gzip from the CDN.
+    // We only forward content-type, so a forced identity body just wastes bandwidth.
     if (useReferer) headers.Referer = `${origin}/`;
     return await fetch(target, {
       headers,
