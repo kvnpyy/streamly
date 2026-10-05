@@ -27,6 +27,13 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.13.67] — 2026-10-05
+
+A cut-off episode file no longer ends playback with file not found.
+
+### Fixed
+- If the download stops halfway through, playback keeps the part already watched and downloads the episode again instead of asking for a missing segment.
+
 ## [0.13.66] — 2026-10-05
 
 Episodes play straight through instead of skipping a second or two.

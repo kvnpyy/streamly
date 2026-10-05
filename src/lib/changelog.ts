@@ -11,6 +11,15 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.13.67",
+    date: "2026-10-05",
+    summary:
+      "A cut-off episode file no longer ends playback with file not found.",
+    highlights: [
+      "If the download stops halfway through, playback keeps the part already watched and downloads the episode again instead of asking for a missing segment.",
+    ],
+  },
+  {
     version: "0.13.66",
     date: "2026-10-05",
     summary:
