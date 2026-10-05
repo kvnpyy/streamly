@@ -22,6 +22,10 @@ import {
 } from "@/lib/vod-transcode-manifest";
 import { transcodeManifestWaitMs } from "@/lib/vod-transcode-wait";
 import {
+  fmp4HlsMuxArgs,
+  formatHlsTime,
+  keyframePlanForFrameRate,
+  parseFrameRate,
   planFromProbeCodecs,
   shouldIdleStopFfmpeg,
   transcodeLibx264Args,
@@ -449,6 +453,7 @@ type ProbedCodecs = {
   audio: string | null;
   audioStreamIndex: number | null;
   audioStreamCount: number;
+  frameRate: number | null;
 };
 
 /** One ffprobe round-trip — picks the best audio stream index for ffmpeg `-map`. */
@@ -459,7 +464,7 @@ async function probeStreamCodecs(input: string): Promise<ProbedCodecs> {
     ...ffprobeInputArgs(referer, true, local),
     ...ffprobeVideoAndAudioSelectArgs(),
     "-show_entries",
-    "stream=index,codec_name,codec_type,channels",
+    "stream=index,codec_name,codec_type,channels,avg_frame_rate,r_frame_rate",
     "-of",
     "json",
     input,
@@ -471,6 +476,7 @@ async function probeStreamCodecs(input: string): Promise<ProbedCodecs> {
       audio: null,
       audioStreamIndex: null,
       audioStreamCount: 0,
+      frameRate: null,
     };
     const proc = spawn(ffprobeBinary(), args, {
       stdio: ["ignore", "pipe", "pipe"],
@@ -496,9 +502,12 @@ async function probeStreamCodecs(input: string): Promise<ProbedCodecs> {
             codec_type?: string;
             codec_name?: string;
             channels?: number;
+            avg_frame_rate?: string;
+            r_frame_rate?: string;
           }>;
         };
         let video: string | null = null;
+        let frameRate: number | null = null;
         const audioStreams: ProbedAudioStream[] = [];
         for (const stream of parsed.streams ?? []) {
           const type = stream.codec_type?.toLowerCase();
@@ -507,7 +516,12 @@ async function probeStreamCodecs(input: string): Promise<ProbedCodecs> {
             typeof stream.index === "number" && Number.isFinite(stream.index)
               ? stream.index
               : null;
-          if (type === "video" && !video && name) video = name;
+          if (type === "video" && !video && name) {
+            video = name;
+            frameRate =
+              parseFrameRate(stream.avg_frame_rate) ??
+              parseFrameRate(stream.r_frame_rate);
+          }
           if (type === "audio" && index != null) {
             audioStreams.push({
               index,
@@ -530,6 +544,7 @@ async function probeStreamCodecs(input: string): Promise<ProbedCodecs> {
           audio: picked?.codec ?? null,
           audioStreamIndex,
           audioStreamCount: audioStreams.length,
+          frameRate,
         });
       } catch {
         resolve(empty);
@@ -539,7 +554,7 @@ async function probeStreamCodecs(input: string): Promise<ProbedCodecs> {
 }
 
 /** Bump when segment packaging changes. Older caches are discarded on the next play. */
-const TRANSCODE_ENCODE_REV = 9;
+const TRANSCODE_ENCODE_REV = 10;
 
 type JobMeta = {
   plan: VodTranscodePlan;
@@ -547,6 +562,8 @@ type JobMeta = {
   startOffsetSec?: number;
   audioStreamIndex?: number | null;
   encodeRev?: number;
+  /** Source frame rate used to lock each segment to one keyframe. */
+  frameRate?: number | null;
   /** Chapter intro/credits. Absent until a local probe finishes. */
   chapterMarkers?: ParsedVodChapters | null;
   /** True once the local source was complete (or markers were found). */
@@ -816,8 +833,13 @@ async function resolveJobMeta(job: TranscodeJob): Promise<ResolvedJobMeta> {
     return deferIfAudioHidden(job, cached);
   }
 
-  const { video: videoCodec, audio: audioCodec, audioStreamIndex, audioStreamCount } =
-    await probeStreamCodecs(probeInput);
+  const {
+    video: videoCodec,
+    audio: audioCodec,
+    audioStreamIndex,
+    audioStreamCount,
+    frameRate,
+  } = await probeStreamCodecs(probeInput);
   const plan = planFromProbeCodecs(videoCodec, audioCodec, {
     maxHeight: transcodeMaxHeight(),
   });
@@ -837,6 +859,7 @@ async function resolveJobMeta(job: TranscodeJob): Promise<ResolvedJobMeta> {
         startOffsetSec: job.startOffsetSec,
         audioStreamIndex: null,
         encodeRev: TRANSCODE_ENCODE_REV,
+        frameRate,
         audioDeferred: true,
       };
     }
@@ -860,6 +883,7 @@ async function resolveJobMeta(job: TranscodeJob): Promise<ResolvedJobMeta> {
     startOffsetSec: job.startOffsetSec,
     audioStreamIndex,
     encodeRev: TRANSCODE_ENCODE_REV,
+    frameRate,
   };
   await writeJobMeta(job.dir, meta);
 
@@ -1561,11 +1585,17 @@ async function resumeTranscodeJob(job: TranscodeJob): Promise<void> {
     if (job.proc && job.proc.exitCode == null) return;
     await stripEndlistFromDiskManifest(job.dir);
     const prefixNow = contiguousSegmentCount(await listSegmentFiles(job.dir));
-    await spawnFfmpeg(job, meta.plan, {
-      seekInSourceSec,
-      startSegmentNumber: prefixNow,
-      outputTsOffsetSec,
-    }, meta.audioStreamIndex);
+    await spawnFfmpeg(
+      job,
+      meta.plan,
+      {
+        seekInSourceSec,
+        startSegmentNumber: prefixNow,
+        outputTsOffsetSec,
+      },
+      meta.audioStreamIndex,
+      meta.frameRate
+    );
   } catch (err) {
     job.state = "failed";
     job.error =
@@ -1815,10 +1845,11 @@ async function spawnFfmpeg(
   resume?: {
     seekInSourceSec: number;
     startSegmentNumber: number;
-    /** Continuity PTS for MPEG-TS (defaults to seekInSourceSec). */
+    /** Continuity PTS (defaults to seekInSourceSec). */
     outputTsOffsetSec?: number;
   },
-  audioStreamIndex?: number | null
+  audioStreamIndex?: number | null,
+  frameRate?: number | null
 ): Promise<void> {
   if (job.proc && job.proc.exitCode == null) return;
   if (spawnFfmpegInflight.has(job.key)) return;
@@ -1829,7 +1860,7 @@ async function spawnFfmpeg(
   }
   spawnFfmpegInflight.add(job.key);
   try {
-    await spawnFfmpegLocked(job, plan, resume, audioStreamIndex);
+    await spawnFfmpegLocked(job, plan, resume, audioStreamIndex, frameRate);
   } finally {
     spawnFfmpegInflight.delete(job.key);
   }
@@ -1843,7 +1874,8 @@ async function spawnFfmpegLocked(
     startSegmentNumber: number;
     outputTsOffsetSec?: number;
   },
-  audioStreamIndex?: number | null
+  audioStreamIndex?: number | null,
+  frameRate?: number | null
 ): Promise<void> {
   if (job.proc && job.proc.exitCode == null) return;
   // Kill orphan writers left after a prior SIGTERM-without-wait.
@@ -1883,7 +1915,7 @@ async function spawnFfmpegLocked(
   const upstreamUrl = job.upstream;
   const refererHost = upstreamReferer(upstreamUrl);
   const segSec = hlsSegmentSeconds();
-  const gop = Math.max(24, Math.round(segSec * 24));
+  const keys = keyframePlanForFrameRate(frameRate ?? null, segSec);
   const seekSec = resume
     ? Math.max(0, resume.seekInSourceSec)
     : Math.max(0, Math.floor(job.startOffsetSec));
@@ -1894,7 +1926,7 @@ async function spawnFfmpegLocked(
       ? Math.max(0, resume.outputTsOffsetSec ?? seekSec)
       : seekSec;
 
-  const segPattern = path.join(job.dir, "seg_%05d.ts");
+  const segPattern = path.join(job.dir, "seg_%05d.m4s");
   const outManifest = path.join(job.dir, MANIFEST_NAME);
   const args = [
     "-nostdin",
@@ -1945,7 +1977,8 @@ async function spawnFfmpegLocked(
       ...transcodeLibx264Args({
         preset: x264Preset(),
         maxHeight: plan.maxHeight,
-        gop,
+        gop: keys.gop,
+        frameRate: keys.frameRate,
       }),
       "-c:a",
       "aac",
@@ -1960,8 +1993,8 @@ async function spawnFfmpegLocked(
 
   args.push(
     "-sn",
-    // Tip resume: keep MPEG-TS timeline continuous with earlier segments.
-    // setpts alone is ignored by the HLS/mpegts path; output_ts_offset works.
+    // Tip resume: keep timestamps continuous with the segments already played.
+    // setpts is ignored by the HLS muxer; output_ts_offset is applied first.
     ...(outputTsOffsetSec > 0
       ? ["-output_ts_offset", String(outputTsOffsetSec)]
       : []),
@@ -1978,7 +2011,7 @@ async function spawnFfmpegLocked(
     "-f",
     "hls",
     "-hls_time",
-    String(segSec),
+    formatHlsTime(keys.hlsTimeSec),
     "-hls_list_size",
     "0",
     // Always append_list. resumeTranscodeJob heals a contiguous MEDIA-SEQUENCE:0
@@ -1987,12 +2020,12 @@ async function spawnFfmpegLocked(
     // freezes mid-film scrub.
     "-hls_flags",
     "independent_segments+temp_file+append_list",
-    // Fragmented MP4 kept every frame in the file, and the player still
-    // painted one still every few seconds. MPEG-TS is what actually moves.
-    // Video is re-encoded with a keyframe on each segment so the old
-    // one-second replay at the boundary does not come back.
-    "-hls_segment_type",
-    "mpegts",
+    // MPEG-TS leaves a video hole at every segment edge. Chrome plays about
+    // a second of audio across that hole and the picture jumps. Fragmented
+    // MP4 keeps one timeline. Edit lists are off so Chrome does not hold or
+    // replay the first frame, and the video is re-encoded so each segment
+    // starts on a keyframe.
+    ...fmp4HlsMuxArgs(),
     "-hls_segment_filename",
     segPattern,
   );
@@ -2528,7 +2561,7 @@ async function beginTranscodeJob(job: TranscodeJob): Promise<void> {
     if (job.state === "failed") return;
 
     job.state = "starting";
-    await spawnFfmpeg(job, plan, undefined, meta.audioStreamIndex);
+    await spawnFfmpeg(job, plan, undefined, meta.audioStreamIndex, meta.frameRate);
   } catch (err) {
     job.state = "failed";
     job.error =

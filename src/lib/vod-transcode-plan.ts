@@ -27,6 +27,8 @@ export function transcodeLibx264Args(opts: {
   preset: string;
   maxHeight: number;
   gop: number;
+  /** Output rate, e.g. "24000/1001". Omitted only when the source rate is unknown. */
+  frameRate?: string | null;
 }): string[] {
   return [
     "-c:v",
@@ -40,9 +42,10 @@ export function transcodeLibx264Args(opts: {
     "-pix_fmt",
     "yuv420p",
     "-x264-params",
-    "cabac=1:bframes=0:ref=1:8x8dct=0",
+    "cabac=1:bframes=0:ref=1:8x8dct=0:open-gop=0",
     "-fps_mode",
     "cfr",
+    ...(opts.frameRate ? ["-r", opts.frameRate] : []),
     "-g",
     String(opts.gop),
     "-keyint_min",
@@ -54,6 +57,101 @@ export function transcodeLibx264Args(opts: {
     // segment. Those crumbs are the repeating hitch on a cached episode.
     "-vf",
     transcodeScaleFilter(opts.maxHeight),
+  ];
+}
+
+const NAMED_FRAME_RATES: readonly { fps: number; expr: string }[] = [
+  { fps: 24000 / 1001, expr: "24000/1001" },
+  { fps: 24, expr: "24" },
+  { fps: 25, expr: "25" },
+  { fps: 30000 / 1001, expr: "30000/1001" },
+  { fps: 30, expr: "30" },
+  { fps: 50, expr: "50" },
+  { fps: 60000 / 1001, expr: "60000/1001" },
+  { fps: 60, expr: "60" },
+];
+
+/** ffprobe `avg_frame_rate` / `r_frame_rate`. Rejects 0/0 and impossible rates. */
+export function parseFrameRate(raw: string | null | undefined): number | null {
+  if (!raw) return null;
+  const text = raw.trim();
+  const slash = /^(\d+(?:\.\d+)?)\s*\/\s*(\d+(?:\.\d+)?)$/.exec(text);
+  const fps = slash
+    ? Number(slash[2]) > 0
+      ? Number(slash[1]) / Number(slash[2])
+      : NaN
+    : Number(text);
+  if (!Number.isFinite(fps) || fps < 12 || fps > 60) return null;
+  return fps;
+}
+
+export type SegmentKeyframePlan = {
+  /** Closed GOP length. One keyframe, one segment. */
+  gop: number;
+  /** ffmpeg `-r`. */
+  frameRate: string;
+  /** `-hls_time`, equal to gop/fps so the cut lands on that keyframe. */
+  hlsTimeSec: number;
+};
+
+/**
+ * Lock the segment cut to a keyframe. A GOP sized for 24fps on a 30fps
+ * episode misses the HLS boundary, and the muxer then leaves a hole the
+ * browser skips.
+ */
+export function keyframePlanForFrameRate(
+  fps: number | null,
+  segmentSec: number
+): SegmentKeyframePlan {
+  const seg =
+    Number.isFinite(segmentSec) && segmentSec >= 2 && segmentSec <= 8
+      ? segmentSec
+      : 4;
+  const snapped = snapFrameRate(fps);
+  const gop = Math.max(1, Math.round(snapped.fps * seg));
+  return {
+    gop,
+    frameRate: snapped.expr,
+    hlsTimeSec: gop / snapped.fps,
+  };
+}
+
+function snapFrameRate(fps: number | null): { fps: number; expr: string } {
+  if (fps == null) return { fps: 24, expr: "24" };
+  let best = NAMED_FRAME_RATES[0]!;
+  let bestDist = Infinity;
+  for (const rate of NAMED_FRAME_RATES) {
+    const dist = Math.abs(rate.fps - fps);
+    if (dist < bestDist) {
+      best = rate;
+      bestDist = dist;
+    }
+  }
+  if (bestDist > 0.5) {
+    const rounded = Math.round(fps);
+    return { fps: rounded, expr: String(rounded) };
+  }
+  return best;
+}
+
+export function formatHlsTime(sec: number): string {
+  const rounded = Math.round(sec * 1_000_000) / 1_000_000;
+  return String(rounded);
+}
+
+/**
+ * Fragmented MP4 with no edit list. MPEG-TS repeats or gaps about a second
+ * of picture at every segment, which is the skip. Copying the source into
+ * fMP4 held one frame until the next keyframe — the caller re-encodes.
+ */
+export function fmp4HlsMuxArgs(): string[] {
+  return [
+    "-hls_segment_type",
+    "fmp4",
+    "-hls_segment_options",
+    "use_editlist=0",
+    "-hls_fmp4_init_filename",
+    "init.mp4",
   ];
 }
 
@@ -73,8 +171,9 @@ export function planFromProbeCodecs(
   opts?: { maxHeight?: number }
 ): VodTranscodePlan {
   const maxHeight = opts?.maxHeight ?? 720;
-  // Re-encode the picture as well as the audio. Copying H.264 into MPEG-TS
-  // replays about a second of video at every segment. A fresh keyframe on
-  // each segment plays straight through, and the audio is stereo AAC.
+  // Re-encode the picture as well as the audio. A copied stream does not
+  // start each segment on a keyframe, so the player holds one frame until
+  // the next one. A closed GOP plays straight through, and the audio is
+  // stereo AAC.
   return { mode: "transcode", maxHeight };
 }
