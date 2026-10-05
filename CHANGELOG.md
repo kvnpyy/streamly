@@ -27,6 +27,14 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.13.68] — 2026-10-05
+
+Episodes keep playing through short gaps, and Play next starts the following title.
+
+### Fixed
+- A short gap between segments was pausing the picture until you skipped ahead. Playback steps across that gap on its own.
+- Play next was still pointed at the episode that just finished, so that episode started over. It now loads the next one.
+
 ## [0.13.67] — 2026-10-05
 
 A cut-off episode file no longer ends playback with file not found.

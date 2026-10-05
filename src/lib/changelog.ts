@@ -11,6 +11,16 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.13.68",
+    date: "2026-10-05",
+    summary:
+      "Episodes keep playing through short gaps, and Play next starts the following title.",
+    highlights: [
+      "A short gap between segments was pausing the picture until you skipped ahead. Playback steps across that gap on its own.",
+      "Play next was still pointed at the episode that just finished, so that episode started over. It now loads the next one.",
+    ],
+  },
+  {
     version: "0.13.67",
     date: "2026-10-05",
     summary:
