@@ -377,6 +377,33 @@ async function runDownload(entry: SourceEntry): Promise<void> {
   }
 }
 
+/**
+ * Throw away the on-disk episode and download it again.
+ * A matching Content-Length can still be a truncated MKV: ffmpeg then stops
+ * halfway and a seek into the rest never finds a picture.
+ */
+export async function forceRedownloadVodSource(upstream: string): Promise<void> {
+  if (!isVodSourceCacheEnabled()) return;
+  const entry = await ensureEntry(upstream);
+  if (entry.abort) {
+    try {
+      entry.abort.abort();
+    } catch {
+      /* noop */
+    }
+    entry.abort = null;
+  }
+  entry.downloadPromise = null;
+  await fsp.rm(entry.finalPath, { force: true }).catch(() => {});
+  await fsp.rm(entry.partialPath, { force: true }).catch(() => {});
+  entry.bytes = 0;
+  entry.totalBytes = null;
+  entry.complete = false;
+  entry.sizeAuthoritative = false;
+  entry.error = undefined;
+  ensureVodSource(upstream);
+}
+
 /** Start (or resume) downloading the upstream file. Safe to call repeatedly. */
 export function ensureVodSource(upstream: string): void {
   if (!isVodSourceCacheEnabled()) return;

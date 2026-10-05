@@ -25,6 +25,8 @@ import {
   manifestNeedsContiguityHeal,
   resumeSeekSecForDiskPrefix,
   shouldRestartFragmentedTranscode,
+  shouldForceSourceRefetch,
+  sourceSeekLanded,
   sumExtinfDurationSec,
   transcodeStartupReady,
 } from "./vod-transcode-manifest";
@@ -78,12 +80,49 @@ describe("shouldRestartFragmentedTranscode", () => {
         playlistText: '#EXTM3U\n#EXT-X-MAP:URI="init.mp4"\n',
         hasInit: false,
         hasFirstSegment: true,
-        segmentCount: 4,
+        segmentCount: 1,
         ffmpegRunning: false,
       })
     ).toBe(true);
   });
 
+  it("does not delete a long encode when resume replaces the init segment", () => {
+    expect(
+      shouldRestartFragmentedTranscode({
+        playlistText:
+          '#EXTM3U\n#EXT-X-MAP:URI="init.mp4"\n#EXTINF:4,\nseg_00000.m4s\n',
+        hasInit: false,
+        hasFirstSegment: true,
+        segmentCount: 400,
+        ffmpegRunning: true,
+      })
+    ).toBe(false);
+  });
+});
+
+describe("sourceSeekLanded", () => {
+  it("rejects a seek that lands back near the start of a broken file", () => {
+    expect(sourceSeekLanded(1728, 263)).toBe(false);
+    expect(sourceSeekLanded(1728, null)).toBe(false);
+    expect(sourceSeekLanded(1728, 1724)).toBe(true);
+    expect(
+      shouldForceSourceRefetch({
+        seekSec: 1728,
+        landedPtsSec: 263,
+        refetchCount: 0,
+      })
+    ).toBe(true);
+    expect(
+      shouldForceSourceRefetch({
+        seekSec: 1728,
+        landedPtsSec: 263,
+        refetchCount: 1,
+      })
+    ).toBe(false);
+  });
+});
+
+describe("shouldRestartFragmentedTranscode", () => {
   it("keeps a healthy in-progress fMP4 encode", () => {
     expect(
       shouldRestartFragmentedTranscode({

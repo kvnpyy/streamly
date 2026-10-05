@@ -213,8 +213,37 @@ export function shouldRestartFragmentedTranscode(opts: {
   if (opts.segmentCount > 0 && !opts.hasFirstSegment) return true;
   const needsInit = /#EXT-X-MAP:/i.test(opts.playlistText);
   if (!needsInit) return false;
-  if (!opts.hasInit && (opts.segmentCount > 0 || !opts.ffmpegRunning)) return true;
+  if (!opts.hasInit) {
+    // Resume starts a second ffmpeg, which replaces init.mp4 for a moment.
+    // Deleting a long encode here is what makes replay say the file is missing.
+    if (opts.hasFirstSegment && opts.segmentCount >= 3) return false;
+    if (opts.segmentCount > 0 || !opts.ffmpegRunning) return true;
+  }
   return false;
+}
+
+/** True when a seek into the source actually lands near that timestamp. */
+export function sourceSeekLanded(
+  seekSec: number,
+  landedPtsSec: number | null
+): boolean {
+  if (landedPtsSec == null || !Number.isFinite(landedPtsSec)) return false;
+  if (!Number.isFinite(seekSec) || seekSec < 0) return false;
+  return Math.abs(landedPtsSec - seekSec) <= 30;
+}
+
+/**
+ * ffmpeg hit EOF well before the episode duration. The byte count can still
+ * match Content-Length when the container itself is truncated.
+ */
+export function shouldForceSourceRefetch(opts: {
+  seekSec: number;
+  landedPtsSec: number | null;
+  refetchCount: number;
+}): boolean {
+  if (opts.refetchCount >= 1) return false;
+  if (!(opts.seekSec > 30)) return false;
+  return !sourceSeekLanded(opts.seekSec, opts.landedPtsSec);
 }
 
 /**

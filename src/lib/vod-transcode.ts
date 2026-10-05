@@ -9,6 +9,8 @@ import {
   manifestNeedsContiguityHeal,
   resumeSeekSecForDiskPrefix,
   shouldRestartFragmentedTranscode,
+  shouldForceSourceRefetch,
+  sourceSeekLanded,
   hasOrphanSegmentsBeyondPrefix,
   manifestReferencesMissingOrGappedSegments,
   parseExtinfDurationsBySegment,
@@ -56,6 +58,7 @@ import path from "path";
 import { validateVodUpstreamReadable } from "@/lib/vod-transcode-upstream";
 import {
   ensureVodSource,
+  forceRedownloadVodSource,
   getVodSourceStatus,
   isVodSourceCacheEnabled,
   isVodSourceComplete,
@@ -218,7 +221,106 @@ function waitForChildExit(
   });
 }
 
-/** One ffmpeg per episode directory. A second writer deletes init.mp4. */
+const INIT_KEEP_NAME = "init.mp4.keep";
+
+/** Keep the first init segment. A resume ffmpeg replaces init.mp4 and breaks replay. */
+async function rememberFmp4Init(dir: string): Promise<void> {
+  const keep = path.join(dir, INIT_KEEP_NAME);
+  try {
+    const keepSt = await fsp.stat(keep);
+    if (keepSt.size > 32) return;
+  } catch {
+    /* no copy yet */
+  }
+  try {
+    const st = await fsp.stat(path.join(dir, "init.mp4"));
+    if (st.size > 32) await fsp.copyFile(path.join(dir, "init.mp4"), keep);
+  } catch {
+    /* init not written yet */
+  }
+}
+
+async function restoreFmp4Init(dir: string): Promise<void> {
+  const init = path.join(dir, "init.mp4");
+  try {
+    const st = await fsp.stat(init);
+    if (st.size > 32) return;
+  } catch {
+    /* missing */
+  }
+  try {
+    await fsp.copyFile(path.join(dir, INIT_KEEP_NAME), init);
+  } catch {
+    /* no backup */
+  }
+}
+
+function scheduleFmp4InitRestore(dir: string): void {
+  for (const delayMs of [400, 1500, 4000]) {
+    const timer = setTimeout(() => {
+      void (async () => {
+        try {
+          const keep = path.join(dir, INIT_KEEP_NAME);
+          const keepSt = await fsp.stat(keep);
+          if (keepSt.size > 32) await fsp.copyFile(keep, path.join(dir, "init.mp4"));
+        } catch {
+          /* noop */
+        }
+      })();
+    }, delayMs);
+    timer.unref?.();
+  }
+}
+
+/** First video packet PTS at a seek, or null when the container cannot land there. */
+async function probeSourceVideoPtsAt(
+  filePath: string,
+  seekSec: number
+): Promise<number | null> {
+  return new Promise((resolve) => {
+    const proc = spawn(
+      ffprobeBinary(),
+      [
+        "-v",
+        "error",
+        "-read_intervals",
+        `${Math.max(0, Math.floor(seekSec))}%+#1`,
+        "-select_streams",
+        "v:0",
+        "-show_entries",
+        "packet=pts_time",
+        "-of",
+        "csv=p=0",
+        filePath,
+      ],
+      { stdio: ["ignore", "pipe", "ignore"] }
+    );
+    let out = "";
+    const timer = setTimeout(() => {
+      try {
+        proc.kill("SIGKILL");
+      } catch {
+        /* noop */
+      }
+      resolve(null);
+    }, 8_000);
+    proc.stdout?.on("data", (c: Buffer) => {
+      out += c.toString();
+    });
+    proc.on("error", () => {
+      clearTimeout(timer);
+      resolve(null);
+    });
+    proc.on("close", () => {
+      clearTimeout(timer);
+      const pts = out
+        .split(/\s+/)
+        .map((part) => parseFloat(part))
+        .find((n) => Number.isFinite(n));
+      resolve(pts ?? null);
+    });
+  });
+}
 async function killStrayFfmpegForDir(dir: string): Promise<void> {
   const listed = await new Promise<string>((resolve) => {
     const proc = spawn("ps", ["-ax", "-o", "pid=", "-o", "command="], {
@@ -274,6 +376,7 @@ async function discardUnplayableTranscodeOutput(job: TranscodeJob): Promise<void
         (name) =>
           name === "index.m3u8" ||
           name === "init.mp4" ||
+          name === "init.mp4.keep" ||
           name === ".ffmpeg.pid" ||
           /^seg_\d+\.(?:ts|m4s)(?:\.tmp)?$/i.test(name)
       )
@@ -564,6 +667,8 @@ type JobMeta = {
   encodeRev?: number;
   /** Source frame rate used to lock each segment to one keyframe. */
   frameRate?: number | null;
+  /** How many times we discarded a source that could not be seeked. */
+  sourceRefetchCount?: number;
   /** Chapter intro/credits. Absent until a local probe finishes. */
   chapterMarkers?: ParsedVodChapters | null;
   /** True once the local source was complete (or markers were found). */
@@ -918,6 +1023,8 @@ type TranscodeJob = {
   lastViewerAt: number;
   /** Real playback requested the manifest — not a credits-card warm. */
   hasPlayerViewer?: boolean;
+  /** The downloaded file ends before the episode does. Do not seek into the hole. */
+  sourceGaveOut?: boolean;
   /** Started from the next-episode card. Abandoned warms must not stop a real play. */
   backgroundWarm?: boolean;
   chapterProbeState?: "idle" | "running" | "done";
@@ -1558,6 +1665,60 @@ async function resumeTranscodeJob(job: TranscodeJob): Promise<void> {
       segmentSec: hlsSegmentSeconds(),
       manifestEncodedSec: sumExtinfDurationSec(trimmed),
     });
+    if (seekInSourceSec > 30 && isVodSourceCacheEnabled()) {
+      const source = await getVodSourceStatus(job.upstream);
+      if (source?.complete && source.path) {
+        const landedPts = await probeSourceVideoPtsAt(
+          source.path,
+          seekInSourceSec
+        );
+        const refetchCount = meta.sourceRefetchCount ?? 0;
+        if (
+          shouldForceSourceRefetch({
+            seekSec: seekInSourceSec,
+            landedPtsSec: landedPts,
+            refetchCount,
+          })
+        ) {
+          meta.sourceRefetchCount = refetchCount + 1;
+          await writeJobMeta(job.dir, meta);
+          await forceRedownloadVodSource(job.upstream);
+          await waitForVodSourceForSeek(job.upstream, seekInSourceSec, {
+            durationSec: job.durationSec ?? meta.durationSec,
+            timeoutMs: Math.min(
+              600_000,
+              Math.max(
+                waitForPlaylistMs(),
+                Math.floor(seekInSourceSec) * 2_500 + 120_000
+              )
+            ),
+          }).catch(() => {});
+          const again = await getVodSourceStatus(job.upstream);
+          const againPts =
+            again?.complete && again.path
+              ? await probeSourceVideoPtsAt(again.path, seekInSourceSec)
+              : null;
+          if (!sourceSeekLanded(seekInSourceSec, againPts)) {
+            job.sourceGaveOut = true;
+            job.state = "failed";
+            job.error =
+              "This episode's file from your provider is incomplete, so playback stops partway through.";
+            notifyWaiters(job, false);
+            return;
+          }
+        } else if (
+          refetchCount >= 1 &&
+          !sourceSeekLanded(seekInSourceSec, landedPts)
+        ) {
+          job.sourceGaveOut = true;
+          job.state = "failed";
+          job.error =
+            "This episode's file from your provider is incomplete, so playback stops partway through.";
+          notifyWaiters(job, false);
+          return;
+        }
+      }
+    }
     let outputTsOffsetSec = seekInSourceSec;
     if (prefixForSeek > 0) {
       const seqName = `seg_${String(prefixForSeek - 1).padStart(5, "0")}`;
@@ -1606,6 +1767,7 @@ async function resumeTranscodeJob(job: TranscodeJob): Promise<void> {
 
 /** Keep ffmpeg running until the full episode is encoded (pause / close included). */
 async function ensureEncodingContinues(job: TranscodeJob): Promise<void> {
+  if (job.sourceGaveOut) return;
   if (job.proc && job.proc.exitCode == null) return;
 
   let raw: string | null = null;
@@ -2031,11 +2193,13 @@ async function spawnFfmpegLocked(
   );
   args.push(outManifest);
 
+  await rememberFmp4Init(job.dir);
   const proc = spawn(ffmpegPath(), args, {
     stdio: ["ignore", "ignore", "pipe"],
   });
   job.proc = proc;
   job.state = "running";
+  if (resume && seekSec > 0) scheduleFmp4InitRestore(job.dir);
   if (proc.pid) {
     try {
       await fsp.writeFile(
@@ -2776,6 +2940,8 @@ export async function handleVodTranscodeRequest(opts: {
       /* keep prior raw */
     }
     const onDiskAfter = await listSegmentFiles(job.dir);
+    await rememberFmp4Init(job.dir);
+    await restoreFmp4Init(job.dir);
     const packagedNow = await fragmentedOutputState(job.dir);
     if (
       shouldRestartFragmentedTranscode({
@@ -2875,20 +3041,17 @@ export async function handleVodTranscodeRequest(opts: {
     };
   }
 
+  if (media === "init.mp4") await restoreFmp4Init(job.dir);
   const segPath = path.join(job.dir, media);
   let segmentReady = await waitForSegmentFile(segPath, 200);
   if (!segmentReady) {
     void ensureEncodingContinues(job);
     const ready = await waitForReady(job, opts.signal);
     if (!ready) {
-      const stillEncoding =
-        job.state === "starting" ||
-        job.state === "running" ||
-        job.state === "queued";
       return {
-        status: stillEncoding ? 503 : 404,
-        errorText: "Segment not ready yet.",
-        extraHeaders: stillEncoding ? { "retry-after": "2" } : undefined,
+        status: 503,
+        errorText: job.error || "Segment not ready yet.",
+        extraHeaders: { "retry-after": "2" },
       };
     }
     /** Encode can lag on a busy VPS — wait longer than one HLS segment. */
@@ -2901,12 +3064,18 @@ export async function handleVodTranscodeRequest(opts: {
       const notEncodedYet =
         segNum >= 0 &&
         (segNum >= diskPrefix || !diskAfterWait.has(media));
-      if (notEncodedYet) {
+      const encodedSec = diskPrefix * hlsSegmentSeconds();
+      const duration = job.durationSec;
+      const encodeFinished =
+        duration != null &&
+        duration >= 60 &&
+        encodedSec >= duration - 45;
+      if (notEncodedYet || !encodeFinished) {
         await ensureTranscodeJobContiguous(job);
         void ensureEncodingContinues(job);
         return {
           status: 503,
-          errorText: "Segment not ready yet.",
+          errorText: job.error || "Segment not ready yet.",
           extraHeaders: { "retry-after": "2" },
         };
       }
