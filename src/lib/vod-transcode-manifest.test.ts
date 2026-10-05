@@ -27,6 +27,7 @@ import {
   shouldRestartFragmentedTranscode,
   shouldForceSourceRefetch,
   sourceSeekLanded,
+  fmp4ResumeJoinPlan,
   sumExtinfDurationSec,
   transcodeStartupReady,
 } from "./vod-transcode-manifest";
@@ -97,6 +98,38 @@ describe("shouldRestartFragmentedTranscode", () => {
         ffmpegRunning: true,
       })
     ).toBe(false);
+  });
+});
+
+describe("fmp4ResumeJoinPlan", () => {
+  it("hides the one-frame crumb and the tail after a resume join", () => {
+    const raw = [
+      "#EXTM3U",
+      "#EXT-X-MAP:URI=\"init.mp4\"",
+      "#EXTINF:4.000000,",
+      "seg_00000.m4s",
+      "#EXTINF:0.041667,",
+      "seg_00001.m4s",
+      "#EXT-X-DISCONTINUITY",
+      "#EXTINF:4.000000,",
+      "seg_00002.m4s",
+    ].join("\n");
+    const plan = fmp4ResumeJoinPlan(raw);
+    expect(plan.discontinuityBefore.has("seg_00002.m4s")).toBe(true);
+    expect(plan.tail.has("seg_00001.m4s")).toBe(true);
+    expect(plan.tail.has("seg_00002.m4s")).toBe(true);
+    const onDisk = new Set(["seg_00000.m4s", "seg_00001.m4s", "seg_00002.m4s"]);
+    const built = buildManifestFromContiguousDisk(onDisk, new Map(), 4, {
+      discontinuityBefore: plan.discontinuityBefore,
+      omit: new Set(["seg_00001.m4s"]),
+      openingInit: "init.mp4.keep",
+    });
+    const served = prepareManifestForPlayback(built, true, onDisk);
+    expect(served).toContain('URI="init.mp4.keep"');
+    expect(served).toContain("#EXT-X-DISCONTINUITY");
+    expect(served).toContain('URI="init.mp4"');
+    expect(served).not.toContain("seg_00001.m4s");
+    expect(served).toContain("seg_00002.m4s");
   });
 });
 

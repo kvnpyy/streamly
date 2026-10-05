@@ -5,6 +5,7 @@ import {
   contiguousSegmentCount,
   countManifestSegments,
   encodedCoverageSec,
+  fmp4ResumeJoinPlan,
   manifestIsTipOnlyTail,
   manifestNeedsContiguityHeal,
   resumeSeekSecForDiskPrefix,
@@ -255,24 +256,6 @@ async function restoreFmp4Init(dir: string): Promise<void> {
   }
 }
 
-function scheduleFmp4InitRestore(dir: string): void {
-  for (const delayMs of [400, 1500, 4000]) {
-    const timer = setTimeout(() => {
-      void (async () => {
-        try {
-          const keep = path.join(dir, INIT_KEEP_NAME);
-          const keepSt = await fsp.stat(keep);
-          if (keepSt.size > 32) await fsp.copyFile(keep, path.join(dir, "init.mp4"));
-        } catch {
-          /* noop */
-        }
-      })();
-    }, delayMs);
-    timer.unref?.();
-  }
-}
-
-/** First video packet PTS at a seek, or null when the container cannot land there. */
 async function probeSourceVideoPtsAt(
   filePath: string,
   seekSec: number
@@ -474,18 +457,54 @@ async function maybeRecoverStalledFfmpeg(
 function manifestTextForPlayback(
   raw: string,
   playlistComplete: boolean,
-  onDisk: ReadonlySet<string>
+  onDisk: ReadonlySet<string>,
+  initBytesMatch: boolean,
+  hasOpeningInit: boolean
 ): string {
-  // Always rebuild from contiguous disk segments. ffmpeg's on-disk m3u8 is not
-  // the playback contract — resume without append_list rewrites MEDIA-SEQUENCE
-  // to the tip and clients then cannot scrub backward into earlier segments.
+  const join = fmp4ResumeJoinPlan(raw);
+  const hideTail = initBytesMatch && join.tail.size > 0;
+  const omit = new Set<string>();
+  if (hideTail) {
+    for (const name of join.tail) omit.add(name);
+  } else {
+    for (const name of join.tail) {
+      if (!join.discontinuityBefore.has(name)) omit.add(name);
+    }
+  }
   const source = buildManifestFromContiguousDisk(
     onDisk,
     parseExtinfDurationsBySegment(raw),
     hlsSegmentSeconds(),
-    { playlistComplete }
+    {
+      playlistComplete,
+      discontinuityBefore: hideTail ? undefined : join.discontinuityBefore,
+      omit: omit.size > 0 ? omit : undefined,
+      openingInit:
+        !hideTail && join.discontinuityBefore.size > 0 && hasOpeningInit
+          ? "init.mp4.keep"
+          : undefined,
+    }
   );
   return prepareManifestForPlayback(source, playlistComplete, onDisk);
+}
+
+async function fmp4InitState(dir: string): Promise<{
+  matches: boolean;
+  hasKeep: boolean;
+}> {
+  try {
+    const [keep, init] = await Promise.all([
+      fsp.readFile(path.join(dir, INIT_KEEP_NAME)),
+      fsp.readFile(path.join(dir, "init.mp4")),
+    ]);
+    const hasKeep = keep.length > 32;
+    return {
+      hasKeep,
+      matches: hasKeep && init.length > 32 && Buffer.compare(keep, init) === 0,
+    };
+  } catch {
+    return { matches: false, hasKeep: false };
+  }
 }
 
 function transcodeMaxHeight(): number {
@@ -2199,7 +2218,6 @@ async function spawnFfmpegLocked(
   });
   job.proc = proc;
   job.state = "running";
-  if (resume && seekSec > 0) scheduleFmp4InitRestore(job.dir);
   if (proc.pid) {
     try {
       await fsp.writeFile(
@@ -2818,7 +2836,7 @@ export async function handleVodTranscodeRequest(opts: {
       ? path.basename(opts.media)
       : MANIFEST_NAME;
 
-  if (!SEGMENT_RE.test(media) && media !== MANIFEST_NAME && media !== "init.mp4") {
+  if (!SEGMENT_RE.test(media) && media !== MANIFEST_NAME && media !== "init.mp4" && media !== INIT_KEEP_NAME) {
     return { status: 400, errorText: "Invalid transcode media." };
   }
 
@@ -2967,10 +2985,13 @@ export async function handleVodTranscodeRequest(opts: {
     if (playlistComplete && job.state !== "ready") {
       job.state = "ready";
     }
+    const initState = await fmp4InitState(job.dir);
     const trimmed = manifestTextForPlayback(
       rawAfterHeal,
       playlistComplete,
-      onDiskAfter
+      onDiskAfter,
+      initState.matches,
+      initState.hasKeep
     );
     if (!playlistComplete && countManifestSegments(trimmed) < 1) {
       return {

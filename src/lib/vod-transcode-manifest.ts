@@ -349,6 +349,52 @@ export function parseExtinfDurationsBySegment(
   return out;
 }
 
+/**
+ * Resume ffmpeg inserts EXT-X-DISCONTINUITY and often a one-frame crumb.
+ * The crumb and everything after the join are one tail. Playing that tail
+ * with the original init makes the browser report the file as missing.
+ */
+export function fmp4ResumeJoinPlan(manifestText: string): {
+  discontinuityBefore: Set<string>;
+  tail: Set<string>;
+} {
+  const pairs: { name: string; dur: number; disc: boolean }[] = [];
+  let disc = false;
+  let pending: number | null = null;
+  for (const line of manifestText.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (/^#EXT-X-DISCONTINUITY/i.test(trimmed)) {
+      disc = true;
+      continue;
+    }
+    const inf = trimmed.match(/^#EXTINF:([\d.]+)/i);
+    if (inf) {
+      const n = parseFloat(inf[1]!);
+      pending = Number.isFinite(n) && n > 0 ? n : null;
+      continue;
+    }
+    const name = segmentNameFromPlaylistLine(trimmed);
+    if (!name || pending == null) continue;
+    pairs.push({ name, dur: pending, disc });
+    pending = null;
+    disc = false;
+  }
+  const discontinuityBefore = new Set(
+    pairs.filter((pair) => pair.disc).map((pair) => pair.name)
+  );
+  const tail = new Set<string>();
+  const firstDisc = pairs.findIndex((pair) => pair.disc);
+  if (firstDisc >= 0) {
+    if (firstDisc > 0 && pairs[firstDisc - 1]!.dur < 0.75) {
+      tail.add(pairs[firstDisc - 1]!.name);
+    }
+    for (let i = firstDisc; i < pairs.length; i++) {
+      tail.add(pairs[i]!.name);
+    }
+  }
+  return { discontinuityBefore, tail };
+}
+
 /** A flushed opening segment is playable even if ffmpeg's playlist is still empty. */
 export const OPENING_SEGMENT_MIN_BYTES = 800;
 
@@ -381,12 +427,19 @@ export function buildManifestFromContiguousDisk(
   onDisk: ReadonlySet<string>,
   durationBySegment: ReadonlyMap<string, number>,
   defaultSegSec: number,
-  opts?: { playlistComplete?: boolean }
+  opts?: {
+    playlistComplete?: boolean;
+    discontinuityBefore?: ReadonlySet<string>;
+    omit?: ReadonlySet<string>;
+    /** Init used for segments before a resume join. */
+    openingInit?: string;
+  }
 ): string {
   const prefix = contiguousSegmentCount(onDisk);
   if (prefix <= 0) return "#EXTM3U\n";
   const ext = [...onDisk].some((name) => name.endsWith(".m4s")) ? "m4s" : "ts";
   const targetDur = Math.max(2, Math.ceil(defaultSegSec));
+  const openingInit = opts?.openingInit ?? VOD_TRANSCODE_INIT_NAME;
   const lines = [
     "#EXTM3U",
     "#EXT-X-VERSION:6",
@@ -395,11 +448,15 @@ export function buildManifestFromContiguousDisk(
     "#EXT-X-INDEPENDENT-SEGMENTS",
   ];
   if (ext === "m4s") {
-    lines.push(`#EXT-X-MAP:URI="${VOD_TRANSCODE_INIT_NAME}"`);
+    lines.push(`#EXT-X-MAP:URI="${openingInit}"`);
   }
   for (let i = 0; i < prefix; i++) {
     const name = `seg_${String(i).padStart(5, "0")}.${ext}`;
     if (!onDisk.has(name)) break;
+    if (opts?.omit?.has(name)) continue;
+    if (opts?.discontinuityBefore?.has(name)) {
+      lines.push("#EXT-X-DISCONTINUITY");
+    }
     const dur = durationBySegment.get(name) ?? defaultSegSec;
     lines.push(`#EXTINF:${dur.toFixed(6)},`, name);
   }
@@ -408,7 +465,7 @@ export function buildManifestFromContiguousDisk(
 }
 
 export function trimContiguousSegmentsFromStart<
-  T extends { extinf: string; media: string },
+  T extends { extinf: string; media: string; discontinuity?: boolean },
 >(pairs: T[]): T[] {
   if (pairs.length === 0) return pairs;
   const out: T[] = [];
@@ -419,9 +476,9 @@ export function trimContiguousSegmentsFromStart<
     const seq = segmentSequence(name);
     if (seq == null) continue;
     if (expect == null) expect = seq;
-    if (seq !== expect) break;
+    if (seq !== expect && !pair.discontinuity) break;
     out.push(pair);
-    expect += 1;
+    expect = seq + 1;
   }
   return out;
 }
@@ -516,7 +573,17 @@ export function prepareManifestForPlayback(
 
   const out = [...header];
   for (const p of kept) {
-    if (p.discontinuity) out.push("#EXT-X-DISCONTINUITY");
+    if (p.discontinuity) {
+      out.push("#EXT-X-DISCONTINUITY");
+      const mapLine = header.find((line) => /^#EXT-X-MAP:/i.test(line.trim()));
+      if (mapLine) {
+        out.push(
+          /init\.mp4\.keep/i.test(mapLine)
+            ? `#EXT-X-MAP:URI="${VOD_TRANSCODE_INIT_NAME}"`
+            : mapLine
+        );
+      }
+    }
     out.push(p.extinf, p.media);
   }
   if (playlistComplete) out.push("#EXT-X-ENDLIST");
