@@ -11,6 +11,14 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.13.75",
+    date: "2026-10-06",
+    summary: "Skipping ahead in an episode loads the picture at that spot.",
+    highlights: [
+      "Pieces made after encoding resumed still started their clock at zero, so jumping ahead found nothing to play. Those pieces are put on the episode clock before playback seeks.",
+    ],
+  },
+  {
     version: "0.13.74",
     date: "2026-10-06",
     summary: "Playback no longer freezes where an episode was resumed.",

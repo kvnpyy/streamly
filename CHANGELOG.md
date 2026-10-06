@@ -27,6 +27,13 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.13.75] — 2026-10-06
+
+Skipping ahead in an episode loads the picture at that spot.
+
+### Fixed
+- Pieces made after encoding resumed still started their clock at zero, so jumping ahead found nothing to play. Those pieces are put on the episode clock before playback seeks.
+
 ## [0.13.74] — 2026-10-06
 
 Playback no longer freezes where an episode was resumed.
