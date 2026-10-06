@@ -19,7 +19,6 @@ import {
   encodedLooksFullyComplete,
   prepareManifestForPlayback,
   rewriteTranscodeManifest,
-  segmentSequence,
   sumExtinfDurationSec,
   transcodeStartupReady,
   VOD_TRANSCODE_SEGMENT_RE as SEGMENT_RE,
@@ -459,27 +458,12 @@ function manifestTextForPlayback(
   raw: string,
   playlistComplete: boolean,
   onDisk: ReadonlySet<string>,
-  initBytesMatch: boolean,
   hasOpeningInit: boolean
 ): string {
   const join = fmp4ResumeJoinPlan(raw);
   const omit = new Set<string>();
-  if (initBytesMatch && join.discontinuityBefore.size > 0) {
-    // The resume init was replaced with the original. Later pieces were
-    // encoded against the lost init, so the browser reports them missing.
-    const from = Math.min(
-      ...[...join.discontinuityBefore].map(
-        (name) => segmentSequence(name) ?? Number.POSITIVE_INFINITY
-      )
-    );
-    for (const name of onDisk) {
-      const seq = segmentSequence(name);
-      if (seq != null && seq >= from) omit.add(name);
-    }
-  } else {
-    for (const name of join.tail) {
-      if (!join.discontinuityBefore.has(name)) omit.add(name);
-    }
+  for (const name of join.tail) {
+    if (!join.discontinuityBefore.has(name)) omit.add(name);
   }
   const source = buildManifestFromContiguousDisk(
     onDisk,
@@ -487,10 +471,10 @@ function manifestTextForPlayback(
     hlsSegmentSeconds(),
     {
       playlistComplete,
-      discontinuityBefore: initBytesMatch ? undefined : join.discontinuityBefore,
+      discontinuityBefore: join.discontinuityBefore,
       omit: omit.size > 0 ? omit : undefined,
       openingInit:
-        !initBytesMatch && join.discontinuityBefore.size > 0 && hasOpeningInit
+        join.discontinuityBefore.size > 0 && hasOpeningInit
           ? "init.mp4.keep"
           : undefined,
     }
@@ -515,31 +499,6 @@ async function fmp4InitState(dir: string): Promise<{
   } catch {
     return { matches: false, hasKeep: false };
   }
-}
-
-/** Delete pieces encoded against an init file we no longer have. */
-async function dropSegmentsDecodedWithLostInit(dir: string): Promise<void> {
-  const initState = await fmp4InitState(dir);
-  if (!initState.matches) return;
-  const raw = await fsp
-    .readFile(path.join(dir, MANIFEST_NAME), "utf8")
-    .catch(() => "");
-  const join = fmp4ResumeJoinPlan(raw);
-  if (join.discontinuityBefore.size === 0) return;
-  const from = Math.min(
-    ...[...join.discontinuityBefore].map(
-      (name) => segmentSequence(name) ?? Number.POSITIVE_INFINITY
-    )
-  );
-  if (!Number.isFinite(from)) return;
-  const names = await fsp.readdir(dir).catch(() => [] as string[]);
-  await Promise.all(
-    names.map(async (name) => {
-      const seq = segmentSequence(name);
-      if (seq == null || seq < from) return;
-      await fsp.rm(path.join(dir, name), { force: true }).catch(() => {});
-    })
-  );
 }
 
 function transcodeMaxHeight(): number {
@@ -1667,11 +1626,6 @@ async function resumeTranscodeJob(job: TranscodeJob): Promise<void> {
   // kept writing while a resume ffmpeg started on the same index.m3u8.
   await stopJobProc(job);
   await maybeEvictForSlot(job);
-  if (activeTranscodeCount() >= maxConcurrentJobs()) {
-    job.state = "queued";
-    return;
-  }
-  await dropSegmentsDecodedWithLostInit(job.dir);
   try {
     if (isVodSourceCacheEnabled()) {
       const st = await getVodSourceStatus(job.upstream);
@@ -3029,7 +2983,6 @@ export async function handleVodTranscodeRequest(opts: {
       rawAfterHeal,
       playlistComplete,
       onDiskAfter,
-      initState.matches,
       initState.hasKeep
     );
     if (!playlistComplete && countManifestSegments(trimmed) < 1) {
