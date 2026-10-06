@@ -27,6 +27,13 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.13.74] — 2026-10-06
+
+Playback no longer freezes where an episode was resumed.
+
+### Fixed
+- Resuming an encode was repeating silent picture from that moment on, so the episode froze there every time. That stretch is thrown out and the episode continues with sound.
+
 ## [0.13.73] — 2026-10-06
 
 An episode plays again after encoding had to restart.

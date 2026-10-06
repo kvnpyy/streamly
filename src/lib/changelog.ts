@@ -11,6 +11,14 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.13.74",
+    date: "2026-10-06",
+    summary: "Playback no longer freezes where an episode was resumed.",
+    highlights: [
+      "Resuming an encode was repeating silent picture from that moment on, so the episode froze there every time. That stretch is thrown out and the episode continues with sound.",
+    ],
+  },
+  {
     version: "0.13.73",
     date: "2026-10-06",
     summary: "An episode plays again after encoding had to restart.",
