@@ -5,7 +5,6 @@ import {
   contiguousSegmentCount,
   countManifestSegments,
   encodedCoverageSec,
-  fmp4ResumeJoinPlan,
   manifestIsTipOnlyTail,
   manifestNeedsContiguityHeal,
   resumeSeekSecForDiskPrefix,
@@ -19,11 +18,22 @@ import {
   encodedLooksFullyComplete,
   prepareManifestForPlayback,
   rewriteTranscodeManifest,
+  segmentSequence,
   sumExtinfDurationSec,
   transcodeStartupReady,
   VOD_TRANSCODE_SEGMENT_RE as SEGMENT_RE,
 } from "@/lib/vod-transcode-manifest";
 import { transcodeManifestWaitMs } from "@/lib/vod-transcode-wait";
+import {
+  countTfdtBoxes,
+  firstSilentTailIndex,
+  initDeclaresAudio,
+  playlistTimeBeforeSegment,
+  readTrackTimescales,
+  segmentTimelineStartSec,
+  shiftFmp4Timeline,
+  timelineShiftSec,
+} from "@/lib/vod-transcode-fmp4-timeline";
 import {
   fmp4HlsMuxArgs,
   formatHlsTime,
@@ -457,48 +467,15 @@ async function maybeRecoverStalledFfmpeg(
 function manifestTextForPlayback(
   raw: string,
   playlistComplete: boolean,
-  onDisk: ReadonlySet<string>,
-  hasOpeningInit: boolean
+  onDisk: ReadonlySet<string>
 ): string {
-  const join = fmp4ResumeJoinPlan(raw);
-  const omit = new Set<string>();
-  for (const name of join.tail) {
-    if (!join.discontinuityBefore.has(name)) omit.add(name);
-  }
   const source = buildManifestFromContiguousDisk(
     onDisk,
     parseExtinfDurationsBySegment(raw),
     hlsSegmentSeconds(),
-    {
-      playlistComplete,
-      discontinuityBefore: join.discontinuityBefore,
-      omit: omit.size > 0 ? omit : undefined,
-      openingInit:
-        join.discontinuityBefore.size > 0 && hasOpeningInit
-          ? "init.mp4.keep"
-          : undefined,
-    }
+    { playlistComplete }
   );
   return prepareManifestForPlayback(source, playlistComplete, onDisk);
-}
-
-async function fmp4InitState(dir: string): Promise<{
-  matches: boolean;
-  hasKeep: boolean;
-}> {
-  try {
-    const [keep, init] = await Promise.all([
-      fsp.readFile(path.join(dir, INIT_KEEP_NAME)),
-      fsp.readFile(path.join(dir, "init.mp4")),
-    ]);
-    const hasKeep = keep.length > 32;
-    return {
-      hasKeep,
-      matches: hasKeep && init.length > 32 && Buffer.compare(keep, init) === 0,
-    };
-  } catch {
-    return { matches: false, hasKeep: false };
-  }
 }
 
 function transcodeMaxHeight(): number {
@@ -1043,6 +1020,8 @@ type TranscodeJob = {
   chapterProbeState?: "idle" | "running" | "done";
   chapterProbeNotBefore?: number;
   chapterProbeBytes?: number;
+  /** Segment index through which audio tracks have been checked. */
+  audioScanThrough?: number;
 };
 
 const jobs = new Map<string, TranscodeJob>();
@@ -1728,20 +1707,6 @@ async function resumeTranscodeJob(job: TranscodeJob): Promise<void> {
         }
       }
     }
-    let outputTsOffsetSec = seekInSourceSec;
-    if (prefixForSeek > 0) {
-      const seqName = `seg_${String(prefixForSeek - 1).padStart(5, "0")}`;
-      const lastSeg =
-        [".ts", ".m4s"]
-          .map((ext) => path.join(job.dir, `${seqName}${ext}`))
-          .find((candidate) => fs.existsSync(candidate)) ??
-        path.join(job.dir, `${seqName}.ts`);
-      const lastPts = await probeTsLastVideoPtsSec(lastSeg);
-      // Continue just after the last packet so the join is contiguous.
-      if (lastPts != null && lastPts > 0) {
-        outputTsOffsetSec = lastPts + 1 / 90_000;
-      }
-    }
     if (isVodSourceCacheEnabled() && seekInSourceSec > 0) {
       await waitForVodSourceForSeek(job.upstream, seekInSourceSec, {
         durationSec: job.durationSec ?? meta.durationSec,
@@ -1761,7 +1726,6 @@ async function resumeTranscodeJob(job: TranscodeJob): Promise<void> {
       {
         seekInSourceSec,
         startSegmentNumber: prefixNow,
-        outputTsOffsetSec,
       },
       meta.audioStreamIndex,
       meta.frameRate
@@ -1777,6 +1741,7 @@ async function resumeTranscodeJob(job: TranscodeJob): Promise<void> {
 /** Keep ffmpeg running until the full episode is encoded (pause / close included). */
 async function ensureEncodingContinues(job: TranscodeJob): Promise<void> {
   if (job.sourceGaveOut) return;
+  await dropSilentTranscodeTail(job);
   if (job.proc && job.proc.exitCode == null) return;
 
   let raw: string | null = null;
@@ -1957,57 +1922,121 @@ async function waitForReady(
 }
 
 /**
- * Last video packet PTS in a finished .ts — used so tip-resume `output_ts_offset`
- * continues the MPEG-TS timeline instead of leaving a multi-second hole.
+ * Drop a resumed stretch that has picture and no audio.
+ * Those pieces are duplicated frames from a timestamp offset, and playback
+ * freezes on them because the audio track never receives a sample.
  */
-async function probeTsLastVideoPtsSec(
-  segmentPath: string
-): Promise<number | null> {
-  return new Promise((resolve) => {
-    const proc = spawn(
-      ffprobeBinary(),
-      [
-        "-v",
-        "error",
-        "-select_streams",
-        "v:0",
-        "-show_entries",
-        "packet=pts_time",
-        "-of",
-        "csv=p=0",
-        segmentPath,
-      ],
-      { stdio: ["ignore", "pipe", "ignore"] }
-    );
-    let out = "";
-    const timer = setTimeout(() => {
-      try {
-        proc.kill("SIGKILL");
-      } catch {
-        /* noop */
-      }
-      resolve(null);
-    }, 8_000);
-    proc.stdout?.on("data", (c: Buffer) => {
-      out += c.toString();
-      if (out.length > 256_000) out = out.slice(-128_000);
-    });
-    proc.on("error", () => {
-      clearTimeout(timer);
-      resolve(null);
-    });
-    proc.on("close", () => {
-      clearTimeout(timer);
-      let last: number | null = null;
-      for (const line of out.split(/\r?\n/)) {
-        const raw = line.trim().split(",")[0];
-        if (!raw) continue;
-        const n = parseFloat(raw);
-        if (Number.isFinite(n)) last = n;
-      }
-      resolve(last);
-    });
+async function countSegmentTracks(filePath: string): Promise<number> {
+  const fh = await fsp.open(filePath, "r");
+  try {
+    const buf = Buffer.alloc(256 * 1024);
+    const { bytesRead } = await fh.read(buf, 0, buf.length, 0);
+    return countTfdtBoxes(buf.subarray(0, bytesRead));
+  } finally {
+    await fh.close();
+  }
+}
+
+async function dropSilentTranscodeTail(job: TranscodeJob): Promise<void> {
+  const initPath = path.join(job.dir, "init.mp4");
+  let init: Buffer;
+  try {
+    init = await fsp.readFile(initPath);
+  } catch {
+    return;
+  }
+  if (!initDeclaresAudio(init)) return;
+  const onDisk = await listSegmentFiles(job.dir);
+  const prefix = contiguousSegmentCount(onDisk);
+  const start = Math.max(0, (job.audioScanThrough ?? 0) - 1);
+  if (prefix < 2 || start >= prefix - 1) {
+    job.audioScanThrough = prefix;
+    return;
+  }
+  const counts: number[] = [];
+  for (let i = 0; i < start; i++) counts.push(2);
+  let tailAt: number | null = null;
+  for (let i = start; i < prefix; i++) {
+    const name = `seg_${String(i).padStart(5, "0")}.m4s`;
+    if (!onDisk.has(name)) break;
+    counts[i] = await countSegmentTracks(path.join(job.dir, name));
+    tailAt = firstSilentTailIndex(counts);
+    if (tailAt != null) break;
+  }
+  if (tailAt == null) {
+    job.audioScanThrough = prefix;
+    return;
+  }
+  await stopJobProc(job);
+  const names = await fsp.readdir(job.dir).catch(() => [] as string[]);
+  await Promise.all(
+    names.map(async (name) => {
+      const seq = segmentSequence(name);
+      if (seq == null || seq < tailAt!) return;
+      await fsp.rm(path.join(job.dir, name), { force: true }).catch(() => {});
+    })
+  );
+  job.audioScanThrough = tailAt;
+  console.info(
+    `[vod-transcode] drop silent tail key=${job.key.slice(0, 12)} from=${tailAt}`
+  );
+  await healTranscodeJobContiguity(job);
+  await stripEndlistFromDiskManifest(job.dir);
+}
+
+const segmentAlignInflight = new Map<string, Promise<void>>();
+
+/** Put a resumed segment's clock back on the episode, once the file is finished. */
+async function alignFmp4SegmentForPlayback(
+  dir: string,
+  name: string
+): Promise<void> {
+  const filePath = path.join(dir, name);
+  const existing = segmentAlignInflight.get(filePath);
+  if (existing) {
+    await existing;
+    return;
+  }
+  const run = alignFmp4SegmentOnce(dir, name).finally(() => {
+    segmentAlignInflight.delete(filePath);
   });
+  segmentAlignInflight.set(filePath, run);
+  await run;
+}
+
+async function alignFmp4SegmentOnce(dir: string, name: string): Promise<void> {
+  const filePath = path.join(dir, name);
+  let manifest = "";
+  let init: Buffer;
+  try {
+    [manifest, init] = await Promise.all([
+      fsp.readFile(path.join(dir, MANIFEST_NAME), "utf8"),
+      fsp.readFile(path.join(dir, "init.mp4")),
+    ]);
+  } catch {
+    return;
+  }
+  const expected = playlistTimeBeforeSegment(manifest, name);
+  if (expected == null) return;
+  const timescales = readTrackTimescales(init);
+  if (timescales.size === 0) return;
+  const fh = await fsp.open(filePath, "r").catch(() => null);
+  if (!fh) return;
+  let actual: number | null = null;
+  try {
+    const head = Buffer.alloc(256 * 1024);
+    const { bytesRead } = await fh.read(head, 0, head.length, 0);
+    actual = segmentTimelineStartSec(head.subarray(0, bytesRead), timescales);
+  } finally {
+    await fh.close();
+  }
+  const shift = actual == null ? 0 : timelineShiftSec(expected, actual);
+  if (!(shift > 0)) return;
+  const raw = await fsp.readFile(filePath);
+  const shifted = shiftFmp4Timeline(raw, shift, timescales);
+  const tmp = `${filePath}.align`;
+  await fsp.writeFile(tmp, shifted);
+  await fsp.rename(tmp, filePath);
 }
 
 async function spawnFfmpeg(
@@ -2016,8 +2045,6 @@ async function spawnFfmpeg(
   resume?: {
     seekInSourceSec: number;
     startSegmentNumber: number;
-    /** Continuity PTS (defaults to seekInSourceSec). */
-    outputTsOffsetSec?: number;
   },
   audioStreamIndex?: number | null,
   frameRate?: number | null
@@ -2043,7 +2070,6 @@ async function spawnFfmpegLocked(
   resume?: {
     seekInSourceSec: number;
     startSegmentNumber: number;
-    outputTsOffsetSec?: number;
   },
   audioStreamIndex?: number | null,
   frameRate?: number | null
@@ -2090,12 +2116,6 @@ async function spawnFfmpegLocked(
   const seekSec = resume
     ? Math.max(0, resume.seekInSourceSec)
     : Math.max(0, Math.floor(job.startOffsetSec));
-  // Tip resume: prefer last packet PTS so the join does not leave a 2–4s hole
-  // that freezes hls.js for the remainder of the title.
-  const outputTsOffsetSec =
-    resume && seekSec > 0
-      ? Math.max(0, resume.outputTsOffsetSec ?? seekSec)
-      : seekSec;
 
   const segPattern = path.join(job.dir, "seg_%05d.m4s");
   const outManifest = path.join(job.dir, MANIFEST_NAME);
@@ -2140,8 +2160,7 @@ async function spawnFfmpegLocked(
       "-ac",
       "2",
       "-af",
-      // Tip resume: first_pts=0 fights output_ts_offset and desyncs A/V at the join.
-      seekSec > 0 ? "aresample=async=1" : "aresample=async=1:first_pts=0"
+      "aresample=async=1:first_pts=0"
     );
   } else {
     args.push(
@@ -2150,7 +2169,6 @@ async function spawnFfmpegLocked(
         maxHeight: plan.maxHeight,
         gop: keys.gop,
         frameRate: keys.frameRate,
-        ptsOffsetSec: outputTsOffsetSec > 0 ? outputTsOffsetSec : undefined,
       }),
       "-c:a",
       "aac",
@@ -2159,21 +2177,14 @@ async function spawnFfmpegLocked(
       "-ac",
       "2",
       "-af",
-      outputTsOffsetSec > 0
-        ? `aresample=async=1,asetpts=PTS-STARTPTS+${outputTsOffsetSec}/TB`
-        : "aresample=async=1:first_pts=0"
+      "aresample=async=1:first_pts=0"
     );
   }
 
   args.push(
     "-sn",
-    // Tip resume: keep timestamps continuous with the segments already played.
-    // setpts is ignored by the HLS muxer; output_ts_offset is applied first.
-    ...(outputTsOffsetSec > 0
-      ? ["-output_ts_offset", String(outputTsOffsetSec)]
-      : []),
     "-avoid_negative_ts",
-    seekSec > 0 ? "make_non_negative" : "make_zero",
+    "make_zero",
     "-max_muxing_queue_size",
     "4096",
     // Default mux delay pads each MPEG-TS segment and leaves a video hole
@@ -2840,6 +2851,8 @@ export async function handleVodTranscodeRequest(opts: {
       );
     }
     scheduleVodChapterProbe(job);
+    // Drop a silent resumed stretch before deciding the episode is finished.
+    await dropSilentTranscodeTail(job);
     // Contiguity heal is awaited below before serve — do not fire-and-forget
     // a parallel heal that races stop/rewrite with ffmpeg append_list.
     void ensureEncodingContinues(job);
@@ -2978,12 +2991,10 @@ export async function handleVodTranscodeRequest(opts: {
     if (playlistComplete && job.state !== "ready") {
       job.state = "ready";
     }
-    const initState = await fmp4InitState(job.dir);
     const trimmed = manifestTextForPlayback(
       rawAfterHeal,
       playlistComplete,
-      onDiskAfter,
-      initState.hasKeep
+      onDiskAfter
     );
     if (!playlistComplete && countManifestSegments(trimmed) < 1) {
       return {
@@ -3092,6 +3103,9 @@ export async function handleVodTranscodeRequest(opts: {
     };
   }
 
+  if (media.endsWith(".m4s")) {
+    await alignFmp4SegmentForPlayback(job.dir, media);
+  }
   const data = await fsp.readFile(segPath);
   return {
     status: 200,
