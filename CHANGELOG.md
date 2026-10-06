@@ -27,6 +27,13 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.13.71] — 2026-10-05
+
+Episode playback no longer jumps where an encode was restarted.
+
+### Fixed
+- Each time encoding stopped and started again, the next piece began its clock at zero and the picture skipped. Those joins are marked so playback stays on the right moment.
+
 ## [0.13.70] — 2026-10-05
 
 Resuming an episode no longer fails as a missing file.

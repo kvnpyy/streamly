@@ -11,6 +11,14 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.13.71",
+    date: "2026-10-05",
+    summary: "Episode playback no longer jumps where an encode was restarted.",
+    highlights: [
+      "Each time encoding stopped and started again, the next piece began its clock at zero and the picture skipped. Those joins are marked so playback stays on the right moment.",
+    ],
+  },
+  {
     version: "0.13.70",
     date: "2026-10-05",
     summary: "Resuming an episode no longer fails as a missing file.",
