@@ -126,7 +126,7 @@ export function segmentNameFromPlaylistLine(line: string): string | null {
   return VOD_TRANSCODE_SEGMENT_RE.test(base) ? base : null;
 }
 
-function segmentSequence(name: string): number | null {
+export function segmentSequence(name: string): number | null {
   const m = name.match(/^seg_(\d+)\.(?:ts|m4s)$/i);
   if (!m) return null;
   const n = parseInt(m[1]!, 10);
