@@ -92,7 +92,7 @@ export function timelineShiftSec(
     return 0;
   }
   const delta = expectedStartSec - actualStartSec;
-  if (delta <= 2) return 0;
+  if (delta <= 0.5) return 0;
   return delta;
 }
 

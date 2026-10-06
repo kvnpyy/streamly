@@ -78,7 +78,8 @@ describe("fmp4 timeline shift", () => {
       )
     ).toBe(4);
     expect(timelineShiftSec(300, 0)).toBe(300);
-    expect(timelineShiftSec(300, 299)).toBe(0);
+    expect(timelineShiftSec(300, 299.7)).toBe(0);
+    expect(timelineShiftSec(300, 298)).toBe(2);
 
     const shifted = shiftFmp4Timeline(raw, 10, scales);
     expect(segmentTimelineStartSec(shifted, scales)).toBeCloseTo(10, 5);

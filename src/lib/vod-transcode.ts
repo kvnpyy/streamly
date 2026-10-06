@@ -1022,6 +1022,8 @@ type TranscodeJob = {
   chapterProbeBytes?: number;
   /** Segment index through which audio tracks have been checked. */
   audioScanThrough?: number;
+  /** Segment index through which media timestamps match the playlist. */
+  timelineAlignedThrough?: number;
 };
 
 const jobs = new Map<string, TranscodeJob>();
@@ -1984,27 +1986,24 @@ async function dropSilentTranscodeTail(job: TranscodeJob): Promise<void> {
   await stripEndlistFromDiskManifest(job.dir);
 }
 
-const segmentAlignInflight = new Map<string, Promise<void>>();
+const segmentAlignInflight = new Map<string, Promise<"ready" | "wait">>();
 
 /** Put a resumed segment's clock back on the episode, once the file is finished. */
 async function alignFmp4SegmentForPlayback(
   dir: string,
   name: string
-): Promise<void> {
+): Promise<"ready" | "wait"> {
   const filePath = path.join(dir, name);
   const existing = segmentAlignInflight.get(filePath);
-  if (existing) {
-    await existing;
-    return;
-  }
+  if (existing) return existing;
   const run = alignFmp4SegmentOnce(dir, name).finally(() => {
     segmentAlignInflight.delete(filePath);
   });
   segmentAlignInflight.set(filePath, run);
-  await run;
+  return run;
 }
 
-async function alignFmp4SegmentOnce(dir: string, name: string): Promise<void> {
+async function alignFmp4SegmentOnce(dir: string, name: string): Promise<"ready" | "wait"> {
   const filePath = path.join(dir, name);
   let manifest = "";
   let init: Buffer;
@@ -2014,14 +2013,14 @@ async function alignFmp4SegmentOnce(dir: string, name: string): Promise<void> {
       fsp.readFile(path.join(dir, "init.mp4")),
     ]);
   } catch {
-    return;
+    return "wait";
   }
   const expected = playlistTimeBeforeSegment(manifest, name);
-  if (expected == null) return;
+  if (expected == null) return "wait";
   const timescales = readTrackTimescales(init);
-  if (timescales.size === 0) return;
+  if (timescales.size === 0) return "ready";
   const fh = await fsp.open(filePath, "r").catch(() => null);
-  if (!fh) return;
+  if (!fh) return "wait";
   let actual: number | null = null;
   try {
     const head = Buffer.alloc(256 * 1024);
@@ -2031,12 +2030,28 @@ async function alignFmp4SegmentOnce(dir: string, name: string): Promise<void> {
     await fh.close();
   }
   const shift = actual == null ? 0 : timelineShiftSec(expected, actual);
-  if (!(shift > 0)) return;
+  if (!(shift > 0)) return "ready";
   const raw = await fsp.readFile(filePath);
   const shifted = shiftFmp4Timeline(raw, shift, timescales);
   const tmp = `${filePath}.align`;
   await fsp.writeFile(tmp, shifted);
   await fsp.rename(tmp, filePath);
+  return "ready";
+}
+
+/** Shift every finished piece onto the episode clock before the player seeks. */
+async function alignFinishedFmp4Segments(job: TranscodeJob): Promise<void> {
+  const onDisk = await listSegmentFiles(job.dir);
+  const prefix = contiguousSegmentCount(onDisk);
+  let through = job.timelineAlignedThrough ?? 0;
+  for (let i = through; i < prefix; i++) {
+    const name = `seg_${String(i).padStart(5, "0")}.m4s`;
+    if (!onDisk.has(name)) break;
+    const status = await alignFmp4SegmentForPlayback(job.dir, name);
+    if (status === "wait") break;
+    through = i + 1;
+  }
+  job.timelineAlignedThrough = through;
 }
 
 async function spawnFfmpeg(
@@ -2966,6 +2981,7 @@ export async function handleVodTranscodeRequest(opts: {
     const onDiskAfter = await listSegmentFiles(job.dir);
     await rememberFmp4Init(job.dir);
     await restoreFmp4Init(job.dir);
+    await alignFinishedFmp4Segments(job);
     const packagedNow = await fragmentedOutputState(job.dir);
     if (
       shouldRestartFragmentedTranscode({
