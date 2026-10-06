@@ -11,6 +11,14 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.13.73",
+    date: "2026-10-06",
+    summary: "An episode plays again after encoding had to restart.",
+    highlights: [
+      "The rest of the episode was being hidden once encoding restarted, so pressing play found nothing past that point. Those pieces are back in the playlist, with the restart marked.",
+    ],
+  },
+  {
     version: "0.13.72",
     date: "2026-10-06",
     summary: "A restarted encode no longer shows up as a missing file.",

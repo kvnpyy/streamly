@@ -27,6 +27,13 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.13.73] — 2026-10-06
+
+An episode plays again after encoding had to restart.
+
+### Fixed
+- The rest of the episode was being hidden once encoding restarted, so pressing play found nothing past that point. Those pieces are back in the playlist, with the restart marked.
+
 ## [0.13.72] — 2026-10-06
 
 A restarted encode no longer shows up as a missing file.
