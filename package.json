@@ -1,6 +1,6 @@
 {
   "name": "iptv-player",
-  "version": "0.13.71",
+  "version": "0.13.72",
   "private": true,
   "scripts": {
     "dev": "next dev",

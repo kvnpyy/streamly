@@ -11,6 +11,14 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.13.72",
+    date: "2026-10-06",
+    summary: "A restarted encode no longer shows up as a missing file.",
+    highlights: [
+      "Pieces made after encoding restarted did not match the opening of the episode, so the browser said the file was missing. Those pieces are rebuilt with an opening that stays.",
+    ],
+  },
+  {
     version: "0.13.71",
     date: "2026-10-05",
     summary: "Episode playback no longer jumps where an encode was restarted.",

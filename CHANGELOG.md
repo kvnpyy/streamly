@@ -27,6 +27,13 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.13.72] — 2026-10-06
+
+A restarted encode no longer shows up as a missing file.
+
+### Fixed
+- Pieces made after encoding restarted did not match the opening of the episode, so the browser said the file was missing. Those pieces are rebuilt with an opening that stays.
+
 ## [0.13.71] — 2026-10-05
 
 Episode playback no longer jumps where an encode was restarted.
