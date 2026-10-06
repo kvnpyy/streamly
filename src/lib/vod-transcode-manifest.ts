@@ -382,6 +382,13 @@ export function fmp4ResumeJoinPlan(manifestText: string): {
   const discontinuityBefore = new Set(
     pairs.filter((pair) => pair.disc).map((pair) => pair.name)
   );
+  // A short segment is the tail of a killed encode. The next piece starts
+  // its timestamps at zero, and the player skips unless that join is marked.
+  for (let i = 0; i < pairs.length - 1; i++) {
+    if (pairs[i]!.dur < 0.75) {
+      discontinuityBefore.add(pairs[i + 1]!.name);
+    }
+  }
   const tail = new Set<string>();
   const firstDisc = pairs.findIndex((pair) => pair.disc);
   if (firstDisc >= 0) {

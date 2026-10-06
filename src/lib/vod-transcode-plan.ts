@@ -29,6 +29,8 @@ export function transcodeLibx264Args(opts: {
   gop: number;
   /** Output rate, e.g. "24000/1001". Omitted only when the source rate is unknown. */
   frameRate?: string | null;
+  /** Keep fragmented-MP4 timestamps continuous across a resumed encode. */
+  ptsOffsetSec?: number;
 }): string[] {
   return [
     "-c:v",
@@ -56,7 +58,9 @@ export function transcodeLibx264Args(opts: {
     // inserts a second keyframe one frame early, and ffmpeg writes a one-frame
     // segment. Those crumbs are the repeating hitch on a cached episode.
     "-vf",
-    transcodeScaleFilter(opts.maxHeight),
+    opts.ptsOffsetSec && opts.ptsOffsetSec > 0
+      ? `${transcodeScaleFilter(opts.maxHeight)},setpts=PTS-STARTPTS+${opts.ptsOffsetSec}/TB`
+      : transcodeScaleFilter(opts.maxHeight),
   ];
 }
 

@@ -118,6 +118,11 @@ describe("fmp4ResumeJoinPlan", () => {
     expect(plan.discontinuityBefore.has("seg_00002.m4s")).toBe(true);
     expect(plan.tail.has("seg_00001.m4s")).toBe(true);
     expect(plan.tail.has("seg_00002.m4s")).toBe(true);
+    expect(
+      fmp4ResumeJoinPlan(
+        ["#EXTINF:4.000,", "seg_00000.m4s", "#EXTINF:0.290,", "seg_00001.m4s", "#EXTINF:4.000,", "seg_00002.m4s"].join("\n")
+      ).discontinuityBefore.has("seg_00002.m4s")
+    ).toBe(true);
     const onDisk = new Set(["seg_00000.m4s", "seg_00001.m4s", "seg_00002.m4s"]);
     const built = buildManifestFromContiguousDisk(onDisk, new Map(), 4, {
       discontinuityBefore: plan.discontinuityBefore,

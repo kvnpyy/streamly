@@ -2160,6 +2160,7 @@ async function spawnFfmpegLocked(
         maxHeight: plan.maxHeight,
         gop: keys.gop,
         frameRate: keys.frameRate,
+        ptsOffsetSec: outputTsOffsetSec > 0 ? outputTsOffsetSec : undefined,
       }),
       "-c:a",
       "aac",
@@ -2168,7 +2169,9 @@ async function spawnFfmpegLocked(
       "-ac",
       "2",
       "-af",
-      seekSec > 0 ? "aresample=async=1" : "aresample=async=1:first_pts=0"
+      outputTsOffsetSec > 0
+        ? `aresample=async=1,asetpts=PTS-STARTPTS+${outputTsOffsetSec}/TB`
+        : "aresample=async=1:first_pts=0"
     );
   }
 
