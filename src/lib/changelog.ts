@@ -11,6 +11,23 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.13.79",
+    date: "2026-10-07",
+    summary: "Episodes keep playing instead of jumping and hitching.",
+    highlights: [
+      "A resumed episode was restarting its clock at zero every few seconds, so the picture jumped. Those pieces stay on the episode clock.",
+      "Scene changes were cutting the video into tiny pieces, so playback hitched every few seconds. Cuts stay about four seconds apart again.",
+    ],
+  },
+  {
+    version: "0.13.78",
+    date: "2026-10-07",
+    summary: "Episode progress follows you to other devices.",
+    highlights: [
+      "Watching part of an episode is saved to your account. Opening that show on another device, or refreshing it, shows the same progress instead of marking the episode unwatched.",
+    ],
+  },
+  {
     version: "0.13.77",
     date: "2026-10-07",
     summary: "Scrubbing to a later time actually plays that time.",

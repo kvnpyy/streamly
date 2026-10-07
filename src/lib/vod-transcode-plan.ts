@@ -41,8 +41,6 @@ export function transcodeLibx264Args(opts: {
     "4.0",
     "-pix_fmt",
     "yuv420p",
-    "-x264-params",
-    "cabac=1:bframes=0:ref=1:8x8dct=0:open-gop=0",
     "-fps_mode",
     "cfr",
     ...(opts.frameRate ? ["-r", opts.frameRate] : []),
@@ -52,9 +50,12 @@ export function transcodeLibx264Args(opts: {
     String(opts.gop),
     "-sc_threshold",
     "0",
-    // Do not also force keyframes at exact hls_time. Combined with -g that
-    // inserts a second keyframe one frame early, and ffmpeg writes a one-frame
-    // segment. Those crumbs are the repeating hitch on a cached episode.
+    // Keep the GOP lock inside x264-params. A params string placed before -g
+    // is applied again at encoder open and restores scene-cut keyframes, which
+    // splits a 4s segment into a one- or two-frame crumb. Do not also pass
+    // force_key_frames: that inserts a second keyframe one frame early.
+    "-x264-params",
+    `cabac=1:bframes=0:ref=1:8x8dct=0:open-gop=0:scenecut=0:keyint=${opts.gop}:min-keyint=${opts.gop}`,
     "-vf",
     transcodeScaleFilter(opts.maxHeight),
   ];

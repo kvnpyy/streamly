@@ -78,14 +78,15 @@ import {
 } from "@/lib/vod-transcode-url";
 import {
   applyVodResumePersist,
-  decideVodResumePersist,
+  decidePassiveVodResumePersist,
+  isVodResumeRegression,
   type VodTimelineHold,
   vodAbsoluteSec,
   vodResumeStorageKey,
 } from "@/lib/player-vod-resume";
 import { shouldSuppressVodTipPersist } from "@/lib/player-vod-seek-land";
 import { mapHlsAudioTracks } from "@/lib/player-audio-tracks";
-import { browseAccountKey } from "@/store/preferences";
+import { browseAccountKey, usePrefs } from "@/store/preferences";
 import type { PlayerSource } from "@/store/player";
 import type { useHlsRuntime } from "@/hooks/use-hls-runtime";
 import type { PlayerAudioTrack } from "@/lib/player-audio-tracks";
@@ -1575,8 +1576,16 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
               vodDurationHintRef.current > 1
                 ? vodDurationHintRef.current
                 : video.duration;
-            if (key && d && Number.isFinite(d)) {
-              applyVodResumePersist(key, decideVodResumePersist(absolute, d));
+            if (
+              key &&
+              d &&
+              Number.isFinite(d) &&
+              !isVodResumeRegression(usePrefs.getState().getVodResume(key), absolute)
+            ) {
+              applyVodResumePersist(
+                key,
+                decidePassiveVodResumePersist(absolute, d)
+              );
             }
           }
         }

@@ -27,6 +27,21 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.13.79] — 2026-10-07
+
+Episodes keep playing instead of jumping and hitching.
+
+### Fixed
+- A resumed episode was restarting its clock at zero every few seconds, so the picture jumped. Those pieces stay on the episode clock.
+- Scene changes were cutting the video into tiny pieces, so playback hitched every few seconds. Cuts stay about four seconds apart again.
+
+## [0.13.78] — 2026-10-07
+
+Episode progress follows you to other devices.
+
+### Fixed
+- Watching part of an episode is saved to your account. Opening that show on another device, or refreshing it, shows the same progress instead of marking the episode unwatched.
+
 ## [0.13.77] — 2026-10-07
 
 Scrubbing to a later time actually plays that time.

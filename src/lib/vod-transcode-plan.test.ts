@@ -42,9 +42,14 @@ describe("transcodeLibx264Args", () => {
       gop: 96,
     });
     expect(args).toContain("main");
-    expect(args).toContain("cabac=1:bframes=0:ref=1:8x8dct=0:open-gop=0");
+    expect(args).toContain(
+      "cabac=1:bframes=0:ref=1:8x8dct=0:open-gop=0:scenecut=0:keyint=96:min-keyint=96"
+    );
     expect(args).toContain("ultrafast");
     expect(args.join(" ")).not.toContain("force_key_frames");
+    const g = args.indexOf("-g");
+    const params = args.indexOf("-x264-params");
+    expect(params).toBeGreaterThan(g);
   });
 
   it("locks the output frame rate so the GOP matches the segment", () => {

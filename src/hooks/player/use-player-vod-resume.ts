@@ -4,7 +4,9 @@ import { useEffect, type RefObject } from "react";
 import type Hls from "hls.js";
 import {
   applyVodResumePersist,
+  decidePassiveVodResumePersist,
   decideVodResumePersist,
+  isVodResumeRegression,
   shouldSkipVodResumeSeek,
   resolveStoredVodResumeSec,
   vodAbsoluteSec,
@@ -225,7 +227,10 @@ export function usePlayerVodResume(p: UsePlayerVodResumeParams) {
       });
       const d = readDuration();
       if (!d || absolute - lastPersist < 7) return;
-      const action = decideVodResumePersist(absolute, d);
+      if (isVodResumeRegression(usePrefs.getState().getVodResume(key), absolute)) {
+        return;
+      }
+      const action = decidePassiveVodResumePersist(absolute, d);
       if (!action) return;
       lastPersist = absolute;
       applyVodResumePersist(key, action);

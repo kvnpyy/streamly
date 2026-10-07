@@ -24,7 +24,6 @@ import {
   type RecentItem,
 } from "@/store/preferences";
 import { useSession } from "next-auth/react";
-import { scheduleWhenIdle } from "@/lib/defer-idle";
 import { isLibraryHomePath } from "@/lib/home-route";
 import { isMobileShellWidth } from "@/lib/shell-layout";
 import { isTvClassUserAgent } from "@/lib/tv-user-agent";
@@ -140,17 +139,23 @@ async function fetchRemoteWatchState(
   }
 }
 
+function isTitleDetailPath(pathname: string | null | undefined): boolean {
+  if (!pathname) return false;
+  return /^\/app\/(?:series|movies)\/[^/]+/.test(pathname);
+}
+
 async function pushWatchState(
   accountKey: string,
   recents: RecentItem[],
   resume: VodResumeSnapshot,
   dismissed: Record<string, number>,
-  opts?: { onStaleSession?: () => void }
+  opts?: { onStaleSession?: () => void; keepalive?: boolean }
 ): Promise<boolean> {
   try {
     const res = await fetch(`${window.location.origin}/api/watch-state`, {
       method: "PUT",
       credentials: "include",
+      keepalive: opts?.keepalive === true,
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         accountKey,
@@ -181,26 +186,36 @@ export function FavoritesSyncBootstrap({ children }: { children: ReactNode }) {
   const accountKey = creds ? browseAccountKey(creds) : null;
   const pathname = usePathname();
   const onLibraryHome = isLibraryHomePath(pathname);
+  const onTitlePage = isTitleDetailPath(pathname);
 
   const prefsHydrated = useSyncExternalStore(
     subscribePrefsHydrated,
     getPrefsHydratedSnapshot,
     () => false
   );
-  const pullDoneForKeyRef = useRef<string | null>(null);
+  const accountKeyRef = useRef(accountKey);
   const activeLibraryKeyRef = useRef<string | null>(null);
   const activePullKeyRef = useRef<string | null>(null);
   const favPushTimerRef = useRef<number | null>(null);
   const watchPushTimerRef = useRef<number | null>(null);
   const favPushingRef = useRef(false);
   const watchPushingRef = useRef(false);
+  const watchPushAgainRef = useRef(false);
   const skipNextFavPushRef = useRef(false);
   const skipNextWatchPushRef = useRef(false);
   const cloudSyncBlockedRef = useRef(false);
+  const lastWatchPullAtRef = useRef(0);
+  const watchPullingRef = useRef(false);
+  const pullCloudRef = useRef<() => Promise<void>>(async () => {});
+  const pushWatchNowRef = useRef<(keepalive?: boolean) => void>(() => {});
 
   const onStaleCloudSession = useCallback(() => {
     cloudSyncBlockedRef.current = true;
   }, []);
+
+  useEffect(() => {
+    accountKeyRef.current = accountKey;
+  }, [accountKey]);
 
   useEffect(() => {
     if (!accountKey || !prefsHydrated) return;
@@ -215,41 +230,36 @@ export function FavoritesSyncBootstrap({ children }: { children: ReactNode }) {
     if (watchPushTimerRef.current !== null) {
       window.clearTimeout(watchPushTimerRef.current);
       watchPushTimerRef.current = null;
+      if (previous) {
+        const { recents, vodResumeSec, vodResumeWriteAt, recentDismissedAt } =
+          usePrefs.getState();
+        void pushWatchState(
+          previous,
+          recents,
+          vodResumeSnapshotForAccount(
+            { sec: vodResumeSec, writeAt: vodResumeWriteAt },
+            previous
+          ),
+          recentDismissedAt,
+          { onStaleSession: onStaleCloudSession, keepalive: true }
+        );
+      }
     }
+    lastWatchPullAtRef.current = 0;
     usePrefs.getState().swapActiveLibrary(previous, accountKey);
     activeLibraryKeyRef.current = accountKey;
-  }, [accountKey, prefsHydrated]);
+  }, [accountKey, prefsHydrated, onStaleCloudSession]);
 
-  useEffect(() => {
-    if (!streamSignedIn || !accountKey || !prefsHydrated) return;
-    if (pullDoneForKeyRef.current === accountKey) return;
+  const pullCloud = useCallback(async () => {
+    const key = accountKeyRef.current;
+    if (!key || !streamSignedIn || !prefsHydrated) return;
+    if (cloudSyncBlockedRef.current || watchPullingRef.current) return;
+    if (Date.now() - lastWatchPullAtRef.current < 1_500) return;
 
-    let cancelled = false;
-    pullDoneForKeyRef.current = accountKey;
-    activePullKeyRef.current = accountKey;
-
-    const key = accountKey;
-
-    const tvShell =
-      typeof navigator !== "undefined" &&
-      isTvClassUserAgent(navigator.userAgent || "");
-    /** TV / post-pair: pull Continue Watching ASAP so shelves aren't empty. */
-    const idleMs = tvShell
-      ? 400
-      : onLibraryHome
-        ? isMobileShellWidth()
-          ? 14_000
-          : 8_000
-        : isMobileShellWidth()
-          ? 10_000
-          : 3_500;
-    const cancelIdle = scheduleWhenIdle(() => {
-      if (cancelled) return;
-      void pullCloud();
-    }, idleMs);
-
-    async function pullCloud() {
-      if (cloudSyncBlockedRef.current) return;
+    watchPullingRef.current = true;
+    activePullKeyRef.current = key;
+    lastWatchPullAtRef.current = Date.now();
+    try {
       let remoteFavorites: Favorite[] | null = null;
       let remoteWatch: RemoteWatchState | null = null;
       try {
@@ -258,14 +268,15 @@ export function FavoritesSyncBootstrap({ children }: { children: ReactNode }) {
           fetchRemoteWatchState(key),
         ]);
       } catch {
+        lastWatchPullAtRef.current = 0;
         return;
       }
-      if (cancelled || activePullKeyRef.current !== key) return;
+      if (accountKeyRef.current !== key) return;
 
       if (remoteFavorites !== null) {
         const local = usePrefs.getState().favorites;
         const merged = mergeFavorites(local, remoteFavorites);
-        if (cancelled || activePullKeyRef.current !== key) return;
+        if (accountKeyRef.current !== key) return;
         skipNextFavPushRef.current = true;
         usePrefs.getState().setFavorites(merged);
 
@@ -276,7 +287,7 @@ export function FavoritesSyncBootstrap({ children }: { children: ReactNode }) {
         }
       }
 
-      if (remoteWatch !== null) {
+      if (remoteWatch !== null && accountKeyRef.current === key) {
         const localRecents = usePrefs.getState().recents;
         const localResume: VodResumeSnapshot = {
           sec: usePrefs.getState().vodResumeSec,
@@ -297,7 +308,8 @@ export function FavoritesSyncBootstrap({ children }: { children: ReactNode }) {
           remoteWatch.resume,
           key
         );
-        if (cancelled || activePullKeyRef.current !== key) return;
+        const accountResume = vodResumeSnapshotForAccount(mergedResume, key);
+        if (accountKeyRef.current !== key) return;
         skipNextWatchPushRef.current = true;
         usePrefs.getState().setSyncedWatch(
           mergedRecents,
@@ -306,30 +318,110 @@ export function FavoritesSyncBootstrap({ children }: { children: ReactNode }) {
           dismissed
         );
 
+        const remoteAccount = vodResumeSnapshotForAccount(
+          remoteWatch.resume,
+          key
+        );
         if (
           mergedRecents.length !== remoteWatch.recents.length ||
-          !vodResumeSnapshotsEqual(mergedResume, remoteWatch.resume) ||
+          !vodResumeSnapshotsEqual(accountResume, remoteAccount) ||
           !recentDismissalsEqual(dismissed, remoteWatch.dismissed)
         ) {
-          await pushWatchState(key, mergedRecents, mergedResume, dismissed, {
+          await pushWatchState(key, mergedRecents, accountResume, dismissed, {
             onStaleSession: onStaleCloudSession,
           });
         }
       }
-    }
 
+      if (remoteFavorites === null && remoteWatch === null) {
+        lastWatchPullAtRef.current = 0;
+      }
+    } finally {
+      watchPullingRef.current = false;
+      if (activePullKeyRef.current === key) activePullKeyRef.current = null;
+    }
+  }, [onStaleCloudSession, prefsHydrated, streamSignedIn]);
+
+  useEffect(() => {
+    pullCloudRef.current = pullCloud;
+  }, [pullCloud]);
+
+  useEffect(() => {
+    if (!streamSignedIn || !accountKey || !prefsHydrated) return;
+    let cancelled = false;
+    const tvShell =
+      typeof navigator !== "undefined" &&
+      isTvClassUserAgent(navigator.userAgent || "");
+    /** Title pages and TV pull quickly so a refresh shows the other device's progress. */
+    const delayMs =
+      tvShell || onTitlePage
+        ? 250
+        : onLibraryHome
+          ? isMobileShellWidth()
+            ? 2_500
+            : 1_000
+          : isMobileShellWidth()
+            ? 1_200
+            : 400;
+    const timer = window.setTimeout(() => {
+      if (cancelled) return;
+      if (onTitlePage) lastWatchPullAtRef.current = 0;
+      void pullCloudRef.current();
+    }, delayMs);
     return () => {
       cancelled = true;
-      if (activePullKeyRef.current === accountKey) {
-        activePullKeyRef.current = null;
-      }
-      cancelIdle();
+      window.clearTimeout(timer);
     };
-  }, [streamSignedIn, accountKey, prefsHydrated, onStaleCloudSession, onLibraryHome]);
+  }, [streamSignedIn, accountKey, prefsHydrated, onLibraryHome, onTitlePage]);
 
   useEffect(() => {
     if (!streamSignedIn || !accountKey || !prefsHydrated) return;
     const key = accountKey;
+
+    const pushLatest = (keepalive: boolean) => {
+      if (cloudSyncBlockedRef.current) return;
+      if (watchPushingRef.current) {
+        watchPushAgainRef.current = true;
+        return;
+      }
+      watchPushingRef.current = true;
+      const { recents, vodResumeSec, vodResumeWriteAt, recentDismissedAt } =
+        usePrefs.getState();
+      void pushWatchState(
+        key,
+        recents,
+        vodResumeSnapshotForAccount(
+          { sec: vodResumeSec, writeAt: vodResumeWriteAt },
+          key
+        ),
+        recentDismissedAt,
+        { onStaleSession: onStaleCloudSession, keepalive }
+      ).finally(() => {
+        watchPushingRef.current = false;
+        if (watchPushAgainRef.current && !cloudSyncBlockedRef.current) {
+          watchPushAgainRef.current = false;
+          pushLatest(false);
+        }
+      });
+    };
+
+    const scheduleWatchPush = () => {
+      if (watchPushTimerRef.current !== null) {
+        window.clearTimeout(watchPushTimerRef.current);
+      }
+      watchPushTimerRef.current = window.setTimeout(() => {
+        watchPushTimerRef.current = null;
+        pushLatest(false);
+      }, PUSH_DEBOUNCE_MS);
+    };
+
+    pushWatchNowRef.current = (keepalive?: boolean) => {
+      if (watchPushTimerRef.current !== null) {
+        window.clearTimeout(watchPushTimerRef.current);
+        watchPushTimerRef.current = null;
+      }
+      pushLatest(keepalive === true);
+    };
 
     const unsub = usePrefs.subscribe((state, prev) => {
       if (cloudSyncBlockedRef.current) return;
@@ -364,42 +456,49 @@ export function FavoritesSyncBootstrap({ children }: { children: ReactNode }) {
         if (skipNextWatchPushRef.current) {
           skipNextWatchPushRef.current = false;
         } else {
-          if (watchPushTimerRef.current !== null) {
-            window.clearTimeout(watchPushTimerRef.current);
-          }
-          watchPushTimerRef.current = window.setTimeout(() => {
-            watchPushTimerRef.current = null;
-            if (watchPushingRef.current || cloudSyncBlockedRef.current) return;
-            watchPushingRef.current = true;
-            const { recents, vodResumeSec, vodResumeWriteAt, recentDismissedAt } =
-              usePrefs.getState();
-            void pushWatchState(
-              key,
-              recents,
-              vodResumeSnapshotForAccount(
-                { sec: vodResumeSec, writeAt: vodResumeWriteAt },
-                key
-              ),
-              recentDismissedAt,
-              { onStaleSession: onStaleCloudSession }
-            ).finally(() => {
-              watchPushingRef.current = false;
-            });
-          }, PUSH_DEBOUNCE_MS);
+          scheduleWatchPush();
         }
       }
     });
 
+    const pullIfVisible = () => {
+      if (document.visibilityState !== "visible") return;
+      lastWatchPullAtRef.current = 0;
+      void pullCloudRef.current();
+    };
+
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") {
+        pushWatchNowRef.current(true);
+        return;
+      }
+      pullIfVisible();
+    };
+
+    const onPageHide = () => {
+      pushWatchNowRef.current(true);
+    };
+
+    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("focus", pullIfVisible);
+    window.addEventListener("pagehide", onPageHide);
+
     return () => {
       unsub();
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("focus", pullIfVisible);
+      window.removeEventListener("pagehide", onPageHide);
+      pushWatchNowRef.current = () => {};
       if (favPushTimerRef.current !== null) {
         window.clearTimeout(favPushTimerRef.current);
         favPushTimerRef.current = null;
       }
+      const watchPending = watchPushTimerRef.current !== null;
       if (watchPushTimerRef.current !== null) {
         window.clearTimeout(watchPushTimerRef.current);
         watchPushTimerRef.current = null;
       }
+      if (watchPending) pushLatest(true);
     };
   }, [streamSignedIn, accountKey, prefsHydrated, onStaleCloudSession]);
 
@@ -408,12 +507,6 @@ export function FavoritesSyncBootstrap({ children }: { children: ReactNode }) {
       cloudSyncBlockedRef.current = false;
     }
   }, [streamSignedIn]);
-
-  useEffect(() => {
-    if (!accountKey) {
-      pullDoneForKeyRef.current = null;
-    }
-  }, [accountKey]);
 
   return children;
 }

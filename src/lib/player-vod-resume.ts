@@ -136,7 +136,7 @@ export type VodResumePersistAction =
   | { type: "clear" }
   | { type: "save"; seconds: number };
 
-/** Single decision point for scrub, close, wake, and periodic saves. */
+/** Single decision point for an explicit scrub. */
 export function decideVodResumePersist(
   absoluteSec: number,
   durationSec: number
@@ -152,6 +152,31 @@ export function decideVodResumePersist(
     return { type: "save", seconds: absoluteSec };
   }
   return null;
+}
+
+/**
+ * Playhead ticks, wake, and closing the player. A transcode reload often
+ * reports the start of the file before the real offset is applied. Treating
+ * that as "unwatched" deletes the bookmark and syncs the deletion to other devices.
+ */
+export function decidePassiveVodResumePersist(
+  absoluteSec: number,
+  durationSec: number
+): VodResumePersistAction | null {
+  const action = decideVodResumePersist(absoluteSec, durationSec);
+  if (!action || action.type === "clear") return null;
+  return action;
+}
+
+/** True when the element jumped backward (reload), so it must not replace a further bookmark. */
+export function isVodResumeRegression(
+  storedSec: number | undefined,
+  absoluteSec: number
+): boolean {
+  if (storedSec == null || !Number.isFinite(storedSec) || storedSec < 15) {
+    return false;
+  }
+  return storedSec > absoluteSec + 30;
 }
 
 /** Apply a persist decision to the prefs store. */

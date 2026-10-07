@@ -55,6 +55,7 @@ import { buildMoviePlayUrl } from "@/lib/xtream";
 import { usePlayer, type PlayerSource } from "@/store/player";
 import {
   applyVodResumePersist,
+  decidePassiveVodResumePersist,
   decideVodResumePersist,
   playableStoredVodResumeSec,
   type VodTimelineHold,
@@ -1377,7 +1378,7 @@ export function PlayerOverlay() {
       if (resumeKey && durationSec) {
         applyVodResumePersist(
           resumeKey,
-          decideVodResumePersist(absolute, durationSec)
+          decidePassiveVodResumePersist(absolute, durationSec)
         );
       }
 

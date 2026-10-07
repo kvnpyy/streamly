@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  decidePassiveVodResumePersist,
   decideVodResumePersist,
   isVodResumeCompleted,
+  isVodResumeRegression,
   playableStoredVodResumeSec,
   resolveStoredVodResumeSec,
   shouldClearVodResume,
@@ -114,6 +116,20 @@ describe("vod completion", () => {
 
   it("decideVodResumePersist clears near the start", () => {
     expect(decideVodResumePersist(5, 3600)).toEqual({ type: "clear" });
+  });
+
+  it("passive playhead updates do not clear a bookmark", () => {
+    expect(decidePassiveVodResumePersist(5, 3600)).toBeNull();
+    expect(decidePassiveVodResumePersist(600, 3600)).toEqual({
+      type: "save",
+      seconds: 600,
+    });
+  });
+
+  it("treats a jump back to the start as a regression", () => {
+    expect(isVodResumeRegression(1800, 2)).toBe(true);
+    expect(isVodResumeRegression(1800, 1790)).toBe(false);
+    expect(isVodResumeRegression(undefined, 2)).toBe(false);
   });
 
   it("decideVodResumePersist saves mid-playback positions", () => {

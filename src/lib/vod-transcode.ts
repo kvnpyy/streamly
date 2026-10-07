@@ -1967,23 +1967,32 @@ async function dropSilentTranscodeTail(job: TranscodeJob): Promise<void> {
   if (!initDeclaresAudio(init)) return;
   const onDisk = await listSegmentFiles(job.dir);
   const prefix = contiguousSegmentCount(onDisk);
+  const ffmpegRunning = !!(job.proc && job.proc.exitCode == null);
+  // The open tip often has only a video fragment so far. Treating it as a
+  // silent resume deletes it, ffmpeg writes the next one the same way, and
+  // playback stalls a segment at a time.
+  const scanEnd = ffmpegRunning ? prefix - 1 : prefix;
   const start = Math.max(0, (job.audioScanThrough ?? 0) - 1);
-  if (prefix < 2 || start >= prefix - 1) {
-    job.audioScanThrough = prefix;
+  if (scanEnd - start < 2) {
+    job.audioScanThrough = Math.max(job.audioScanThrough ?? 0, scanEnd);
     return;
   }
-  const counts: number[] = [];
-  for (let i = 0; i < start; i++) counts.push(2);
+  const measured: number[] = [];
   let tailAt: number | null = null;
-  for (let i = start; i < prefix; i++) {
+  for (let i = start; i < scanEnd; i++) {
     const name = `seg_${String(i).padStart(5, "0")}.m4s`;
     if (!onDisk.has(name)) break;
-    counts[i] = await countSegmentTracks(path.join(job.dir, name));
-    tailAt = firstSilentTailIndex(counts);
-    if (tailAt != null) break;
+    measured.push(await countSegmentTracks(path.join(job.dir, name)));
+    const rel = firstSilentTailIndex(measured);
+    if (rel != null) {
+      tailAt = start + rel;
+      break;
+    }
   }
   if (tailAt == null) {
-    job.audioScanThrough = prefix;
+    // Remember only pieces we actually measured. Counting the open tip as done
+    // hides the first silent segment and the next poll never pairs it.
+    job.audioScanThrough = Math.max(job.audioScanThrough ?? 0, scanEnd);
     return;
   }
   await stopJobProc(job);
@@ -2035,7 +2044,9 @@ async function alignFmp4SegmentOnce(dir: string, name: string): Promise<"ready" 
   const expected = playlistTimeBeforeSegment(manifest, name);
   if (expected == null) return "wait";
   const timescales = readTrackTimescales(init);
-  if (timescales.size === 0) return "ready";
+  // An init we cannot read is not "already aligned" — skipping it leaves the
+  // segment at time zero and the player jumps there on every piece.
+  if (timescales.size === 0) return "wait";
   const fh = await fsp.open(filePath, "r").catch(() => null);
   if (!fh) return "wait";
   let actual: number | null = null;
@@ -2046,7 +2057,10 @@ async function alignFmp4SegmentOnce(dir: string, name: string): Promise<"ready" 
   } finally {
     await fh.close();
   }
-  const shift = actual == null ? 0 : timelineShiftSec(expected, actual);
+  // Still being written: moof is not there yet. Do not record this index as
+  // done, or the finished file stays at time zero after ffmpeg renames it in.
+  if (actual == null) return "wait";
+  const shift = timelineShiftSec(expected, actual);
   if (!(shift > 0)) return "ready";
   const raw = await fsp.readFile(filePath);
   const shifted = shiftFmp4Timeline(raw, shift, timescales);
@@ -2060,8 +2074,13 @@ async function alignFmp4SegmentOnce(dir: string, name: string): Promise<"ready" 
 async function alignFinishedFmp4Segments(job: TranscodeJob): Promise<void> {
   const onDisk = await listSegmentFiles(job.dir);
   const prefix = contiguousSegmentCount(onDisk);
+  const ffmpegRunning = !!(job.proc && job.proc.exitCode == null);
+  // temp_file renames the segment ffmpeg is writing. Aligning that file and
+  // then advancing past it leaves the replaced file at time zero forever.
+  const limit = ffmpegRunning ? Math.max(0, prefix - 1) : prefix;
   let through = job.timelineAlignedThrough ?? 0;
-  for (let i = through; i < prefix; i++) {
+  if (through > limit) through = limit;
+  for (let i = through; i < limit; i++) {
     const name = `seg_${String(i).padStart(5, "0")}.m4s`;
     if (!onDisk.has(name)) break;
     const status = await alignFmp4SegmentForPlayback(job.dir, name);
@@ -2116,6 +2135,10 @@ async function spawnFfmpegLocked(
     return;
   }
   await mkdirTranscodeDir(job.dir);
+  // A new ffmpeg starts its clock at zero and can replace the tail via
+  // temp_file. Re-check every finished piece against the playlist instead of
+  // trusting an align pass that ran while the file was still empty.
+  job.timelineAlignedThrough = 0;
   // Re-check after await — another caller may have started ffmpeg.
   if (job.proc && job.proc.exitCode == null) return;
   await maybeEvictForSlot(job);

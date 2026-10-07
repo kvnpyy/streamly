@@ -333,6 +333,9 @@ export const usePrefs = create<PrefsState>()(
         if (!storageKey) return;
         const now = Date.now();
         set((state) => {
+          // No saved position: do not write an "unwatched" stamp. A stamp with
+          // no seconds is newer than another device's progress and erases it.
+          if (state.vodResumeSec[storageKey] == null) return state;
           const sec = { ...state.vodResumeSec };
           delete sec[storageKey];
           const trimmed = trimVodResumeSnapshot({
