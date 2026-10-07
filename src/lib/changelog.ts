@@ -11,6 +11,14 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.13.81",
+    date: "2026-10-07",
+    summary: "An episode you already started no longer keeps skipping.",
+    highlights: [
+      "Opening an episode that was encoded with tiny pieces kept playing that copy. It is encoded again, in steady pieces, the next time you press play.",
+    ],
+  },
+  {
     version: "0.13.79",
     date: "2026-10-07",
     summary: "Episodes keep playing instead of jumping and hitching.",

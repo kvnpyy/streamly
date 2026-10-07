@@ -27,6 +27,13 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.13.81] — 2026-10-07
+
+An episode you already started no longer keeps skipping.
+
+### Fixed
+- Opening an episode that was encoded with tiny pieces kept playing that copy. It is encoded again, in steady pieces, the next time you press play.
+
 ## [0.13.79] — 2026-10-07
 
 Episodes keep playing instead of jumping and hitching.

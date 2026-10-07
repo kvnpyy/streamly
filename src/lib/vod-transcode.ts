@@ -2372,6 +2372,23 @@ async function spawnFfmpegLocked(
   });
 }
 
+/**
+ * An on-disk encode full of sub-second pieces hitches on every one of them.
+ * Playing it again used to keep that file. Drop it so the next start re-encodes.
+ */
+async function discardHitchyTranscodeCache(
+  dir: string,
+  key: string
+): Promise<boolean> {
+  const manifest = await readManifestIfReady(dir);
+  if (!manifest || !cachedTranscodeShouldBeRebuilt(manifest)) return false;
+  console.info(
+    `[vod-transcode] rebuild hitchy playlist key=${key.slice(0, 12)}`
+  );
+  await wipeTranscodeJobDir(dir, key);
+  return true;
+}
+
 async function wipeTranscodeJobDir(dir: string, key: string): Promise<void> {
   const job = jobs.get(key);
   if (job) {
@@ -2563,15 +2580,22 @@ async function ensureJobLocked(
       pack
     );
     if (reusable) {
-      noteTranscodeViewer(reusable);
-      void ensureEncodingContinues(reusable);
-      return reusable;
+      if (await discardHitchyTranscodeCache(reusable.dir, reusable.key)) {
+        /* fall through and start a clean encode */
+      } else {
+        noteTranscodeViewer(reusable);
+        void ensureEncodingContinues(reusable);
+        return reusable;
+      }
     }
   }
 
   const startOffsetSec = quantizeTranscodeSeekSec(requestedSeek);
   const key = cacheKeyForUpstream(upstream, startOffsetSec, pack);
   const dir = jobDir(key);
+  if (await discardHitchyTranscodeCache(dir, key)) {
+    /* directory is gone; create a new job below */
+  }
 
   if (startOffsetSec > 0) {
     await cancelSiblingTranscodeJobs(upstream, key);
