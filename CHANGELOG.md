@@ -27,6 +27,13 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.13.83] — 2026-10-07
+
+Playing an episode no longer deletes the video out from under you.
+
+### Fixed
+- A few short pieces in a long episode were treated as a broken file, so playback deleted it while you were watching. That is the missing-file error. Those episodes stay on screen.
+
 ## [0.13.81] — 2026-10-07
 
 An episode you already started no longer keeps skipping.

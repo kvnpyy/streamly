@@ -2380,8 +2380,18 @@ async function discardHitchyTranscodeCache(
   dir: string,
   key: string
 ): Promise<boolean> {
+  const job = jobs.get(key);
+  if (job?.proc && job.proc.exitCode == null) return false;
   const manifest = await readManifestIfReady(dir);
   if (!manifest || !cachedTranscodeShouldBeRebuilt(manifest)) return false;
+  try {
+    const st = await fsp.stat(path.join(dir, MANIFEST_NAME));
+    // The playlist is still being written or was just served. Deleting it
+    // revokes the video the browser is playing (blob file-not-found).
+    if (Date.now() - st.mtimeMs < 120_000) return false;
+  } catch {
+    return false;
+  }
   console.info(
     `[vod-transcode] rebuild hitchy playlist key=${key.slice(0, 12)}`
   );

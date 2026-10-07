@@ -69,8 +69,9 @@ export function encodeEdgeHoldbackCount(segmentCount: number): number {
 
 /**
  * Cached encodes that used forced keyframes are full of one-frame segments.
- * Replaying that playlist hitches every few seconds. A short final segment
- * alone is normal and does not count.
+ * Replaying that playlist hitches every few seconds. A short final segment,
+ * or a few crumbs in an otherwise even episode, is normal and does not count.
+ * Wiping those deletes the file the player is reading.
  */
 export function cachedTranscodeShouldBeRebuilt(manifestText: string): boolean {
   let total = 0;
@@ -83,8 +84,8 @@ export function cachedTranscodeShouldBeRebuilt(manifestText: string): boolean {
     total++;
     if (d < 0.75) micro++;
   }
-  if (total < 8) return false;
-  return micro >= 4;
+  if (total < 8 || micro < 4) return false;
+  return micro / total >= 0.08;
 }
 
 export function sumExtinfDurationSec(manifestText: string): number {

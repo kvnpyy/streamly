@@ -321,6 +321,14 @@ describe("rewriteTranscodeManifest", () => {
       "#EXTINF:0.417,",
     ].join("\n");
     expect(cachedTranscodeShouldBeRebuilt(crumbs)).toBe(true);
+    const rareCrumbs = [
+      ...Array.from({ length: 400 }, () => "#EXTINF:4.000,"),
+      "#EXTINF:0.042,",
+      "#EXTINF:0.042,",
+      "#EXTINF:0.042,",
+      "#EXTINF:0.042,",
+    ].join("\n");
+    expect(cachedTranscodeShouldBeRebuilt(rareCrumbs)).toBe(false);
   });
 
   it("encodeEdgeHoldbackCount hides a fixed tail and never shrinks the list", () => {

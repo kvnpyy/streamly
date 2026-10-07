@@ -11,6 +11,14 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.13.83",
+    date: "2026-10-07",
+    summary: "Playing an episode no longer deletes the video out from under you.",
+    highlights: [
+      "A few short pieces in a long episode were treated as a broken file, so playback deleted it while you were watching. That is the missing-file error. Those episodes stay on screen.",
+    ],
+  },
+  {
     version: "0.13.81",
     date: "2026-10-07",
     summary: "An episode you already started no longer keeps skipping.",
