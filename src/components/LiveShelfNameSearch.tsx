@@ -1,8 +1,10 @@
 "use client";
 
+import { OnAirSearchResults } from "@/components/OnAirSearchResults";
 import { LiveChannelGridTile } from "@/components/live/LiveChannelGridTile";
 import { VirtualLiveChannelGrid } from "@/components/VirtualMediaCatalogGrid";
 import { useGlobalProgrammeSearch } from "@/hooks/use-global-programme-search";
+import { useOnAirSearch } from "@/hooks/use-on-air-search";
 import { liveChannelSearchQueryOptions } from "@/lib/live-catalog-search";
 import { buildLiveChannelIndex } from "@/lib/live-channel-index";
 import { isLiveProgrammeSearchEnabled } from "@/lib/live-epg-policy";
@@ -65,7 +67,23 @@ export function LiveShelfNameSearch({
     programmeSearchOn && searchEnabled && Boolean(channelIndex)
   );
 
-  const matches = programmeSearchOn ? liveMatches : nameMatched;
+  const onAir = useOnAirSearch(
+    creds,
+    qLower,
+    "all",
+    tvRegion,
+    hideAdult && !parentalUnlocked
+  );
+  const onAirIds = useMemo(() => {
+    const ids = new Set<number>();
+    for (const match of onAir.data?.matches ?? []) ids.add(match.stream.stream_id);
+    return ids;
+  }, [onAir.data?.matches]);
+
+  const matches = (programmeSearchOn ? liveMatches : nameMatched).filter(
+    (stream) => !onAirIds.has(stream.stream_id)
+  );
+  const guideHasHits = (onAir.data?.matches.length ?? 0) > 0;
 
   if (!searchEnabled) {
     return (
@@ -75,8 +93,18 @@ export function LiveShelfNameSearch({
     );
   }
 
-  if (searchQuery.isLoading || searchQuery.isFetching) {
-    return <SkeletonGrid variant="tile" count={8} />;
+  if ((searchQuery.isLoading || searchQuery.isFetching) && !searchQuery.data) {
+    return (
+      <>
+        <OnAirSearchResults
+          creds={creds}
+          query={qLower}
+          tvRegion={tvRegion}
+          onPlay={(stream) => openChannel(stream)}
+        />
+        <SkeletonGrid variant="tile" count={8} />
+      </>
+    );
   }
 
   if (searchQuery.isError) {
@@ -94,11 +122,11 @@ export function LiveShelfNameSearch({
     );
   }
 
-  if (!matches.length && !programmeScanning) {
+  if (!matches.length && !programmeScanning && !guideHasHits && !onAir.isLoading) {
     return (
       <div className="card p-8 text-center text-sm text-(--text-muted)">
-        No channels match your search. Try a shorter name, another spelling, or
-        pick a category from the sidebar.
+        Nothing on now or in the channel list matches that. Try the show title,
+        the event name, or a shorter channel name.
         {searchQuery.data?.totalInScope != null &&
         searchQuery.data.totalInScope > (scanPool.length || 0) ? (
           <span className="block mt-2 text-xs">
@@ -111,6 +139,12 @@ export function LiveShelfNameSearch({
 
   return (
     <>
+      <OnAirSearchResults
+        creds={creds}
+        query={qLower}
+        tvRegion={tvRegion}
+        onPlay={(stream) => openChannel(stream)}
+      />
       {programmeScanning ? (
         <p className="text-xs text-(--text-muted) mb-3">
           {matches.length === 0
@@ -118,20 +152,22 @@ export function LiveShelfNameSearch({
             : "Scanning more programmes… (partial results)"}
         </p>
       ) : null}
-      <VirtualLiveChannelGrid
-        items={matches}
-        maxItems={LIVE_LIST_MAX_CHANNELS}
-        itemKey={(c) => c.stream_id}
-        renderItem={(c) => (
-          <LiveChannelGridTile
-            stream={c}
-            categoryLine={categoryNameById[c.category_id]}
-            isFavorite={isFavorite(c.stream_id)}
-            onToggleFavorite={() => onToggleFavorite(c)}
-            onPlay={() => openChannel(c)}
-          />
-        )}
-      />
+      {matches.length > 0 ? (
+        <VirtualLiveChannelGrid
+          items={matches}
+          maxItems={LIVE_LIST_MAX_CHANNELS}
+          itemKey={(c) => c.stream_id}
+          renderItem={(c) => (
+            <LiveChannelGridTile
+              stream={c}
+              categoryLine={categoryNameById[c.category_id]}
+              isFavorite={isFavorite(c.stream_id)}
+              onToggleFavorite={() => onToggleFavorite(c)}
+              onPlay={() => openChannel(c)}
+            />
+          )}
+        />
+      ) : null}
     </>
   );
 }

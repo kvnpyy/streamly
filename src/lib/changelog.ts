@@ -11,6 +11,14 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.13.76",
+    date: "2026-10-06",
+    summary: "Search finds the show that’s on, not only the channel name.",
+    highlights: [
+      "A search for a game or episode checks the TV guide and lists the channel that’s airing it, including shows that start in the next few hours.",
+    ],
+  },
+  {
     version: "0.13.75",
     date: "2026-10-06",
     summary: "Skipping ahead in an episode loads the picture at that spot.",

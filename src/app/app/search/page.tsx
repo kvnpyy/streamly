@@ -8,7 +8,9 @@ import { VirtualMediaCatalogGrid } from "@/components/VirtualMediaCatalogGrid";
 import { SectionHeader, SkeletonGrid } from "@/components/SectionHeader";
 import { useTvBrowser } from "@/components/TvBrowserProvider";
 import { useCatalogPlay } from "@/hooks/use-catalog-play";
+import { OnAirSearchResults } from "@/components/OnAirSearchResults";
 import { useGlobalProgrammeSearch } from "@/hooks/use-global-programme-search";
+import { useOnAirSearch } from "@/hooks/use-on-air-search";
 import {
   seriesCatalogSearchQueryOptions,
   vodCatalogSearchQueryOptions,
@@ -87,18 +89,32 @@ function SearchInner() {
     return out;
   }, [liveSearch.data?.matches, safe, searchEnabled]);
 
-  const { liveMatches, programmeScanning } = useGlobalProgrammeSearch(
-    creds,
-    f,
-    filteredLiveByName,
-    liveChannelIndex,
-    searchEnabled && isLiveProgrammeSearchEnabled()
-  );
+  const { liveMatches, programmeScanning, programmeTitles } =
+    useGlobalProgrammeSearch(
+      creds,
+      f,
+      filteredLiveByName,
+      liveChannelIndex,
+      searchEnabled && isLiveProgrammeSearchEnabled()
+    );
+
+  const onAir = useOnAirSearch(creds, f, "all", undefined, safe);
+  const onAirIds = useMemo(() => {
+    const ids = new Set<number>();
+    for (const match of onAir.data?.matches ?? []) ids.add(match.stream.stream_id);
+    return ids;
+  }, [onAir.data?.matches]);
 
   const filteredLive = useMemo(() => {
     if (!searchEnabled) return [];
-    return liveMatches.slice(0, MAX_PER_SECTION);
-  }, [liveMatches, searchEnabled]);
+    const out: typeof liveMatches = [];
+    for (const stream of liveMatches) {
+      if (onAirIds.has(stream.stream_id)) continue;
+      out.push(stream);
+      if (out.length >= MAX_PER_SECTION) break;
+    }
+    return out;
+  }, [liveMatches, onAirIds, searchEnabled]);
 
   const filteredVod = useMemo(() => {
     if (!searchEnabled) return [];
@@ -136,8 +152,14 @@ function SearchInner() {
 
   const loading = catalogLoading && deferredLive.length + deferredVod.length + deferredSeries.length === 0;
 
+  const onAirCount = onAir.data?.matches.length ?? 0;
+  const guidePending = searchEnabled && onAir.isLoading;
+
   const total =
-    deferredLive.length + deferredVod.length + deferredSeries.length;
+    onAirCount +
+    deferredLive.length +
+    deferredVod.length +
+    deferredSeries.length;
 
   return (
     <div className="space-y-3 sm:space-y-5">
@@ -148,8 +170,8 @@ function SearchInner() {
         title="Search"
         description={
           tv
-            ? "Type below with your remote — matches appear as you search."
-            : "Use the bar at the top — results update as you type. Channels, on-air programmes, movies, and series."
+            ? "Type a show, event, or channel. Matches appear as you search."
+            : "Search a show or event to see which channel has it on. Movies and series are here too."
         }
       />
 
@@ -166,7 +188,9 @@ function SearchInner() {
           Type at least {MIN_SEARCH_QUERY_LEN} characters to search the catalog.
         </div>
       ) : liveSearch.isError || vodSearch.isError || seriesSearch.isError ? (
-        <div className="rounded-xl border border-(--line) bg-(--bg-2)/80 px-4 py-6 text-center text-sm text-(--text-muted) space-y-3">
+        <div className="space-y-6">
+          <OnAirSearchResults creds={creds} query={f} />
+          <div className="rounded-xl border border-(--line) bg-(--bg-2)/80 px-4 py-6 text-center text-sm text-(--text-muted) space-y-3">
           <p>Search couldn’t load completely. Check your connection and retry.</p>
           <button
             type="button"
@@ -179,9 +203,15 @@ function SearchInner() {
           >
             Retry search
           </button>
+          </div>
         </div>
       ) : loading ? (
         <div className="space-y-8" aria-busy="true">
+          {guidePending ? (
+            <p className="text-xs text-(--text-muted)" role="status">
+              Checking the TV guide for what’s on…
+            </p>
+          ) : null}
           <section>
             <div className="skeleton h-4 w-24 rounded mb-3" />
             <SkeletonGrid count={8} variant="tile" />
@@ -191,16 +221,17 @@ function SearchInner() {
             <SkeletonGrid count={12} />
           </section>
         </div>
-      ) : total === 0 && !programmeScanning ? (
+      ) : total === 0 && !programmeScanning && !guidePending ? (
         <div className="rounded-xl border border-(--line) bg-(--bg-2)/80 px-4 py-6 sm:py-8 text-center text-sm text-(--text-muted)">
           No results for “{q}”.
         </div>
       ) : (
         <div className="space-y-6 sm:space-y-8 scroll-mt-4">
+          <OnAirSearchResults creds={creds} query={f} />
           {(deferredLive.length > 0 || programmeScanning) && (
             <section aria-busy={programmeScanning}>
               <h3 className="text-sm uppercase tracking-wider text-(--text-muted) mb-3">
-                Live ({deferredLive.length}
+                Channels ({deferredLive.length}
                 {programmeScanning ? "+" : ""})
                 {programmeScanning ? (
                   <span className="normal-case tracking-normal text-(--text-dim) ml-2">
@@ -217,6 +248,7 @@ function SearchInner() {
                       number={c.num}
                       name={c.name}
                       icon={c.stream_icon}
+                      nowPlaying={programmeTitles.get(c.stream_id)}
                       isFavorite={isFavorite("live", c.stream_id)}
                       onToggleFavorite={() =>
                         toggleFavorite({

@@ -125,5 +125,6 @@ export function useGlobalProgrammeSearch(
     liveMatches: programmeMatched,
     programmeScanning: scanning,
     programmeOnlyCount,
+    programmeTitles,
   };
 }

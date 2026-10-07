@@ -232,7 +232,7 @@ function TopBarInner({ title, subtitle }: { title?: string; subtitle?: string })
                   ? "Search channels or programs…"
                   : onCatalogBrowse && catalogSearch
                     ? catalogBrowseSearchPlaceholder(catalogSearch.kind)
-                    : "Search channels, movies, series…"
+                    : "Search shows, events, movies…"
               }
               className="bg-transparent outline-none text-sm w-full min-w-0 placeholder:text-(--text-muted)"
             />

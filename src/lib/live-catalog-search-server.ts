@@ -87,7 +87,7 @@ function streamInScope(
   return filterStreamsForTvRegion([stream], tvRegion, catName).length > 0;
 }
 
-function streamsInScope(
+export function streamsInScope(
   bundle: LiveCatalogBundle,
   index: Record<string, number[]>,
   streamById: Map<number, LiveStream>,

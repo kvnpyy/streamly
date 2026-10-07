@@ -130,6 +130,24 @@ export function getBulkServerEpgTitles(
   return out;
 }
 
+/** Fresh on-air titles already stored for this account (from earlier guide lookups). */
+export function listFreshServerEpgTitles(
+  creds: XtreamCredentials
+): Array<{ streamId: number; title: string }> {
+  const accountKey = serverEpgAccountKey(creds);
+  const prefix = `${accountKey}|`;
+  const now = Date.now();
+  const out: Array<{ streamId: number; title: string }> = [];
+  for (const [key, entry] of memory) {
+    if (!key.startsWith(prefix)) continue;
+    if (now - entry.at > EPG_CACHE_TTL_MS) continue;
+    const streamId = Number(key.slice(prefix.length));
+    if (!Number.isFinite(streamId) || streamId <= 0) continue;
+    out.push({ streamId, title: entry.title });
+  }
+  return out;
+}
+
 export function setServerEpgTitle(
   creds: XtreamCredentials,
   streamId: number,

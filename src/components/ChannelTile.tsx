@@ -43,6 +43,8 @@ export type ChannelTileProps = {
   onToggleFavorite?: () => void;
   /** Currently airing program title. */
   nowPlaying?: string;
+  /** `upcoming` is a programme that has not started yet. */
+  airing?: "now" | "upcoming";
   /** Next scheduled program title. */
   nextPlaying?: string;
   /** Compact label like "23m left". Used inline with the progress bar. */
@@ -82,6 +84,7 @@ export function ChannelTile({
   isFavorite,
   onToggleFavorite,
   nowPlaying,
+  airing = "now",
   nextPlaying,
   endsIn,
   nowProgress,
@@ -183,10 +186,16 @@ export function ChannelTile({
           {/* Hero: now-playing program title */}
           {hasEpg ? (
             <div className="mt-1 flex items-center gap-2 min-w-0">
-              <span className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-(--danger) shrink-0">
-                <span className="size-1.5 rounded-full bg-(--danger) animate-pulse" />
-                Live
-              </span>
+              {airing === "upcoming" ? (
+                <span className="text-[10px] font-bold uppercase tracking-wider text-(--brand-2) shrink-0">
+                  Up next
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-(--danger) shrink-0">
+                  <span className="size-1.5 rounded-full bg-(--danger) animate-pulse" />
+                  Live
+                </span>
+              )}
               <h3 className="text-[15px] font-semibold text-(--text) truncate min-w-0">
                 {nowPlaying}
               </h3>
@@ -208,14 +217,18 @@ export function ChannelTile({
           {/* Progress + time range */}
           {hasEpg && (
             <div className="mt-2 flex items-center gap-3 min-w-0">
-              <div className="flex-1 h-1.5 rounded-full bg-white/5 overflow-hidden min-w-[60px]">
-                <div
-                  className="h-full bg-gradient-to-r from-(--brand) to-(--brand-2) rounded-full transition-[width] duration-700 ease-out"
-                  style={{
-                    width: `${Math.max(0, Math.min(1, nowProgress ?? 0)) * 100}%`,
-                  }}
-                />
-              </div>
+              {airing === "now" ? (
+                <div className="flex-1 h-1.5 rounded-full bg-white/5 overflow-hidden min-w-[60px]">
+                  <div
+                    className="h-full bg-gradient-to-r from-(--brand) to-(--brand-2) rounded-full transition-[width] duration-700 ease-out"
+                    style={{
+                      width: `${Math.max(0, Math.min(1, nowProgress ?? 0)) * 100}%`,
+                    }}
+                  />
+                </div>
+              ) : (
+                <div className="flex-1" />
+              )}
               <div className="text-[11px] tabular-nums text-(--text-muted) shrink-0 flex items-center gap-1.5">
                 {nowStart && nowEnd ? (
                   <span>

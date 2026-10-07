@@ -27,6 +27,13 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.13.76] — 2026-10-06
+
+Search finds the show that’s on, not only the channel name.
+
+### Added
+- A search for a game or episode checks the TV guide and lists the channel that’s airing it, including shows that start in the next few hours.
+
 ## [0.13.75] — 2026-10-06
 
 Skipping ahead in an episode loads the picture at that spot.

@@ -8,6 +8,8 @@ import { MobileCategoryRail } from "@/components/MobileCategoryRail";
 import { LiveCategoryBrowseModal } from "@/components/LiveCategoryBrowseModal";
 import { VirtualLiveChannelGrid } from "@/components/VirtualMediaCatalogGrid";
 import { LiveGuidePanel } from "@/components/live/LiveGuidePanel";
+import { OnAirSearchResults } from "@/components/OnAirSearchResults";
+import { useOnAirSearch } from "@/hooks/use-on-air-search";
 import { LiveChannelGridTile } from "@/components/live/LiveChannelGridTile";
 import {
   LIVE_GUIDE_MAX_CHANNELS,
@@ -223,6 +225,17 @@ export function LiveGridPageInner({ shell }: { shell: LivePageShell }) {
       tvRegionForChannels
     )
   );
+
+  const onAirSearch = useOnAirSearch(
+    creds,
+    qLower,
+    selected,
+    tvRegionForChannels,
+    hideAdult && !parentalUnlocked
+  );
+  const guideCoversSearch =
+    Boolean(qTrim) &&
+    (onAirSearch.isLoading || (onAirSearch.data?.matches.length ?? 0) > 0);
 
   const liveSearchActive = Boolean(qLower) && view === "list";
   const liveChannelSearchQuery = useQuery(
@@ -462,14 +475,22 @@ export function LiveGridPageInner({ shell }: { shell: LivePageShell }) {
   }, [qLower, categoryFilteredStreams, searchNameMatches]);
 
   const visible = useMemo(() => {
+    const guideIds = new Set(
+      (onAirSearch.data?.matches ?? []).map((match) => match.stream.stream_id)
+    );
+    const dropGuideDupes = (rows: LiveStream[]) =>
+      guideIds.size ? rows.filter((stream) => !guideIds.has(stream.stream_id)) : rows;
+
     if (!qLower) return categoryFilteredStreams;
-    if (!programmeSearchOn) return nameMatched;
-    return mergeLiveSearchResults(
-      nameMatched,
-      programmeSearchStreams,
-      qLower,
-      nowPlayingMap,
-      epgSearchTitleByStreamId
+    if (!programmeSearchOn) return dropGuideDupes(nameMatched);
+    return dropGuideDupes(
+      mergeLiveSearchResults(
+        nameMatched,
+        programmeSearchStreams,
+        qLower,
+        nowPlayingMap,
+        epgSearchTitleByStreamId
+      )
     );
   }, [
     categoryFilteredStreams,
@@ -479,6 +500,7 @@ export function LiveGridPageInner({ shell }: { shell: LivePageShell }) {
     programmeSearchOn,
     nowPlayingMap,
     epgSearchTitleByStreamId,
+    onAirSearch.data?.matches,
   ]);
 
   const displayVisible = useDeferredValue(visible);
@@ -1047,13 +1069,24 @@ export function LiveGridPageInner({ shell }: { shell: LivePageShell }) {
             tvBrowser && "lg:col-span-12 xl:col-span-12"
           )}
         >
+          {qTrim ? (
+            <div className="mb-5">
+              <OnAirSearchResults
+                creds={creds}
+                query={qLower}
+                categoryId={selected}
+                tvRegion={tvRegionForChannels}
+                onPlay={(stream) => openChannel(stream)}
+              />
+            </div>
+          ) : null}
           {streams.isLoading ||
           channelsLoading ||
           false ||
           deferredSelected !== selected ? (
             <SkeletonGrid variant="tile" count={12} />
           ) : visible.length === 0 ? (
-            programmeSearchOn && qTrim && searchScanning ? (
+            guideCoversSearch ? null : programmeSearchOn && qTrim && searchScanning ? (
               <div className="card p-10 sm:p-12 text-center">
                 <p className="text-sm text-(--text-muted) text-pretty max-w-md mx-auto leading-relaxed">
                   No channel names match &ldquo;{qTrim}&rdquo; yet. Programme
