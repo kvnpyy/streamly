@@ -55,6 +55,16 @@ export function isTvClassUserAgent(ua: string): boolean {
   return false;
 }
 
+/**
+ * Fire TV Silk and other TV browsers stop after the first frame of fragmented
+ * MP4. They get MPEG-TS instead. Chromecast plays fMP4, so it stays on that.
+ */
+export function tvBrowserNeedsMpegTs(ua: string): boolean {
+  if (/\bcrkey\b/i.test(ua)) return false;
+  if (isAmazonSilkUserAgent(ua)) return true;
+  return isTvClassUserAgent(ua);
+}
+
 /** Tizen / webOS / Fire TV Silk — living-room MSE clients. */
 export function isTvOrSilkUserAgent(ua?: string): boolean {
   const u =

@@ -19,6 +19,11 @@ const LIVE_FREEZE_TICK_MS = 1_000;
 export type UseTvLiveFreezeWatchdogParams = {
   open: boolean;
   isLive: boolean;
+  /**
+   * Fire TV Silk episode playback can paint one frame and never move.
+   * Watch that the same way as live, without treating it as a channel.
+   */
+  startupWatch?: boolean;
   /** Changing channel resets the stuck-recovery count. */
   channelId: string | null;
   videoRef: RefObject<HTMLVideoElement | null>;
@@ -42,6 +47,7 @@ export function useTvLiveFreezeWatchdog(p: UseTvLiveFreezeWatchdogParams) {
   const {
     open,
     isLive,
+    startupWatch = false,
     channelId,
     videoRef,
     hlsRef,
@@ -52,7 +58,7 @@ export function useTvLiveFreezeWatchdog(p: UseTvLiveFreezeWatchdogParams) {
   } = p;
 
   useEffect(() => {
-    if (!open || !isLive) return;
+    if (!open || (!isLive && !startupWatch)) return;
 
     const policy: LiveFreezePolicy = isTvOrSilkUserAgent() ? "tv" : "gentle";
     let state = initialTvLiveFreezeWatchState();
@@ -80,7 +86,7 @@ export function useTvLiveFreezeWatchdog(p: UseTvLiveFreezeWatchdogParams) {
       state = next;
       if (action === "none") return;
       let switching = false;
-      if (stuckRecoveryCountsTowardRemux(action)) {
+      if (isLive && stuckRecoveryCountsTowardRemux(action)) {
         stuckRecoveries += 1;
         switching = shouldSwitchLiveToRemux({
           stuckRecoveries,
@@ -114,6 +120,7 @@ export function useTvLiveFreezeWatchdog(p: UseTvLiveFreezeWatchdogParams) {
   }, [
     open,
     isLive,
+    startupWatch,
     channelId,
     videoRef,
     hlsRef,

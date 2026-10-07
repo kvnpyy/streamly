@@ -1,0 +1,7 @@
+[Unit]
+Description=Stream local health check
+After=stream.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/stream-healthcheck.sh

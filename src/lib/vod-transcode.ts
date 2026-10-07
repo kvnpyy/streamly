@@ -1024,6 +1024,8 @@ type TranscodeJob = {
   audioScanThrough?: number;
   /** Segment index through which media timestamps match the playlist. */
   timelineAlignedThrough?: number;
+  /** Fire TV / Silk. MPEG-TS instead of fMP4, which those decoders freeze on. */
+  pack?: "ts";
 };
 
 const jobs = new Map<string, TranscodeJob>();
@@ -1039,11 +1041,13 @@ function jobViewerActive(job: TranscodeJob): boolean {
 
 function touchTranscodeViewerByUpstream(
   upstream: string,
-  startOffsetSec: number
+  startOffsetSec: number,
+  pack?: "ts"
 ): void {
   const key = cacheKeyForUpstream(
     upstream,
-    quantizeTranscodeSeekSec(startOffsetSec)
+    quantizeTranscodeSeekSec(startOffsetSec),
+    pack
   );
   const job = jobs.get(key);
   if (job) {
@@ -1053,7 +1057,7 @@ function touchTranscodeViewerByUpstream(
   }
   // Tip seeks often reuse the from-0 job — keep that viewer warm too.
   if (startOffsetSec > 0) {
-    const base = jobs.get(cacheKeyForUpstream(upstream, 0));
+    const base = jobs.get(cacheKeyForUpstream(upstream, 0, pack));
     if (base) {
       base.lastViewerAt = Date.now();
       base.hasPlayerViewer = true;
@@ -1331,11 +1335,16 @@ function drainTranscodeQueue(): void {
 /** Bump suffix when transcode output format changes (invalidates stale cache). */
 const CACHE_KEY_SUFFIX = "|v9-hscale";
 
-function cacheKeyForUpstream(upstream: string, startOffsetSec = 0): string {
+function cacheKeyForUpstream(
+  upstream: string,
+  startOffsetSec = 0,
+  pack?: "ts"
+): string {
   const off = Math.max(0, Math.floor(startOffsetSec));
+  const packTag = pack === "ts" ? "|ts" : "";
   return crypto
     .createHash("sha256")
-    .update(upstream + CACHE_KEY_SUFFIX + `|o${off}`)
+    .update(upstream + CACHE_KEY_SUFFIX + `|o${off}` + packTag)
     .digest("hex")
     .slice(0, 32);
 }
@@ -2132,7 +2141,11 @@ async function spawnFfmpegLocked(
     ? Math.max(0, resume.seekInSourceSec)
     : Math.max(0, Math.floor(job.startOffsetSec));
 
-  const segPattern = path.join(job.dir, "seg_%05d.m4s");
+  const mpegts = job.pack === "ts";
+  const segPattern = path.join(
+    job.dir,
+    mpegts ? "seg_%05d.ts" : "seg_%05d.m4s"
+  );
   const outManifest = path.join(job.dir, MANIFEST_NAME);
   const args = [
     "-nostdin",
@@ -2224,8 +2237,9 @@ async function spawnFfmpegLocked(
     // a second of audio across that hole and the picture jumps. Fragmented
     // MP4 keeps one timeline. Edit lists are off so Chrome does not hold or
     // replay the first frame, and the video is re-encoded so each segment
-    // starts on a keyframe.
-    ...fmp4HlsMuxArgs(),
+    // starts on a keyframe. Fire TV Silk freezes on that fMP4, so those
+    // clients get MPEG-TS and hls.js remuxes it.
+    ...(mpegts ? ["-hls_segment_type", "mpegts"] : fmp4HlsMuxArgs()),
     "-hls_segment_filename",
     segPattern,
   );
@@ -2407,10 +2421,11 @@ async function encodedDurationForJob(job: TranscodeJob): Promise<number> {
 /** Load a job dir from disk into memory after process restart (deploy). */
 async function hydrateTranscodeJobFromDisk(
   upstream: string,
-  startOffsetSec: number
+  startOffsetSec: number,
+  pack?: "ts"
 ): Promise<TranscodeJob | null> {
   const off = Math.max(0, Math.floor(startOffsetSec));
-  const key = cacheKeyForUpstream(upstream, off);
+  const key = cacheKeyForUpstream(upstream, off, pack);
   const existing = jobs.get(key);
   if (existing) return existing;
 
@@ -2443,6 +2458,7 @@ async function hydrateTranscodeJobFromDisk(
     lastSegmentCount: 0,
     lastSegmentGrowthAt: Date.now(),
     lastViewerAt: Date.now(),
+    pack,
   };
   jobs.set(key, job);
   return job;
@@ -2451,7 +2467,8 @@ async function hydrateTranscodeJobFromDisk(
 /** Reuse a covering/growing encode instead of forking a parallel seek job. */
 async function findReusableTranscodeJob(
   upstream: string,
-  seekSec: number
+  seekSec: number,
+  pack?: "ts"
 ): Promise<TranscodeJob | null> {
   if (seekSec <= 0) return null;
 
@@ -2462,13 +2479,14 @@ async function findReusableTranscodeJob(
     quantizeTranscodeSeekSec(seekSec),
   ]);
   for (const off of hydrateOffsets) {
-    await hydrateTranscodeJobFromDisk(upstream, off);
+    await hydrateTranscodeJobFromDisk(upstream, off, pack);
   }
 
   let best: TranscodeJob | null = null;
   let bestEncoded = -1;
   for (const job of jobs.values()) {
     if (job.upstream !== upstream) continue;
+    if ((job.pack === "ts") !== (pack === "ts")) continue;
     if (job.state === "failed") {
       const hasManifest = await readManifestIfReady(job.dir);
       if (!hasManifest) continue;
@@ -2497,12 +2515,22 @@ async function findReusableTranscodeJob(
 
 async function ensureJobLocked(
   upstream: string,
-  opts?: { resetCache?: boolean; seekSec?: number; backgroundWarm?: boolean }
+  opts?: {
+    resetCache?: boolean;
+    seekSec?: number;
+    backgroundWarm?: boolean;
+    pack?: "ts";
+  }
 ): Promise<TranscodeJob> {
   const requestedSeek = Math.max(0, Math.floor(opts?.seekSec ?? 0));
+  const pack = opts?.pack;
 
   if (!opts?.resetCache && requestedSeek > 0) {
-    const reusable = await findReusableTranscodeJob(upstream, requestedSeek);
+    const reusable = await findReusableTranscodeJob(
+      upstream,
+      requestedSeek,
+      pack
+    );
     if (reusable) {
       noteTranscodeViewer(reusable);
       void ensureEncodingContinues(reusable);
@@ -2511,7 +2539,7 @@ async function ensureJobLocked(
   }
 
   const startOffsetSec = quantizeTranscodeSeekSec(requestedSeek);
-  const key = cacheKeyForUpstream(upstream, startOffsetSec);
+  const key = cacheKeyForUpstream(upstream, startOffsetSec, pack);
   const dir = jobDir(key);
 
   if (startOffsetSec > 0) {
@@ -2531,7 +2559,7 @@ async function ensureJobLocked(
       let existingSoft = jobs.get(key);
       if (!existingSoft) {
         existingSoft =
-          (await hydrateTranscodeJobFromDisk(upstream, startOffsetSec)) ??
+          (await hydrateTranscodeJobFromDisk(upstream, startOffsetSec, pack)) ??
           undefined;
       }
       if (existingSoft) {
@@ -2610,6 +2638,7 @@ async function ensureJobLocked(
     lastSegmentGrowthAt: Date.now(),
     lastViewerAt: opts?.backgroundWarm ? 0 : Date.now(),
     backgroundWarm: !!opts?.backgroundWarm,
+    pack,
   };
   jobs.set(key, job);
   if (manifest) {
@@ -2623,12 +2652,17 @@ async function ensureJobLocked(
 
 async function ensureJob(
   upstream: string,
-  opts?: { resetCache?: boolean; seekSec?: number; backgroundWarm?: boolean }
+  opts?: {
+    resetCache?: boolean;
+    seekSec?: number;
+    backgroundWarm?: boolean;
+    pack?: "ts";
+  }
 ): Promise<TranscodeJob> {
   // One flight chain per upstream — tip seeks cannot race a from-0 create and
   // fork a second ffmpeg job before reuse logic sees the first.
   // get→chain→set must stay synchronous so concurrent callers serialize.
-  const gateKey = `up:${cacheKeyForUpstream(upstream, 0)}`;
+  const gateKey = `up:${cacheKeyForUpstream(upstream, 0, opts?.pack)}`;
   const prev = ensureJobInflight.get(gateKey);
   const promise = (
     prev ? prev.catch(() => null) : Promise.resolve()
@@ -2795,6 +2829,8 @@ export async function handleVodTranscodeRequest(opts: {
   /** Chromecast receiver — emit absolute segment URLs in the m3u8. */
   forCast?: boolean;
   proxyOrigin?: string;
+  /** MPEG-TS segments for Fire TV / Silk. Desktop stays on fMP4. */
+  mpegts?: boolean;
 }): Promise<VodTranscodeHandleResult> {
   if (!isVodTranscodeEnabledServer()) {
     return {
@@ -2825,7 +2861,8 @@ export async function handleVodTranscodeRequest(opts: {
   if (!opts.head) {
     touchTranscodeViewerByUpstream(
       opts.upstream,
-      Math.max(0, Math.floor(opts.seekSec ?? 0))
+      Math.max(0, Math.floor(opts.seekSec ?? 0)),
+      opts.mpegts ? "ts" : undefined
     );
     if (!upstreamIsHlsMediaPlaylist(opts.upstream)) {
       touchVodSource(opts.upstream);
@@ -2842,6 +2879,7 @@ export async function handleVodTranscodeRequest(opts: {
     resetCache: opts.resetCache,
     seekSec: opts.seekSec,
     backgroundWarm: opts.head && !(opts.seekSec && opts.seekSec > 0),
+    pack: opts.mpegts ? "ts" : undefined,
   });
   if (opts.head && !job.hasPlayerViewer) {
     job.backgroundWarm = true;
@@ -2981,7 +3019,7 @@ export async function handleVodTranscodeRequest(opts: {
     const onDiskAfter = await listSegmentFiles(job.dir);
     await rememberFmp4Init(job.dir);
     await restoreFmp4Init(job.dir);
-    await alignFinishedFmp4Segments(job);
+    if (job.pack !== "ts") await alignFinishedFmp4Segments(job);
     const packagedNow = await fragmentedOutputState(job.dir);
     if (
       shouldRestartFragmentedTranscode({

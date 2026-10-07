@@ -1,0 +1,11 @@
+[Unit]
+Description=Check stream health every 30 seconds
+
+[Timer]
+OnBootSec=45
+OnUnitActiveSec=30
+AccuracySec=5s
+Persistent=true
+
+[Install]
+WantedBy=timers.target

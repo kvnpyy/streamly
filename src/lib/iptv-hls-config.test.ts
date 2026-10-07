@@ -41,6 +41,7 @@ describe("buildIptvHlsJsConfig live IPTV smoothness", () => {
     expect(cfg.liveSyncOnStallIncrease).toBe(0);
     expect(cfg.capLevelToPlayerSize).toBe(false);
     expect(cfg.enableWorker).toBe(false);
+    expect(cfg.preferManagedMediaSource).toBe(false);
     const tizenChromium = buildIptvHlsJsConfig({
       isLive: true,
       mobileLike: true,
@@ -57,6 +58,7 @@ describe("buildIptvHlsJsConfig live IPTV smoothness", () => {
       chromiumDesktop: true,
     });
     expect(desktop.enableWorker).toBe(true);
+    expect(desktop.preferManagedMediaSource).toBe(true);
     expect(desktop.capLevelToPlayerSize).toBe(false);
     expect(desktop.enableCEA708Captions).toBe(true);
     expect(desktop.abrBandWidthUpFactor).toBeGreaterThanOrEqual(0.4);

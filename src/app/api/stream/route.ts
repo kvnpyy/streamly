@@ -15,12 +15,18 @@ import { recordIptvApiError } from "@/lib/iptv-api-error-metrics";
 import { recordCastMetric } from "@/lib/cast-metrics";
 import { isChromecastReceiverUserAgent } from "@/lib/chromecast-ua";
 import { newRequestId, STREAM_PROXY_REQUEST_ID_HEADER } from "@/lib/request-id";
+import { publicRequestOrigin } from "@/lib/public-request-origin";
+import { tvBrowserNeedsMpegTs } from "@/lib/tv-user-agent";
 import { passthroughStreamWithGracefulClose } from "@/lib/stream-proxy-passthrough";
 import {
   acquireStreamProxySlot,
   recordStreamProxyBytes,
 } from "@/lib/runtime-metrics";
 import { maybeLogStreamUpstreamSlow } from "@/lib/stream-proxy-slow-log";
+import {
+  fetchWithHeadersTimeout,
+  streamProxyHeadersTimeoutMs,
+} from "@/lib/stream-upstream-headers-timeout";
 import {
   hostRevokesStaleSegments,
   isRevokedTokenPayload,
@@ -101,15 +107,28 @@ async function fetchUpstream(
   init: RequestInit
 ): Promise<Response> {
   let last: Response | undefined;
+  let lastErr: unknown;
   for (let attempt = 0; attempt < 3; attempt++) {
-    const res = await fetch(urlStr, init);
-    last = res;
-    const retry =
-      res.status === 502 || res.status === 503 || res.status === 504;
-    if (!retry || attempt === 2) return res;
+    try {
+      const res = await fetchWithHeadersTimeout(
+        urlStr,
+        init,
+        streamProxyHeadersTimeoutMs()
+      );
+      last = res;
+      const retry =
+        res.status === 502 || res.status === 503 || res.status === 504;
+      if (!retry || attempt === 2) return res;
+    } catch (err) {
+      // Provider TCP connects often die at ~10s (status null in the slow log).
+      // One failure used to 502 the segment and the TV gave up.
+      lastErr = err;
+      if (attempt === 2) throw err;
+    }
     await new Promise((r) => setTimeout(r, 220 * (attempt + 1)));
   }
-  return last!;
+  if (last) return last;
+  throw lastErr ?? new Error("upstream fetch failed");
 }
 
 function corsHeaders(extra: HeadersInit = {}, requestId?: string): Headers {
@@ -336,7 +355,8 @@ async function handle(req: NextRequest, head: boolean) {
       resetCache: tcReset,
       seekSec: tcSeek,
       forCast,
-      proxyOrigin: forCast ? new URL(req.url).origin : undefined,
+      proxyOrigin: forCast ? publicRequestOrigin(req) : undefined,
+      mpegts: tvBrowserNeedsMpegTs(ua),
     });
     const tcHeaders = corsHeaders(
       {
@@ -683,7 +703,7 @@ async function handle(req: NextRequest, head: boolean) {
     const rewritten = rewriteHlsManifest(text, finalManifestUrl, {
       compatMse,
       forCast: forCastManifest,
-      proxyOrigin: forCastManifest ? new URL(req.url).origin : undefined,
+      proxyOrigin: forCastManifest ? publicRequestOrigin(req) : undefined,
     });
     const manifestTtl = liveHlsManifestCacheTtlMs(rewritten);
     if (manifestTtl != null) {

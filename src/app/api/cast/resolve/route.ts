@@ -5,6 +5,7 @@ import {
   isStreamProxyUaCheckDisabled,
   streamProxyUaAllowExtraFromEnv,
 } from "@/lib/stream-client-user-agent";
+import { publicRequestOrigin } from "@/lib/public-request-origin";
 import { NextRequest, NextResponse } from "next/server";
 
 export const runtime = "nodejs";
@@ -25,7 +26,7 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  const origin = new URL(req.url).origin;
+  const origin = publicRequestOrigin(req);
   const raw = req.nextUrl.searchParams.get("url")?.trim();
   if (!raw) {
     return NextResponse.json(

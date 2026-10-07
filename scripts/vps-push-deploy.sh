@@ -92,7 +92,13 @@ if [ -f "${REMOTE_DIR}/.env.local" ]; then sudo cp -a "${REMOTE_DIR}/.env.local"
 if [ -d "${REMOTE_DIR}/data" ]; then sudo cp -a "${REMOTE_DIR}/data" "$TMP/data"; fi
 # sudo cp -a preserves stream ownership — chown so the EXIT trap can rm the temp dir as this user.
 sudo chown -R "$(id -un):$(id -gn)" "$TMP"
-sudo rsync -aO --delete "${REMOTE_STAGE}/" "${REMOTE_DIR}/"
+sudo rsync -aO --delete \
+  --exclude node_modules \
+  --exclude .next \
+  --exclude data \
+  --exclude .env \
+  --exclude .env.local \
+  "${REMOTE_STAGE}/" "${REMOTE_DIR}/"
 sudo chown -R stream:stream "${REMOTE_DIR}"
 if [ -f "$TMP/.env" ]; then sudo cp -a "$TMP/.env" "${REMOTE_DIR}/.env" && sudo chown stream:stream "${REMOTE_DIR}/.env"; fi
 if [ -f "$TMP/.env.local" ]; then sudo cp -a "$TMP/.env.local" "${REMOTE_DIR}/.env.local" && sudo chown stream:stream "${REMOTE_DIR}/.env.local"; fi

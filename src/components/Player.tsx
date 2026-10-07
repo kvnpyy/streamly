@@ -112,6 +112,7 @@ import {
   applyGentleLiveHlsRecovery,
   applySoftLiveHlsRecovery,
   applyTvLiveFreezeAction,
+  recoverTvLiveMedia,
   hlsRenditionLabel,
   liveBrowserTranscodeFailedMessage,
   maxSafeLevelIndex,
@@ -1505,15 +1506,35 @@ export function PlayerOverlay() {
     setPlaybackRetryKey((k) => k + 1);
   }, [current, setLoading, setPlaybackRetryKey]);
 
+  const silkVodStartupWatch =
+    silkLikeClient &&
+    !isLive &&
+    playbackUrlUsesVodTranscode(vodPlaybackUrl ?? current?.url ?? "");
+
+  const recoverSilkVodStartup = useCallback(() => {
+    const el = videoRef.current;
+    const hls = hlsRef.current;
+    if (!el || !hls) return;
+    setError(null);
+    setStalled(false);
+    recoverTvLiveMedia(hls, el);
+    try {
+      hls.startLoad(0);
+    } catch {
+      /* noop */
+    }
+  }, [videoRef, hlsRef, setError, setStalled]);
+
   useTvLiveFreezeWatchdog({
     open,
     isLive,
+    startupWatch: silkVodStartupWatch,
     channelId: liveChannelKey || null,
     videoRef,
     hlsRef,
     remuxActive: liveRemuxUrl != null,
     remuxGaveUpRef: liveRemuxGaveUpRef,
-    onReinit: wakeReinitPlayback,
+    onReinit: isLive ? wakeReinitPlayback : recoverSilkVodStartup,
     onRemuxBudget: requestLiveRemux,
   });
 

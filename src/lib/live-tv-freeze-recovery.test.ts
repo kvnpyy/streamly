@@ -4,6 +4,7 @@ import {
   TV_LIVE_FREEZE_STUCK_MS,
   TV_LIVE_MAX_AUTO_REINITS,
   TV_LIVE_MIN_PLAYHEAD_SEC,
+  TV_LIVE_STARTUP_STALL_MS,
   TV_LIVE_RECOVERY_COOLDOWN_MS,
   bufferAheadAtPlayhead,
   initialTvLiveFreezeWatchState,
@@ -67,16 +68,33 @@ describe("playheadLooksStuck", () => {
 });
 
 describe("nextTvLiveFreezeAction", () => {
-  it("does nothing while joining before the playhead is established", () => {
+  it("does nothing while joining before a frame is on screen", () => {
     expect(
       nextTvLiveFreezeAction(
         base({
           sawProgress: false,
+          readyState: 1,
+          stuckMs: 2_000,
           currentTime: TV_LIVE_MIN_PLAYHEAD_SEC - 0.5,
           lastCurrentTime: TV_LIVE_MIN_PLAYHEAD_SEC - 0.5,
         })
       )
     ).toBe("none");
+  });
+
+  it("reloads when Silk is stuck on the opening frame", () => {
+    expect(
+      nextTvLiveFreezeAction(
+        base({
+          sawProgress: false,
+          currentTime: 0.04,
+          lastCurrentTime: 0.04,
+          readyState: 2,
+          stuckMs: TV_LIVE_STARTUP_STALL_MS,
+          bufferAheadSec: 0.2,
+        })
+      )
+    ).toBe("reload");
   });
 
   it("does nothing when paused, errored, or the playhead is moving", () => {

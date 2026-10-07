@@ -1303,6 +1303,25 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
                   liveSoftRecoverBeforeError = true;
                   break;
                 }
+                // Silk/TV: a burst of slow provider connects used to end the
+                // night with Unable to play. Refresh then started at the
+                // frozen first frame. Keep fetching instead of tearing down.
+                if (silkLike || livingRoomLike) {
+                  consecutiveNetworkErrors = Math.floor(maxFatalNet / 2);
+                  try {
+                    const vv = videoRef.current;
+                    const at =
+                      !isLive && vv && Number.isFinite(vv.currentTime)
+                        ? vv.currentTime
+                        : undefined;
+                    if (at != null && at > 1) hls.startLoad(at);
+                    else hls.startLoad();
+                    if (vv) voidSafeVideoPlay(vv);
+                  } catch {
+                    /* next fatal retries */
+                  }
+                  break;
+                }
                 surfacePlaybackError(
                   vodTranscodeHls
                     ? "Transcoded playback failed. Tap Try again to restart encoding — or use a native IPTV app for MKV files."

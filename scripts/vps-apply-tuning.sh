@@ -32,7 +32,11 @@ fi
 echo "==> stream systemd override"
 mkdir -p /etc/systemd/system/stream.service.d
 cp "$TUNING_DIR/stream.service.d-override.conf" /etc/systemd/system/stream.service.d/override.conf
+install -m 0755 "$TUNING_DIR/stream-healthcheck.sh" /usr/local/sbin/stream-healthcheck.sh
+cp "$TUNING_DIR/stream-healthcheck.service" /etc/systemd/system/stream-healthcheck.service
+cp "$TUNING_DIR/stream-healthcheck.timer" /etc/systemd/system/stream-healthcheck.timer
 systemctl daemon-reload
+systemctl enable --now stream-healthcheck.timer
 
 echo "==> Caddy"
 if [ -f /etc/caddy/Caddyfile ]; then

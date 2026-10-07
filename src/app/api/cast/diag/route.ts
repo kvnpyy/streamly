@@ -11,6 +11,7 @@ import {
   isSameOriginStreamProxyUrl,
   resolveLiveCastPlayUrlServer,
 } from "@/lib/cast-resolve-server";
+import { publicRequestOrigin } from "@/lib/public-request-origin";
 import { NextRequest, NextResponse } from "next/server";
 
 export const runtime = "nodejs";
@@ -116,7 +117,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
   }
 
-  const origin = new URL(req.url).origin;
+  const origin = publicRequestOrigin(req);
   const raw = req.nextUrl.searchParams.get("url")?.trim();
   if (!raw) {
     return NextResponse.json(

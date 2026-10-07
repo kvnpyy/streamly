@@ -18,8 +18,9 @@ ssh ubuntu@YOUR_VPS 'sudo bash /tmp/streamly-tuning/vps-apply-tuning.sh'
 | Firewall | UFW: deny incoming except 22, 80, 443 |
 | SSH | `PasswordAuthentication no`, keys only |
 | Process | `stream` user, `systemd` `stream.service`, `Restart=on-failure` |
-| Memory | `MemoryMax` on unit; Node `--max-old-space-size` |
-| Swap | 2G swap file on 8G VPS (OOM safety during `next build`) |
+| Memory | `MemoryMax=4G`, `MemorySwapMax=0`, Node `--max-old-space-size=3072`. No `MemoryHigh` — it freezes the process instead of restarting it. |
+| Swap | 2G swap file on 8G VPS for the OS and `next build` only. The `stream` cgroup must not use it. |
+| Watchdog | `stream-healthcheck.timer` curls `/api/health` every 30s and restarts on two failures. |
 | DB | SQLite + daily `npm run db:backup` cron as `stream` |
 | Updates | `unattended-upgrades` enabled |
 | Brute force | `fail2ban` sshd jail + UFW |
@@ -60,9 +61,14 @@ sudo apt install -y nodejs
 sudo systemctl restart stream
 ```
 
+## When to upgrade the VPS
+
+Upgrade when healthy traffic sits near the cap: sustained RSS well above 1 GB, load above the vCPU count for hours, or the capacity mail saying concurrent streams are pegged. A process that grew to 4 GB and then froze is a leak / stuck-upstream problem. A larger box moves that cliff later; it does not restart a wedged Node process.
+
 ## Monitoring
 
 - Uptime: `GET https://iptvwebplayer.org/api/health`
+- Local watchdog: `systemctl status stream-healthcheck.timer`
 - Sentry: `NEXT_PUBLIC_SENTRY_DSN` in `.env`
 - Logs: `journalctl -u stream -f`, `journalctl -u caddy -f`
 

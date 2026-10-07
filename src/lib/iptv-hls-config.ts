@@ -142,6 +142,12 @@ export function buildIptvHlsJsConfig(opts: {
      * worker off — MSE workers wedge those decoders.
      */
     enableWorker: chromiumDesktop && !livingRoomLike && !silkLike,
+    /**
+     * Fire TV Silk exposes ManagedMediaSource, but its decoder paints one
+     * frame and then stalls. Classic MediaSource keeps the picture moving.
+     * Desktop Chrome's managed source is fine, so this stays on there.
+     */
+    preferManagedMediaSource: !(silkLike || livingRoomLike),
     manifestLoadingTimeOut: timeouts,
     levelLoadingTimeOut: timeouts,
     fragLoadingTimeOut: timeouts,

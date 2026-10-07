@@ -9,6 +9,8 @@
  */
 
 export const TV_LIVE_FREEZE_STUCK_MS = 16_000;
+/** Silk/Tizen often paint one frame at t=0 and never advance. That is not a join. */
+export const TV_LIVE_STARTUP_STALL_MS = 8_000;
 export const TV_LIVE_DECODER_STALL_MS = 10_000;
 export const TV_LIVE_RECOVERY_COOLDOWN_MS = 20_000;
 export const TV_LIVE_MIN_PLAYHEAD_SEC = 3;
@@ -84,11 +86,36 @@ export function isTvLiveDecoderStall(opts: {
   );
 }
 
+/**
+ * A frame is on screen and the clock never left the opening. Manual restarts
+ * on Fire TV Silk clear this; play() does not.
+ */
+export function isTvStartupFrameStall(input: TvLiveFreezeInputs): boolean {
+  if (input.hasError) return false;
+  if (input.paused && !input.fullscreen) return false;
+  if (input.sawProgress) return false;
+  if (input.currentTime >= TV_LIVE_MIN_PLAYHEAD_SEC) return false;
+  if (input.readyState < 2) return false;
+  if (input.stuckMs < TV_LIVE_STARTUP_STALL_MS) return false;
+  if (
+    input.lastRecoveryAtMs > 0 &&
+    input.nowMs - input.lastRecoveryAtMs < TV_LIVE_RECOVERY_COOLDOWN_MS
+  ) {
+    return false;
+  }
+  return true;
+}
+
 export function nextTvLiveFreezeAction(
   input: TvLiveFreezeInputs
 ): TvLiveFreezeAction {
   if (input.hasError) return "none";
   if (input.paused && !input.fullscreen) return "none";
+  if (isTvStartupFrameStall(input)) {
+    if (input.recoveryStep < 2) return "reload";
+    if ((input.reinitCount ?? 0) >= TV_LIVE_MAX_AUTO_REINITS) return "none";
+    return "reinit";
+  }
   if (!input.sawProgress && input.currentTime < TV_LIVE_MIN_PLAYHEAD_SEC) {
     return "none";
   }

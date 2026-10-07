@@ -1,9 +1,17 @@
 "use client";
 
 import { BrandMark } from "@/components/BrandMark";
+import {
+  buildIptvHlsJsConfig,
+  buildVodTranscodeHlsJsConfig,
+  disableVodTranscodeGapSeek,
+  disableVodTranscodeLiveEdgeSeek,
+} from "@/lib/iptv-hls-config";
 import { loadHlsModule } from "@/lib/lazy-hls";
 import { SITE_NAME } from "@/lib/site-brand";
 import { playbackUrlIsHls } from "@/lib/playback-url";
+import { isAmazonSilkUserAgent, isTvClassUserAgent } from "@/lib/tv-user-agent";
+import { detachVideoElement } from "@/lib/video-play";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -32,14 +40,19 @@ export function StandaloneStreamPlayer() {
     const video = videoRef.current;
     if (!video || !streamUrl) return;
 
+    const params = new URLSearchParams(
+      streamUrl.includes("?") ? streamUrl.slice(streamUrl.indexOf("?") + 1) : ""
+    );
+    const streamType = params.get("type");
+    const isLive = streamType === "hls" || streamType === "mpegts";
+    const vodTranscode = params.get("transcode") === "hls";
+    const ua = navigator.userAgent || "";
+    const weakTv = isAmazonSilkUserAgent(ua) || isTvClassUserAgent(ua);
+
     let cancelled = false;
     let hls: { destroy: () => void } | null = null;
+    let startupTimer = 0;
     setError(null);
-
-    const onVideoError = () => {
-      if (!cancelled) setError("This stream could not be started.");
-    };
-    video.addEventListener("error", onVideoError);
 
     const start = async () => {
       if (!isHls) {
@@ -61,18 +74,79 @@ export function StandaloneStreamPlayer() {
         const Hls = await loadHlsModule();
         if (cancelled) return;
         if (Hls.isSupported()) {
-          const instance = new Hls({ enableWorker: true, lowLatencyMode: false });
-          hls = instance;
-          instance.on(Hls.Events.ERROR, (_evt, data) => {
-            if (data.fatal && !cancelled) {
-              setError("This stream could not be started.");
+          type HlsInstance = InstanceType<typeof Hls>;
+          let instance: HlsInstance | null = null;
+          let startupRebuilds = 0;
+          const resumeAt = () => {
+            const time = video.currentTime;
+            if (isLive || !Number.isFinite(time) || time < 1) return -1;
+            return time;
+          };
+          const boot = (at: number) => {
+            if (cancelled) return;
+            window.clearTimeout(startupTimer);
+            try {
+              instance?.destroy();
+            } catch {
+              /* already destroyed */
             }
-          });
-          instance.loadSource(streamUrl);
-          instance.attachMedia(video);
-          instance.on(Hls.Events.MANIFEST_PARSED, () => {
-            void video.play().catch(() => {});
-          });
+            const next = new Hls({
+              ...buildIptvHlsJsConfig({
+                isLive,
+                mobileLike: weakTv,
+                livingRoomLike: weakTv,
+                silkLike: weakTv,
+              }),
+              ...(vodTranscode ? buildVodTranscodeHlsJsConfig() : {}),
+              ...(weakTv ? { preferManagedMediaSource: false } : {}),
+              startPosition: at > 1 ? at : -1,
+            });
+            instance = next;
+            hls = next;
+            if (vodTranscode) {
+              const vodHls = next as unknown as Parameters<
+                typeof disableVodTranscodeGapSeek
+              >[0] &
+                Parameters<typeof disableVodTranscodeLiveEdgeSeek>[0];
+              disableVodTranscodeGapSeek(vodHls);
+              disableVodTranscodeLiveEdgeSeek(vodHls);
+            }
+            next.on(Hls.Events.ERROR, (_evt, data) => {
+              if (!data.fatal || cancelled) return;
+              const played = video.currentTime > 3;
+              if (data.type === Hls.ErrorTypes.NETWORK_ERROR || played) {
+                try {
+                  const atPlayhead = resumeAt();
+                  if (atPlayhead > 1) next.startLoad(atPlayhead);
+                  else next.startLoad();
+                  void video.play().catch(() => {});
+                  return;
+                } catch {
+                  /* rebuild below */
+                }
+              }
+              if (!weakTv || startupRebuilds >= 3) {
+                if (!played) setError("This stream could not be started.");
+                return;
+              }
+              startupRebuilds += 1;
+              boot(resumeAt());
+            });
+            next.loadSource(streamUrl);
+            next.attachMedia(video);
+            next.on(Hls.Events.MANIFEST_PARSED, () => {
+              void video.play().catch(() => {});
+              if (!weakTv) return;
+              window.clearTimeout(startupTimer);
+              startupTimer = window.setTimeout(() => {
+                if (cancelled || video.currentTime >= 1) return;
+                if (startupRebuilds >= 3) return;
+                startupRebuilds += 1;
+                boot(0);
+              }, 6_000);
+            });
+          };
+          boot(0);
           return;
         }
       } catch {
@@ -93,10 +167,9 @@ export function StandaloneStreamPlayer() {
 
     return () => {
       cancelled = true;
-      video.removeEventListener("error", onVideoError);
+      window.clearTimeout(startupTimer);
       hls?.destroy();
-      video.removeAttribute("src");
-      video.load();
+      detachVideoElement(video);
     };
   }, [isHls, streamUrl]);
 
