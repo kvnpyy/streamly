@@ -28,6 +28,7 @@ import {
   shouldForceSourceRefetch,
   sourceSeekLanded,
   fmp4ResumeJoinPlan,
+  segmentAtPlaylistTime,
   sumExtinfDurationSec,
   transcodeStartupReady,
 } from "./vod-transcode-manifest";
@@ -98,6 +99,34 @@ describe("shouldRestartFragmentedTranscode", () => {
         ffmpegRunning: true,
       })
     ).toBe(false);
+  });
+});
+
+describe("segmentAtPlaylistTime", () => {
+  const raw = [
+    "#EXTINF:4.000000,",
+    "seg_00000.m4s",
+    "#EXTINF:4.000000,",
+    "seg_00001.m4s",
+    "#EXTINF:0.083333,",
+    "seg_00002.m4s",
+  ].join("\n");
+
+  it("picks the segment that contains the scrub time", () => {
+    expect(segmentAtPlaylistTime(raw, 0)).toEqual({
+      name: "seg_00000.m4s",
+      offsetSec: 0,
+    });
+    expect(segmentAtPlaylistTime(raw, 5.5)).toEqual({
+      name: "seg_00001.m4s",
+      offsetSec: 1.5,
+    });
+  });
+
+  it("stays on the last segment when the scrub is past the encode", () => {
+    const hit = segmentAtPlaylistTime(raw, 90);
+    expect(hit?.name).toBe("seg_00002.m4s");
+    expect(hit?.offsetSec).toBeCloseTo(0.033333, 4);
   });
 });
 

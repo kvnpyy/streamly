@@ -54,8 +54,10 @@ export async function GET(req: NextRequest) {
 
   const jpeg = await getVodSeekPreviewJpeg(upstream, t);
   if (!jpeg) {
-    return new Response("Thumbnail unavailable", {
-      status: 404,
+    // 204, not 404. A missing preview used to print "Not Found" in the
+    // console on every scrub step.
+    return new Response(null, {
+      status: 204,
       headers: { [STREAM_PROXY_REQUEST_ID_HEADER]: requestId },
     });
   }

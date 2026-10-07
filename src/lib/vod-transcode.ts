@@ -1353,6 +1353,14 @@ function jobDir(key: string): string {
   return path.join(cacheRoot(), key);
 }
 
+/** On-disk directory for a from-0 (or offset) transcode of this upstream. */
+export function vodTranscodeJobDir(
+  upstream: string,
+  startOffsetSec = 0
+): string {
+  return jobDir(cacheKeyForUpstream(upstream, startOffsetSec));
+}
+
 function upstreamLooksLikeVod(upstreamUrl: URL): boolean {
   const p = upstreamUrl.pathname.toLowerCase();
   if (p.includes("/live/")) return false;
@@ -3160,7 +3168,32 @@ export async function handleVodTranscodeRequest(opts: {
   if (media.endsWith(".m4s")) {
     await alignFmp4SegmentForPlayback(job.dir, media);
   }
-  const data = await fsp.readFile(segPath);
+  let data: Buffer;
+  try {
+    data = await fsp.readFile(segPath);
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code !== "ENOENT") throw err;
+    // Align rewrites the segment via rename. A scrub that arrives mid-rename
+    // used to throw "no such file" into the browser console.
+    const again = await waitForSegmentFile(segPath, 1500);
+    if (!again) {
+      return {
+        status: 503,
+        errorText: "Segment not ready yet.",
+        extraHeaders: { "retry-after": "1" },
+      };
+    }
+    try {
+      data = await fsp.readFile(segPath);
+    } catch {
+      return {
+        status: 503,
+        errorText: "Segment not ready yet.",
+        extraHeaders: { "retry-after": "1" },
+      };
+    }
+  }
   return {
     status: 200,
     body: new Uint8Array(data),

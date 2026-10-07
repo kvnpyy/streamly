@@ -27,6 +27,13 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.13.77] — 2026-10-07
+
+Scrubbing forward and back lands without a missing-file error.
+
+### Fixed
+- A fast scrub no longer cancels the piece of video already downloading, which the browser was reporting as a missing file. The preview frame comes from the copy already prepared on the server.
+
 ## [0.13.76] — 2026-10-06
 
 Search finds the show that’s on, not only the channel name.

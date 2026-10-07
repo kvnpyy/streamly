@@ -14,6 +14,9 @@ type UseVodSeekPreviewOpts = {
   poster?: string;
 };
 
+/** Wait until the pointer rests so a fast scrub does not request every frame. */
+const PREVIEW_FETCH_DEBOUNCE_MS = 140;
+
 export function useVodSeekPreview({
   playbackUrl,
   previewSec,
@@ -29,83 +32,89 @@ export function useVodSeekPreview({
   useEffect(() => {
     if (!enabled || previewSec == null || previewSec < 0) {
       abortRef.current?.abort();
-      queueMicrotask(() => {
-        setLoading(false);
-        imageUrlRef.current = null;
-        setImageUrl(null);
-      });
       return;
     }
 
     const upstream = upstreamFromPlaybackProxyUrl(playbackUrl);
     if (!upstream) {
-      queueMicrotask(() => {
-        imageUrlRef.current = poster ?? null;
-        setImageUrl(poster ?? null);
-      });
+      if (poster) {
+        imageUrlRef.current = poster;
+        setImageUrl(poster);
+      }
       return;
     }
 
     const bucket = bucketSeekPreviewSec(previewSec);
     const cached = cacheRef.current.get(bucket);
     if (cached) {
-      queueMicrotask(() => {
-        imageUrlRef.current = cached;
-        setImageUrl(cached);
-        setLoading(false);
-      });
+      imageUrlRef.current = cached;
+      setImageUrl(cached);
+      setLoading(false);
       return;
     }
 
-    abortRef.current?.abort();
-    const ac = new AbortController();
-    abortRef.current = ac;
-    queueMicrotask(() => setLoading(true));
+    const timer = window.setTimeout(() => {
+      abortRef.current?.abort();
+      const ac = new AbortController();
+      abortRef.current = ac;
+      setLoading(true);
 
-    const url = buildVodSeekPreviewUrl(upstream, previewSec);
-    void fetch(url, { credentials: "same-origin", signal: ac.signal })
-      .then((res) => {
-        if (!res.ok) throw new Error(String(res.status));
-        return res.blob();
-      })
-      .then((blob) => {
-        if (ac.signal.aborted) return;
-        const objectUrl = URL.createObjectURL(blob);
-        cacheRef.current.set(bucket, objectUrl);
-        if (cacheRef.current.size > 48) {
-          const first = cacheRef.current.keys().next().value;
-          if (first != null) {
-            const old = cacheRef.current.get(first);
-            cacheRef.current.delete(first);
-            if (
-              old?.startsWith("blob:") &&
-              old !== imageUrlRef.current
-            ) {
-              URL.revokeObjectURL(old);
+      const url = buildVodSeekPreviewUrl(upstream, previewSec);
+      void fetch(url, { credentials: "same-origin", signal: ac.signal })
+        .then((res) => {
+          if (res.status === 204 || !res.ok) throw new Error(String(res.status));
+          return res.blob();
+        })
+        .then((blob) => {
+          if (ac.signal.aborted) return;
+          if (blob.size < 500) throw new Error("empty");
+          const objectUrl = URL.createObjectURL(blob);
+          cacheRef.current.set(bucket, objectUrl);
+          if (cacheRef.current.size > 48) {
+            const first = cacheRef.current.keys().next().value;
+            if (first != null && first !== bucket) {
+              const old = cacheRef.current.get(first);
+              cacheRef.current.delete(first);
+              // Revoke after the <img> has moved on. Revoking in the same
+              // turn the src changes makes Chrome log ERR_FILE_NOT_FOUND.
+              if (old?.startsWith("blob:")) {
+                window.setTimeout(() => {
+                  if (imageUrlRef.current !== old) URL.revokeObjectURL(old);
+                }, 2000);
+              }
             }
           }
-        }
-        imageUrlRef.current = objectUrl;
-        setImageUrl(objectUrl);
-        setLoading(false);
-      })
-      .catch(() => {
-        if (ac.signal.aborted) return;
-        setImageUrl(poster ?? null);
-        setLoading(false);
-      });
+          imageUrlRef.current = objectUrl;
+          setImageUrl(objectUrl);
+          setLoading(false);
+        })
+        .catch(() => {
+          if (ac.signal.aborted) return;
+          setLoading(false);
+          if (!imageUrlRef.current && poster) {
+            imageUrlRef.current = poster;
+            setImageUrl(poster);
+          }
+        });
+    }, PREVIEW_FETCH_DEBOUNCE_MS);
 
-    return () => ac.abort();
+    return () => {
+      window.clearTimeout(timer);
+      abortRef.current?.abort();
+    };
   }, [playbackUrl, previewSec, enabled, poster]);
 
   useEffect(() => {
     const cache = cacheRef.current;
     return () => {
       abortRef.current?.abort();
-      for (const url of cache.values()) {
-        if (url.startsWith("blob:")) URL.revokeObjectURL(url);
-      }
+      const urls = [...cache.values()];
       cache.clear();
+      window.setTimeout(() => {
+        for (const url of urls) {
+          if (url.startsWith("blob:")) URL.revokeObjectURL(url);
+        }
+      }, 1000);
     };
   }, []);
 

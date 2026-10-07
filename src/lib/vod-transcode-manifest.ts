@@ -327,6 +327,48 @@ export function encodedCoverageSec(opts: {
 
 /** Drop gaps (e.g. from crashed duplicate ffmpeg) so hls.js never 404s mid-playlist. */
 /** Parse #EXTINF durations keyed by segment filename from an ffmpeg m3u8. */
+/**
+ * Which on-disk segment contains `atSec`, and how far into that segment to
+ * look. Used for seek-preview frames so a scrub does not open the provider
+ * file (those range reads come back as "file not found").
+ */
+export function segmentAtPlaylistTime(
+  manifestText: string,
+  atSec: number
+): { name: string; offsetSec: number } | null {
+  if (!Number.isFinite(atSec) || atSec < 0) return null;
+  let cursor = 0;
+  let pending: number | null = null;
+  let last: { name: string; dur: number } | null = null;
+  for (const line of manifestText.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    const inf = trimmed.match(/^#EXTINF:([\d.]+)/i);
+    if (inf) {
+      const n = parseFloat(inf[1]!);
+      pending = Number.isFinite(n) && n > 0 ? n : null;
+      continue;
+    }
+    const name = segmentNameFromPlaylistLine(trimmed);
+    if (!name || pending == null) continue;
+    const dur = pending;
+    pending = null;
+    last = { name, dur };
+    if (atSec < cursor + dur) {
+      const offset = atSec - cursor;
+      return {
+        name,
+        offsetSec: Math.min(Math.max(0, offset), Math.max(0, dur - 0.05)),
+      };
+    }
+    cursor += dur;
+  }
+  if (!last) return null;
+  return {
+    name: last.name,
+    offsetSec: Math.max(0, last.dur - 0.05),
+  };
+}
+
 export function parseExtinfDurationsBySegment(
   manifestText: string
 ): Map<string, number> {

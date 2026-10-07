@@ -11,6 +11,14 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.13.77",
+    date: "2026-10-07",
+    summary: "Scrubbing forward and back lands without a missing-file error.",
+    highlights: [
+      "A fast scrub no longer cancels the piece of video already downloading, which the browser was reporting as a missing file. The preview frame comes from the copy already prepared on the server.",
+    ],
+  },
+  {
     version: "0.13.76",
     date: "2026-10-06",
     summary: "Search finds the show that’s on, not only the channel name.",

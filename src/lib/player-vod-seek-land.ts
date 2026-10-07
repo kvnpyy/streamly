@@ -19,6 +19,15 @@ export const VOD_SEEK_SUPPRESS_TIP_PERSIST_MS = 20_000;
  */
 export const VOD_SEEK_NEAR_START_LAND_SEC = 4;
 
+/**
+ * A pipeline reload aborts the segment hls.js is already fetching. Chrome
+ * reports that abort as `net::ERR_FILE_NOT_FOUND`. Move the playhead first.
+ * Reload once, only if it is still sitting on the old time.
+ */
+export function vodSeekShouldReloadPipeline(attempt: number): boolean {
+  return attempt === 2;
+}
+
 export function vodSeekPlayheadLanded(
   currentRelativeSec: number,
   targetRelativeSec: number,

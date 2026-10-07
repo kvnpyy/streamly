@@ -2,9 +2,19 @@ import { describe, expect, it } from "vitest";
 import {
   shouldSuppressVodTipPersist,
   vodSeekPlayheadLanded,
+  vodSeekShouldReloadPipeline,
   VOD_SEEK_LAND_TOLERANCE_SEC,
   VOD_SEEK_SUPPRESS_TIP_PERSIST_MS,
 } from "./player-vod-seek-land";
+
+describe("vodSeekShouldReloadPipeline", () => {
+  it("moves the playhead before aborting the current segment load", () => {
+    expect(vodSeekShouldReloadPipeline(0)).toBe(false);
+    expect(vodSeekShouldReloadPipeline(1)).toBe(false);
+    expect(vodSeekShouldReloadPipeline(2)).toBe(true);
+    expect(vodSeekShouldReloadPipeline(3)).toBe(false);
+  });
+});
 
 describe("vodSeekPlayheadLanded", () => {
   it("accepts playhead within tolerance", () => {
