@@ -39,7 +39,7 @@ export function useVodSeekPreview({
     if (!upstream) {
       if (poster) {
         imageUrlRef.current = poster;
-        setImageUrl(poster);
+        queueMicrotask(() => setImageUrl(poster));
       }
       return;
     }
@@ -48,8 +48,10 @@ export function useVodSeekPreview({
     const cached = cacheRef.current.get(bucket);
     if (cached) {
       imageUrlRef.current = cached;
-      setImageUrl(cached);
-      setLoading(false);
+      queueMicrotask(() => {
+        setImageUrl(cached);
+        setLoading(false);
+      });
       return;
     }
 
