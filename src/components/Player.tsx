@@ -63,6 +63,7 @@ import {
 import {
   vodSeekPlayheadLanded,
   vodSeekShouldReloadPipeline,
+  vodSeekTargetBuffered,
   VOD_SEEK_LAND_MAX_TRIES,
   VOD_SEEK_LAND_RETRY_MS,
   VOD_SEEK_SUPPRESS_TIP_PERSIST_MS,
@@ -1723,48 +1724,42 @@ export function PlayerOverlay() {
       // Large backward scrubs on growing/finished transcode HLS need a clean
       // reload at the target — startLoad alone often leaves the playhead stuck.
       if (hls && usesTranscodePlayback) {
-        const applySeek = (reload: boolean) => {
+        const seekLanded = (el: HTMLVideoElement) =>
+          vodSeekPlayheadLanded(el.currentTime, relative) &&
+          vodSeekTargetBuffered(el.buffered, relative);
+
+        const applySeek = () => {
           const h = hlsRef.current;
           const el = videoRef.current;
           if (!h || !el || landGen !== vodSeekLandGenRef.current) return;
-          // Reloading aborts the fragment Chrome is fetching and the console
-          // shows that abort as a missing file. A plain currentTime seek is
-          // enough when the segment is already in this playlist. Reload once
-          // only if the playhead is still on the old time — hls.js drops a
-          // backward currentTime while the element is playing.
-          if (reload) {
-            if (backwardScrub) {
-              try {
-                el.pause();
-              } catch {
-                /* noop */
-              }
-            }
+          // hls.js drops a backward currentTime while the element is playing.
+          // Pause first, then ask for the segment at the target. The clock
+          // alone is not a seek: the element accepts 15:00 before any media
+          // is there, and playback stays on the opening.
+          if (backwardScrub) {
             try {
-              h.stopLoad();
+              el.pause();
             } catch {
               /* noop */
             }
+          }
+          try {
+            h.startLoad(relative);
+          } catch {
+            /* noop */
           }
           try {
             el.currentTime = relative;
           } catch {
             /* noop */
           }
-          if (reload) {
-            try {
-              h.startLoad(relative);
-            } catch {
-              /* noop */
-            }
-          }
         };
-        applySeek(false);
+        applySeek();
 
         const onSeeked = () => {
           const el = videoRef.current;
           if (!el || landGen !== vodSeekLandGenRef.current) return;
-          if (vodSeekPlayheadLanded(el.currentTime, relative)) {
+          if (seekLanded(el)) {
             el.removeEventListener("seeked", onSeeked);
             finishLanded();
           }
@@ -1783,17 +1778,17 @@ export function PlayerOverlay() {
             v.removeEventListener("seeked", onSeeked);
             return;
           }
-          if (vodSeekPlayheadLanded(el.currentTime, relative)) {
+          if (seekLanded(el)) {
             v.removeEventListener("seeked", onSeeked);
             finishLanded();
             return;
           }
           tries += 1;
-          // Do not assign currentTime again on every tick — that cancels the
-          // seek that is already in flight and makes a fast scrub never land.
+          // One retry if the first load never buffered. More than that aborts
+          // the segment the player is already fetching.
           if (!didReload && vodSeekShouldReloadPipeline(tries)) {
             didReload = true;
-            applySeek(true);
+            applySeek();
           }
           if (tries < VOD_SEEK_LAND_MAX_TRIES) {
             window.setTimeout(verifyLanded, VOD_SEEK_LAND_RETRY_MS);

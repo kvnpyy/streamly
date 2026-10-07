@@ -20,12 +20,39 @@ export const VOD_SEEK_SUPPRESS_TIP_PERSIST_MS = 20_000;
 export const VOD_SEEK_NEAR_START_LAND_SEC = 4;
 
 /**
- * A pipeline reload aborts the segment hls.js is already fetching. Chrome
- * reports that abort as `net::ERR_FILE_NOT_FOUND`. Move the playhead first.
- * Reload once, only if it is still sitting on the old time.
+ * One follow-up load if the first request has not put media under the
+ * playhead. Repeating it every tick aborts the download and Chrome logs
+ * that abort as a missing file.
  */
 export function vodSeekShouldReloadPipeline(attempt: number): boolean {
-  return attempt === 2;
+  return attempt === 8;
+}
+
+type BufferedRanges = {
+  length: number;
+  start(index: number): number;
+  end(index: number): number;
+};
+
+/**
+ * The element will accept `currentTime` as soon as the playlist duration is
+ * known, before any media exists there. That clock move is not a landed seek.
+ */
+export function vodSeekTargetBuffered(
+  buffered: BufferedRanges | null | undefined,
+  targetSec: number
+): boolean {
+  if (!buffered || !Number.isFinite(targetSec)) return false;
+  try {
+    for (let i = 0; i < buffered.length; i++) {
+      const start = buffered.start(i);
+      const end = buffered.end(i);
+      if (targetSec + 0.4 >= start && targetSec <= end + 0.25) return true;
+    }
+  } catch {
+    return false;
+  }
+  return false;
 }
 
 export function vodSeekPlayheadLanded(

@@ -29,10 +29,10 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ## [0.13.77] — 2026-10-07
 
-Scrubbing forward and back lands without a missing-file error.
+Scrubbing to a later time actually plays that time.
 
 ### Fixed
-- A fast scrub no longer cancels the piece of video already downloading, which the browser was reporting as a missing file. The preview frame comes from the copy already prepared on the server.
+- Jumping ahead now loads the video at that spot. The seek is not treated as finished just because the clock moved.
 
 ## [0.13.76] — 2026-10-06
 

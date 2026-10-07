@@ -3,16 +3,33 @@ import {
   shouldSuppressVodTipPersist,
   vodSeekPlayheadLanded,
   vodSeekShouldReloadPipeline,
+  vodSeekTargetBuffered,
   VOD_SEEK_LAND_TOLERANCE_SEC,
   VOD_SEEK_SUPPRESS_TIP_PERSIST_MS,
 } from "./player-vod-seek-land";
 
 describe("vodSeekShouldReloadPipeline", () => {
-  it("moves the playhead before aborting the current segment load", () => {
+  it("retries the load once, not on every tick", () => {
     expect(vodSeekShouldReloadPipeline(0)).toBe(false);
-    expect(vodSeekShouldReloadPipeline(1)).toBe(false);
-    expect(vodSeekShouldReloadPipeline(2)).toBe(true);
-    expect(vodSeekShouldReloadPipeline(3)).toBe(false);
+    expect(vodSeekShouldReloadPipeline(7)).toBe(false);
+    expect(vodSeekShouldReloadPipeline(8)).toBe(true);
+    expect(vodSeekShouldReloadPipeline(9)).toBe(false);
+  });
+});
+
+describe("vodSeekTargetBuffered", () => {
+  const ranges = (pairs: Array<[number, number]>) => ({
+    length: pairs.length,
+    start: (i: number) => pairs[i]![0],
+    end: (i: number) => pairs[i]![1],
+  });
+
+  it("is not landed when the clock moved but that time is not buffered", () => {
+    expect(vodSeekTargetBuffered(ranges([[0, 8]]), 900)).toBe(false);
+  });
+
+  it("is landed when the target sits in a buffered range", () => {
+    expect(vodSeekTargetBuffered(ranges([[896, 908]]), 900)).toBe(true);
   });
 });
 

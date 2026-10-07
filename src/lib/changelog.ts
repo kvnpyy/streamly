@@ -13,9 +13,9 @@ export const CHANGELOG: readonly ChangelogEntry[] = [
   {
     version: "0.13.77",
     date: "2026-10-07",
-    summary: "Scrubbing forward and back lands without a missing-file error.",
+    summary: "Scrubbing to a later time actually plays that time.",
     highlights: [
-      "A fast scrub no longer cancels the piece of video already downloading, which the browser was reporting as a missing file. The preview frame comes from the copy already prepared on the server.",
+      "Jumping ahead now loads the video at that spot. The seek is not treated as finished just because the clock moved.",
     ],
   },
   {
