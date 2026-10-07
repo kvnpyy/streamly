@@ -27,10 +27,24 @@ import {
   shouldTreatTranscodeAsEnded,
   shouldTreatTranscodeSnapAsEnded,
   signalTranscodePlaybackEnded,
+  shouldFlushVodPictureStall,
   vodTranscodeRecoveryPlayhead,
   vodTranscodeWaitBridgeSec,
   shouldHoldTranscodeSeekTarget,
 } from "@/lib/player-transcode-playback-end";
+
+function decodedVideoFrames(video: HTMLVideoElement): number | null {
+  try {
+    const total = video.getVideoPlaybackQuality?.().totalVideoFrames;
+    if (typeof total === "number" && total > 0) return total;
+  } catch {
+    /* not in a document yet */
+  }
+  const webkit = (
+    video as HTMLVideoElement & { webkitDecodedFrameCount?: number }
+  ).webkitDecodedFrameCount;
+  return typeof webkit === "number" && webkit > 0 ? webkit : null;
+}
 
 function isBraveOnAppleMobile(): boolean {
   if (typeof navigator === "undefined") return false;
@@ -124,6 +138,107 @@ export function usePlayerVideoEvents(p: UsePlayerVideoEventsParams) {
     setMediaClockSec,
     applyVodDurationHint,
   } = p;
+
+  useEffect(() => {
+    const v = videoRef.current;
+    const vod = current != null && current.kind !== "live";
+    if (!open || !vod || !v) return;
+
+    let presentedMediaTime = 0;
+    let haveFrame = false;
+    let lastClock = Number.isFinite(v.currentTime) ? v.currentTime : 0;
+    let lastFlushAt = 0;
+    let frameHandle = 0;
+    let stopped = false;
+    let ownFlush = false;
+    let anchorFrames = -1;
+    let anchorTime = lastClock;
+    const canWatchFrames = typeof v.requestVideoFrameCallback === "function";
+
+    const watchFrame = (
+      _now: number,
+      meta: VideoFrameCallbackMetadata
+    ) => {
+      if (stopped) return;
+      if (Number.isFinite(meta.mediaTime) && meta.mediaTime > 0) {
+        haveFrame = true;
+        presentedMediaTime = meta.mediaTime;
+      }
+      frameHandle = v.requestVideoFrameCallback(watchFrame);
+    };
+
+    const onSeeking = () => {
+      if (ownFlush) {
+        ownFlush = false;
+        return;
+      }
+      haveFrame = false;
+      anchorFrames = -1;
+    };
+
+    const onTime = () => {
+      const now = performance.now();
+      const currentTime = v.currentTime;
+      const clockAdvanced =
+        Number.isFinite(currentTime) && currentTime > lastClock + 0.05;
+      lastClock = Number.isFinite(currentTime) ? currentTime : lastClock;
+      let pictureBehindSec = 0;
+      if (canWatchFrames) {
+        // A zero presentation time while playback is underway is a bad sample,
+        // not a frozen frame.
+        if (haveFrame && presentedMediaTime > 0) {
+          pictureBehindSec = currentTime - presentedMediaTime;
+        }
+      } else {
+        const frames = decodedVideoFrames(v);
+        if (frames == null) {
+          pictureBehindSec = 0;
+        } else if (anchorFrames < 0 || frames > anchorFrames) {
+          anchorFrames = frames;
+          anchorTime = currentTime;
+        } else {
+          pictureBehindSec = currentTime - anchorTime;
+        }
+      }
+      if (
+        !shouldFlushVodPictureStall({
+          paused: v.paused,
+          seeking: v.seeking,
+          scrubbing: vodScrubbingRef.current,
+          hidden: document.hidden,
+          outgoing: vodOutgoingPlayheadRef.current,
+          clockAdvanced,
+          pictureBehindSec,
+          nowMs: now,
+          lastFlushAtMs: lastFlushAt,
+        })
+      ) {
+        return;
+      }
+      lastFlushAt = now;
+      ownFlush = true;
+      try {
+        // Same flush hls.js uses for a video-only hole. It does not skip audio.
+        v.currentTime += 0.000001;
+      } catch {
+        ownFlush = false;
+      }
+      if (!v.seeking) ownFlush = false;
+    };
+
+    if (canWatchFrames) {
+      frameHandle = v.requestVideoFrameCallback(watchFrame);
+    }
+    v.addEventListener("seeking", onSeeking);
+    // timeupdate is too slow to catch the freeze before it lasts a full second.
+    const poll = window.setInterval(onTime, 100);
+    return () => {
+      stopped = true;
+      window.clearInterval(poll);
+      if (canWatchFrames) v.cancelVideoFrameCallback(frameHandle);
+      v.removeEventListener("seeking", onSeeking);
+    };
+  }, [open, current, videoRef, vodScrubbingRef, vodOutgoingPlayheadRef]);
 
   useEffect(() => {
     const v = videoRef.current;

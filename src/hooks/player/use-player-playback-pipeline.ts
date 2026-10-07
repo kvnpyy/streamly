@@ -50,7 +50,10 @@ import {
 } from "@/lib/stream-url";
 import { isAmazonSilkUserAgent, isTvClassUserAgent, isTvOrSilkUserAgent } from "@/lib/tv-user-agent";
 import { humanizePlaybackErrorResponse } from "@/lib/playback-error-message";
-import { isRetryableVodTranscodeHttpStatus } from "@/lib/vod-transcode-http";
+import {
+  isRetryableVodTranscodeHttpStatus,
+  vodTranscodeFragShouldRetryInPlace,
+} from "@/lib/vod-transcode-http";
 import {
   shouldIgnoreOutgoingTranscodeClock,
   vodTranscodeRecoveryPlayhead,
@@ -1174,12 +1177,14 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
                 typeof data.response?.code === "number"
                   ? data.response.code
                   : 0;
-              // 502/503/504/524 = segment still encoding or a brief gateway
-              // blip. hls.js retries in place. startLoad() aborts that retry
-              // and, on an EVENT playlist, restarts at the opening.
+              // 502/503/504/524, or a socket reset with no status. hls.js
+              // retries that piece in place. startLoad() aborts the retry
+              // and closes the MediaSource (blob file-not-found).
               if (
-                isRetryableVodTranscodeHttpStatus(httpCode) ||
-                data.details === Hls.ErrorDetails.FRAG_LOAD_TIMEOUT
+                vodTranscodeFragShouldRetryInPlace({
+                  details: data.details,
+                  httpStatus: httpCode,
+                })
               ) {
                 return;
               }

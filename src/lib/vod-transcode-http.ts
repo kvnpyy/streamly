@@ -10,6 +10,34 @@ export function isRetryableVodTranscodeHttpStatus(status: number): boolean {
   return RETRYABLE_VOD_TRANSCODE_HTTP.has(status);
 }
 
+/**
+ * Cloudflare's proxy drops an origin request that stays silent for about 100s.
+ * The browser reports that as ERR_CONNECTION_CLOSED, with no HTTP status.
+ * A segment wait has to finish well inside that window and answer 503.
+ */
+export const VOD_SEGMENT_READY_WAIT_MS = 12_000;
+
+/**
+ * A dropped socket (status 0) is the same kind of blip as 502/503.
+ * Restarting the HLS load aborts the in-place retry and closes the
+ * MediaSource, which is the blob file-not-found after the episode stops.
+ */
+export function vodTranscodeFragShouldRetryInPlace(opts: {
+  details: string;
+  httpStatus: number;
+}): boolean {
+  if (isRetryableVodTranscodeHttpStatus(opts.httpStatus)) return true;
+  if (opts.details === "fragLoadTimeOut" || opts.details === "levelLoadTimeOut") {
+    return true;
+  }
+  if (opts.httpStatus !== 0) return false;
+  return (
+    opts.details === "fragLoadError" ||
+    opts.details === "levelLoadError" ||
+    opts.details === "manifestLoadError"
+  );
+}
+
 function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
     if (signal?.aborted) {

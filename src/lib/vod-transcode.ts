@@ -16,13 +16,17 @@ import {
   parseExtinfDurationsBySegment,
   cachedTranscodeShouldBeRebuilt,
   encodedLooksFullyComplete,
+  fmp4ResumeJoinPlan,
+  playbackManifestFromRaw,
   prepareManifestForPlayback,
   rewriteTranscodeManifest,
+  VOD_TRANSCODE_JOIN_INIT_NAME,
   segmentSequence,
   sumExtinfDurationSec,
   transcodeStartupReady,
   VOD_TRANSCODE_SEGMENT_RE as SEGMENT_RE,
 } from "@/lib/vod-transcode-manifest";
+import { VOD_SEGMENT_READY_WAIT_MS } from "@/lib/vod-transcode-http";
 import { transcodeManifestWaitMs } from "@/lib/vod-transcode-wait";
 import {
   countTfdtBoxes,
@@ -469,13 +473,12 @@ function manifestTextForPlayback(
   playlistComplete: boolean,
   onDisk: ReadonlySet<string>
 ): string {
-  const source = buildManifestFromContiguousDisk(
+  return playbackManifestFromRaw(
+    raw,
     onDisk,
-    parseExtinfDurationsBySegment(raw),
-    hlsSegmentSeconds(),
-    { playlistComplete }
+    playlistComplete,
+    hlsSegmentSeconds()
   );
-  return prepareManifestForPlayback(source, playlistComplete, onDisk);
 }
 
 function transcodeMaxHeight(): number {
@@ -1155,11 +1158,18 @@ async function sweepTranscodeDiskCache(): Promise<void> {
       /* skip */
     }
   }
-  // Only a live ffmpeg is protected. Viewer-warm dirs used to be kept past the
-  // cap, which let HLS cache plus source files fill the volume.
+  // A live ffmpeg or a viewer who is still watching. Idle caches are still
+  // evicted so the disk cap holds.
   const protectKeys = new Set<string>();
   for (const [key, job] of jobs) {
-    if (job.proc && job.proc.exitCode == null) protectKeys.add(key);
+    // A finished encode has no ffmpeg. Deleting it while someone is still
+    // watching removes the segment they request next (connection reset).
+    if (
+      (job.proc && job.proc.exitCode == null) ||
+      jobViewerActive(job)
+    ) {
+      protectKeys.add(key);
+    }
   }
 
   const victims = evictionKeysForPressure({
@@ -1410,6 +1420,13 @@ function mergeHeaders(
 
 const SEGMENT_CACHE_CONTROL = "public, max-age=86400, immutable";
 
+function transcodeMediaCacheControl(name: string): string {
+  // Init is replaced when an encode resumes. An immutable cache keeps the
+  // opening header and the next piece fails as a missing file.
+  if (name.startsWith("init")) return "no-cache";
+  return SEGMENT_CACHE_CONTROL;
+}
+
 function transcodeMediaContentType(name: string): string {
   if (name.endsWith(".m4s") || name.endsWith(".mp4")) return "video/mp4";
   return "video/mp2t";
@@ -1528,9 +1545,11 @@ async function healTranscodeJobContiguity(job: TranscodeJob): Promise<number> {
 
   try {
     let durationBySegment = new Map<string, number>();
+    let joinPlan: ReturnType<typeof fmp4ResumeJoinPlan> | null = null;
     try {
       const raw = await fsp.readFile(path.join(dir, MANIFEST_NAME), "utf8");
       durationBySegment = parseExtinfDurationsBySegment(raw);
+      joinPlan = fmp4ResumeJoinPlan(raw);
     } catch {
       /* fresh dir */
     }
@@ -1549,7 +1568,10 @@ async function healTranscodeJobContiguity(job: TranscodeJob): Promise<number> {
       healedDisk,
       durationBySegment,
       hlsSegmentSeconds(),
-      { playlistComplete }
+      {
+        playlistComplete,
+        discontinuityBefore: joinPlan?.discontinuityBefore,
+      }
     );
     await fsp.writeFile(path.join(dir, MANIFEST_NAME), healed, "utf8");
   } catch {
@@ -2382,6 +2404,9 @@ async function discardHitchyTranscodeCache(
 ): Promise<boolean> {
   const job = jobs.get(key);
   if (job?.proc && job.proc.exitCode == null) return false;
+  // Watching a finished episode. The playlist is no longer being rewritten,
+  // so the age check below would otherwise delete it mid-watch.
+  if (job && jobViewerActive(job)) return false;
   const manifest = await readManifestIfReady(dir);
   if (!manifest || !cachedTranscodeShouldBeRebuilt(manifest)) return false;
   try {
@@ -2958,7 +2983,13 @@ export async function handleVodTranscodeRequest(opts: {
       ? path.basename(opts.media)
       : MANIFEST_NAME;
 
-  if (!SEGMENT_RE.test(media) && media !== MANIFEST_NAME && media !== "init.mp4" && media !== INIT_KEEP_NAME) {
+  if (
+    !SEGMENT_RE.test(media) &&
+    media !== MANIFEST_NAME &&
+    media !== "init.mp4" &&
+    media !== INIT_KEEP_NAME &&
+    media !== VOD_TRANSCODE_JOIN_INIT_NAME
+  ) {
     return { status: 400, errorText: "Invalid transcode media." };
   }
 
@@ -3110,6 +3141,17 @@ export async function handleVodTranscodeRequest(opts: {
     if (playlistComplete && job.state !== "ready") {
       job.state = "ready";
     }
+    const playlistJoin = fmp4ResumeJoinPlan(rawAfterHeal);
+    if (playlistJoin.discontinuityBefore.size > 0) {
+      try {
+        await fsp.copyFile(
+          path.join(job.dir, "init.mp4"),
+          path.join(job.dir, VOD_TRANSCODE_JOIN_INIT_NAME)
+        );
+      } catch {
+        /* opening init is not on disk yet */
+      }
+    }
     const trimmed = manifestTextForPlayback(
       rawAfterHeal,
       playlistComplete,
@@ -3189,7 +3231,14 @@ export async function handleVodTranscodeRequest(opts: {
   let segmentReady = await waitForSegmentFile(segPath, 200);
   if (!segmentReady) {
     void ensureEncodingContinues(job);
-    const ready = await waitForReady(job, opts.signal);
+    // Default ready-wait is 120s. Cloudflare closes that socket around 100s
+    // (ERR_CONNECTION_CLOSED) and the player drops the episode.
+    const ready = await waitForReady(
+      job,
+      opts.signal,
+      VOD_SEGMENT_READY_WAIT_MS,
+      { failJobOnTimeout: false }
+    );
     if (!ready) {
       return {
         status: 503,
@@ -3217,7 +3266,7 @@ export async function handleVodTranscodeRequest(opts: {
       contentType: transcodeMediaContentType(media),
       extraHeaders: {
         "content-length": String(st.size),
-        "cache-control": SEGMENT_CACHE_CONTROL,
+        "cache-control": transcodeMediaCacheControl(media),
       },
     };
   }
@@ -3257,7 +3306,7 @@ export async function handleVodTranscodeRequest(opts: {
     contentType: transcodeMediaContentType(media),
     extraHeaders: {
       "content-length": String(data.byteLength),
-      "cache-control": SEGMENT_CACHE_CONTROL,
+      "cache-control": transcodeMediaCacheControl(media),
     },
   };
 }

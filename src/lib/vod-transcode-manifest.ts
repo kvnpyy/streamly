@@ -5,6 +5,8 @@ import {
 
 export const VOD_TRANSCODE_SEGMENT_RE = /^seg_\d+\.(?:ts|m4s)$/i;
 export const VOD_TRANSCODE_INIT_NAME = "init.mp4";
+/** Resume init. A new name so the browser does not reuse the cached opening init. */
+export const VOD_TRANSCODE_JOIN_INIT_NAME = "init.join.mp4";
 
 const DURATION_TAG_RE = /^#EXT-X-STREAMLY-DURATION-SEC:([\d.]+)/im;
 const START_OFFSET_TAG_RE = /^#EXT-X-STREAMLY-START-OFFSET-SEC:([\d.]+)/im;
@@ -400,6 +402,8 @@ export function parseExtinfDurationsBySegment(
 export function fmp4ResumeJoinPlan(manifestText: string): {
   discontinuityBefore: Set<string>;
   tail: Set<string>;
+  /** One-frame crumbs in front of a join. Playing them closes the video. */
+  omit: Set<string>;
 } {
   const pairs: { name: string; dur: number; disc: boolean }[] = [];
   let disc = false;
@@ -425,11 +429,13 @@ export function fmp4ResumeJoinPlan(manifestText: string): {
   const discontinuityBefore = new Set(
     pairs.filter((pair) => pair.disc).map((pair) => pair.name)
   );
+  const omit = new Set<string>();
   // A short segment is the tail of a killed encode. The next piece starts
   // its timestamps at zero, and the player skips unless that join is marked.
   for (let i = 0; i < pairs.length - 1; i++) {
     if (pairs[i]!.dur < 0.75) {
       discontinuityBefore.add(pairs[i + 1]!.name);
+      omit.add(pairs[i]!.name);
     }
   }
   const tail = new Set<string>();
@@ -442,7 +448,7 @@ export function fmp4ResumeJoinPlan(manifestText: string): {
       tail.add(pairs[i]!.name);
     }
   }
-  return { discontinuityBefore, tail };
+  return { discontinuityBefore, tail, omit };
 }
 
 /** A flushed opening segment is playable even if ffmpeg's playlist is still empty. */
@@ -459,6 +465,31 @@ export function transcodeStartupReady(opts: {
   if (opts.openingSegmentBytes >= OPENING_SEGMENT_MIN_BYTES) return true;
   const text = opts.manifestText ?? "";
   return text.includes("#EXTM3U") && countManifestSegments(text) >= 1;
+}
+
+/**
+ * Playlist the player should see. A resume join is marked and the one-frame
+ * crumb is left out. The pieces after the join use a separate init file.
+ */
+export function playbackManifestFromRaw(
+  raw: string,
+  onDisk: ReadonlySet<string>,
+  playlistComplete: boolean,
+  segmentSec: number,
+  extraDiscontinuityBefore?: ReadonlySet<string>
+): string {
+  const plan = fmp4ResumeJoinPlan(raw);
+  const discontinuityBefore = new Set(plan.discontinuityBefore);
+  if (extraDiscontinuityBefore) {
+    for (const name of extraDiscontinuityBefore) discontinuityBefore.add(name);
+  }
+  const durations = parseExtinfDurationsBySegment(raw);
+  const built = buildManifestFromContiguousDisk(onDisk, durations, segmentSec, {
+    playlistComplete,
+    discontinuityBefore,
+    omit: plan.omit,
+  });
+  return prepareManifestForPlayback(built, playlistComplete, onDisk);
 }
 
 export function countManifestSegments(manifestText: string): number {
@@ -627,11 +658,10 @@ export function prepareManifestForPlayback(
       out.push("#EXT-X-DISCONTINUITY");
       const mapLine = header.find((line) => /^#EXT-X-MAP:/i.test(line.trim()));
       if (mapLine) {
-        out.push(
-          /init\.mp4\.keep/i.test(mapLine)
-            ? `#EXT-X-MAP:URI="${VOD_TRANSCODE_INIT_NAME}"`
-            : mapLine
-        );
+        // Same URL as the opening init is still the cached original. The
+        // resume header has to be a different file or the append fails and
+        // the browser drops the video (blob file-not-found).
+        out.push(`#EXT-X-MAP:URI="${VOD_TRANSCODE_JOIN_INIT_NAME}"`);
       }
     }
     out.push(p.extinf, p.media);

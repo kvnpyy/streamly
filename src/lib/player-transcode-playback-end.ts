@@ -191,6 +191,51 @@ export function vodTranscodeWaitBridgeSec(
   return null;
 }
 
+/**
+ * Chrome holds the last painted frame for about a second when the video
+ * samples have a short hole and the audio clock keeps moving, then the
+ * picture jumps. A one-microsecond seek flushes that pipeline.
+ * See https://issues.chromium.org/issues/40280613
+ */
+export const VOD_PICTURE_STALL_SEC = 0.35;
+/** Ignore a stall that is already a real skip, not the one-second Chrome hold. */
+export const VOD_PICTURE_STALL_MAX_SEC = 1.5;
+export const VOD_PICTURE_STALL_COOLDOWN_MS = 2_000;
+
+export function shouldFlushVodPictureStall(opts: {
+  paused: boolean;
+  seeking: boolean;
+  scrubbing: boolean;
+  hidden: boolean;
+  /** Previous episode is still on the element. */
+  outgoing: boolean;
+  /** Audio clock moved since the last check. A frozen clock is a buffer wait. */
+  clockAdvanced: boolean;
+  /** Seconds the playhead is ahead of the last painted frame. */
+  pictureBehindSec: number;
+  nowMs: number;
+  lastFlushAtMs: number;
+}): boolean {
+  if (
+    opts.paused ||
+    opts.seeking ||
+    opts.scrubbing ||
+    opts.hidden ||
+    opts.outgoing ||
+    !opts.clockAdvanced
+  ) {
+    return false;
+  }
+  if (opts.nowMs - opts.lastFlushAtMs < VOD_PICTURE_STALL_COOLDOWN_MS) {
+    return false;
+  }
+  if (!Number.isFinite(opts.pictureBehindSec)) return false;
+  return (
+    opts.pictureBehindSec >= VOD_PICTURE_STALL_SEC &&
+    opts.pictureBehindSec <= VOD_PICTURE_STALL_MAX_SEC
+  );
+}
+
 /** HLS snap-back near the finale — mid-episode snaps are recovery, not ended. */
 export function shouldTreatTranscodeSnapAsEnded(
   currentRel: number,

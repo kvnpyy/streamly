@@ -27,6 +27,27 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.13.86] — 2026-10-07
+
+The same moment in an episode no longer closes the video.
+
+### Fixed
+- When encoding picked up again partway through, the next piece did not match the opening of the file. The player threw that video away and reported it missing. That piece now uses its own header, so playback continues.
+
+## [0.13.85] — 2026-10-07
+
+An episode no longer dies half an hour in when a piece is slow to arrive.
+
+### Fixed
+- A segment that was not ready yet held the connection open until it was cut off, and playback threw the video away. That piece is retried and the episode stays where you were.
+
+## [0.13.84] — 2026-10-07
+
+The picture no longer freezes for a second while the sound keeps going.
+
+### Fixed
+- A short gap in the video was leaving the last frame on screen while the audio continued, then the picture jumped ahead. That frame now moves with the sound.
+
 ## [0.13.83] — 2026-10-07
 
 Playing an episode no longer deletes the video out from under you.

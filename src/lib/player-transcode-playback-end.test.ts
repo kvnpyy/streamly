@@ -9,6 +9,7 @@ import {
   shouldIgnoreOutgoingTranscodeClock,
   vodTranscodeRecoveryPlayhead,
   vodTranscodeWaitBridgeSec,
+  shouldFlushVodPictureStall,
   shouldHoldTranscodeSeekTarget,
 } from "./player-transcode-playback-end";
 
@@ -248,5 +249,52 @@ describe("vodTranscodeWaitBridgeSec", () => {
     expect(
       vodTranscodeWaitBridgeSec(10, [{ start: 10.1, end: 20 }], true)
     ).toBeNull();
+  });
+});
+
+describe("shouldFlushVodPictureStall", () => {
+  const playing = {
+    paused: false,
+    seeking: false,
+    scrubbing: false,
+    hidden: false,
+    outgoing: false,
+    clockAdvanced: true,
+    pictureBehindSec: 0.6,
+    nowMs: 10_000,
+    lastFlushAtMs: 0,
+  };
+
+  it("flushes when the picture sits still and the clock keeps moving", () => {
+    expect(shouldFlushVodPictureStall(playing)).toBe(true);
+  });
+
+  it("leaves a frame that is keeping up with the sound", () => {
+    expect(
+      shouldFlushVodPictureStall({ ...playing, pictureBehindSec: 0.04 })
+    ).toBe(false);
+  });
+
+  it("does not seek while paused, scrubbing, hidden, or waiting on data", () => {
+    expect(shouldFlushVodPictureStall({ ...playing, paused: true })).toBe(false);
+    expect(shouldFlushVodPictureStall({ ...playing, seeking: true })).toBe(false);
+    expect(shouldFlushVodPictureStall({ ...playing, scrubbing: true })).toBe(false);
+    expect(shouldFlushVodPictureStall({ ...playing, hidden: true })).toBe(false);
+    expect(shouldFlushVodPictureStall({ ...playing, outgoing: true })).toBe(false);
+    expect(
+      shouldFlushVodPictureStall({ ...playing, clockAdvanced: false })
+    ).toBe(false);
+  });
+
+  it("waits before flushing the same stall again", () => {
+    expect(
+      shouldFlushVodPictureStall({ ...playing, lastFlushAtMs: 9_000 })
+    ).toBe(false);
+  });
+
+  it("does not treat a multi-second jump as this stall", () => {
+    expect(
+      shouldFlushVodPictureStall({ ...playing, pictureBehindSec: 4 })
+    ).toBe(false);
   });
 });
