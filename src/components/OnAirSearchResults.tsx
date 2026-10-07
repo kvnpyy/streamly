@@ -11,11 +11,14 @@ import {
   buildLiveFlipPlaylist,
   liveStreamToPlayerSource,
 } from "@/lib/live-flip-playlist";
+import { useNow } from "@/lib/hooks";
 import { MIN_SEARCH_QUERY_LEN } from "@/lib/search-normalize";
 import type { LiveStream, XtreamCredentials } from "@/lib/xtream-types";
 import { usePlayer } from "@/store/player";
 import { usePrefs } from "@/store/preferences";
 import { useMemo } from "react";
+
+const EMPTY_MATCHES: OnAirSearchMatch[] = [];
 
 function programmeProgress(match: OnAirSearchMatch, nowSec: number): number | undefined {
   if (match.slot !== "now" || match.start <= 0 || match.end <= match.start) {
@@ -55,7 +58,8 @@ export function OnAirSearchResults({
     safe
   );
 
-  const matches = search.data?.matches ?? [];
+  const matches = search.data?.matches ?? EMPTY_MATCHES;
+  const nowSec = useNow(60_000);
   const nowRows = useMemo(
     () => matches.filter((m) => m.slot === "now"),
     [matches]
@@ -97,8 +101,6 @@ export function OnAirSearchResults({
         : {}),
     });
   };
-
-  const nowSec = Math.floor(Date.now() / 1000);
 
   const renderMatch = (match: OnAirSearchMatch) => {
     const stream = match.stream;
