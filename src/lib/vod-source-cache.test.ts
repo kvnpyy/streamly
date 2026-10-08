@@ -5,6 +5,17 @@ import path from "path";
 
 vi.mock("server-only", () => ({}));
 
+describe("bytesLookLikeErrorPage", () => {
+  it("spots a provider HTML page sent in place of the episode", async () => {
+    const { bytesLookLikeErrorPage } = await import("./vod-source-cache");
+    const enc = (s: string) => new TextEncoder().encode(s);
+    expect(bytesLookLikeErrorPage(enc("<html><head><title>XUI.one - Debug Mode"))).toBe(true);
+    expect(bytesLookLikeErrorPage(enc("\n  <!DOCTYPE html>"))).toBe(true);
+    expect(bytesLookLikeErrorPage(new Uint8Array([0x1a, 0x45, 0xdf, 0xa3, 0x01]))).toBe(false);
+    expect(bytesLookLikeErrorPage(enc("\0\0\0 ftypisom"))).toBe(false);
+  });
+});
+
 describe("vod-source-cache", () => {
   let tmp: string;
 

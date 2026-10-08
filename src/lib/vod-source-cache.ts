@@ -203,6 +203,12 @@ async function ensureEntry(upstream: string): Promise<SourceEntry> {
     abort: null,
   };
 
+  for (const p of [finalPath, partialPath]) {
+    if (await fileStartsWithErrorPage(p)) {
+      await fsp.rm(p, { force: true }).catch(() => {});
+    }
+  }
+
   try {
     const st = await fsp.stat(finalPath);
     if (st.size > 0) {
@@ -232,6 +238,29 @@ function parseTotalFromContentRange(header: string | null): number | null {
   if (!m) return null;
   const n = parseInt(m[1]!, 10);
   return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+const PROVIDER_ERROR_PAGE =
+  "Your provider sent an error page instead of this episode. It may be at its connection limit; try again in a moment.";
+
+/** Panels like XUI answer a busy or blocked line with an HTML page and status 200. */
+export function bytesLookLikeErrorPage(head: Uint8Array): boolean {
+  const text = Buffer.from(head.subarray(0, 64)).toString("latin1").trimStart();
+  return /^<(!doctype|html|head|body|\?xml)/i.test(text);
+}
+
+async function fileStartsWithErrorPage(filePath: string): Promise<boolean> {
+  const fh = await fsp.open(filePath, "r").catch(() => null);
+  if (!fh) return false;
+  try {
+    const head = Buffer.alloc(64);
+    const { bytesRead } = await fh.read(head, 0, head.length, 0);
+    return bytesLookLikeErrorPage(head.subarray(0, bytesRead));
+  } catch {
+    return false;
+  } finally {
+    await fh.close().catch(() => {});
+  }
 }
 
 async function runDownload(entry: SourceEntry): Promise<void> {
@@ -285,6 +314,12 @@ async function runDownload(entry: SourceEntry): Promise<void> {
     throw new Error(entry.error);
   }
 
+  if (/^text\//i.test(res.headers.get("content-type") ?? "")) {
+    await res.body?.cancel().catch(() => {});
+    entry.error = PROVIDER_ERROR_PAGE;
+    throw new Error(entry.error);
+  }
+
   const totalFromRange = parseTotalFromContentRange(
     res.headers.get("content-range")
   );
@@ -330,6 +365,11 @@ async function runDownload(entry: SourceEntry): Promise<void> {
       const { done, value } = await reader.read();
       if (done) break;
       if (!value || value.byteLength === 0) continue;
+      if (written === 0 && bytesLookLikeErrorPage(value)) {
+        await reader.cancel().catch(() => {});
+        entry.error = PROVIDER_ERROR_PAGE;
+        throw new Error(entry.error);
+      }
       await fh.write(value);
       written += value.byteLength;
       entry.bytes = written;

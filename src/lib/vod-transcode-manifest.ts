@@ -477,9 +477,12 @@ export function playbackManifestFromRaw(
   onDisk: ReadonlySet<string>,
   playlistComplete: boolean,
   segmentSec: number,
-  extraDiscontinuityBefore?: ReadonlySet<string>
+  extraDiscontinuityBefore?: ReadonlySet<string>,
+  /** Lengths read from the segment files; they win over the playlist's. */
+  measuredDurations?: ReadonlyMap<string, number>
 ): string {
   const durations = parseExtinfDurationsBySegment(raw);
+  for (const [name, dur] of measuredDurations ?? []) durations.set(name, dur);
   const discontinuityBefore = new Set(extraDiscontinuityBefore ?? []);
   const built = buildManifestFromContiguousDisk(onDisk, durations, segmentSec, {
     playlistComplete,
@@ -515,7 +518,12 @@ export function buildManifestFromContiguousDisk(
   const prefix = contiguousSegmentCount(onDisk);
   if (prefix <= 0) return "#EXTM3U\n";
   const ext = [...onDisk].some((name) => name.endsWith(".m4s")) ? "m4s" : "ts";
-  const targetDur = Math.max(2, Math.ceil(defaultSegSec));
+  let longest = defaultSegSec;
+  for (let i = 0; i < prefix; i++) {
+    const d = durationBySegment.get(`seg_${String(i).padStart(5, "0")}.${ext}`);
+    if (d != null && d > longest) longest = d;
+  }
+  const targetDur = Math.max(2, Math.round(longest));
   const openingInit = opts?.openingInit ?? VOD_TRANSCODE_INIT_NAME;
   const lines = [
     "#EXTM3U",

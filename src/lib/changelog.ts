@@ -11,6 +11,15 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.13.89",
+    date: "2026-10-07",
+    summary: "The picture no longer freezes for a few seconds while the sound keeps going.",
+    highlights: [
+      "Each piece of an episode was moved to the start time the playlist expected. The playlist listed every piece as exactly four seconds, but real pieces run anywhere from two to five. After every short piece, the next one was pushed seconds ahead and left a hole the picture stopped on. Pieces now follow straight on from the one before, and the playlist lists their real lengths.",
+      "When your provider answers with an error page instead of the episode, that page is no longer saved as the episode. You see a message and can try again.",
+    ],
+  },
+  {
     version: "0.13.88",
     date: "2026-10-07",
     summary: "Episodes play straight through while they are still downloading.",

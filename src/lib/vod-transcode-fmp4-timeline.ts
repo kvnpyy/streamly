@@ -15,6 +15,7 @@ const CONTAINER_TYPES = new Set([
   "stbl",
   "moof",
   "traf",
+  "mvex",
 ]);
 
 type Mp4Box = {
@@ -54,46 +55,6 @@ export function firstSilentTailIndex(
     if (here < 2 && next < 2) return i;
   }
   return null;
-}
-
-/** Seconds of playlist time before `segmentName`, from EXTINF durations. */
-export function playlistTimeBeforeSegment(
-  manifest: string,
-  segmentName: string
-): number | null {
-  let acc = 0;
-  let pending: number | null = null;
-  for (const line of manifest.split(/\r?\n/)) {
-    const trimmed = line.trim();
-    const inf = /^#EXTINF:([\d.]+)/i.exec(trimmed);
-    if (inf) {
-      const n = parseFloat(inf[1]!);
-      pending = Number.isFinite(n) && n > 0 ? n : null;
-      continue;
-    }
-    if (!trimmed || trimmed.startsWith("#") || pending == null) continue;
-    const name = trimmed.split("/").pop() || trimmed;
-    if (name === segmentName) return acc;
-    acc += pending;
-    pending = null;
-  }
-  return null;
-}
-
-/**
- * How far to move a segment so its media time matches the playlist.
- * Small drift is left alone. A resume that restarts at zero is moved.
- */
-export function timelineShiftSec(
-  expectedStartSec: number,
-  actualStartSec: number
-): number {
-  if (!Number.isFinite(expectedStartSec) || !Number.isFinite(actualStartSec)) {
-    return 0;
-  }
-  const delta = expectedStartSec - actualStartSec;
-  if (delta <= 0.5) return 0;
-  return delta;
 }
 
 function readBox(buf: Buffer, offset: number): Mp4Box | null {
@@ -250,6 +211,112 @@ export function segmentTimelineStartSec(
     start = ticks / timescale;
   });
   return start;
+}
+
+/** track_id → default sample duration (ticks), from the init segment's trex. */
+export function readTrackDefaultDurations(init: Buffer): Map<number, number> {
+  const out = new Map<number, number>();
+  walkBoxes(init, 0, init.length, (box) => {
+    if (box.type !== "trex") return;
+    const off = box.start + box.header + 4;
+    if (off + 12 > box.start + box.size) return;
+    out.set(init.readUInt32BE(off), init.readUInt32BE(off + 8));
+  });
+  return out;
+}
+
+function trunDurationTicks(
+  buf: Buffer,
+  box: Mp4Box,
+  defaultDuration: number
+): number {
+  const end = box.start + box.size;
+  let p = box.start + box.header;
+  if (p + 8 > end) return 0;
+  const flags = buf.readUInt32BE(p) & 0xffffff;
+  const count = buf.readUInt32BE(p + 4);
+  p += 8;
+  if (flags & 0x1) p += 4;
+  if (flags & 0x4) p += 4;
+  const perSample =
+    (flags & 0x100 ? 4 : 0) +
+    (flags & 0x200 ? 4 : 0) +
+    (flags & 0x400 ? 4 : 0) +
+    (flags & 0x800 ? 4 : 0);
+  if (!(flags & 0x100)) return count * defaultDuration;
+  let total = 0;
+  for (let i = 0; i < count && p + 4 <= end; i++) {
+    total += buf.readUInt32BE(p);
+    p += perSample;
+  }
+  return total;
+}
+
+/**
+ * Media end (decode time + sample durations) of the track in the first track
+ * fragment, in seconds. The next segment of an unbroken encode starts here.
+ */
+export function segmentTimelineEndSec(
+  segment: Buffer,
+  timescales: ReadonlyMap<number, number>,
+  defaultDurations: ReadonlyMap<number, number> = new Map()
+): number | null {
+  let track: number | null = null;
+  let endTicks: number | null = null;
+  walkBoxes(segment, 0, segment.length, (box) => {
+    if (box.type !== "traf") return;
+    let trackId: number | null = null;
+    let defaultDuration: number | null = null;
+    let base: number | null = null;
+    let ticks = 0;
+    walkBoxes(segment, box.start + box.header, box.start + box.size, (child) => {
+      const at = child.start + child.header;
+      const end = child.start + child.size;
+      if (child.type === "tfhd" && trackId == null && at + 8 <= end) {
+        const flags = segment.readUInt32BE(at) & 0xffffff;
+        trackId = segment.readUInt32BE(at + 4);
+        let p = at + 8;
+        if (flags & 0x1) p += 8;
+        if (flags & 0x2) p += 4;
+        if (flags & 0x8 && p + 4 <= end) defaultDuration = segment.readUInt32BE(p);
+      } else if (child.type === "tfdt" && base == null) {
+        const version = segment[at] ?? 0;
+        base =
+          version === 0
+            ? segment.readUInt32BE(at + 4)
+            : Number(segment.readBigUInt64BE(at + 4));
+      } else if (child.type === "trun" && trackId != null) {
+        ticks += trunDurationTicks(
+          segment,
+          child,
+          defaultDuration ?? defaultDurations.get(trackId) ?? 0
+        );
+      }
+    });
+    if (trackId == null || base == null) return;
+    if (track == null) track = trackId;
+    if (trackId !== track) return;
+    const fragEnd = base + ticks;
+    endTicks = endTicks == null ? fragEnd : Math.max(endTicks, fragEnd);
+  });
+  if (track == null || endTicks == null) return null;
+  const timescale = timescales.get(track);
+  return timescale ? endTicks / timescale : null;
+}
+
+/**
+ * How far to move a segment so it starts where the previous one ended.
+ * Only a restart that went back in time is moved; an unbroken encode is left
+ * exactly as ffmpeg wrote it.
+ */
+export function continuityShiftSec(
+  previousEndSec: number | null,
+  actualStartSec: number
+): number {
+  if (previousEndSec == null || !Number.isFinite(previousEndSec)) return 0;
+  if (!Number.isFinite(actualStartSec)) return 0;
+  const delta = previousEndSec - actualStartSec;
+  return delta > 0.5 ? delta : 0;
 }
 
 /** Move every track's decode time and the segment index by the same seconds. */

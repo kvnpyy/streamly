@@ -187,6 +187,19 @@ describe("fmp4ResumeJoinPlan", () => {
     expect(served).toContain("seg_00000.m4s");
     expect(served).toContain("seg_00002.m4s");
   });
+
+  it("lists the measured length of each piece instead of a healed flat 4.0", () => {
+    const raw = ["#EXTM3U", "#EXTINF:4.000000,", "seg_00000.m4s", "#EXTINF:4.000000,", "seg_00001.m4s"].join("\n");
+    const onDisk = new Set(["seg_00000.m4s", "seg_00001.m4s"]);
+    const measured = new Map([
+      ["seg_00000.m4s", 2.395],
+      ["seg_00001.m4s", 5.2],
+    ]);
+    const served = playbackManifestFromRaw(raw, onDisk, true, 4, undefined, measured);
+    expect(served).toContain("#EXTINF:2.395000,\nseg_00000.m4s");
+    expect(served).toContain("#EXTINF:5.200000,\nseg_00001.m4s");
+    expect(served).toContain("#EXT-X-TARGETDURATION:5");
+  });
 });
 
 describe("sourceSeekLanded", () => {

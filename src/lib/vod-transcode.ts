@@ -28,14 +28,15 @@ import {
 import { VOD_SEGMENT_READY_WAIT_MS } from "@/lib/vod-transcode-http";
 import { transcodeManifestWaitMs } from "@/lib/vod-transcode-wait";
 import {
+  continuityShiftSec,
   countTfdtBoxes,
   firstSilentTailIndex,
   initDeclaresAudio,
-  playlistTimeBeforeSegment,
+  readTrackDefaultDurations,
   readTrackTimescales,
+  segmentTimelineEndSec,
   segmentTimelineStartSec,
   shiftFmp4Timeline,
-  timelineShiftSec,
 } from "@/lib/vod-transcode-fmp4-timeline";
 import {
   fmp4HlsMuxArgs,
@@ -484,6 +485,7 @@ async function maybeRecoverStalledFfmpeg(
 }
 
 function manifestTextForPlayback(
+  dir: string,
   raw: string,
   playlistComplete: boolean,
   onDisk: ReadonlySet<string>
@@ -492,7 +494,9 @@ function manifestTextForPlayback(
     raw,
     onDisk,
     playlistComplete,
-    hlsSegmentSeconds()
+    hlsSegmentSeconds(),
+    undefined,
+    timelineAlignState.get(dir)?.durations
   );
 }
 
@@ -665,7 +669,7 @@ async function probeStreamCodecs(input: string): Promise<ProbedCodecs> {
 }
 
 /** Bump when segment packaging changes. Older caches are discarded on the next play. */
-const TRANSCODE_ENCODE_REV = 11;
+const TRANSCODE_ENCODE_REV = 12;
 
 type JobMeta = {
   plan: VodTranscodePlan;
@@ -806,6 +810,7 @@ async function runVodChapterProbe(job: TranscodeJob): Promise<void> {
           maxHeight: transcodeMaxHeight(),
         }),
         durationSec,
+        encodeRev: TRANSCODE_ENCODE_REV,
       };
     if (parsed && found) latest.chapterMarkers = parsed;
     if (status.complete || found) latest.chapterProbeComplete = true;
@@ -1046,8 +1051,6 @@ type TranscodeJob = {
   sourceStarved?: boolean;
   /** Times the silent-tail check stopped ffmpeg for this job. */
   silentTailDrops?: number;
-  /** Segment index through which media timestamps match the playlist. */
-  timelineAlignedThrough?: number;
   /** Fire TV / Silk. MPEG-TS instead of fMP4, which those decoders freeze on. */
   pack?: "ts";
 };
@@ -1704,12 +1707,23 @@ async function resumeTranscodeJob(job: TranscodeJob): Promise<void> {
     const onDisk = await listSegmentFiles(job.dir);
     const trimmed = prepareManifestForPlayback(raw, false, onDisk);
     const prefixForSeek = contiguousSegmentCount(onDisk);
-    const seekInSourceSec = resumeSeekSecForDiskPrefix({
+    let seekInSourceSec = resumeSeekSecForDiskPrefix({
       startOffsetSec: job.startOffsetSec,
       prefixCount: prefixForSeek,
       segmentSec: hlsSegmentSeconds(),
       manifestEncodedSec: sumExtinfDurationSec(trimmed),
     });
+    if (job.pack !== "ts" && prefixForSeek > 0) {
+      // Rounded playlist durations drift from the real media. Resuming at the
+      // playlist time skipped or repeated seconds at every restart.
+      const lastName = `seg_${String(prefixForSeek - 1).padStart(5, "0")}.m4s`;
+      if ((await alignFmp4SegmentForPlayback(job.dir, lastName)) === "ready") {
+        const state = timelineAlignState.get(job.dir);
+        if (state?.through === prefixForSeek && state.prevEndSec != null) {
+          seekInSourceSec = job.startOffsetSec + state.prevEndSec;
+        }
+      }
+    }
     if (seekInSourceSec > 30 && isVodSourceCacheEnabled()) {
       const source = await getVodSourceStatus(job.upstream);
       if (source?.complete && source.path) {
@@ -2058,69 +2072,123 @@ async function dropSilentTranscodeTail(job: TranscodeJob): Promise<void> {
   await stripEndlistFromDiskManifest(job.dir);
 }
 
-const segmentAlignInflight = new Map<string, Promise<"ready" | "wait">>();
+type TimelineAlignState = {
+  /** Segments below this index sit on the episode clock. */
+  through: number;
+  /** Media end of segment `through - 1`, once measured. */
+  prevEndSec: number | null;
+  /** Real length of each checked piece. Heals write a flat 4.0 for all of them. */
+  durations: Map<string, number>;
+};
+
+const timelineAlignState = new Map<string, TimelineAlignState>();
+const timelineAlignChain = new Map<string, Promise<unknown>>();
+
+/** A new ffmpeg rewrites from `fromIndex`; re-check from the piece before it. */
+function resetTimelineAlign(dir: string, fromIndex: number): void {
+  const state = timelineAlignState.get(dir);
+  if (!state) return;
+  if (fromIndex <= 0) {
+    timelineAlignState.delete(dir);
+    return;
+  }
+  if (state.through >= fromIndex) {
+    for (const name of [...state.durations.keys()]) {
+      const seq = segmentSequence(name);
+      if (seq != null && seq >= fromIndex - 1) state.durations.delete(name);
+    }
+    timelineAlignState.set(dir, {
+      through: fromIndex - 1,
+      prevEndSec: null,
+      durations: state.durations,
+    });
+  }
+}
 
 /** Put a resumed segment's clock back on the episode, once the file is finished. */
-async function alignFmp4SegmentForPlayback(
+function alignFmp4SegmentForPlayback(
   dir: string,
   name: string
 ): Promise<"ready" | "wait"> {
-  const filePath = path.join(dir, name);
-  const existing = segmentAlignInflight.get(filePath);
-  if (existing) return existing;
-  const run = alignFmp4SegmentOnce(dir, name).finally(() => {
-    segmentAlignInflight.delete(filePath);
+  const index = segmentSequence(name);
+  if (index == null) return Promise.resolve("ready");
+  const prev = timelineAlignChain.get(dir) ?? Promise.resolve();
+  const run = prev
+    .catch(() => {})
+    .then(() => alignFmp4ThroughIndex(dir, index));
+  timelineAlignChain.set(dir, run);
+  void run.finally(() => {
+    if (timelineAlignChain.get(dir) === run) timelineAlignChain.delete(dir);
   });
-  segmentAlignInflight.set(filePath, run);
   return run;
 }
 
-async function alignFmp4SegmentOnce(dir: string, name: string): Promise<"ready" | "wait"> {
-  const filePath = path.join(dir, name);
+/**
+ * Walk segments in order up to `index`. A piece that starts before the
+ * previous one ended came from a restarted ffmpeg and is moved to follow it.
+ * Pieces from an unbroken encode are never touched: the playlist durations
+ * are rounded (a heal writes 4.0 for everything), and moving a short piece to
+ * match them punched multi-second holes the picture froze on.
+ */
+async function alignFmp4ThroughIndex(
+  dir: string,
+  index: number
+): Promise<"ready" | "wait"> {
+  const state = timelineAlignState.get(dir) ?? {
+    through: 0,
+    prevEndSec: null,
+    durations: new Map<string, number>(),
+  };
+  if (state.through > index) return "ready";
   await restoreFmp4Init(dir);
-  let manifest = "";
   let init: Buffer;
   try {
-    [manifest, init] = await Promise.all([
-      fsp.readFile(path.join(dir, MANIFEST_NAME), "utf8"),
-      fsp.readFile(path.join(dir, "init.mp4")),
-    ]);
+    init = await fsp.readFile(path.join(dir, "init.mp4"));
+    if (init.length <= 32) init = await fsp.readFile(path.join(dir, INIT_KEEP_NAME));
   } catch {
     return "wait";
   }
-  if (init.length <= 32) {
-    try {
-      init = await fsp.readFile(path.join(dir, INIT_KEEP_NAME));
-    } catch {
-      return "wait";
-    }
-  }
-  const expected = playlistTimeBeforeSegment(manifest, name);
-  if (expected == null) return "wait";
   const timescales = readTrackTimescales(init);
   // An init we cannot read is not "already aligned" — skipping it leaves the
   // segment at time zero and the player jumps there on every piece.
   if (timescales.size === 0) return "wait";
-  const fh = await fsp.open(filePath, "r").catch(() => null);
-  if (!fh) return "wait";
-  let actual: number | null = null;
-  try {
-    const head = Buffer.alloc(256 * 1024);
-    const { bytesRead } = await fh.read(head, 0, head.length, 0);
-    actual = segmentTimelineStartSec(head.subarray(0, bytesRead), timescales);
-  } finally {
-    await fh.close();
+  const defaults = readTrackDefaultDurations(init);
+
+  for (let i = state.through; i <= index; i++) {
+    const filePath = path.join(dir, `seg_${String(i).padStart(5, "0")}.m4s`);
+    const fh = await fsp.open(filePath, "r").catch(() => null);
+    if (!fh) return "wait";
+    let head: Buffer;
+    let fileBytes = 0;
+    try {
+      const buf = Buffer.alloc(64 * 1024);
+      const { bytesRead } = await fh.read(buf, 0, buf.length, 0);
+      head = buf.subarray(0, bytesRead);
+      fileBytes = (await fh.stat()).size;
+    } finally {
+      await fh.close();
+    }
+    let start = segmentTimelineStartSec(head, timescales);
+    let end = segmentTimelineEndSec(head, timescales, defaults);
+    if ((start == null || end == null) && fileBytes > head.length) {
+      head = await fsp.readFile(filePath).catch(() => Buffer.alloc(0));
+      start = segmentTimelineStartSec(head, timescales);
+      end = segmentTimelineEndSec(head, timescales, defaults);
+    }
+    // Still being written: moof is not there yet.
+    if (start == null || end == null) return "wait";
+    const shift = i === 0 ? 0 : continuityShiftSec(state.prevEndSec, start);
+    if (shift > 0) {
+      const raw = await fsp.readFile(filePath);
+      const tmp = `${filePath}.align`;
+      await fsp.writeFile(tmp, shiftFmp4Timeline(raw, shift, timescales));
+      await fsp.rename(tmp, filePath);
+    }
+    state.prevEndSec = end + shift;
+    if (end > start) state.durations.set(path.basename(filePath), end - start);
+    state.through = i + 1;
+    timelineAlignState.set(dir, state);
   }
-  // Still being written: moof is not there yet. Do not record this index as
-  // done, or the finished file stays at time zero after ffmpeg renames it in.
-  if (actual == null) return "wait";
-  const shift = timelineShiftSec(expected, actual);
-  if (!(shift > 0)) return "ready";
-  const raw = await fsp.readFile(filePath);
-  const shifted = shiftFmp4Timeline(raw, shift, timescales);
-  const tmp = `${filePath}.align`;
-  await fsp.writeFile(tmp, shifted);
-  await fsp.rename(tmp, filePath);
   return "ready";
 }
 
@@ -2132,16 +2200,11 @@ async function alignFinishedFmp4Segments(job: TranscodeJob): Promise<void> {
   // temp_file renames the segment ffmpeg is writing. Aligning that file and
   // then advancing past it leaves the replaced file at time zero forever.
   const limit = ffmpegRunning ? Math.max(0, prefix - 1) : prefix;
-  let through = job.timelineAlignedThrough ?? 0;
-  if (through > limit) through = limit;
-  for (let i = through; i < limit; i++) {
-    const name = `seg_${String(i).padStart(5, "0")}.m4s`;
-    if (!onDisk.has(name)) break;
-    const status = await alignFmp4SegmentForPlayback(job.dir, name);
-    if (status === "wait") break;
-    through = i + 1;
-  }
-  job.timelineAlignedThrough = through;
+  if (limit <= 0) return;
+  await alignFmp4SegmentForPlayback(
+    job.dir,
+    `seg_${String(limit - 1).padStart(5, "0")}.m4s`
+  );
 }
 
 async function spawnFfmpeg(
@@ -2189,10 +2252,12 @@ async function spawnFfmpegLocked(
     return;
   }
   await mkdirTranscodeDir(job.dir);
-  // A new ffmpeg starts its clock at zero and can replace the tail via
-  // temp_file. Re-check every finished piece against the playlist instead of
-  // trusting an align pass that ran while the file was still empty.
-  job.timelineAlignedThrough = 0;
+  // A new ffmpeg starts its clock at zero and writes from the end of the
+  // finished prefix. Re-check from there instead of trusting an earlier pass.
+  resetTimelineAlign(
+    job.dir,
+    contiguousSegmentCount(await listSegmentFiles(job.dir))
+  );
   // Re-check after await — another caller may have started ffmpeg.
   if (job.proc && job.proc.exitCode == null) return;
   await maybeEvictForSlot(job);
@@ -2514,6 +2579,7 @@ async function wipeTranscodeJobDir(dir: string, key: string): Promise<void> {
     await stopJobProc(job);
   }
   jobs.delete(key);
+  timelineAlignState.delete(dir);
   try {
     await fsp.rm(dir, { recursive: true, force: true });
   } catch {
@@ -3180,6 +3246,7 @@ export async function handleVodTranscodeRequest(opts: {
             maxHeight: transcodeMaxHeight(),
           }),
           durationSec: probed,
+          encodeRev: TRANSCODE_ENCODE_REV,
         };
         meta.durationSec = probed;
         await writeJobMeta(job.dir, meta);
@@ -3227,6 +3294,7 @@ export async function handleVodTranscodeRequest(opts: {
     }
     await restoreFmp4Init(job.dir);
     const trimmed = manifestTextForPlayback(
+      job.dir,
       rawAfterHeal,
       playlistComplete,
       onDiskAfter
