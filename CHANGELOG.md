@@ -27,6 +27,13 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.13.91] — 2026-10-08
+
+Starting the next episode no longer stops it a few seconds in.
+
+### Fixed
+- Any episode being played stopped the encoding of every other episode on the server, including other people's and your own next episode. The previous episode's player kept doing this after you moved on. An episode now only makes room on the same provider account, and only while it still needs to download.
+
 ## [0.13.90] — 2026-10-07
 
 An episode no longer fails with "Invalid data found when processing input".

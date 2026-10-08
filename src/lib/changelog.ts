@@ -11,6 +11,14 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.13.91",
+    date: "2026-10-08",
+    summary: "Starting the next episode no longer stops it a few seconds in.",
+    highlights: [
+      "Any episode being played stopped the encoding of every other episode on the server, including other people's and your own next episode. The previous episode's player kept doing this after you moved on. An episode now only makes room on the same provider account, and only while it still needs to download.",
+    ],
+  },
+  {
     version: "0.13.90",
     date: "2026-10-07",
     summary: "An episode no longer fails with \"Invalid data found when processing input\".",

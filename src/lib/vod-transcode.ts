@@ -2587,9 +2587,17 @@ async function cancelOtherUpstreamTranscodeJobs(
   upstream: string,
   keepKey: string
 ): Promise<void> {
+  // A fully downloaded episode does not use the provider connection. Its
+  // requests (an old tab, the previous episode's player) used to kill the
+  // next episode's encode every few seconds.
+  if (await isVodSourceComplete(upstream)) return;
   const otherUpstreams = new Set<string>();
   for (const [key, job] of jobs.entries()) {
     if (key === keepKey || job.upstream === upstream) continue;
+    // Other accounts and providers have their own connections. Stopping them
+    // made every viewer on the server restart everyone else's encode.
+    if (!sameProviderDownloadSlot(job.upstream, upstream)) continue;
+    if (await isVodSourceComplete(job.upstream)) continue;
     otherUpstreams.add(job.upstream);
     job.lastViewerAt = 0;
     stopTranscodeProcOnly(job);
