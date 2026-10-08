@@ -201,13 +201,12 @@ async function ensureEntry(upstream: string): Promise<SourceEntry> {
 }
 
 async function createEntry(upstream: string, key: string): Promise<SourceEntry> {
-  let entry: SourceEntry;
   const root = sourceRoot();
   await mkdirSourceRoot(root);
   const partialPath = path.join(root, `${key}.partial`);
   const finalPath = path.join(root, `${key}.bin`);
 
-  entry = {
+  const entry: SourceEntry = {
     key,
     upstream,
     partialPath,
