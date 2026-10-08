@@ -27,6 +27,15 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.13.93] — 2026-10-08
+
+An episode you jumped into partway no longer keeps the server busy after it finishes.
+
+### Fixed
+- When you started an episode partway through, the server never treated its encode as finished, so it kept restarting it at the last second. That loop kept taking an encode slot from the episode you were actually watching.
+
+---
+
 ## [0.13.92] — 2026-10-08
 
 Episodes no longer freeze about a minute in on a frozen, silent picture.

@@ -16,6 +16,7 @@ import {
   parseExtinfDurationsBySegment,
   cachedTranscodeShouldBeRebuilt,
   encodedLooksFullyComplete,
+  encodeTargetSec,
   playbackManifestFromRaw,
   prepareManifestForPlayback,
   rewriteTranscodeManifest,
@@ -380,7 +381,7 @@ async function fragmentedOutputState(dir: string): Promise<{
 
 /** Delete a package that advertises the opening but cannot play it. */
 async function discardUnplayableTranscodeOutput(job: TranscodeJob): Promise<void> {
-  await stopJobProc(job);
+  await stopJobProc(job, "unplayable-output");
   await killStrayFfmpegForDir(job.dir);
   const names = await fsp.readdir(job.dir).catch(() => [] as string[]);
   await Promise.all(
@@ -403,8 +404,14 @@ async function discardUnplayableTranscodeOutput(job: TranscodeJob): Promise<void
  */
 async function stopJobProc(
   job: TranscodeJob,
+  why: string,
   opts?: { waitMs?: number }
 ): Promise<boolean> {
+  if (job.proc && job.proc.exitCode == null) {
+    console.info(
+      `[vod-transcode] stop ffmpeg key=${job.key.slice(0, 12)} why=${why}`
+    );
+  }
   const proc = job.proc;
   const waitMs = opts?.waitMs ?? 4_000;
   const pidFromProc = proc?.pid;
@@ -486,7 +493,7 @@ async function maybeRecoverStalledFfmpeg(
     return;
   }
   if (now - job.lastSegmentGrowthAt < transcodeStallKillMs()) return;
-  await stopJobProc(job);
+  await stopJobProc(job, "stalled");
   job.lastSegmentGrowthAt = now;
 }
 
@@ -1211,16 +1218,16 @@ async function sweepTranscodeDiskCache(): Promise<void> {
     protectKeys,
   });
   for (const key of victims) {
-    await wipeTranscodeJobDir(path.join(root, key), key);
+    await wipeTranscodeJobDir(path.join(root, key), key, "disk-pressure");
   }
 }
 
 registerDiskReclaimer(sweepTranscodeDiskCache);
 
-function stopTranscodeProcOnly(job: TranscodeJob): boolean {
+function stopTranscodeProcOnly(job: TranscodeJob, why: string): boolean {
   if (!job.proc || job.proc.exitCode != null) return false;
   // Fire-and-forget wait — callers that need a hard single-writer barrier use stopJobProc.
-  void stopJobProc(job).then(() => {
+  void stopJobProc(job, why).then(() => {
     if (job.state === "running" || job.state === "starting") {
       job.state = "ready";
     }
@@ -1248,7 +1255,7 @@ async function sweepIdleTranscodeJobs(): Promise<void> {
     ) {
       continue;
     }
-    stopTranscodeProcOnly(job);
+    stopTranscodeProcOnly(job, "idle");
   }
 }
 
@@ -1275,7 +1282,7 @@ export function abandonVodTranscodeWarm(upstream: string): boolean {
     if (job.upstream !== upstream || !job.backgroundWarm) continue;
     job.backgroundWarm = false;
     job.lastViewerAt = 0;
-    stopTranscodeProcOnly(job);
+    stopTranscodeProcOnly(job, "warm-abandoned");
     abandoned = true;
   }
   if (abandoned) releaseVodSourceDownload(upstream);
@@ -1328,7 +1335,7 @@ async function evictIdleTranscodeSlot(
     if (!oldest || job.lastViewerAt < oldest.lastViewerAt) oldest = job;
   }
   if (!oldest) return false;
-  await stopJobProc(oldest);
+  await stopJobProc(oldest, `evicted-for=${exceptKey?.slice(0, 12) ?? "?"}`);
   if (oldest.state === "running" || oldest.state === "starting") {
     oldest.state = "ready";
   }
@@ -1485,7 +1492,14 @@ async function isPlaylistFullyEncoded(
   });
   // Tip-only ENDLIST is never "complete" while earlier segments exist on disk.
   if (manifestIsTipOnlyTail(raw, onDisk)) return false;
-  if (!encodedLooksFullyComplete(encoded, job.durationSec)) return false;
+  if (
+    !encodedLooksFullyComplete(
+      encoded,
+      encodeTargetSec(job.durationSec, job.startOffsetSec)
+    )
+  ) {
+    return false;
+  }
   if (isVodSourceCacheEnabled() && !(await isVodSourceComplete(job.upstream))) {
     return false;
   }
@@ -1542,7 +1556,10 @@ async function healTranscodeJobContiguity(job: TranscodeJob): Promise<number> {
     const durationSec =
       job.durationSec ?? (await readJobMeta(job.dir))?.durationSec ?? null;
     const diskEncoded = prefixCount * hlsSegmentSeconds();
-    let playlistComplete = encodedLooksFullyComplete(diskEncoded, durationSec);
+    let playlistComplete = encodedLooksFullyComplete(
+      diskEncoded,
+      encodeTargetSec(durationSec, job.startOffsetSec)
+    );
     if (
       playlistComplete &&
       isVodSourceCacheEnabled() &&
@@ -1611,7 +1628,7 @@ async function ensureTranscodeJobContiguous(job: TranscodeJob): Promise<number> 
 
   if (job.proc && job.proc.exitCode == null) {
     // PID-file aware stop — raw SIGTERM left orphans writing during heal.
-    await stopJobProc(job);
+    await stopJobProc(job, "contiguity-heal");
     if (job.state === "running" || job.state === "starting") {
       job.state = "ready";
     }
@@ -1627,7 +1644,7 @@ async function resumeTranscodeJob(job: TranscodeJob): Promise<void> {
   if (job.proc && job.proc.exitCode == null) return;
   // Stall recovery used to SIGTERM and clear job.proc without waiting — orphans
   // kept writing while a resume ffmpeg started on the same index.m3u8.
-  await stopJobProc(job);
+  await stopJobProc(job, "resume");
   await maybeEvictForSlot(job);
   try {
     if (isVodSourceCacheEnabled()) {
@@ -1741,6 +1758,14 @@ async function resumeTranscodeJob(job: TranscodeJob): Promise<void> {
           return;
         }
       }
+    }
+    const totalSec = job.durationSec ?? meta.durationSec ?? null;
+    if (totalSec != null && totalSec > 0 && seekInSourceSec >= totalSec - 1) {
+      // Nothing left to encode. ffmpeg exits at once past the end, and the
+      // next poll resumed it again in a loop that held an encode slot.
+      job.state = "ready";
+      notifyWaiters(job, true);
+      return;
     }
     if (isVodSourceCacheEnabled() && seekInSourceSec > 0) {
       await waitForVodSourceForSeek(job.upstream, seekInSourceSec, {
@@ -2019,7 +2044,7 @@ async function dropSilentTranscodeTail(job: TranscodeJob): Promise<void> {
     return;
   }
   job.silentTailDrops = (job.silentTailDrops ?? 0) + 1;
-  await stopJobProc(job);
+  await stopJobProc(job, "silent-tail");
   const names = await fsp.readdir(job.dir).catch(() => [] as string[]);
   await Promise.all(
     names.map(async (name) => {
@@ -2214,7 +2239,7 @@ async function spawnFfmpegLocked(
 ): Promise<void> {
   if (job.proc && job.proc.exitCode == null) return;
   // Kill orphan writers left after a prior SIGTERM-without-wait.
-  await stopJobProc(job);
+  await stopJobProc(job, "respawn");
   await killStrayFfmpegForDir(job.dir);
   await maybeEvictForSlot(job);
   if (activeTranscodeCount() >= maxConcurrentJobs()) {
@@ -2539,14 +2564,19 @@ async function discardHitchyTranscodeCache(
   console.info(
     `[vod-transcode] rebuild ${staleEncode ? "stale" : "hitchy"} playlist key=${key.slice(0, 12)}`
   );
-  await wipeTranscodeJobDir(dir, key);
+  await wipeTranscodeJobDir(dir, key, "rebuild");
   return true;
 }
 
-async function wipeTranscodeJobDir(dir: string, key: string): Promise<void> {
+async function wipeTranscodeJobDir(
+  dir: string,
+  key: string,
+  why: string
+): Promise<void> {
   const job = jobs.get(key);
   if (job) {
-    await stopJobProc(job);
+    console.info(`[vod-transcode] wipe key=${key.slice(0, 12)} why=${why}`);
+    await stopJobProc(job, why);
   }
   jobs.delete(key);
   timelineAlignState.delete(dir);
@@ -2574,7 +2604,7 @@ async function cancelSiblingTranscodeJobs(
     victims.push({ key, dir: job.dir });
   }
   await Promise.all(
-    victims.map(({ key, dir }) => wipeTranscodeJobDir(dir, key))
+    victims.map(({ key, dir }) => wipeTranscodeJobDir(dir, key, "seek-sibling"))
   );
 }
 
@@ -2600,7 +2630,7 @@ async function cancelOtherUpstreamTranscodeJobs(
     if (await isVodSourceComplete(job.upstream)) continue;
     otherUpstreams.add(job.upstream);
     job.lastViewerAt = 0;
-    stopTranscodeProcOnly(job);
+    stopTranscodeProcOnly(job, `provider-slot-for=${keepKey.slice(0, 12)}`);
   }
   await Promise.all(
     [...otherUpstreams].map(async (u) => {
@@ -2649,7 +2679,7 @@ async function hydrateTranscodeJobFromDisk(
   const manifest = await readManifestIfReady(dir);
   const stalePackaging = (cachedMeta.encodeRev ?? 0) !== TRANSCODE_ENCODE_REV;
   if (stalePackaging || (manifest && cachedTranscodeShouldBeRebuilt(manifest))) {
-    await wipeTranscodeJobDir(dir, key);
+    await wipeTranscodeJobDir(dir, key, "hydrate-stale");
     return null;
   }
   if (!manifest) {
@@ -2781,7 +2811,7 @@ async function ensureJobLocked(
           undefined;
       }
       if (existingSoft) {
-        await stopJobProc(existingSoft);
+        await stopJobProc(existingSoft, "soft-reset");
         existingSoft.state = "ready";
         existingSoft.error = undefined;
         existingSoft.lastViewerAt = Date.now();
@@ -2814,13 +2844,13 @@ async function ensureJobLocked(
       }
     }
     // Wipe HLS segments only — keep the downloaded source so Try again is fast.
-    await wipeTranscodeJobDir(dir, key);
+    await wipeTranscodeJobDir(dir, key, "reset");
   }
 
   const existing = jobs.get(key);
   if (existing) {
     if (existing.startOffsetSec !== startOffsetSec) {
-      await wipeTranscodeJobDir(dir, key);
+      await wipeTranscodeJobDir(dir, key, "offset-mismatch");
     } else if (existing.state === "failed") {
       const again = await readManifestIfReady(dir);
       if (again) {
@@ -2831,7 +2861,7 @@ async function ensureJobLocked(
         void ensureEncodingContinues(existing);
         return existing;
       }
-      await wipeTranscodeJobDir(dir, key);
+      await wipeTranscodeJobDir(dir, key, "failed-no-playlist");
     } else {
       void ensureEncodingContinues(existing);
       return existing;

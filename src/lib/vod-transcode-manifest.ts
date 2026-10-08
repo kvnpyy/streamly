@@ -122,6 +122,15 @@ export function encodedLooksFullyComplete(
   return encodedSec >= durationSec - VOD_ENCODE_COMPLETE_REMAINING_SEC;
 }
 
+/** Seconds a job must encode: an encode that starts mid-episode ends at the same credits. */
+export function encodeTargetSec(
+  durationSec: number | null | undefined,
+  startOffsetSec: number
+): number | null {
+  if (durationSec == null || !(durationSec > 0)) return null;
+  return Math.max(0, durationSec - Math.max(0, startOffsetSec));
+}
+
 export function segmentNameFromPlaylistLine(line: string): string | null {
   const trimmed = line.trim();
   if (!trimmed || trimmed.startsWith("#")) return null;

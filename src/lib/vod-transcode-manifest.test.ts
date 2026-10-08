@@ -5,6 +5,7 @@ import {
   countManifestSegments,
   encodedCoverageSec,
   encodedLooksFullyComplete,
+  encodeTargetSec,
   hasOrphanSegmentsBeyondPrefix,
   manifestIsTipOnlyTail,
   manifestReferencesMissingOrGappedSegments,
@@ -862,5 +863,14 @@ describe("encodedLooksFullyComplete", () => {
     expect(encodedLooksFullyComplete(9459, 9935)).toBe(false);
     expect(encodedLooksFullyComplete(9890, 9935)).toBe(true);
     expect(encodedLooksFullyComplete(9935, 9935)).toBe(true);
+  });
+
+  it("completes an encode that started mid-episode at the credits", () => {
+    // A 30:00 seek encode of a 44:18 episode only has 858s to produce.
+    expect(encodedLooksFullyComplete(858, encodeTargetSec(2658, 1800))).toBe(
+      true
+    );
+    expect(encodedLooksFullyComplete(858, encodeTargetSec(2658, 0))).toBe(false);
+    expect(encodeTargetSec(null, 1800)).toBeNull();
   });
 });

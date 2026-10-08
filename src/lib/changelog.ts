@@ -11,6 +11,14 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.13.93",
+    date: "2026-10-08",
+    summary: "An episode you jumped into partway no longer keeps the server busy after it finishes.",
+    highlights: [
+      "When you started an episode partway through, the server never treated its encode as finished, so it kept restarting it at the last second. That loop kept taking an encode slot from the episode you were actually watching.",
+    ],
+  },
+  {
     version: "0.13.92",
     date: "2026-10-08",
     summary: "Episodes no longer freeze about a minute in on a frozen, silent picture.",
