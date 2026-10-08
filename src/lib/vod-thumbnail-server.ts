@@ -7,7 +7,7 @@ import {
 import {
   upstreamEligibleForVodTranscode,
   vodTranscodeJobDir,
-} from "@/lib/vod-transcode";
+} from "@/lib/vod-transcode-paths";
 import { spawn } from "child_process";
 import crypto from "crypto";
 import fs from "fs/promises";

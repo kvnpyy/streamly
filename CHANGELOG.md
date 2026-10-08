@@ -27,6 +27,13 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.13.90] — 2026-10-07
+
+An episode no longer fails with "Invalid data found when processing input".
+
+### Fixed
+- Two copies of the episode download could run at once and blank out the start of the saved file, so it could not be opened. Only one download per episode runs now, and a saved file that does not start like a video is downloaded again.
+
 ## [0.13.89] — 2026-10-07
 
 The picture no longer freezes for a few seconds while the sound keeps going.

@@ -11,6 +11,7 @@ import {
   registerDiskReclaimer,
 } from "@/lib/disk-pressure";
 import { isNoSpaceError } from "@/lib/vod-transcode-disk-cache";
+import { processSingleton } from "@/lib/process-singleton";
 
 const IPTV_UA_VOD = "VLC/3.0.20 LibVLC/3.0.20";
 
@@ -42,7 +43,7 @@ type SourceEntry = {
   abort: AbortController | null;
 };
 
-const entries = new Map<string, SourceEntry>();
+const entries = processSingleton("vod-source:entries", () => new Map<string, SourceEntry>());
 let idleSweepTimer: ReturnType<typeof setInterval> | null = null;
 
 function upstreamReferer(upstreamUrl: string): string {
@@ -249,6 +250,44 @@ export function bytesLookLikeErrorPage(head: Uint8Array): boolean {
   return /^<(!doctype|html|head|body|\?xml)/i.test(text);
 }
 
+/** False when the first bytes are not any container ffmpeg could open. */
+export function sourceHeadLooksPlayable(head: Uint8Array): boolean {
+  if (head.length < 12) return true;
+  const b = Buffer.from(head);
+  if (b.readUInt32BE(0) === 0x1a45dfa3) return true; // Matroska / WebM
+  if (b.toString("latin1", 4, 8) === "ftyp") return true; // MP4 / MOV
+  if (b.toString("latin1", 0, 4) === "RIFF") return true; // AVI
+  if (b[0] === 0x47 && (b.length < 189 || b[188] === 0x47)) return true; // MPEG-TS
+  if (b.toString("latin1", 0, 3) === "FLV") return true;
+  if (b.readUInt32BE(0) === 0x000001ba) return true; // MPEG-PS
+  return false;
+}
+
+/**
+ * Throw away a local copy whose start is not video (a provider error page or
+ * a file another writer zeroed) and fetch it again. Returns true when it did.
+ */
+export async function discardUnplayableVodSource(upstream: string): Promise<boolean> {
+  if (!isVodSourceCacheEnabled()) return false;
+  const entry = await ensureEntry(upstream);
+  if (entry.bytes < 4096) return false;
+  const filePath = entry.complete ? entry.finalPath : entry.partialPath;
+  const fh = await fsp.open(filePath, "r").catch(() => null);
+  if (!fh) return false;
+  let head: Buffer;
+  try {
+    const buf = Buffer.alloc(512);
+    const { bytesRead } = await fh.read(buf, 0, buf.length, 0);
+    head = buf.subarray(0, bytesRead);
+  } finally {
+    await fh.close().catch(() => {});
+  }
+  if (sourceHeadLooksPlayable(head)) return false;
+  console.warn(`[vod-source] discard unplayable source key=${entry.key.slice(0, 12)}`);
+  await forceRedownloadVodSource(upstream);
+  return true;
+}
+
 async function fileStartsWithErrorPage(filePath: string): Promise<boolean> {
   const fh = await fsp.open(filePath, "r").catch(() => null);
   if (!fh) return false;
@@ -350,7 +389,12 @@ async function runDownload(entry: SourceEntry): Promise<void> {
 
   let written = append ? existing : 0;
   await reclaimVodSourceDisk();
-  const fh = await fsp.open(entry.partialPath, append ? "a" : "w");
+  if (!append) {
+    await fsp.rm(entry.partialPath, { force: true }).catch(() => {});
+  }
+  // Always O_APPEND: a positional writer whose file was truncated under it
+  // leaves a zero-filled hole at the start that ffmpeg cannot open.
+  const fh = await fsp.open(entry.partialPath, "a");
   try {
     const reader = res.body.getReader();
     while (true) {
@@ -433,7 +477,10 @@ export async function forceRedownloadVodSource(upstream: string): Promise<void> 
     }
     entry.abort = null;
   }
+  const previous = entry.downloadPromise;
   entry.downloadPromise = null;
+  // Let the cancelled download close its file before a new one opens it.
+  await previous?.catch(() => {});
   await fsp.rm(entry.finalPath, { force: true }).catch(() => {});
   await fsp.rm(entry.partialPath, { force: true }).catch(() => {});
   entry.bytes = 0;
@@ -454,13 +501,16 @@ async function ensureVodSourceStarted(upstream: string): Promise<SourceEntry> {
   const entry = await ensureEntry(upstream);
   if (entry.complete) return entry;
   if (!entry.downloadPromise) {
-    entry.downloadPromise = runDownload(entry)
+    const run: Promise<void> = runDownload(entry)
       .catch(() => {
         /* error stored on entry */
       })
       .finally(() => {
-        entry.downloadPromise = null;
+        // A cancelled download finishing late must not clear its replacement,
+        // or a third download starts next to it and both write the file.
+        if (entry.downloadPromise === run) entry.downloadPromise = null;
       });
+    entry.downloadPromise = run;
   }
   return entry;
 }

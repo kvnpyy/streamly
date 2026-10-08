@@ -66,12 +66,12 @@ import {
   warmWouldStealProviderDownload,
 } from "@/lib/vod-next-warm";
 import { spawn, type ChildProcess } from "child_process";
-import crypto from "crypto";
 import fs from "fs";
 import fsp from "fs/promises";
 import path from "path";
 import { validateVodUpstreamReadable } from "@/lib/vod-transcode-upstream";
 import {
+  discardUnplayableVodSource,
   ensureVodSource,
   forceRedownloadVodSource,
   getVodSourceStatus,
@@ -86,6 +86,17 @@ import {
   waitForVodSourceForSeek,
   waitForVodSourceGrowth,
 } from "@/lib/vod-source-cache";
+import { processSingleton } from "@/lib/process-singleton";
+import {
+  cacheKeyForUpstream,
+  transcodeCacheRoot,
+  upstreamEligibleForVodTranscode,
+} from "@/lib/vod-transcode-paths";
+
+export {
+  upstreamEligibleForVodTranscode,
+  vodTranscodeJobDir,
+} from "@/lib/vod-transcode-paths";
 import {
   followGrowingFile,
   sourceCanStreamFromPipe,
@@ -151,12 +162,7 @@ async function resolveFfmpegBinary(): Promise<string | null> {
   return null;
 }
 
-function cacheRoot(): string {
-  return (
-    process.env.STREAM_TRANSCODE_CACHE_DIR?.trim() ||
-    path.join(process.cwd(), ".cache", "vod-transcode")
-  );
-}
+const cacheRoot = transcodeCacheRoot;
 
 function x264Preset(): string {
   const raw = process.env.STREAM_TRANSCODE_X264_PRESET?.trim().toLowerCase();
@@ -1055,7 +1061,7 @@ type TranscodeJob = {
   pack?: "ts";
 };
 
-const jobs = new Map<string, TranscodeJob>();
+const jobs = processSingleton("vod-transcode:jobs", () => new Map<string, TranscodeJob>());
 let idleSweepTimer: ReturnType<typeof setInterval> | null = null;
 let diskSweepTimer: ReturnType<typeof setInterval> | null = null;
 const DISK_SWEEP_MS = 60_000;
@@ -1338,11 +1344,14 @@ async function maybeEvictForSlot(
   await evictIdleTranscodeSlot(job.key);
 }
 /** One in-flight ensureJob per cache key — prevents duplicate ffmpeg on the same output dir. */
-const ensureJobInflight = new Map<string, Promise<TranscodeJob>>();
+const ensureJobInflight = processSingleton(
+  "vod-transcode:ensure",
+  () => new Map<string, Promise<TranscodeJob>>()
+);
 /** Prevents duplicate ffmpeg spawns when ensureEncodingContinues races. */
-const beginTranscodeInflight = new Set<string>();
+const beginTranscodeInflight = processSingleton("vod-transcode:begin", () => new Set<string>());
 /** Serialize spawn per job — concurrent callers used to orphan multiple ffmpeg on one dir. */
-const spawnFfmpegInflight = new Set<string>();
+const spawnFfmpegInflight = processSingleton("vod-transcode:spawn", () => new Set<string>());
 
 function activeTranscodeCount(): number {
   let n = 0;
@@ -1366,53 +1375,8 @@ function drainTranscodeQueue(): void {
   void beginTranscodeJob(queued);
 }
 
-/** Bump suffix when transcode output format changes (invalidates stale cache). */
-const CACHE_KEY_SUFFIX = "|v9-hscale";
-
-function cacheKeyForUpstream(
-  upstream: string,
-  startOffsetSec = 0,
-  pack?: "ts"
-): string {
-  const off = Math.max(0, Math.floor(startOffsetSec));
-  const packTag = pack === "ts" ? "|ts" : "";
-  return crypto
-    .createHash("sha256")
-    .update(upstream + CACHE_KEY_SUFFIX + `|o${off}` + packTag)
-    .digest("hex")
-    .slice(0, 32);
-}
-
 function jobDir(key: string): string {
   return path.join(cacheRoot(), key);
-}
-
-/** On-disk directory for a from-0 (or offset) transcode of this upstream. */
-export function vodTranscodeJobDir(
-  upstream: string,
-  startOffsetSec = 0
-): string {
-  return jobDir(cacheKeyForUpstream(upstream, startOffsetSec));
-}
-
-function upstreamLooksLikeVod(upstreamUrl: URL): boolean {
-  const p = upstreamUrl.pathname.toLowerCase();
-  if (p.includes("/live/")) return false;
-  return (
-    p.includes("/movie/") ||
-    p.includes("/series/") ||
-    /\.(mkv|avi|mp4|mov|wmv|flv|ts|m2ts|mpeg|mpg|webm)($|\?)/i.test(p)
-  );
-}
-
-export function upstreamEligibleForVodTranscode(upstream: string): boolean {
-  try {
-    const u = new URL(upstream);
-    if (u.protocol !== "http:" && u.protocol !== "https:") return false;
-    return upstreamLooksLikeVod(u);
-  } catch {
-    return false;
-  }
 }
 
 function playlistHasSegments(text: string): boolean {
@@ -1657,7 +1621,7 @@ async function ensureTranscodeJobContiguous(job: TranscodeJob): Promise<number> 
   return healTranscodeJobContiguity(job);
 }
 
-const resumeInflight = new Map<string, Promise<void>>();
+const resumeInflight = processSingleton("vod-transcode:resume", () => new Map<string, Promise<void>>());
 
 async function resumeTranscodeJob(job: TranscodeJob): Promise<void> {
   if (job.proc && job.proc.exitCode == null) return;
@@ -2081,8 +2045,14 @@ type TimelineAlignState = {
   durations: Map<string, number>;
 };
 
-const timelineAlignState = new Map<string, TimelineAlignState>();
-const timelineAlignChain = new Map<string, Promise<unknown>>();
+const timelineAlignState = processSingleton(
+  "vod-transcode:align",
+  () => new Map<string, TimelineAlignState>()
+);
+const timelineAlignChain = processSingleton(
+  "vod-transcode:align-chain",
+  () => new Map<string, Promise<unknown>>()
+);
 
 /** A new ffmpeg rewrites from `fromIndex`; re-check from the piece before it. */
 function resetTimelineAlign(dir: string, fromIndex: number): void {
@@ -2951,6 +2921,11 @@ async function beginTranscodeJob(job: TranscodeJob): Promise<void> {
         await waitForVodSourceBytes(job.upstream, vodSourceEncodeStartBytes(), {
           timeoutMs: Math.min(waitForPlaylistMs(), 180_000),
         });
+        if (await discardUnplayableVodSource(job.upstream)) {
+          await waitForVodSourceBytes(job.upstream, vodSourceEncodeStartBytes(), {
+            timeoutMs: Math.min(waitForPlaylistMs(), 180_000),
+          });
+        }
         // Keep downloading ahead of ffmpeg (disk read — frees the IPTV connection).
         ensureVodSource(job.upstream);
       } catch (err) {

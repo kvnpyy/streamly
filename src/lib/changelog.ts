@@ -11,6 +11,14 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.13.90",
+    date: "2026-10-07",
+    summary: "An episode no longer fails with \"Invalid data found when processing input\".",
+    highlights: [
+      "Two copies of the episode download could run at once and blank out the start of the saved file, so it could not be opened. Only one download per episode runs now, and a saved file that does not start like a video is downloaded again.",
+    ],
+  },
+  {
     version: "0.13.89",
     date: "2026-10-07",
     summary: "The picture no longer freezes for a few seconds while the sound keeps going.",

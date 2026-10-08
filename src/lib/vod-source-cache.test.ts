@@ -16,6 +16,24 @@ describe("bytesLookLikeErrorPage", () => {
   });
 });
 
+describe("sourceHeadLooksPlayable", () => {
+  it("accepts real containers and rejects a zeroed start", async () => {
+    const { sourceHeadLooksPlayable } = await import("./vod-source-cache");
+    const withHead = (head: number[] | string) => {
+      const b = Buffer.alloc(512);
+      (typeof head === "string" ? Buffer.from(head, "latin1") : Buffer.from(head)).copy(b);
+      return b;
+    };
+    expect(sourceHeadLooksPlayable(withHead([0x1a, 0x45, 0xdf, 0xa3]))).toBe(true);
+    expect(sourceHeadLooksPlayable(withHead("\0\0\0\x20ftypisom"))).toBe(true);
+    const ts = Buffer.alloc(512);
+    ts[0] = 0x47;
+    ts[188] = 0x47;
+    expect(sourceHeadLooksPlayable(ts)).toBe(true);
+    expect(sourceHeadLooksPlayable(Buffer.alloc(512))).toBe(false);
+  });
+});
+
 describe("vod-source-cache", () => {
   let tmp: string;
 
