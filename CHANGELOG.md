@@ -27,6 +27,14 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.13.88] — 2026-10-07
+
+Episodes play straight through while they are still downloading.
+
+### Fixed
+- Encoding used to stop every time it caught up with the download and start again a moment later. Each restart left a break in the picture and sound, and the player paused there. Encoding now waits for the download and runs as one unbroken pass.
+- Episodes that were encoded the old way are rebuilt the next time you play them.
+
 ## [0.13.87] — 2026-10-07
 
 An episode no longer stops where encoding had to start again.

@@ -86,6 +86,10 @@ import {
   waitForVodSourceGrowth,
 } from "@/lib/vod-source-cache";
 import {
+  followGrowingFile,
+  sourceCanStreamFromPipe,
+} from "@/lib/vod-source-follow";
+import {
   quantizeTranscodeSeekSec,
   shouldReuseTranscodeJobForSeek,
 } from "@/lib/vod-transcode-seek-policy";
@@ -468,6 +472,12 @@ async function maybeRecoverStalledFfmpeg(
     return;
   }
   if (!job.proc || job.proc.exitCode != null) return;
+  if (job.followingSource && job.sourceStarved) {
+    // ffmpeg is waiting on the download, not hung. Killing it here restarts
+    // mid-episode and leaves a timestamp break.
+    job.lastSegmentGrowthAt = now;
+    return;
+  }
   if (now - job.lastSegmentGrowthAt < transcodeStallKillMs()) return;
   await stopJobProc(job);
   job.lastSegmentGrowthAt = now;
@@ -655,7 +665,7 @@ async function probeStreamCodecs(input: string): Promise<ProbedCodecs> {
 }
 
 /** Bump when segment packaging changes. Older caches are discarded on the next play. */
-const TRANSCODE_ENCODE_REV = 10;
+const TRANSCODE_ENCODE_REV = 11;
 
 type JobMeta = {
   plan: VodTranscodePlan;
@@ -1030,6 +1040,12 @@ type TranscodeJob = {
   chapterProbeBytes?: number;
   /** Segment index through which audio tracks have been checked. */
   audioScanThrough?: number;
+  /** ffmpeg reads the still-downloading source through stdin. */
+  followingSource?: boolean;
+  /** The follower has sent everything downloaded so far and is waiting for more. */
+  sourceStarved?: boolean;
+  /** Times the silent-tail check stopped ffmpeg for this job. */
+  silentTailDrops?: number;
   /** Segment index through which media timestamps match the playlist. */
   timelineAlignedThrough?: number;
   /** Fire TV / Silk. MPEG-TS instead of fMP4, which those decoders freeze on. */
@@ -1978,6 +1994,8 @@ async function countSegmentTracks(filePath: string): Promise<number> {
   }
 }
 
+const MAX_SILENT_TAIL_DROPS = 2;
+
 async function dropSilentTranscodeTail(job: TranscodeJob): Promise<void> {
   const initPath = path.join(job.dir, "init.mp4");
   let init: Buffer;
@@ -1987,6 +2005,11 @@ async function dropSilentTranscodeTail(job: TranscodeJob): Promise<void> {
     return;
   }
   if (!initDeclaresAudio(init)) return;
+  // A single continuous encode with a video-only stretch has a quiet source,
+  // not a broken restart. Each drop restarts ffmpeg, and a restart is what
+  // makes the next silent piece, so this looped every few seconds.
+  if (job.followingSource) return;
+  if ((job.silentTailDrops ?? 0) >= MAX_SILENT_TAIL_DROPS) return;
   const onDisk = await listSegmentFiles(job.dir);
   const prefix = contiguousSegmentCount(onDisk);
   const ffmpegRunning = !!(job.proc && job.proc.exitCode == null);
@@ -2017,6 +2040,7 @@ async function dropSilentTranscodeTail(job: TranscodeJob): Promise<void> {
     job.audioScanThrough = Math.max(job.audioScanThrough ?? 0, scanEnd);
     return;
   }
+  job.silentTailDrops = (job.silentTailDrops ?? 0) + 1;
   await stopJobProc(job);
   const names = await fsp.readdir(job.dir).catch(() => [] as string[]);
   await Promise.all(
@@ -2177,8 +2201,13 @@ async function spawnFfmpegLocked(
     return;
   }
 
+  const seekSec = resume
+    ? Math.max(0, resume.seekInSourceSec)
+    : Math.max(0, Math.floor(job.startOffsetSec));
+
   let inputPath = job.upstream;
   let useLocalSource = false;
+  let followSourcePath: string | null = null;
   if (
     isVodSourceCacheEnabled() &&
     !upstreamIsHlsMediaPlaylist(job.upstream)
@@ -2188,6 +2217,10 @@ async function spawnFfmpegLocked(
       inputPath = st.path;
       useLocalSource = true;
       ensureVodSource(job.upstream);
+      if (!st.complete && seekSec === 0 && sourceCanStreamFromPipe(job.upstream)) {
+        followSourcePath = st.path;
+        inputPath = "pipe:0";
+      }
     }
   }
 
@@ -2198,9 +2231,6 @@ async function spawnFfmpegLocked(
   const refererHost = upstreamReferer(upstreamUrl);
   const segSec = hlsSegmentSeconds();
   const keys = keyframePlanForFrameRate(frameRate ?? null, segSec);
-  const seekSec = resume
-    ? Math.max(0, resume.seekInSourceSec)
-    : Math.max(0, Math.floor(job.startOffsetSec));
 
   const mpegts = job.pack === "ts";
   const segPattern = path.join(
@@ -2308,10 +2338,53 @@ async function spawnFfmpegLocked(
 
   await rememberFmp4Init(job.dir);
   const proc = spawn(ffmpegPath(), args, {
-    stdio: ["ignore", "ignore", "pipe"],
+    stdio: [followSourcePath ? "pipe" : "ignore", "ignore", "pipe"],
   });
   job.proc = proc;
   job.state = "running";
+  if (followSourcePath && proc.stdin) {
+    const stdin = proc.stdin;
+    const follow = new AbortController();
+    stdin.on("error", () => {
+      /* ffmpeg exited or was stopped */
+    });
+    job.followingSource = true;
+    job.sourceStarved = false;
+    proc.once("close", () => {
+      follow.abort();
+      job.followingSource = false;
+      job.sourceStarved = false;
+    });
+    console.info(
+      `[vod-transcode] encode following download key=${job.key.slice(0, 12)}`
+    );
+    void followGrowingFile({
+      filePath: followSourcePath,
+      out: stdin,
+      signal: follow.signal,
+      onBytes: () => {
+        job.sourceStarved = false;
+      },
+      state: async () => {
+        const st = await getVodSourceStatus(job.upstream);
+        return st ? { complete: st.complete, bytes: st.bytes } : null;
+      },
+      waitForGrowth: async (afterBytes) => {
+        job.sourceStarved = true;
+        ensureVodSource(job.upstream);
+        await waitForVodSourceGrowth(job.upstream, afterBytes, {
+          signal: follow.signal,
+          timeoutMs: 5_000,
+        }).catch(() => {});
+      },
+    }).then((r) => {
+      if (r.reason !== "complete" && r.reason !== "aborted") {
+        console.warn(
+          `[vod-transcode] download follow ended (${r.reason}) key=${job.key.slice(0, 12)} bytes=${r.bytes}`
+        );
+      }
+    });
+  }
   if (proc.pid) {
     try {
       await fsp.writeFile(
@@ -2416,7 +2489,10 @@ async function discardHitchyTranscodeCache(
   // so the age check below would otherwise delete it mid-watch.
   if (job && jobViewerActive(job)) return false;
   const manifest = await readManifestIfReady(dir);
-  if (!manifest || !cachedTranscodeShouldBeRebuilt(manifest)) return false;
+  if (!manifest) return false;
+  const meta = await readJobMeta(dir);
+  const staleEncode = !!meta && (meta.encodeRev ?? 0) !== TRANSCODE_ENCODE_REV;
+  if (!staleEncode && !cachedTranscodeShouldBeRebuilt(manifest)) return false;
   try {
     const st = await fsp.stat(path.join(dir, MANIFEST_NAME));
     // The playlist is still being written or was just served. Deleting it
@@ -2426,7 +2502,7 @@ async function discardHitchyTranscodeCache(
     return false;
   }
   console.info(
-    `[vod-transcode] rebuild hitchy playlist key=${key.slice(0, 12)}`
+    `[vod-transcode] rebuild ${staleEncode ? "stale" : "hitchy"} playlist key=${key.slice(0, 12)}`
   );
   await wipeTranscodeJobDir(dir, key);
   return true;

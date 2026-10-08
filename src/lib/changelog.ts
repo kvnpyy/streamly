@@ -11,6 +11,15 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.13.88",
+    date: "2026-10-07",
+    summary: "Episodes play straight through while they are still downloading.",
+    highlights: [
+      "Encoding used to stop every time it caught up with the download and start again a moment later. Each restart left a break in the picture and sound, and the player paused there. Encoding now waits for the download and runs as one unbroken pass.",
+      "Episodes that were encoded the old way are rebuilt the next time you play them.",
+    ],
+  },
+  {
     version: "0.13.87",
     date: "2026-10-07",
     summary: "An episode no longer stops where encoding had to start again.",
