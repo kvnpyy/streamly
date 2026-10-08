@@ -468,8 +468,9 @@ export function transcodeStartupReady(opts: {
 }
 
 /**
- * Playlist the player should see. A resume join is marked and the one-frame
- * crumb is left out. The pieces after the join use a separate init file.
+ * Playlist the player should see. One continuous timeline. Resume pieces are
+ * shifted onto that clock before they are sent; a discontinuity here would
+ * reset the video and then drop it.
  */
 export function playbackManifestFromRaw(
   raw: string,
@@ -478,16 +479,11 @@ export function playbackManifestFromRaw(
   segmentSec: number,
   extraDiscontinuityBefore?: ReadonlySet<string>
 ): string {
-  const plan = fmp4ResumeJoinPlan(raw);
-  const discontinuityBefore = new Set(plan.discontinuityBefore);
-  if (extraDiscontinuityBefore) {
-    for (const name of extraDiscontinuityBefore) discontinuityBefore.add(name);
-  }
   const durations = parseExtinfDurationsBySegment(raw);
+  const discontinuityBefore = new Set(extraDiscontinuityBefore ?? []);
   const built = buildManifestFromContiguousDisk(onDisk, durations, segmentSec, {
     playlistComplete,
     discontinuityBefore,
-    omit: plan.omit,
   });
   return prepareManifestForPlayback(built, playlistComplete, onDisk);
 }

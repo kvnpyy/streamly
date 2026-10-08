@@ -16,7 +16,6 @@ import {
   parseExtinfDurationsBySegment,
   cachedTranscodeShouldBeRebuilt,
   encodedLooksFullyComplete,
-  fmp4ResumeJoinPlan,
   playbackManifestFromRaw,
   prepareManifestForPlayback,
   rewriteTranscodeManifest,
@@ -263,10 +262,16 @@ async function restoreFmp4Init(dir: string): Promise<void> {
   } catch {
     /* missing */
   }
-  try {
-    await fsp.copyFile(path.join(dir, INIT_KEEP_NAME), init);
-  } catch {
-    /* no backup */
+  for (const source of [INIT_KEEP_NAME, "init.mp4.next"]) {
+    try {
+      const st = await fsp.stat(path.join(dir, source));
+      if (st.size > 32) {
+        await fsp.copyFile(path.join(dir, source), init);
+        return;
+      }
+    } catch {
+      /* try the next candidate */
+    }
   }
 }
 
@@ -1545,11 +1550,9 @@ async function healTranscodeJobContiguity(job: TranscodeJob): Promise<number> {
 
   try {
     let durationBySegment = new Map<string, number>();
-    let joinPlan: ReturnType<typeof fmp4ResumeJoinPlan> | null = null;
     try {
       const raw = await fsp.readFile(path.join(dir, MANIFEST_NAME), "utf8");
       durationBySegment = parseExtinfDurationsBySegment(raw);
-      joinPlan = fmp4ResumeJoinPlan(raw);
     } catch {
       /* fresh dir */
     }
@@ -1568,10 +1571,7 @@ async function healTranscodeJobContiguity(job: TranscodeJob): Promise<number> {
       healedDisk,
       durationBySegment,
       hlsSegmentSeconds(),
-      {
-        playlistComplete,
-        discontinuityBefore: joinPlan?.discontinuityBefore,
-      }
+      { playlistComplete }
     );
     await fsp.writeFile(path.join(dir, MANIFEST_NAME), healed, "utf8");
   } catch {
@@ -2053,6 +2053,7 @@ async function alignFmp4SegmentForPlayback(
 
 async function alignFmp4SegmentOnce(dir: string, name: string): Promise<"ready" | "wait"> {
   const filePath = path.join(dir, name);
+  await restoreFmp4Init(dir);
   let manifest = "";
   let init: Buffer;
   try {
@@ -2062,6 +2063,13 @@ async function alignFmp4SegmentOnce(dir: string, name: string): Promise<"ready" 
     ]);
   } catch {
     return "wait";
+  }
+  if (init.length <= 32) {
+    try {
+      init = await fsp.readFile(path.join(dir, INIT_KEEP_NAME));
+    } catch {
+      return "wait";
+    }
   }
   const expected = playlistTimeBeforeSegment(manifest, name);
   if (expected == null) return "wait";
@@ -3141,17 +3149,7 @@ export async function handleVodTranscodeRequest(opts: {
     if (playlistComplete && job.state !== "ready") {
       job.state = "ready";
     }
-    const playlistJoin = fmp4ResumeJoinPlan(rawAfterHeal);
-    if (playlistJoin.discontinuityBefore.size > 0) {
-      try {
-        await fsp.copyFile(
-          path.join(job.dir, "init.mp4"),
-          path.join(job.dir, VOD_TRANSCODE_JOIN_INIT_NAME)
-        );
-      } catch {
-        /* opening init is not on disk yet */
-      }
-    }
+    await restoreFmp4Init(job.dir);
     const trimmed = manifestTextForPlayback(
       rawAfterHeal,
       playlistComplete,
@@ -3272,7 +3270,17 @@ export async function handleVodTranscodeRequest(opts: {
   }
 
   if (media.endsWith(".m4s")) {
-    await alignFmp4SegmentForPlayback(job.dir, media);
+    await restoreFmp4Init(job.dir);
+    const aligned = await alignFmp4SegmentForPlayback(job.dir, media);
+    // A resumed piece still at time zero cannot be appended. Serving it
+    // closes the video. Wait until its clock matches the episode.
+    if (aligned !== "ready") {
+      return {
+        status: 503,
+        errorText: "Segment not ready yet.",
+        extraHeaders: { "retry-after": "1" },
+      };
+    }
   }
   let data: Buffer;
   try {

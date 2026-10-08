@@ -102,7 +102,7 @@ describe("fmp4HlsMuxArgs", () => {
     const args = fmp4HlsMuxArgs();
     expect(args).toContain("fmp4");
     expect(args).toContain("use_editlist=0");
-    expect(args).toContain("init.mp4");
+    expect(args).toContain("init.mp4.next");
     expect(args.join(" ")).not.toContain("mpegts");
   });
 });

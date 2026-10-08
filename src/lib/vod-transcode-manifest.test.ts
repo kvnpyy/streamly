@@ -167,7 +167,7 @@ describe("fmp4ResumeJoinPlan", () => {
     expect(served).toContain("seg_00002.m4s");
   });
 
-  it("serves the resume piece with its own init instead of the opening one", () => {
+  it("keeps a restarted episode on one timeline", () => {
     const raw = [
       "#EXTM3U",
       '#EXT-X-MAP:URI="init.mp4"',
@@ -182,16 +182,10 @@ describe("fmp4ResumeJoinPlan", () => {
     const onDisk = new Set(["seg_00000.m4s", "seg_00001.m4s", "seg_00002.m4s"]);
     const served = playbackManifestFromRaw(raw, onDisk, true, 4);
     expect(served).toContain('URI="init.mp4"');
-    expect(served).toContain("#EXT-X-DISCONTINUITY");
-    expect(served).toContain('URI="init.join.mp4"');
-    expect(served).not.toContain("seg_00001.m4s");
+    expect(served).not.toContain("#EXT-X-DISCONTINUITY");
+    expect(served).not.toContain("init.join.mp4");
+    expect(served).toContain("seg_00000.m4s");
     expect(served).toContain("seg_00002.m4s");
-    const opening = served.indexOf('URI="init.mp4"');
-    const join = served.indexOf('URI="init.join.mp4"');
-    const tail = served.indexOf("seg_00002.m4s");
-    expect(opening).toBeGreaterThan(-1);
-    expect(join).toBeGreaterThan(opening);
-    expect(tail).toBeGreaterThan(join);
   });
 });
 

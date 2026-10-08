@@ -152,7 +152,9 @@ export function fmp4HlsMuxArgs(): string[] {
     "-hls_segment_options",
     "use_editlist=0",
     "-hls_fmp4_init_filename",
-    "init.mp4",
+    // Not init.mp4. A resume truncates that file to zero while it is open,
+    // and the player then drops the video (blob file-not-found).
+    "init.mp4.next",
   ];
 }
 

@@ -1445,6 +1445,20 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
               break;
             }
             mediaRecoverAttempts += 1;
+            if (vodTranscodeHls) {
+              // recoverMediaError revokes the MediaSource blob. The element
+              // then stays on that dead URL (ERR_FILE_NOT_FOUND) and the
+              // episode does not come back. Keep loading from here instead.
+              try {
+                const vv = videoRef.current;
+                const pos =
+                  vv && Number.isFinite(vv.currentTime) ? vv.currentTime : 0;
+                hls.startLoad(Math.max(0, pos));
+              } catch {
+                /* fragment retry continues */
+              }
+              break;
+            }
             try {
               hls.recoverMediaError();
             } catch {

@@ -27,6 +27,13 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.13.87] — 2026-10-07
+
+An episode no longer stops where encoding had to start again.
+
+### Fixed
+- A restarted stretch was still stamped at the beginning of the file, so the player closed the video and reported it missing. That stretch is put on the episode clock before it is played, and the opening of the file is left in place.
+
 ## [0.13.86] — 2026-10-07
 
 The same moment in an episode no longer closes the video.

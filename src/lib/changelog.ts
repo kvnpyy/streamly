@@ -11,6 +11,14 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.13.87",
+    date: "2026-10-07",
+    summary: "An episode no longer stops where encoding had to start again.",
+    highlights: [
+      "A restarted stretch was still stamped at the beginning of the file, so the player closed the video and reported it missing. That stretch is put on the episode clock before it is played, and the opening of the file is left in place.",
+    ],
+  },
+  {
     version: "0.13.86",
     date: "2026-10-07",
     summary: "The same moment in an episode no longer closes the video.",
