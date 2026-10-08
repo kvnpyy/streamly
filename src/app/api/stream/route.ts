@@ -346,6 +346,7 @@ async function handle(req: NextRequest, head: boolean) {
         ? Math.floor(tcSeekRaw)
         : 0;
     const forCast = url.searchParams.get("cast") === "1";
+    const tcStartedAt = Date.now();
     const tc = await handleVodTranscodeRequest({
       upstream: target,
       media,
@@ -366,6 +367,18 @@ async function handle(req: NextRequest, head: boolean) {
       requestId
     );
     const tcStatus = coerceHttpResponseStatus(tc.status);
+    if (!head) {
+      const bodyBytes =
+        tc.body instanceof Uint8Array ? tc.body.byteLength : undefined;
+      console.info(
+        `[vod-req] ${media ?? "playlist"} status=${tcStatus} ms=${Date.now() - tcStartedAt}` +
+          (bodyBytes != null ? ` bytes=${bodyBytes}` : "") +
+          (tcSeek ? ` seek=${tcSeek}` : "") +
+          (tcReset ? " reset" : "") +
+          (req.signal.aborted ? " client-gone" : "") +
+          (tc.errorText ? ` err=${JSON.stringify(tc.errorText.slice(0, 120))}` : "")
+      );
+    }
     if (tc.errorText) {
       if (
         tcStatus === 503 &&

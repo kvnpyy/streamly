@@ -27,6 +27,15 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.13.94] — 2026-10-08
+
+The server now records each piece of video an episode asks for.
+
+### Added
+- When an episode stops, the server log shows which piece the player asked for, how long it took, and whether the browser gave up on it. That shows where playback broke without needing browser error reports.
+
+---
+
 ## [0.13.93] — 2026-10-08
 
 An episode you jumped into partway no longer keeps the server busy after it finishes.

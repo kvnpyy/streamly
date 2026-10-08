@@ -11,6 +11,14 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.13.94",
+    date: "2026-10-08",
+    summary: "The server now records each piece of video an episode asks for.",
+    highlights: [
+      "When an episode stops, the server log shows which piece the player asked for, how long it took, and whether the browser gave up on it. That shows where playback broke without needing browser error reports.",
+    ],
+  },
+  {
     version: "0.13.93",
     date: "2026-10-08",
     summary: "An episode you jumped into partway no longer keeps the server busy after it finishes.",
