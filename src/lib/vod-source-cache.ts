@@ -44,6 +44,12 @@ type SourceEntry = {
 };
 
 const entries = processSingleton("vod-source:entries", () => new Map<string, SourceEntry>());
+const entryInflight = processSingleton(
+  "vod-source:entry-inflight",
+  () => new Map<string, Promise<SourceEntry>>()
+);
+/** .partial files with a download writing into them right now. */
+const writingPaths = processSingleton("vod-source:writing", () => new Set<string>());
 let idleSweepTimer: ReturnType<typeof setInterval> | null = null;
 
 function upstreamReferer(upstreamUrl: string): string {
@@ -178,13 +184,24 @@ async function syncEntryBytes(entry: SourceEntry): Promise<void> {
 
 async function ensureEntry(upstream: string): Promise<SourceEntry> {
   const key = vodSourceCacheKey(upstream);
-  let entry = entries.get(key);
+  const entry = entries.get(key);
   if (entry) {
     entry.lastTouchAt = Date.now();
     await syncEntryBytes(entry);
     return entry;
   }
+  // Concurrent first requests must share one entry. Two entries for the same
+  // file each started a download, and both appended into the .partial.
+  let pending = entryInflight.get(key);
+  if (!pending) {
+    pending = createEntry(upstream, key).finally(() => entryInflight.delete(key));
+    entryInflight.set(key, pending);
+  }
+  return pending;
+}
 
+async function createEntry(upstream: string, key: string): Promise<SourceEntry> {
+  let entry: SourceEntry;
   const root = sourceRoot();
   await mkdirSourceRoot(root);
   const partialPath = path.join(root, `${key}.partial`);
@@ -228,6 +245,8 @@ async function ensureEntry(upstream: string): Promise<SourceEntry> {
     }
   }
 
+  const raced = entries.get(key);
+  if (raced) return raced;
   entries.set(key, entry);
   ensureIdleSweepRunning();
   return entry;
@@ -303,6 +322,18 @@ async function fileStartsWithErrorPage(filePath: string): Promise<boolean> {
 }
 
 async function runDownload(entry: SourceEntry): Promise<void> {
+  // Last line of defence: an entry that was dropped and recreated while its
+  // download kept going must not start a second writer on the same file.
+  if (writingPaths.has(entry.partialPath)) return;
+  writingPaths.add(entry.partialPath);
+  try {
+    await runDownloadExclusive(entry);
+  } finally {
+    writingPaths.delete(entry.partialPath);
+  }
+}
+
+async function runDownloadExclusive(entry: SourceEntry): Promise<void> {
   const referer = upstreamReferer(entry.upstream);
   await syncEntryBytes(entry);
   if (entry.complete) return;
@@ -829,6 +860,8 @@ export function _resetVodSourceCacheForTests(): void {
     }
   }
   entries.clear();
+  entryInflight.clear();
+  writingPaths.clear();
   if (idleSweepTimer) {
     clearInterval(idleSweepTimer);
     idleSweepTimer = null;

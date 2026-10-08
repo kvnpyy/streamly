@@ -11,6 +11,14 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.13.92",
+    date: "2026-10-08",
+    summary: "Episodes no longer freeze about a minute in on a frozen, silent picture.",
+    highlights: [
+      "Opening an episode sends several requests at once. Each one could start its own download of the episode, and the copies were written into the same file in turns, which scrambled it. Only one download per episode starts now.",
+    ],
+  },
+  {
     version: "0.13.91",
     date: "2026-10-08",
     summary: "Starting the next episode no longer stops it a few seconds in.",

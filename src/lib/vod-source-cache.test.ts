@@ -55,6 +55,29 @@ describe("vod-source-cache", () => {
     delete process.env.STREAM_VOD_SOURCE_START_BYTES;
   });
 
+  it("starts one download when first requests for an episode arrive together", async () => {
+    const body = Buffer.concat([Buffer.from([0x1a, 0x45, 0xdf, 0xa3]), Buffer.alloc(5000, 7)]);
+    const fetchMock = vi.fn(async () =>
+      new Response(body, {
+        status: 200,
+        headers: { "content-length": String(body.length), "content-type": "video/x-matroska" },
+      })
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const mod = await import("./vod-source-cache");
+    const upstream = "http://provider.test/series/u/p/123.mkv";
+
+    await Promise.all([
+      mod.waitForVodSourceBytes(upstream, body.length, { timeoutMs: 5000 }),
+      mod.waitForVodSourceBytes(upstream, body.length, { timeoutMs: 5000 }),
+      mod.getVodSourceStatus(upstream),
+    ]);
+    const st = await mod.waitForVodSourceBytes(upstream, body.length, { timeoutMs: 5000 });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect((await fsp.readFile(st.path)).equals(body)).toBe(true);
+  });
+
   it("caps the source cache at 15GB unless configured", async () => {
     delete process.env.STREAM_VOD_SOURCE_MAX_BYTES;
     vi.resetModules();

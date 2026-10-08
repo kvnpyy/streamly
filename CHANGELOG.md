@@ -27,6 +27,13 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.13.92] — 2026-10-08
+
+Episodes no longer freeze about a minute in on a frozen, silent picture.
+
+### Fixed
+- Opening an episode sends several requests at once. Each one could start its own download of the episode, and the copies were written into the same file in turns, which scrambled it. Only one download per episode starts now.
+
 ## [0.13.91] — 2026-10-08
 
 Starting the next episode no longer stops it a few seconds in.
