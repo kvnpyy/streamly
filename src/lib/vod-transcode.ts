@@ -1585,50 +1585,86 @@ async function healTranscodeJobContiguity(job: TranscodeJob): Promise<number> {
  * ffmpeg `append_list` can continue at seg_00058 while seg_00029..57 are missing,
  * freezing the player ~2 minutes in. Kill a bad encode and heal before resuming.
  */
-async function ensureTranscodeJobContiguous(job: TranscodeJob): Promise<number> {
-  const onDisk = await listSegmentFiles(job.dir);
-  const prefix = contiguousSegmentCount(onDisk);
-  if (prefix === 0) return 0;
-
-  let manifestDiskGap = false;
-  let manifestEmpty = false;
-  let tipOnlyTail = false;
+async function readContiguityState(dir: string): Promise<{
+  prefix: number;
+  orphans: boolean;
+  manifestDiskGap: boolean;
+  manifestEmpty: boolean;
+  tipOnlyTail: boolean;
+}> {
+  // Playlist first, then disk. ffmpeg renames a finished segment before it
+  // lists it, so a disk listing taken after the playlist always holds every
+  // segment the playlist names. The reverse order saw a segment finish in
+  // between and killed a healthy encode for a "missing" piece.
+  let raw: string | null = null;
   try {
-    const raw = await fsp.readFile(path.join(job.dir, MANIFEST_NAME), "utf8");
-    manifestEmpty = manifestNeedsContiguityHeal(raw);
-    tipOnlyTail = !manifestEmpty && manifestIsTipOnlyTail(raw, onDisk);
-    manifestDiskGap =
-      !manifestEmpty &&
-      !tipOnlyTail &&
-      manifestReferencesMissingOrGappedSegments(raw, onDisk);
+    raw = await fsp.readFile(path.join(dir, MANIFEST_NAME), "utf8");
   } catch {
-    manifestEmpty = true;
+    raw = null;
   }
+  const onDisk = await listSegmentFiles(dir);
+  const prefix = contiguousSegmentCount(onDisk);
+  const manifestEmpty = raw == null || manifestNeedsContiguityHeal(raw);
+  const tipOnlyTail =
+    raw != null && !manifestEmpty && manifestIsTipOnlyTail(raw, onDisk);
+  const manifestDiskGap =
+    raw != null &&
+    !manifestEmpty &&
+    !tipOnlyTail &&
+    manifestReferencesMissingOrGappedSegments(raw, onDisk);
+  return {
+    prefix,
+    orphans: hasOrphanSegmentsBeyondPrefix(onDisk),
+    manifestDiskGap,
+    manifestEmpty,
+    tipOnlyTail,
+  };
+}
 
-  const needsHeal =
-    hasOrphanSegmentsBeyondPrefix(onDisk) ||
-    manifestDiskGap ||
-    manifestEmpty ||
-    tipOnlyTail;
-  if (!needsHeal) return prefix;
-
+function contiguityNeedsStop(
+  s: Awaited<ReturnType<typeof readContiguityState>>,
+  encoderLive: boolean
+): boolean {
+  if (!(s.orphans || s.manifestDiskGap || s.manifestEmpty || s.tipOnlyTail)) {
+    return false;
+  }
   // An empty playlist while ffmpeg is still writing is the temp_file window,
   // not a broken encode. Killing it here left seg_00000 on disk and a 0-byte
   // index.m3u8, and every later play returned 503. Serve from the segments.
-  const encoderLive = !!(job.proc && job.proc.exitCode == null);
   if (
     encoderLive &&
-    (tipOnlyTail ||
-      (manifestEmpty &&
-        !manifestDiskGap &&
-        !hasOrphanSegmentsBeyondPrefix(onDisk)))
+    (s.tipOnlyTail || (s.manifestEmpty && !s.manifestDiskGap && !s.orphans))
   ) {
-    return prefix;
+    return false;
+  }
+  return true;
+}
+
+async function ensureTranscodeJobContiguous(job: TranscodeJob): Promise<number> {
+  let state = await readContiguityState(job.dir);
+  if (state.prefix === 0) return 0;
+  const prefix = state.prefix;
+  const encoderLive = () => !!(job.proc && job.proc.exitCode == null);
+  if (!contiguityNeedsStop(state, encoderLive())) return prefix;
+  if (encoderLive()) {
+    // Stopping a live encode costs a restart and a seam. Look again once
+    // ffmpeg has finished whatever rename or playlist write was in flight.
+    await new Promise((r) => setTimeout(r, 750));
+    state = await readContiguityState(job.dir);
+    if (!contiguityNeedsStop(state, encoderLive())) return state.prefix;
   }
 
   if (job.proc && job.proc.exitCode == null) {
     // PID-file aware stop — raw SIGTERM left orphans writing during heal.
-    await stopJobProc(job, "contiguity-heal");
+    const why = [
+      state.orphans && "orphans",
+      state.manifestDiskGap && "gap",
+      state.manifestEmpty && "empty",
+      state.tipOnlyTail && "tip-only",
+    ]
+      .filter(Boolean)
+      .join("+");
+    await stopJobProc(job, `contiguity-heal(${why})`);
     if (job.state === "running" || job.state === "starting") {
       job.state = "ready";
     }

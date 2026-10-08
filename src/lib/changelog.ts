@@ -11,6 +11,14 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.13.95",
+    date: "2026-10-08",
+    summary: "Episodes that are still being prepared no longer restart their encode every minute or two.",
+    highlights: [
+      "The server checks the episode's playlist for missing pieces while you watch. It sometimes looked in the middle of a piece being finished, decided one was missing, and restarted the encode. Each restart left a seam where the newest part of the video could stall. It now reads in the safe order and checks twice before restarting.",
+    ],
+  },
+  {
     version: "0.13.94",
     date: "2026-10-08",
     summary: "The server now records each piece of video an episode asks for.",
