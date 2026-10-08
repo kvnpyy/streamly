@@ -11,6 +11,16 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.13.96",
+    date: "2026-10-08",
+    summary: "Scrubbing an episode responds faster and shows previews further along the bar.",
+    highlights: [
+      "Encoding now runs at a lower priority than the web server. When several episodes were encoding, the pieces of video you jumped to waited for the processor and took seconds to arrive.",
+      "Pressing skip several times in a row past the prepared part of an episode now asks the server once, for where you stop. Each press used to start its own encode, and they pushed each other out.",
+      "Scrub previews now come from the episode file already downloaded to the server, so they appear past the part that has been prepared for playback.",
+    ],
+  },
+  {
     version: "0.13.95",
     date: "2026-10-08",
     summary: "Episodes that are still being prepared no longer restart their encode every minute or two.",

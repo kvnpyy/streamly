@@ -121,6 +121,17 @@ import {
 const IPTV_UA_VOD = "VLC/3.0.20 LibVLC/3.0.20";
 const MANIFEST_NAME = "index.m3u8";
 const FFMPEG_PID_FILE = ".ffmpeg.pid";
+const FFMPEG_NICE = 10;
+
+let niceAvailableCache: boolean | null = null;
+function niceAvailable(): boolean {
+  if (niceAvailableCache == null) {
+    niceAvailableCache =
+      process.platform !== "win32" &&
+      ["/usr/bin/nice", "/bin/nice"].some((p) => fs.existsSync(p));
+  }
+  return niceAvailableCache;
+}
 
 function isHttpInput(input: string): boolean {
   return /^https?:\/\//i.test(input);
@@ -1217,6 +1228,11 @@ async function sweepTranscodeDiskCache(): Promise<void> {
     reserveBytes: diskFreeReserveBytes(),
     protectKeys,
   });
+  if (victims.length > 0) {
+    console.info(
+      `[vod-transcode] disk sweep used=${Math.round(usedBytes / 1e9)}GB max=${Math.round(maxBytes / 1e9)}GB removing ${victims.length}: ${victims.map((k) => k.slice(0, 12)).join(",")}`
+    );
+  }
   for (const key of victims) {
     await wipeTranscodeJobDir(path.join(root, key), key, "disk-pressure");
   }
@@ -1672,6 +1688,25 @@ async function ensureTranscodeJobContiguous(job: TranscodeJob): Promise<number> 
   }
 
   return healTranscodeJobContiguity(job);
+}
+
+/** Logs where a slow request spent its time; quiet when the request is fast. */
+function phaseTimer(slowMs = 400) {
+  const startedAt = Date.now();
+  let last = startedAt;
+  const parts: string[] = [];
+  return {
+    mark(name: string) {
+      const now = Date.now();
+      parts.push(`${name}=${now - last}`);
+      last = now;
+    },
+    report(label: string) {
+      const total = Date.now() - startedAt;
+      if (total < slowMs) return;
+      console.info(`[vod-slow] ${label} total=${total} ${parts.join(" ")}`);
+    },
+  };
 }
 
 const resumeInflight = processSingleton("vod-transcode:resume", () => new Map<string, Promise<void>>());
@@ -2433,9 +2468,16 @@ async function spawnFfmpegLocked(
   args.push(outManifest);
 
   await rememberFmp4Init(job.dir);
-  const proc = spawn(ffmpegPath(), args, {
-    stdio: [followSourcePath ? "pipe" : "ignore", "ignore", "pipe"],
-  });
+  // Encodes fill every core. At equal priority the web server waited for CPU
+  // and segments took seconds to serve after a scrub. `nice` execs ffmpeg in
+  // place, so the pid (and every stop path keyed on it) stays the same.
+  const proc = niceAvailable()
+    ? spawn("nice", ["-n", String(FFMPEG_NICE), ffmpegPath(), ...args], {
+        stdio: [followSourcePath ? "pipe" : "ignore", "ignore", "pipe"],
+      })
+    : spawn(ffmpegPath(), args, {
+        stdio: [followSourcePath ? "pipe" : "ignore", "ignore", "pipe"],
+      });
   job.proc = proc;
   job.state = "running";
   if (followSourcePath && proc.stdin) {
@@ -3164,6 +3206,7 @@ export async function handleVodTranscodeRequest(opts: {
     }
   }
 
+  const phase = phaseTimer();
   const job = await ensureJob(opts.upstream, {
     resetCache: opts.resetCache,
     seekSec: opts.seekSec,
@@ -3198,9 +3241,11 @@ export async function handleVodTranscodeRequest(opts: {
         `[vod-transcode] play key=${job.key.slice(0, 12)} input=${upstreamIsHlsMediaPlaylist(opts.upstream) ? "playlist" : "file"}`
       );
     }
+    phase.mark("ensure-job");
     scheduleVodChapterProbe(job);
     // Drop a silent resumed stretch before deciding the episode is finished.
     await dropSilentTranscodeTail(job);
+    phase.mark("silent-tail");
     // Contiguity heal is awaited below before serve — do not fire-and-forget
     // a parallel heal that races stop/rewrite with ffmpeg append_list.
     void ensureEncodingContinues(job);
@@ -3228,6 +3273,7 @@ export async function handleVodTranscodeRequest(opts: {
     const ready = await waitForReady(job, opts.signal, manifestWait, {
       failJobOnTimeout: false,
     });
+    phase.mark("wait-ready");
     if (!ready) {
       const sourceHdrs = await vodSourceProgressHeaders(opts.upstream);
       const stillStarting =
@@ -3304,8 +3350,10 @@ export async function handleVodTranscodeRequest(opts: {
     const onDisk = await listSegmentFiles(job.dir);
     const diskPrefix = contiguousSegmentCount(onDisk);
     await maybeRecoverStalledFfmpeg(job, diskPrefix);
+    phase.mark("meta+stall");
     // Heal tip-only MEDIA-SEQUENCE jumps before deciding completeness / serving.
     await ensureTranscodeJobContiguous(job);
+    phase.mark("contiguity");
     let rawAfterHeal = raw;
     try {
       rawAfterHeal = await fsp.readFile(path.join(job.dir, MANIFEST_NAME), "utf8");
@@ -3316,6 +3364,7 @@ export async function handleVodTranscodeRequest(opts: {
     await rememberFmp4Init(job.dir);
     await restoreFmp4Init(job.dir);
     if (job.pack !== "ts") await alignFinishedFmp4Segments(job);
+    phase.mark("init+align");
     const packagedNow = await fragmentedOutputState(job.dir);
     if (
       shouldRestartFragmentedTranscode({
@@ -3338,6 +3387,7 @@ export async function handleVodTranscodeRequest(opts: {
     const playlistComplete =
       job.proc == null &&
       (await isPlaylistFullyEncoded(job, rawAfterHeal));
+    phase.mark("complete-check");
     if (playlistComplete && job.state !== "ready") {
       job.state = "ready";
     }
@@ -3355,6 +3405,7 @@ export async function handleVodTranscodeRequest(opts: {
         extraHeaders: await vodSourceProgressHeaders(opts.upstream),
       };
     }
+    phase.mark("trim");
     const trimmedEncodedSec = sumExtinfDurationSec(trimmed);
     const manifestCompatMse = opts.forCast ? false : opts.compatMse;
     const rewritten = rewriteTranscodeManifest(
@@ -3399,6 +3450,8 @@ export async function handleVodTranscodeRequest(opts: {
       "cache-control": "no-cache, no-store",
       ...(extraDurationHeaders ?? {}),
     };
+    phase.mark("rewrite+headers");
+    phase.report(`playlist key=${job.key.slice(0, 12)}`);
     if (opts.head) {
       return {
         status: 200,
@@ -3417,6 +3470,7 @@ export async function handleVodTranscodeRequest(opts: {
     };
   }
 
+  phase.mark("ensure-job");
   if (media === "init.mp4") await restoreFmp4Init(job.dir);
   const segPath = path.join(job.dir, media);
   let segmentReady = await waitForSegmentFile(segPath, 200);
@@ -3462,6 +3516,7 @@ export async function handleVodTranscodeRequest(opts: {
     };
   }
 
+  phase.mark("wait-file");
   if (media.endsWith(".m4s")) {
     await restoreFmp4Init(job.dir);
     const aligned = await alignFmp4SegmentForPlayback(job.dir, media);
@@ -3475,6 +3530,7 @@ export async function handleVodTranscodeRequest(opts: {
       };
     }
   }
+  phase.mark("align");
   let data: Buffer;
   try {
     data = await fsp.readFile(segPath);
@@ -3501,6 +3557,8 @@ export async function handleVodTranscodeRequest(opts: {
       };
     }
   }
+  phase.mark("read");
+  if (!opts.head) phase.report(`${media} key=${job.key.slice(0, 12)}`);
   return {
     status: 200,
     body: new Uint8Array(data),

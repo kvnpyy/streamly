@@ -67,6 +67,7 @@ import {
   vodSeekTargetBuffered,
   VOD_SEEK_LAND_MAX_TRIES,
   VOD_SEEK_LAND_RETRY_MS,
+  VOD_SEEK_RESTART_SETTLE_MS,
   VOD_SEEK_SUPPRESS_TIP_PERSIST_MS,
 } from "@/lib/player-vod-seek-land";
 import { browseAccountKey, usePrefs } from "@/store/preferences";
@@ -884,15 +885,19 @@ export function PlayerOverlay() {
       vodSeekPrepAbortRef.current?.abort();
       const prep = new AbortController();
       vodSeekPrepAbortRef.current = prep;
+      if (vodSeekRestartTimerRef.current) {
+        clearTimeout(vodSeekRestartTimerRef.current);
+      }
 
       // Keep current playback up until the seek encode has a playlist.
       // Tearing down first + a 120s origin hold caused Cloudflare 524 freezes.
-      void (async () => {
+      const runSeekPrep = async () => {
         const result = await waitForVodTranscodePlaylistReady(url, {
           signal: prep.signal,
           deadlineMs: 180_000,
         });
         if (prep.signal.aborted || vodSeekPrepAbortRef.current !== prep) return;
+        vodSeekPrepAbortRef.current = null;
         if (result !== "ready") {
           setVodSeekInFlight(false);
           setVodSeekTargetSec(null);
@@ -926,7 +931,14 @@ export function PlayerOverlay() {
         }
 
         setVodPlaybackOverride(url);
-      })();
+      };
+      // Held briefly so a burst of skips asks the server for one encode at the
+      // final spot. Each request started its own encode, and they fought over
+      // the server's few encode slots.
+      vodSeekRestartTimerRef.current = setTimeout(() => {
+        vodSeekRestartTimerRef.current = null;
+        void runSeekPrep();
+      }, VOD_SEEK_RESTART_SETTLE_MS);
     },
     [current, tvBrowser, silkLikeClient, vodPlaybackUrl, vodTotalSec]
   );
@@ -1695,6 +1707,20 @@ export function PlayerOverlay() {
         persistIfLanded();
         clearScrubGate();
         return;
+      }
+
+      if (vodSeekRestartTimerRef.current || vodSeekPrepAbortRef.current) {
+        // A skip past the tip followed by one back into the playlist. The
+        // held server seek would otherwise reload the player at the old spot.
+        if (vodSeekRestartTimerRef.current) {
+          clearTimeout(vodSeekRestartTimerRef.current);
+          vodSeekRestartTimerRef.current = null;
+        }
+        vodSeekPrepAbortRef.current?.abort();
+        vodSeekPrepAbortRef.current = null;
+        vodTimelineHoldRef.current = null;
+        setVodSeekInFlight(false);
+        setVodSeekTargetSec(null);
       }
 
       const off = vodStartOffsetRef.current;

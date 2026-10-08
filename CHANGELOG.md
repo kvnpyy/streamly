@@ -27,6 +27,19 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.13.96] — 2026-10-08
+
+Scrubbing an episode responds faster and shows previews further along the bar.
+
+### Fixed
+- Encoding now runs at a lower priority than the web server. When several episodes were encoding, the pieces of video you jumped to waited for the processor and took seconds to arrive.
+- Pressing skip several times in a row past the prepared part of an episode now asks the server once, for where you stop. Each press used to start its own encode, and they pushed each other out.
+
+### Changed
+- Scrub previews now come from the episode file already downloaded to the server, so they appear past the part that has been prepared for playback.
+
+---
+
 ## [0.13.95] — 2026-10-08
 
 Episodes that are still being prepared no longer restart their encode every minute or two.

@@ -8,6 +8,11 @@ import {
   upstreamEligibleForVodTranscode,
   vodTranscodeJobDir,
 } from "@/lib/vod-transcode-paths";
+import {
+  estimateBytesForSeekSec,
+  getVodSourceStatus,
+  isVodSourceCacheEnabled,
+} from "@/lib/vod-source-cache";
 import { spawn } from "child_process";
 import crypto from "crypto";
 import fs from "fs/promises";
@@ -123,6 +128,60 @@ async function extractLocalTranscodeFrame(
   }
 }
 
+async function episodeDurationSec(upstream: string): Promise<number | null> {
+  try {
+    const raw = await fs.readFile(
+      path.join(vodTranscodeJobDir(upstream, 0), ".meta.json"),
+      "utf8"
+    );
+    const d = (JSON.parse(raw) as { durationSec?: unknown }).durationSec;
+    return typeof d === "number" && d > 0 ? d : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Frame from the episode file already downloaded to this server. Works past
+ * the encoded part of the episode, which is where a scrub preview matters most.
+ */
+async function extractLocalSourceFrame(
+  upstream: string,
+  atSec: number
+): Promise<Buffer | null> {
+  const st = await getVodSourceStatus(upstream).catch(() => null);
+  if (!st || st.bytes <= 0 || st.error) return null;
+  if (!st.complete) {
+    const durationSec = await episodeDurationSec(upstream);
+    if (!durationSec || !st.totalBytes) return null;
+    const needBytes = estimateBytesForSeekSec(atSec, {
+      totalBytes: st.totalBytes,
+      durationSec,
+    });
+    if (needBytes > st.bytes) return null;
+  }
+  return runFfmpeg([
+    "-hide_banner",
+    "-loglevel",
+    "error",
+    "-ss",
+    String(atSec),
+    "-i",
+    st.path,
+    "-frames:v",
+    "1",
+    "-vf",
+    "scale=320:-2",
+    "-q:v",
+    "6",
+    "-f",
+    "image2pipe",
+    "-vcodec",
+    "mjpeg",
+    "pipe:1",
+  ]);
+}
+
 function runFfmpeg(args: string[]): Promise<Buffer | null> {
   return new Promise((resolve) => {
     const proc = spawn(ffmpegPath(), args, { stdio: ["ignore", "pipe", "pipe"] });
@@ -205,12 +264,13 @@ export async function getVodSeekPreviewJpeg(
   const work = (async () => {
     try {
       const local = await extractLocalTranscodeFrame(upstream, at);
-      const buf =
-        local.buf && local.buf.length > 500
-          ? local.buf
-          : local.segmentExists
-            ? null
-            : await extractFrame(upstream, at);
+      let buf = local.buf && local.buf.length > 500 ? local.buf : null;
+      if (!buf) buf = await extractLocalSourceFrame(upstream, at);
+      if (!buf && !local.segmentExists && !isVodSourceCacheEnabled()) {
+        // Provider seeks open a second connection, and single-stream plans
+        // drop the episode download for it. Only without a local copy.
+        buf = await extractFrame(upstream, at);
+      }
       if (buf && buf.length > 500) {
         cache.set(key, { buf, at: Date.now() });
         if (cache.size > 400) {

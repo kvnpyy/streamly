@@ -6,6 +6,9 @@ export const VOD_SEEK_LAND_MAX_TRIES = 30;
 
 export const VOD_SEEK_LAND_RETRY_MS = 200;
 
+/** Quiet time after the last skip before a past-the-tip seek asks the server. */
+export const VOD_SEEK_RESTART_SETTLE_MS = 450;
+
 /**
  * After an intentional scrub, ignore tip `timeupdate` resume writes so a failed
  * land cannot re-bookmark the old tip (~1h45).
