@@ -27,6 +27,16 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+---
+
+## [0.13.97] — 2026-10-10
+
+Continuing an episode on a TV starts where you left off.
+
+### Fixed
+- Opening an episode you had already started was skipping through the picture until it reached that minute, then playing normally. It now begins at that moment and stays there.
+- Live TV: scrolling on a channel row now moves the page, so **Show more categories** under the last row can be reached.
+
 ## [0.13.96] — 2026-10-08
 
 Scrubbing an episode responds faster and shows previews further along the bar.

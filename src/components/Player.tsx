@@ -548,10 +548,12 @@ export function PlayerOverlay() {
       current.durationSec ?? 0
     );
 
+    const openAtResume = tvBrowser || silkLikeClient;
     return buildInitialVodPlaybackUrl(current.url, {
       containerExt: current.containerExt,
-      compatMse: tvBrowser || silkLikeClient,
+      compatMse: openAtResume,
       resumeSec,
+      openAtSeek: openAtResume,
     });
   }, [open, current, creds, tvBrowser, silkLikeClient]);
 
@@ -724,11 +726,14 @@ export function PlayerOverlay() {
         current.durationSec ?? 0
       );
       if (playable != null) {
+        // TVs open the encode at the resume, so the playhead stays at 0.
+        // A desktop hold keeps offset 0 and seeks inside the from-0 playlist.
+        const openAtResume = tvBrowser || silkLikeClient;
         resumeHold = {
           absoluteTimeSec: playable,
-          startOffsetSec: 0,
+          startOffsetSec: openAtResume ? playable : 0,
         };
-        vodPlayheadHighWaterRef.current = playable;
+        vodPlayheadHighWaterRef.current = openAtResume ? 0 : playable;
       }
     }
     vodTimelineHoldRef.current = resumeHold;
@@ -739,7 +744,7 @@ export function PlayerOverlay() {
       setVodPrepStartedAt(Date.now());
       if (resumeHold) setVodSeekTargetSec(resumeHold.absoluteTimeSec);
     });
-  }, [episodeIdentity, current, creds]);
+  }, [episodeIdentity, current, creds, tvBrowser, silkLikeClient]);
 
   /** Slow server encode — nudge bar; hard fail only if decode never starts. */
   useEffect(() => {
@@ -866,11 +871,13 @@ export function PlayerOverlay() {
           : vodTotalSec > 1
             ? vodTotalSec
             : undefined;
-      // Hold absolute time only — startOffset comes from the server playlist
-      // (often 0 when reusing a finished from-0 encode). Never set offset=absolute.
+      // Desktop keeps offset 0: the server often returns the from-0 encode and
+      // the player seeks inside it. TV encodes start at the scrub, so the
+      // hold offset is the scrub and the element stays at the start of that file.
+      const openAtResume = tvBrowser || silkLikeClient;
       vodTimelineHoldRef.current = {
         absoluteTimeSec: Math.max(0, absoluteSec),
-        startOffsetSec: 0,
+        startOffsetSec: openAtResume ? Math.max(0, absoluteSec) : 0,
         durationSec,
       };
       vodResumeLockedRef.current = true;

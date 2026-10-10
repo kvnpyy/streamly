@@ -131,3 +131,41 @@ describe("shouldReuseTranscodeJobForSeek", () => {
     ).toBe(false);
   });
 });
+
+describe("shouldReuseTranscodeJobForSeek openAtSeek", () => {
+  it("does not hand a TV resume a from-0 encode that merely covers that minute", () => {
+    expect(
+      shouldReuseTranscodeJobForSeek({
+        jobStartOffsetSec: 0,
+        encodedSec: 9935,
+        seekSec: 2447,
+        procAlive: false,
+        openAtSeek: true,
+      })
+    ).toBe(false);
+  });
+
+  it("reuses the encode that already starts in that minute", () => {
+    expect(
+      shouldReuseTranscodeJobForSeek({
+        jobStartOffsetSec: 2447,
+        encodedSec: 12,
+        seekSec: 2455,
+        procAlive: true,
+        openAtSeek: true,
+      })
+    ).toBe(true);
+  });
+
+  it("does not reuse a short encode from an earlier minute", () => {
+    expect(
+      shouldReuseTranscodeJobForSeek({
+        jobStartOffsetSec: 2340,
+        encodedSec: 84,
+        seekSec: 2700,
+        procAlive: false,
+        openAtSeek: true,
+      })
+    ).toBe(false);
+  });
+});

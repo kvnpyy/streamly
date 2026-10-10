@@ -1,5 +1,10 @@
 "use client";
 
+import {
+  scrollVerticalFrom,
+  shelfWheelScrollsPage,
+  wheelDeltaToPixels,
+} from "@/lib/shelf-vertical-scroll";
 import { cn } from "@/lib/utils";
 import { ChevronRight } from "lucide-react";
 import Link from "next/link";
@@ -109,11 +114,28 @@ export const TvShelf = memo(function TvShelf({
       }
     };
 
+    /**
+     * A vertical trackpad swipe on a channel picture must move the page.
+     * The row only scrolls sideways; otherwise "Show more categories" stays
+     * below the last row and cannot be reached.
+     */
+    const onWheel = (e: WheelEvent) => {
+      if (e.ctrlKey) return;
+      if (!shelfWheelScrollsPage(e.deltaX, e.deltaY)) return;
+      e.preventDefault();
+      scrollVerticalFrom(
+        container,
+        wheelDeltaToPixels(e.deltaY, e.deltaMode, window.innerHeight)
+      );
+    };
+
     container.addEventListener("focusin", onFocusIn);
     container.addEventListener("keydown", onKeyDown);
+    container.addEventListener("wheel", onWheel, { passive: false });
     return () => {
       container.removeEventListener("focusin", onFocusIn);
       container.removeEventListener("keydown", onKeyDown);
+      container.removeEventListener("wheel", onWheel);
     };
   }, []);
 
@@ -185,9 +207,9 @@ export const TvShelf = memo(function TvShelf({
           )}
           style={{
             overflowX: "auto",
-            overflowY: "visible",
+            overflowY: "clip",
             WebkitOverflowScrolling: "touch",
-            touchAction: "pan-x",
+            touchAction: "pan-x pan-y",
           }}
         >
           {children}

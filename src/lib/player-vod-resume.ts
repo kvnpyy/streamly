@@ -168,6 +168,28 @@ export function decidePassiveVodResumePersist(
   return action;
 }
 
+/**
+ * After the server has already opened the encode at the resume, only a
+ * one-segment correction is safe. A longer `currentTime` assignment is what
+ * TVs render as skipping through the episode until the saved minute.
+ * Resumes in the first minute stay on the from-0 encode, so those may still seek.
+ */
+export const VOD_RESUME_OPEN_NUDGE_SEC = 8;
+
+/**
+ * Relative seconds to assign on the media element.
+ * `openedAtSec` is the `tc_seek` the playlist was requested with.
+ * Null means leave the playhead where that playlist starts.
+ */
+export function vodResumeOpenSeekSec(
+  relativeSec: number,
+  openedAtSec: number
+): number | null {
+  if (!Number.isFinite(relativeSec) || relativeSec <= 0.5) return null;
+  if (openedAtSec >= 60 && relativeSec > VOD_RESUME_OPEN_NUDGE_SEC) return null;
+  return relativeSec;
+}
+
 /** True when the element jumped backward (reload), so it must not replace a further bookmark. */
 export function isVodResumeRegression(
   storedSec: number | undefined,

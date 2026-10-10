@@ -2752,7 +2752,13 @@ async function hydrateTranscodeJobFromDisk(
   const cachedMeta = await readJobMeta(dir);
   if (!cachedMeta) return null;
   const metaOff = Math.max(0, Math.floor(cachedMeta.startOffsetSec ?? 0));
-  if (metaOff !== off) return null;
+  // TV resume stores the exact second but the directory is the minute bucket.
+  if (
+    metaOff !== off &&
+    quantizeTranscodeSeekSec(metaOff) !== quantizeTranscodeSeekSec(off)
+  ) {
+    return null;
+  }
 
   const manifest = await readManifestIfReady(dir);
   const stalePackaging = (cachedMeta.encodeRev ?? 0) !== TRANSCODE_ENCODE_REV;
@@ -2787,7 +2793,8 @@ async function hydrateTranscodeJobFromDisk(
 async function findReusableTranscodeJob(
   upstream: string,
   seekSec: number,
-  pack?: "ts"
+  pack?: "ts",
+  openAtSeek = false
 ): Promise<TranscodeJob | null> {
   if (seekSec <= 0) return null;
 
@@ -2812,18 +2819,27 @@ async function findReusableTranscodeJob(
     }
     const encoded = await encodedDurationForJob(job);
     const procAlive = !!(job.proc && job.proc.exitCode == null);
+    const pendingOpen =
+      openAtSeek &&
+      (job.state === "starting" ||
+        job.state === "queued" ||
+        job.state === "running" ||
+        job.state === "ready");
     if (
       !shouldReuseTranscodeJobForSeek({
         jobStartOffsetSec: job.startOffsetSec,
         encodedSec: encoded,
         seekSec,
-        procAlive,
+        procAlive: procAlive || pendingOpen,
+        openAtSeek,
       })
     ) {
       continue;
     }
-    // Prefer earlier start offsets (especially a complete from-0 movie).
-    const rank = encoded + (job.startOffsetSec === 0 ? 1e9 : 0);
+    // Desktop prefers a complete from-0 movie. TV resume must not: that file
+    // starts at 0 and the player then skips forward to the saved minute.
+    const rank =
+      encoded + (!openAtSeek && job.startOffsetSec === 0 ? 1e9 : 0);
     if (rank > bestEncoded) {
       bestEncoded = rank;
       best = job;
@@ -2843,12 +2859,17 @@ async function ensureJobLocked(
 ): Promise<TranscodeJob> {
   const requestedSeek = Math.max(0, Math.floor(opts?.seekSec ?? 0));
   const pack = opts?.pack;
+  // Under a minute stays on the from-0 encode. A seek in that bucket shares
+  // its directory, and starting a second offset there would delete the movie.
+  const seekBucket = quantizeTranscodeSeekSec(requestedSeek);
+  const openAtSeek = pack === "ts" && seekBucket > 0;
 
   if (!opts?.resetCache && requestedSeek > 0) {
     const reusable = await findReusableTranscodeJob(
       upstream,
       requestedSeek,
-      pack
+      pack,
+      openAtSeek
     );
     if (reusable) {
       if (await discardHitchyTranscodeCache(reusable.dir, reusable.key)) {
@@ -2861,8 +2882,14 @@ async function ensureJobLocked(
     }
   }
 
-  const startOffsetSec = quantizeTranscodeSeekSec(requestedSeek);
-  const key = cacheKeyForUpstream(upstream, startOffsetSec, pack);
+  // TV: encode from the exact resume second, cached in the minute directory.
+  // Desktop keeps the quantized offset so a from-0 file can still be reused.
+  const startOffsetSec = openAtSeek ? requestedSeek : seekBucket;
+  const key = cacheKeyForUpstream(
+    upstream,
+    openAtSeek ? seekBucket : startOffsetSec,
+    pack
+  );
   const dir = jobDir(key);
   if (await discardHitchyTranscodeCache(dir, key)) {
     /* directory is gone; create a new job below */
@@ -2927,6 +2954,17 @@ async function ensureJobLocked(
 
   const existing = jobs.get(key);
   if (existing) {
+    if (
+      openAtSeek &&
+      existing.startOffsetSec !== startOffsetSec &&
+      existing.startOffsetSec > 0 &&
+      quantizeTranscodeSeekSec(existing.startOffsetSec) ===
+        quantizeTranscodeSeekSec(startOffsetSec)
+    ) {
+      noteTranscodeViewer(existing);
+      void ensureEncodingContinues(existing);
+      return existing;
+    }
     if (existing.startOffsetSec !== startOffsetSec) {
       await wipeTranscodeJobDir(dir, key, "offset-mismatch");
     } else if (existing.state === "failed") {

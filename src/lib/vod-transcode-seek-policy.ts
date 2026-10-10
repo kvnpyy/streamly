@@ -54,6 +54,10 @@ export function transcodeSeekNeedsServerRestart(opts: {
 /**
  * True when an existing encode already covers (or is about to cover) `seekSec`,
  * so the server should reuse that job instead of starting a parallel one.
+ *
+ * `openAtSeek` is the TV resume path. A finished from-0 encode must not win:
+ * the player would scrub from the start to the saved minute, and living-room
+ * browsers fast-forward through the picture to get there.
  */
 export function shouldReuseTranscodeJobForSeek(opts: {
   jobStartOffsetSec: number;
@@ -62,12 +66,26 @@ export function shouldReuseTranscodeJobForSeek(opts: {
   procAlive: boolean;
   /** Seconds beyond encoded tip still considered "same growing job". */
   nearTipGraceSec?: number;
+  /** Playlist must open at the seek. Do not hand back an earlier encode. */
+  openAtSeek?: boolean;
 }): boolean {
   const seek = Math.max(0, Math.floor(opts.seekSec));
   const start = Math.max(0, Math.floor(opts.jobStartOffsetSec));
+  const encoded = Math.max(0, opts.encodedSec);
+
+  if (opts.openAtSeek) {
+    // One encode per minute. A later request in that minute reuses it even
+    // when it began a few seconds after this resume — wiping it to re-seek
+    // would delete the file the player is about to read.
+    if (seek <= 0 || start <= 0) return false;
+    if (quantizeTranscodeSeekSec(start) !== quantizeTranscodeSeekSec(seek)) {
+      return false;
+    }
+    return opts.procAlive || encoded > 0;
+  }
+
   if (start > seek) return false;
 
-  const encoded = Math.max(0, opts.encodedSec);
   const coversThrough = start + encoded;
   if (coversThrough >= seek - 2) return true;
 

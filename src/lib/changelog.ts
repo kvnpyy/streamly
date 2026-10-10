@@ -11,6 +11,15 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.13.97",
+    date: "2026-10-10",
+    summary: "Continuing an episode on a TV starts where you left off.",
+    highlights: [
+      "Opening an episode you had already started was skipping through the picture until it reached that minute, then playing normally. It now begins at that moment and stays there.",
+      "Live TV: scrolling on a channel row now moves the page, so Show more categories under the last row can be reached.",
+    ],
+  },
+  {
     version: "0.13.96",
     date: "2026-10-08",
     summary: "Scrubbing an episode responds faster and shows previews further along the bar.",

@@ -5,6 +5,19 @@ export function isVodTranscodeEnabledClient(): boolean {
   return process.env.NEXT_PUBLIC_VOD_TRANSCODE === "1";
 }
 
+/** `tc_seek` on a transcode URL, or 0 when this playback starts at the beginning. */
+export function vodTranscodeSeekSec(url: string | null | undefined): number {
+  if (!url) return 0;
+  try {
+    const origin =
+      typeof window !== "undefined" ? window.location.origin : "http://localhost";
+    const n = parseFloat(new URL(url, origin).searchParams.get("tc_seek") ?? "0");
+    return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
+  } catch {
+    return 0;
+  }
+}
+
 export function playbackUrlUsesVodTranscode(url: string): boolean {
   try {
     const origin =
@@ -289,9 +302,9 @@ export function warmVodTranscodePlay(
 
 /**
  * First playback URL for MKV/AVI — applies server transcode.
- * Do NOT bake resume into `tc_seek`: that skips client resume seeking and
- * assumes the playlist window starts at resume time. After deploys we often
- * reuse a complete from-0 encode, so resume must seek inside that playlist.
+ * Desktop leaves resume out of `tc_seek` and seeks inside a from-0 encode.
+ * TVs cannot: that seek plays as a fast-forward until the saved minute.
+ * `openAtSeek` asks the server to start the encode at the resume instead.
  */
 export function buildInitialVodPlaybackUrl(
   proxyUrl: string,
@@ -299,13 +312,22 @@ export function buildInitialVodPlaybackUrl(
     containerExt?: string;
     compatMse?: boolean;
     resumeSec?: number | null;
+    openAtSeek?: boolean;
   }
 ): string {
   if (!isVodTranscodeEnabledClient()) return proxyUrl;
   if (!canVodTranscodeProxyUrl(proxyUrl)) return proxyUrl;
   if (!vodNeedsServerTranscodePrep(opts.containerExt, proxyUrl)) return proxyUrl;
 
-  return appendVodTranscodeHls(proxyUrl, { compatMse: opts.compatMse });
+  const resume = opts.resumeSec;
+  const seekSec =
+    opts.openAtSeek && resume != null && resume >= 15
+      ? Math.floor(resume)
+      : undefined;
+  return appendVodTranscodeHls(proxyUrl, {
+    compatMse: opts.compatMse,
+    seekSec,
+  });
 }
 
 /** Warm a neighboring series episode without fetching raw MKV (single-connection panels). */

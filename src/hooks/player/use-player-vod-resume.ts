@@ -11,10 +11,14 @@ import {
   resolveStoredVodResumeSec,
   vodAbsoluteSec,
   vodRelativeSec,
+  vodResumeOpenSeekSec,
   vodResumeStorageKey,
 } from "@/lib/player-vod-resume";
 import { shouldSuppressVodTipPersist } from "@/lib/player-vod-seek-land";
-import { playbackUrlUsesVodTranscode } from "@/lib/vod-transcode-url";
+import {
+  playbackUrlUsesVodTranscode,
+  vodTranscodeSeekSec,
+} from "@/lib/vod-transcode-url";
 import { voidSafeVideoPlay } from "@/lib/video-play";
 import type { PlayerSource } from "@/store/player";
 import { browseAccountKey, usePrefs } from "@/store/preferences";
@@ -124,13 +128,22 @@ export function usePlayerVodResume(p: UsePlayerVodResumeParams) {
           usesTranscode: true,
           startOffsetSec: off,
         });
+        const openedAt = vodTranscodeSeekSec(activeUrl);
+        const nudge = vodResumeOpenSeekSec(rel, openedAt);
+        // The encode already starts at the resume. Assigning the full
+        // episode time makes a TV skip forward until it gets there.
+        if (openedAt >= 60 && nudge == null) {
+          if (rel <= 0.5 || off > 0) vodResumeLockedRef.current = true;
+          return;
+        }
+        const landAt = nudge ?? rel;
         try {
-          hls.startLoad(Math.max(0, rel));
+          hls.startLoad(Math.max(0, landAt));
         } catch {
           /* noop */
         }
         try {
-          video.currentTime = Math.max(0, rel);
+          video.currentTime = Math.max(0, landAt);
         } catch {
           /* noop */
         }

@@ -176,7 +176,9 @@ html.stream-silk-hint .skeleton {
  */
 .tv-shelf-scroll {
   -webkit-overflow-scrolling: touch;
-  touch-action: pan-x;
+  /* pan-y lets a vertical swipe leave the row and scroll the page. */
+  touch-action: pan-x pan-y;
+  overscroll-behavior-x: contain;
   will-change: scroll-position;
 }
 .tv-shelf-scroll::-webkit-scrollbar {

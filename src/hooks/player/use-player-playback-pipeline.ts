@@ -78,6 +78,7 @@ import {
 import {
   playbackUrlUsesVodTranscode,
   releaseVodTranscodePlayback,
+  vodTranscodeSeekSec,
 } from "@/lib/vod-transcode-url";
 import {
   applyVodResumePersist,
@@ -85,6 +86,7 @@ import {
   isVodResumeRegression,
   type VodTimelineHold,
   vodAbsoluteSec,
+  vodResumeOpenSeekSec,
   vodResumeStorageKey,
 } from "@/lib/player-vod-resume";
 import { shouldSuppressVodTipPersist } from "@/lib/player-vod-seek-land";
@@ -893,14 +895,16 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
                 : null;
             const rel =
               absolute != null ? Math.max(0, absolute - off) : 0;
+            const landAt =
+              vodResumeOpenSeekSec(rel, vodTranscodeSeekSec(url)) ?? 0;
             try {
-              hls.startLoad(rel);
+              hls.startLoad(landAt);
             } catch {
               /* noop */
             }
-            if (rel > 0.5) {
+            if (landAt > 0.5) {
               try {
-                video.currentTime = rel;
+                video.currentTime = landAt;
               } catch {
                 /* noop */
               }

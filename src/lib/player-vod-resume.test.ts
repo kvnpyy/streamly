@@ -12,6 +12,7 @@ import {
   vodAbsoluteSec,
   vodResumeCompletedSec,
   vodRelativeSec,
+  vodResumeOpenSeekSec,
 } from "@/lib/player-vod-resume";
 
 describe("vodAbsoluteSec", () => {
@@ -152,5 +153,16 @@ describe("transcode seek timeline", () => {
     expect(
       vodAbsoluteSec(rel, { usesTranscode: true, startOffsetSec: offset })
     ).toBe(seekAbsolute);
+  });
+
+  it("does not scrub across an episode the server already opened at the resume", () => {
+    expect(vodResumeOpenSeekSec(2447, 2447)).toBeNull();
+    expect(vodResumeOpenSeekSec(2400, 2447)).toBeNull();
+    expect(vodResumeOpenSeekSec(3, 2447)).toBe(3);
+    expect(vodResumeOpenSeekSec(0, 2447)).toBeNull();
+    // First minute still seeks inside the from-0 encode.
+    expect(vodResumeOpenSeekSec(45, 45)).toBe(45);
+    // Desktop has no tc_seek and still seeks inside the playlist.
+    expect(vodResumeOpenSeekSec(2447, 0)).toBe(2447);
   });
 });
