@@ -29,6 +29,13 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.13.98] — 2026-10-10
+
+Continuing an episode starts where you left off on every device.
+
+### Fixed
+- Opening an episode you had already started was still skipping through the picture on a computer until it reached that minute. It now begins at that moment on every device, the same as on a TV.
+
 ## [0.13.97] — 2026-10-10
 
 Continuing an episode on a TV starts where you left off.

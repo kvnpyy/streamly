@@ -170,8 +170,8 @@ export function decidePassiveVodResumePersist(
 
 /**
  * After the server has already opened the encode at the resume, only a
- * one-segment correction is safe. A longer `currentTime` assignment is what
- * TVs render as skipping through the episode until the saved minute.
+ * one-segment correction is safe. A longer `currentTime` assignment plays
+ * as a fast-forward through the episode until the saved minute.
  * Resumes in the first minute stay on the from-0 encode, so those may still seek.
  */
 export const VOD_RESUME_OPEN_NUDGE_SEC = 8;

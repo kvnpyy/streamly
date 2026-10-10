@@ -162,7 +162,7 @@ describe("transcode seek timeline", () => {
     expect(vodResumeOpenSeekSec(0, 2447)).toBeNull();
     // First minute still seeks inside the from-0 encode.
     expect(vodResumeOpenSeekSec(45, 45)).toBe(45);
-    // Desktop has no tc_seek and still seeks inside the playlist.
+    // A playback URL with no tc_seek still seeks inside the playlist.
     expect(vodResumeOpenSeekSec(2447, 0)).toBe(2447);
   });
 });

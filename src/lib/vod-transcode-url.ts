@@ -302,9 +302,9 @@ export function warmVodTranscodePlay(
 
 /**
  * First playback URL for MKV/AVI — applies server transcode.
- * Desktop leaves resume out of `tc_seek` and seeks inside a from-0 encode.
- * TVs cannot: that seek plays as a fast-forward until the saved minute.
- * `openAtSeek` asks the server to start the encode at the resume instead.
+ * A saved resume is sent as `tc_seek` so playback opens at that moment.
+ * Seeking there after the file has started plays as a fast-forward on
+ * desktop and on a TV.
  */
 export function buildInitialVodPlaybackUrl(
   proxyUrl: string,
@@ -312,7 +312,6 @@ export function buildInitialVodPlaybackUrl(
     containerExt?: string;
     compatMse?: boolean;
     resumeSec?: number | null;
-    openAtSeek?: boolean;
   }
 ): string {
   if (!isVodTranscodeEnabledClient()) return proxyUrl;
@@ -321,9 +320,7 @@ export function buildInitialVodPlaybackUrl(
 
   const resume = opts.resumeSec;
   const seekSec =
-    opts.openAtSeek && resume != null && resume >= 15
-      ? Math.floor(resume)
-      : undefined;
+    resume != null && resume >= 15 ? Math.floor(resume) : undefined;
   return appendVodTranscodeHls(proxyUrl, {
     compatMse: opts.compatMse,
     seekSec,

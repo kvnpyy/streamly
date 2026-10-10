@@ -2836,8 +2836,8 @@ async function findReusableTranscodeJob(
     ) {
       continue;
     }
-    // Desktop prefers a complete from-0 movie. TV resume must not: that file
-    // starts at 0 and the player then skips forward to the saved minute.
+    // A from-0 movie starts at 0. Preferring it makes the player skip forward
+    // to the saved minute. Resume opens an encode that already starts there.
     const rank =
       encoded + (!openAtSeek && job.startOffsetSec === 0 ? 1e9 : 0);
     if (rank > bestEncoded) {
@@ -2862,7 +2862,9 @@ async function ensureJobLocked(
   // Under a minute stays on the from-0 encode. A seek in that bucket shares
   // its directory, and starting a second offset there would delete the movie.
   const seekBucket = quantizeTranscodeSeekSec(requestedSeek);
-  const openAtSeek = pack === "ts" && seekBucket > 0;
+  // Any device. The first minute shares the from-0 directory, so it cannot
+  // open as its own encode without deleting that movie.
+  const openAtSeek = seekBucket > 0;
 
   if (!opts?.resetCache && requestedSeek > 0) {
     const reusable = await findReusableTranscodeJob(
@@ -2882,8 +2884,8 @@ async function ensureJobLocked(
     }
   }
 
-  // TV: encode from the exact resume second, cached in the minute directory.
-  // Desktop keeps the quantized offset so a from-0 file can still be reused.
+  // Encode from the exact resume second, cached in that minute's directory.
+  // A from-0 request keeps offset 0 so the opening of the movie stays put.
   const startOffsetSec = openAtSeek ? requestedSeek : seekBucket;
   const key = cacheKeyForUpstream(
     upstream,

@@ -11,6 +11,14 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.13.98",
+    date: "2026-10-10",
+    summary: "Continuing an episode starts where you left off on every device.",
+    highlights: [
+      "Opening an episode you had already started was still skipping through the picture on a computer until it reached that minute. It now begins at that moment on every device, the same as on a TV.",
+    ],
+  },
+  {
     version: "0.13.97",
     date: "2026-10-10",
     summary: "Continuing an episode on a TV starts where you left off.",

@@ -134,23 +134,11 @@ describe("vod-transcode-url", () => {
     vi.unstubAllEnvs();
   });
 
-  it("buildInitialVodPlaybackUrl uses transcode without baking resume into tc_seek", () => {
+  it("buildInitialVodPlaybackUrl opens a resume at the saved time", () => {
     vi.stubEnv("NEXT_PUBLIC_VOD_TRANSCODE", "1");
     const out = buildInitialVodPlaybackUrl(base, {
       containerExt: "mkv",
       resumeSec: 612,
-    });
-    expect(out).toContain("transcode=hls");
-    expect(out).not.toContain("tc_seek=");
-    vi.unstubAllEnvs();
-  });
-
-  it("buildInitialVodPlaybackUrl opens a TV resume at the saved time", () => {
-    vi.stubEnv("NEXT_PUBLIC_VOD_TRANSCODE", "1");
-    const out = buildInitialVodPlaybackUrl(base, {
-      containerExt: "mkv",
-      resumeSec: 612,
-      openAtSeek: true,
     });
     expect(out).toContain("transcode=hls");
     expect(out).toContain("tc_seek=612");
@@ -158,7 +146,6 @@ describe("vod-transcode-url", () => {
       buildInitialVodPlaybackUrl(base, {
         containerExt: "mkv",
         resumeSec: 8,
-        openAtSeek: true,
       })
     ).not.toContain("tc_seek=");
     vi.unstubAllEnvs();

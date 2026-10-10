@@ -131,7 +131,7 @@ export function usePlayerVodResume(p: UsePlayerVodResumeParams) {
         const openedAt = vodTranscodeSeekSec(activeUrl);
         const nudge = vodResumeOpenSeekSec(rel, openedAt);
         // The encode already starts at the resume. Assigning the full
-        // episode time makes a TV skip forward until it gets there.
+        // episode time makes playback skip forward until it gets there.
         if (openedAt >= 60 && nudge == null) {
           if (rel <= 0.5 || off > 0) vodResumeLockedRef.current = true;
           return;

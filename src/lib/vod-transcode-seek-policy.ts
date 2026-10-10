@@ -55,9 +55,9 @@ export function transcodeSeekNeedsServerRestart(opts: {
  * True when an existing encode already covers (or is about to cover) `seekSec`,
  * so the server should reuse that job instead of starting a parallel one.
  *
- * `openAtSeek` is the TV resume path. A finished from-0 encode must not win:
- * the player would scrub from the start to the saved minute, and living-room
- * browsers fast-forward through the picture to get there.
+ * `openAtSeek` means playback must begin at the requested time. A finished
+ * from-0 encode must not win: the player would scrub from the start to that
+ * minute, and that scrub plays as a fast-forward.
  */
 export function shouldReuseTranscodeJobForSeek(opts: {
   jobStartOffsetSec: number;

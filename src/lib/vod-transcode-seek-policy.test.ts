@@ -133,7 +133,7 @@ describe("shouldReuseTranscodeJobForSeek", () => {
 });
 
 describe("shouldReuseTranscodeJobForSeek openAtSeek", () => {
-  it("does not hand a TV resume a from-0 encode that merely covers that minute", () => {
+  it("does not hand a resume a from-0 encode that merely covers that minute", () => {
     expect(
       shouldReuseTranscodeJobForSeek({
         jobStartOffsetSec: 0,
