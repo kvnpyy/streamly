@@ -11,6 +11,15 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.13.99",
+    date: "2026-10-12",
+    summary: "A long live TV session restarts itself when the picture freezes, and sound stays with the picture.",
+    highlights: [
+      "When a live channel on a TV runs out of video, the player starts that channel again. It used to sit on a frozen picture until you restarted it.",
+      "Picture and sound on a TV stay together through a long live session. A short gap at the end of each piece of video was adding up over hours.",
+    ],
+  },
+  {
     version: "0.13.98",
     date: "2026-10-10",
     summary: "Continuing an episode starts where you left off on every device.",

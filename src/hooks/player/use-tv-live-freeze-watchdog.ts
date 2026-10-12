@@ -39,7 +39,9 @@ export type UseTvLiveFreezeWatchdogParams = {
 /**
  * Poll the playhead on every live client. Tizen stops firing `timeupdate`
  * when MSE wedges; desktop Chromium does the same. TV escalates
- * play → recoverMediaError → startLoad → rebuild. Desktop and phones
+ * play → recoverMediaError → startLoad → rebuild when data is still
+ * buffered. An empty playhead rebuilds immediately: play() cannot refill a
+ * revoked segment, and recoverMediaError splits audio from video. Desktop and phones
  * start with startLoad() at the playhead, and only seek or rebuild on a
  * decoder stall (buffer still ahead).
  */

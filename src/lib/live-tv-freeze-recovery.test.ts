@@ -116,14 +116,44 @@ describe("nextTvLiveFreezeAction", () => {
     ).toBe("none");
   });
 
-  it("escalates play → media → reload → reinit (channel-flip rebuild)", () => {
-    expect(nextTvLiveFreezeAction(base({ recoveryStep: 0 }))).toBe("play");
-    expect(nextTvLiveFreezeAction(base({ recoveryStep: 1 }))).toBe("media");
-    expect(nextTvLiveFreezeAction(base({ recoveryStep: 2 }))).toBe("reload");
-    expect(nextTvLiveFreezeAction(base({ recoveryStep: 3 }))).toBe("reinit");
+  it("escalates play → media → reload → reinit when data is still buffered", () => {
+    const buffered = { bufferAheadSec: 2 };
+    expect(nextTvLiveFreezeAction(base({ ...buffered, recoveryStep: 0 }))).toBe(
+      "play"
+    );
+    expect(nextTvLiveFreezeAction(base({ ...buffered, recoveryStep: 1 }))).toBe(
+      "media"
+    );
+    expect(nextTvLiveFreezeAction(base({ ...buffered, recoveryStep: 2 }))).toBe(
+      "reload"
+    );
+    expect(nextTvLiveFreezeAction(base({ ...buffered, recoveryStep: 3 }))).toBe(
+      "reinit"
+    );
     expect(
       nextTvLiveFreezeAction(
-        base({ recoveryStep: 3, reinitCount: TV_LIVE_MAX_AUTO_REINITS })
+        base({
+          ...buffered,
+          recoveryStep: 3,
+          reinitCount: TV_LIVE_MAX_AUTO_REINITS,
+        })
+      )
+    ).toBe("none");
+  });
+
+  it("rebuilds when a long session is stuck with nothing left at the playhead", () => {
+    expect(
+      nextTvLiveFreezeAction(base({ bufferAheadSec: 0, recoveryStep: 0 }))
+    ).toBe("reinit");
+    expect(
+      nextTvLiveFreezeAction(base({ bufferAheadSec: 0.2, recoveryStep: 1 }))
+    ).toBe("reinit");
+    expect(
+      nextTvLiveFreezeAction(
+        base({
+          bufferAheadSec: 0,
+          reinitCount: TV_LIVE_MAX_AUTO_REINITS,
+        })
       )
     ).toBe("none");
   });

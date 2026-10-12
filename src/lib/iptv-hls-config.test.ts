@@ -42,6 +42,7 @@ describe("buildIptvHlsJsConfig live IPTV smoothness", () => {
     expect(cfg.capLevelToPlayerSize).toBe(false);
     expect(cfg.enableWorker).toBe(false);
     expect(cfg.preferManagedMediaSource).toBe(false);
+    expect(cfg.stretchShortVideoTrack).toBe(true);
     const tizenChromium = buildIptvHlsJsConfig({
       isLive: true,
       mobileLike: true,

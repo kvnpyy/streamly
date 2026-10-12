@@ -138,6 +138,17 @@ export function nextTvLiveFreezeAction(
   const frozen = decoderStall || input.stuckMs >= TV_LIVE_FREEZE_STUCK_MS;
   if (!frozen) return "none";
 
+  /**
+   * Nothing left at the playhead: the CDN revoked a segment or the playlist
+   * media sequence restarted. play() cannot refill that, and recoverMediaError
+   * leaves Tizen/Silk audio and video on different timestamps. Rebuild, the
+   * same as the viewer restarting the player.
+   */
+  if (input.bufferAheadSec < TV_LIVE_BUFFER_AHEAD_MIN_SEC) {
+    if ((input.reinitCount ?? 0) >= TV_LIVE_MAX_AUTO_REINITS) return "none";
+    return "reinit";
+  }
+
   if (input.recoveryStep === 0) return "play";
   if (input.recoveryStep === 1) return "media";
   if (input.recoveryStep === 2) return "reload";

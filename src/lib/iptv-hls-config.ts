@@ -160,6 +160,12 @@ export function buildIptvHlsJsConfig(opts: {
     maxBufferHole: isLive ? maxHoleLive : maxHoleVod,
     nudgeMaxRetry: tvLivingRoomLive ? 8 : silkLike ? 18 : 14,
     nudgeOffset: tvLivingRoomLive ? 0.1 : silkLike ? 0.14 : 0.12,
+    /**
+     * IPTV segments often end the video a frame or two before the audio.
+     * Left alone, that gap stacks for hours until picture and sound split.
+     * Stretch the last video frame to the audio edge instead of seeking.
+     */
+    ...(tvLivingRoomLive ? { stretchShortVideoTrack: true } : {}),
     highBufferWatchdogPeriod: tvLivingRoomLive ? 8 : silkLike ? 4.5 : 3,
     manifestLoadingMaxRetry: manifestRetry,
     levelLoadingMaxRetry: manifestRetry,
