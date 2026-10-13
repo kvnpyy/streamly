@@ -15,4 +15,13 @@ When the user says **deploy**, **push update**, or gives a green light for produ
 
 `pre-deploy-check.sh` blocks dirty trees and unmerged local branches (not “wrong branch name”). Override only when the user explicitly asks: `STREAM_DEPLOY_ALLOW_DIRTY=1` or `STREAM_DEPLOY_SKIP_UNMERGED_CHECK=1`.
 
+## Version numbers
+
+The release line is **0.14.x**. Write the version into `package.json`, `package-lock.json`, `CHANGELOG.md`, and `src/lib/changelog.ts` on the release commit, then tag that commit `v<version>`.
+
+- A bugfix ships as the next patch (`0.14.1`, `0.14.2`, …).
+- A user-visible addition ships as the next minor (`0.15.0`, patch reset to 0). The commit subject starts with `feat:` so `scripts/bump-version.mjs` raises the minor. A breaking change uses `feat!:` or `BREAKING CHANGE` and raises the major.
+- Do not use `1.0.0` until accounts, playback, and the app contract are stable enough that a break requires a major bump. The May 2026 notes are `0.1.0`.
+- Tag every release. The bumper refuses to move the number when `v<current>` is missing, so an untagged line cannot turn into another deploy counter.
+
 After deploy, confirm health succeeded. If something could not ship, say what and why before claiming done.

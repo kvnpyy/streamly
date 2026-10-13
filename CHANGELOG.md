@@ -29,6 +29,13 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.14.0] — 2026-10-13
+
+Episode playback, skip intro, next episode, and the series page now sit on a new version.
+
+### Changed
+- The app version is 0.14.0. This collects the improvements shipped through 0.13.100. Fixes after this are 0.14.1, 0.14.2, and so on.
+
 ## [0.13.100] — 2026-10-12
 
 Trying an episode again no longer freezes the picture every few seconds while the sound keeps going.
@@ -1455,7 +1462,9 @@ Production release bundling P0–P3 UX parity, Discord/GA/changelog/blog work, a
 - VOD transcode seek/resume and MKV/HEVC browser fallback.
 - Live Trending on TV shelf EPG hints and cache TTL improvements.
 
-## [1.0.0] — 2026-05-01
+## [0.1.0] — 2026-05-01
+
+First public Streamly release. These notes were first published as 1.0.0. That number is saved for a later release.
 
 ### Added
 - Xtream Codes and M3U login with proxied HLS playback.

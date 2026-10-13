@@ -3,8 +3,12 @@
  * Bump package.json semver from conventional commits since the last v* tag.
  *
  *   patch — fix, perf, refactor, revert, chore, docs, style, build, ci, deploy
- *   minor — feat
+ *   minor — feat (user-visible addition; resets patch)
  *   major — BREAKING CHANGE or type! in subject
+ *
+ * The current package version must already be tagged `v<version>`.
+ * Untagged lines are refused so deploys cannot keep incrementing patch
+ * from an older tag. A repo with no v* tags yet still bumps from the start.
  *
  * Usage:
  *   node scripts/bump-version.mjs          # write package.json + build-meta.json
@@ -66,13 +70,6 @@ function lastVersionTag() {
   } catch {
     return "";
   }
-}
-
-/** Prefer a tag for the current package version so redeploys do not re-bump. */
-function baselineTag(currentVersion) {
-  const exact = `v${currentVersion}`;
-  if (tagExists(exact)) return exact;
-  return lastVersionTag();
 }
 
 function commitsSince(ref) {
@@ -146,7 +143,17 @@ if (process.env.SKIP_VERSION_BUMP === "1") {
 
 const pkg = readPkg();
 const current = pkg.version ?? "0.1.0";
-const tag = baselineTag(current);
+const exactTag = `v${current}`;
+if (!tagExists(exactTag)) {
+  const latest = lastVersionTag();
+  if (latest) {
+    console.error(
+      `Refusing to bump ${current}: ${exactTag} is not a tag (latest is ${latest}). Tag this release before bumping again.`
+    );
+    process.exit(1);
+  }
+}
+const tag = tagExists(exactTag) ? exactTag : "";
 const commits = commitsSince(tag);
 
 if (commits.length === 0) {

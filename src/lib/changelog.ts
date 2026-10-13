@@ -11,6 +11,15 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.14.0",
+    date: "2026-10-13",
+    summary:
+      "Episode playback, skip intro, next episode, and the series page now sit on a new version.",
+    highlights: [
+      "The app version is 0.14.0. This collects the improvements shipped through 0.13.100. Fixes after this are 0.14.1, 0.14.2, and so on.",
+    ],
+  },
+  {
     version: "0.13.100",
     date: "2026-10-12",
     summary: "Trying an episode again no longer freezes the picture every few seconds while the sound keeps going.",
@@ -1482,9 +1491,10 @@ export const CHANGELOG: readonly ChangelogEntry[] = [
     ],
   },
   {
-    version: "1.0.0",
+    version: "0.1.0",
     date: "2026-05-01",
-    summary: "First public Streamly release.",
+    summary:
+      "First public Streamly release. These notes were first published as 1.0.0. That number is saved for a later release.",
     highlights: [
       "Xtream Codes and M3U login with proxied HLS playback.",
       "Live TV shelves, movies, series, global search, and custom player.",
