@@ -27,6 +27,7 @@ import {
   VOD_TRANSCODE_SEGMENT_RE as SEGMENT_RE,
 } from "@/lib/vod-transcode-manifest";
 import { VOD_SEGMENT_READY_WAIT_MS } from "@/lib/vod-transcode-http";
+import { claimVodTranscodeReset } from "@/lib/vod-transcode-reset";
 import { transcodeManifestWaitMs } from "@/lib/vod-transcode-wait";
 import {
   continuityShiftSec,
@@ -2852,6 +2853,8 @@ async function ensureJobLocked(
   upstream: string,
   opts?: {
     resetCache?: boolean;
+    /** Client `tc_reset` value. The same token must restart ffmpeg only once. */
+    resetToken?: string;
     seekSec?: number;
     backgroundWarm?: boolean;
     pack?: "ts";
@@ -2905,7 +2908,13 @@ async function ensureJobLocked(
 
   // ensureJob() serializes concurrent callers via ensureJobInflight — do not await
   // that map here or tc_reset deadlocks waiting on the in-flight promise itself.
-  if (opts?.resetCache) {
+  // Playlist reloads repeat the same tc_reset. Acting on every one kills ffmpeg
+  // every few seconds: the picture freezes on the seam and the sound runs ahead.
+  const resetToken = opts?.resetToken?.trim() ?? "";
+  const applyReset =
+    !!opts?.resetCache &&
+    (!resetToken || claimVodTranscodeReset(key, resetToken));
+  if (applyReset) {
     // Soft reset when we already have real progress — wiping a 1h+ encode on
     // "Try again" is what killed Odyssey mid-watch after the 60m playlist tip.
     const diskBefore = await listSegmentFiles(dir);
@@ -3020,6 +3029,7 @@ async function ensureJob(
   upstream: string,
   opts?: {
     resetCache?: boolean;
+    resetToken?: string;
     seekSec?: number;
     backgroundWarm?: boolean;
     pack?: "ts";
@@ -3195,6 +3205,8 @@ export async function handleVodTranscodeRequest(opts: {
   compatMse: boolean;
   /** Wipe disk cache and restart ffmpeg (client "Try again"). */
   resetCache?: boolean;
+  /** Value of `tc_reset`. Repeated playlist polls share one value. */
+  resetToken?: string;
   /** Start encoding from this position in the source file (seconds). */
   seekSec?: number;
   /** Chromecast receiver — emit absolute segment URLs in the m3u8. */
@@ -3249,6 +3261,7 @@ export async function handleVodTranscodeRequest(opts: {
   const phase = phaseTimer();
   const job = await ensureJob(opts.upstream, {
     resetCache: opts.resetCache,
+    resetToken: opts.resetToken,
     seekSec: opts.seekSec,
     backgroundWarm: opts.head && !(opts.seekSec && opts.seekSec > 0),
     pack: opts.mpegts ? "ts" : undefined,

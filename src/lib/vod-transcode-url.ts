@@ -139,6 +139,23 @@ export function appendVodTranscodeHls(
   return `${parsed.pathname}?${parsed.searchParams.toString()}`;
 }
 
+/**
+ * Playlist URL for the player. `tc_reset` is a one-shot: leaving it on the
+ * URL makes every playlist reload restart the encode.
+ */
+export function vodPlaybackUrlWithoutReset(url: string): string {
+  try {
+    const origin =
+      typeof window !== "undefined" ? window.location.origin : "http://localhost";
+    const parsed = new URL(url, origin);
+    if (!parsed.searchParams.has("tc_reset")) return url;
+    parsed.searchParams.delete("tc_reset");
+    return `${parsed.pathname}?${parsed.searchParams.toString()}`;
+  } catch {
+    return url;
+  }
+}
+
 /** Seek within a long MKV — restart server encode near this timestamp (seconds). */
 export function buildVodTranscodeSeekUrl(
   activeUrl: string,

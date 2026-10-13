@@ -339,7 +339,8 @@ async function handle(req: NextRequest, head: boolean) {
       );
     }
     const media = url.searchParams.get("media");
-    const tcReset = url.searchParams.has("tc_reset");
+    const tcResetToken = url.searchParams.get("tc_reset")?.trim() ?? "";
+    const tcReset = tcResetToken.length > 0;
     const tcSeekRaw = parseFloat(url.searchParams.get("tc_seek") ?? "0");
     const tcSeek =
       Number.isFinite(tcSeekRaw) && tcSeekRaw > 0
@@ -354,6 +355,7 @@ async function handle(req: NextRequest, head: boolean) {
       signal: req.signal,
       compatMse,
       resetCache: tcReset,
+      resetToken: tcReset ? tcResetToken : undefined,
       seekSec: tcSeek,
       forCast,
       proxyOrigin: forCast ? publicRequestOrigin(req) : undefined,

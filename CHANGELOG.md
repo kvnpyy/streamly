@@ -29,6 +29,13 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.13.100] — 2026-10-12
+
+Trying an episode again no longer freezes the picture every few seconds while the sound keeps going.
+
+### Fixed
+- Try again left a mark on the playlist. The player asked for that playlist every few seconds, and each ask restarted the encode. The picture stopped and the sound ran ahead until the next piece arrived. That restart now happens once.
+
 ## [0.13.99] — 2026-10-12
 
 A long live TV session restarts itself when the picture freezes, and sound stays with the picture.

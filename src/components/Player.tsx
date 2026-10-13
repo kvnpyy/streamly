@@ -28,6 +28,7 @@ import {
   buildInitialVodPlaybackUrl,
   buildVodTranscodeRetryUrl,
   buildVodTranscodeSeekUrl,
+  vodPlaybackUrlWithoutReset,
   canVodTranscodeProxyUrl,
   isVodTranscodeEnabledClient,
   playbackUrlUsesVodTranscode,
@@ -1030,7 +1031,9 @@ export function PlayerOverlay() {
       if (retryUrl) {
         vodTriedTranscodeRef.current = true;
         setVodTranscodeBoost(true);
-        setVodPlaybackOverride(retryUrl);
+        // hls.js reloads this URL every few seconds. tc_reset on it restarts
+        // the encode on each reload, so the picture freezes and the sound runs ahead.
+        setVodPlaybackOverride(vodPlaybackUrlWithoutReset(retryUrl));
         setLoading(false);
         const kick = new AbortController();
         vodPrepKickRef.current = kick;
@@ -1049,7 +1052,7 @@ export function PlayerOverlay() {
           compatMse: tvBrowser || silkLikeClient,
           resetCache: true,
         });
-        setVodPlaybackOverride(url);
+        setVodPlaybackOverride(vodPlaybackUrlWithoutReset(url));
         setLoading(false);
         const kick = new AbortController();
         vodPrepKickRef.current = kick;

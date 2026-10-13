@@ -10,6 +10,7 @@ import {
   resolveVodPlaybackUrl,
   stripVodTranscodeParams,
   vodNeedsServerTranscodePrep,
+  vodPlaybackUrlWithoutReset,
   vodTranscodeBaseProxyUrl,
   vodPlaybackOverrideApplies,
 } from "./vod-transcode-url";
@@ -34,6 +35,10 @@ describe("vod-transcode-url", () => {
     const retry = buildVodTranscodeRetryUrl(transcoded, base, { compatMse: true });
     expect(retry).toContain("tc_reset=");
     expect(retry).toContain("transcode=hls");
+    const playback = vodPlaybackUrlWithoutReset(retry!);
+    expect(playback).not.toContain("tc_reset=");
+    expect(playback).toContain("transcode=hls");
+    expect(vodPlaybackUrlWithoutReset(playback)).toBe(playback);
   });
 
   it("ignores a playback override that still points at the previous episode", () => {
