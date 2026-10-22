@@ -133,6 +133,7 @@ describe("skip intro", () => {
     expect(seriesDefaultIntroAllowed(2400)).toBe(true);
     expect(seriesDefaultIntroAllowed(90)).toBe(false);
     const span = defaultSeriesIntroSpan();
+    expect(span.source).toBe("placeholder");
     expect(
       skipIntroCue({
         timeSec: 8,
@@ -149,6 +150,7 @@ describe("skip intro", () => {
         seeking: false,
       })
     ).toBeNull();
+    expect(resolveIntroSpan(applyLearnedIntro(emptyVodMarkerDb(), show, span), nextEp)).toBeNull();
   });
 
   it("learns an intro from a forward scrub in the opening", () => {

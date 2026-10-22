@@ -15,6 +15,7 @@ import {
   recoverTvLiveMedia,
 } from "@/lib/live-hls-playback";
 import { playbackUrlIsHls } from "@/lib/playback-url";
+import { playbackFailureOverlayShouldDismiss } from "@/lib/playback-recovered";
 import { playbackUrlUsesLiveBrowserTranscode, withLiveHlsCompatMse } from "@/lib/stream-url";
 import { voidSafeVideoPlay } from "@/lib/video-play";
 import { videoLikelyMissingDecodableAudio } from "@/lib/vod-silent-audio";
@@ -380,6 +381,15 @@ export function usePlayerVideoEvents(p: UsePlayerVideoEventsParams) {
       }
     };
 
+    const dismissFailureOverlay = () => {
+      if (!playbackFailureOverlayShouldDismiss(v)) return;
+      setError(null);
+      setStalled(false);
+      setLoading(false);
+      setLiveAudioNoPicture(false);
+      setVideoHasFrame(true);
+    };
+
     const markPictureReady = () => {
       const hasDimensions = v.videoWidth > 0 && v.videoHeight > 0;
       const hasDecodedFrame =
@@ -393,6 +403,7 @@ export function usePlayerVideoEvents(p: UsePlayerVideoEventsParams) {
         setStalled(false);
         if (usesTranscodePlayback) setVodPrepProgress(100);
       }
+      dismissFailureOverlay();
     };
 
     const onPlay = () => {
@@ -456,6 +467,7 @@ export function usePlayerVideoEvents(p: UsePlayerVideoEventsParams) {
       if (v.videoWidth > 0) setLiveAudioNoPicture(false);
       cancelLiveKickTimer();
       cancelLiveMediaErrorDefer();
+      dismissFailureOverlay();
       if (isLiveStream) {
         liveBrowserPendingRef.current = false;
         livePlaybackErrorSuppressUntilRef.current =
@@ -516,6 +528,7 @@ export function usePlayerVideoEvents(p: UsePlayerVideoEventsParams) {
       }
       if (nowUi - lastUiFlushMs >= uiFlushMs) {
         lastUiFlushMs = nowUi;
+        dismissFailureOverlay();
         const off = usesTranscodePlayback ? vodStartOffsetRef.current : 0;
         if (!vodScrubbingRef.current) {
           setTime(off + v.currentTime);

@@ -75,6 +75,7 @@ import {
   chapterMarkersFromHeaders,
   type ParsedVodChapters,
 } from "@/lib/vod-chapter-markers";
+import { playbackFailureOverlayShouldDismiss } from "@/lib/playback-recovered";
 import {
   playbackUrlUsesVodTranscode,
   releaseVodTranscodePlayback,
@@ -661,6 +662,10 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
         if (cancelled || recoveryGenAtStart !== livePlaybackRecoveryGenRef.current) {
           return;
         }
+        const healthy = videoRef.current;
+        if (healthy && playbackFailureOverlayShouldDismiss(healthy)) {
+          return;
+        }
         if (isLive) {
           const el = videoRef.current;
           noteLiveSessionStall({
@@ -828,6 +833,7 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
                   introStart: xhr.getResponseHeader("x-vod-intro-start"),
                   introEnd: xhr.getResponseHeader("x-vod-intro-end"),
                   introKind: xhr.getResponseHeader("x-vod-intro-kind"),
+                  introOrigin: xhr.getResponseHeader("x-vod-intro-origin"),
                   creditsStart: xhr.getResponseHeader("x-vod-credits-start"),
                 }) ??
                 (isPlaylist
@@ -1514,7 +1520,11 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
         bufferedEnd = Math.max(bufferedEnd, v.buffered.end(bi));
       }
       const hasBuffer = bufferedEnd > 0.35;
-      if (hasBuffer || v.error) {
+      if (
+        hasBuffer ||
+        v.error ||
+        playbackFailureOverlayShouldDismiss(v)
+      ) {
         setStalled(false);
         return;
       }

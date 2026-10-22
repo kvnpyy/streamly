@@ -63,6 +63,17 @@ import {
   type ParsedVodChapters,
 } from "@/lib/vod-chapter-markers";
 import {
+  introEndFromOpeningGaps,
+  introProbeStep,
+  introScanLimitSec,
+  INTRO_SCAN_MAX_SEC,
+  mergeProbedChapters,
+  openingScanPlaylist,
+  parseBlackDetectLog,
+  parseSilenceDetectLog,
+  withDetectedIntro,
+} from "@/lib/vod-intro-detect";
+import {
   sameProviderDownloadSlot,
   warmEncodeHoldsViewerSlot,
   warmWouldStealProviderDownload,
@@ -710,6 +721,8 @@ type JobMeta = {
   chapterMarkers?: ParsedVodChapters | null;
   /** True once the local source was complete (or markers were found). */
   chapterProbeComplete?: boolean;
+  /** True once the opening was measured, or there was nothing to measure. */
+  introProbeComplete?: boolean;
 };
 
 async function probeDurationSec(input: string): Promise<number | null> {
@@ -837,7 +850,9 @@ async function runVodChapterProbe(job: TranscodeJob): Promise<void> {
         durationSec,
         encodeRev: TRANSCODE_ENCODE_REV,
       };
-    if (parsed && found) latest.chapterMarkers = parsed;
+    if (parsed && found) {
+      latest.chapterMarkers = mergeProbedChapters(latest.chapterMarkers, parsed);
+    }
     if (status.complete || found) latest.chapterProbeComplete = true;
     if (latest.chapterProbeComplete) {
       await writeJobMeta(job.dir, latest);
@@ -849,6 +864,247 @@ async function runVodChapterProbe(job: TranscodeJob): Promise<void> {
   } catch {
     job.chapterProbeState = "idle";
     job.chapterProbeNotBefore = Date.now() + 45_000;
+  }
+}
+
+const INTRO_SCAN_NAME = "intro-scan.m3u8";
+
+function runOpeningFfmpeg(
+  cwd: string,
+  args: string[]
+): Promise<{ log: string; code: number | null }> {
+  return new Promise((resolve) => {
+    const proc = niceAvailable()
+      ? spawn("nice", ["-n", "15", ffmpegPath(), ...args], {
+          cwd,
+          stdio: ["ignore", "ignore", "pipe"],
+        })
+      : spawn(ffmpegPath(), args, {
+          cwd,
+          stdio: ["ignore", "ignore", "pipe"],
+        });
+    let err = "";
+    let settled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const finish = (code: number | null) => {
+      if (settled) return;
+      settled = true;
+      if (timer) clearTimeout(timer);
+      resolve({ log: err, code });
+    };
+    timer = setTimeout(() => {
+      proc.kill("SIGKILL");
+      finish(null);
+    }, 30_000);
+    proc.stderr?.on("data", (chunk: Buffer) => {
+      err += chunk.toString();
+      if (err.length > 250_000) err = err.slice(-120_000);
+    });
+    proc.on("error", () => finish(null));
+    proc.on("close", (code) => finish(code));
+  });
+}
+
+function openingFfmpegArgs(input: string, limit: string, kind: "silence" | "black"): string[] {
+  const head = [
+    "-hide_banner",
+    "-nostats",
+    "-loglevel",
+    "info",
+    "-t",
+    limit,
+    "-i",
+    input,
+  ];
+  if (kind === "silence") {
+    return [...head, "-vn", "-af", "silencedetect=n=-34dB:d=0.35", "-f", "null", "-"];
+  }
+  return [
+    ...head,
+    "-an",
+    "-vf",
+    "scale=160:90,blackdetect=d=0.12:pix_th=0.10:pic_th=0.98",
+    "-f",
+    "null",
+    "-",
+  ];
+}
+
+/** Full local source — measure the opening immediately instead of waiting on the encode. */
+async function measureCompleteSourceOpening(
+  job: TranscodeJob
+): Promise<{ endSec: number | null } | "unavailable" | "failed"> {
+  const source = await getVodSourceStatus(job.upstream);
+  if (!source || isHttpInput(source.path) || !source.complete) return "unavailable";
+  const limit = String(INTRO_SCAN_MAX_SEC + 5);
+  const silence = await runOpeningFfmpeg(job.dir, openingFfmpegArgs(source.path, limit, "silence"));
+  const black = await runOpeningFfmpeg(job.dir, openingFfmpegArgs(source.path, limit, "black"));
+  if (silence.code !== 0 && black.code !== 0) return "failed";
+  const intro = introEndFromOpeningGaps({
+    silence: silence.code === 0 ? parseSilenceDetectLog(silence.log) : [],
+    black: black.code === 0 ? parseBlackDetectLog(black.log) : [],
+  });
+  return { endSec: intro?.endSec ?? null };
+}
+
+async function finishIntroProbe(
+  job: TranscodeJob,
+  introEndSec: number | null
+): Promise<void> {
+  const latest = await readJobMeta(job.dir);
+  if (!latest) {
+    job.introProbeState = "idle";
+    job.introProbeNotBefore = Date.now() + 12_000;
+    return;
+  }
+  if (
+    introEndSec != null &&
+    (!latest.chapterMarkers?.intro ||
+      latest.chapterMarkers.introOrigin === "detected")
+  ) {
+    latest.chapterMarkers = withDetectedIntro(latest.chapterMarkers, {
+      startSec: 0,
+      endSec: introEndSec,
+      kind: "intro",
+    });
+  }
+  latest.introProbeComplete = true;
+  await writeJobMeta(job.dir, latest);
+  job.introProbeState = "done";
+}
+
+function scheduleVodIntroProbe(job: TranscodeJob): void {
+  if (job.introProbeState === "running" || job.introProbeState === "done") return;
+  if ((job.introProbeNotBefore ?? 0) > Date.now()) return;
+  if (job.startOffsetSec > 12) {
+    job.introProbeState = "done";
+    return;
+  }
+  job.introProbeState = "running";
+  void runVodIntroProbe(job);
+}
+
+async function runVodIntroProbe(job: TranscodeJob): Promise<void> {
+  const scanPath = path.join(job.dir, INTRO_SCAN_NAME);
+  try {
+    const existing = await readJobMeta(job.dir);
+    if (existing?.introProbeComplete) {
+      job.introProbeState = "done";
+      return;
+    }
+    if (
+      existing?.chapterMarkers?.intro &&
+      existing.chapterMarkers.introOrigin !== "detected"
+    ) {
+      existing.introProbeComplete = true;
+      await writeJobMeta(job.dir, existing);
+      job.introProbeState = "done";
+      return;
+    }
+    if ((job.introScannedSec ?? 0) <= 0 && (job.introProbeFailures ?? 0) < 2) {
+      const fromSource = await measureCompleteSourceOpening(job);
+      if (fromSource === "failed") {
+        job.introProbeFailures = (job.introProbeFailures ?? 0) + 1;
+      } else if (fromSource !== "unavailable") {
+        job.introScannedSec = INTRO_SCAN_MAX_SEC;
+        job.introFoundEndSec = fromSource.endSec;
+        await finishIntroProbe(job, fromSource.endSec);
+        return;
+      }
+    }
+    let manifest = "";
+    try {
+      manifest = await fsp.readFile(path.join(job.dir, MANIFEST_NAME), "utf8");
+    } catch {
+      job.introProbeState = "idle";
+      job.introProbeNotBefore = Date.now() + 12_000;
+      return;
+    }
+    const encodedSec = sumExtinfDurationSec(manifest);
+    const titleDurationSec = job.durationSec ?? existing?.durationSec ?? null;
+    const encodeFinished = job.state === "ready" || job.state === "failed";
+    const step = introProbeStep({
+      encodedSec,
+      encodeFinished,
+      titleDurationSec,
+      scannedSec: job.introScannedSec ?? 0,
+      foundEndSec: job.introFoundEndSec ?? null,
+    });
+    if (step === "wait") {
+      job.introProbeState = "idle";
+      job.introProbeNotBefore = Date.now() + 12_000;
+      return;
+    }
+    if (step === "give-up") {
+      await finishIntroProbe(job, null);
+      return;
+    }
+    if (step === "done") {
+      await finishIntroProbe(job, job.introFoundEndSec ?? null);
+      return;
+    }
+
+    const windowSec = Math.min(
+      introScanLimitSec(titleDurationSec),
+      Math.max(encodedSec, 1)
+    );
+    const snapshot = openingScanPlaylist(manifest, windowSec);
+    if (!snapshot) {
+      job.introProbeState = "idle";
+      job.introProbeNotBefore = Date.now() + 12_000;
+      return;
+    }
+    await fsp.writeFile(scanPath, snapshot);
+    const scannedSec = sumExtinfDurationSec(snapshot);
+    const limit = String(Math.ceil(scannedSec + 2));
+    const silence = await runOpeningFfmpeg(
+      job.dir,
+      openingFfmpegArgs(INTRO_SCAN_NAME, limit, "silence")
+    );
+    const black = await runOpeningFfmpeg(
+      job.dir,
+      openingFfmpegArgs(INTRO_SCAN_NAME, limit, "black")
+    );
+    if (silence.code !== 0 && black.code !== 0) {
+      throw new Error("opening scan failed");
+    }
+    const intro = introEndFromOpeningGaps({
+      silence: silence.code === 0 ? parseSilenceDetectLog(silence.log) : [],
+      black: black.code === 0 ? parseBlackDetectLog(black.log) : [],
+    });
+    job.introScannedSec = scannedSec;
+    job.introFoundEndSec = intro?.endSec ?? null;
+    const after = introProbeStep({
+      encodedSec,
+      encodeFinished,
+      titleDurationSec,
+      scannedSec,
+      foundEndSec: job.introFoundEndSec,
+    });
+    if (after === "done") {
+      await finishIntroProbe(job, job.introFoundEndSec);
+      return;
+    }
+    if (after === "give-up") {
+      await finishIntroProbe(job, null);
+      return;
+    }
+    job.introProbeState = "idle";
+    job.introProbeNotBefore = Date.now() + 12_000;
+  } catch {
+    job.introProbeFailures = (job.introProbeFailures ?? 0) + 1;
+    if ((job.introProbeFailures ?? 0) >= 2) {
+      try {
+        await finishIntroProbe(job, null);
+      } catch {
+        job.introProbeState = "done";
+      }
+      return;
+    }
+    job.introProbeState = "idle";
+    job.introProbeNotBefore = Date.now() + 20_000;
+  } finally {
+    await fsp.unlink(scanPath).catch(() => {});
   }
 }
 
@@ -1068,6 +1324,11 @@ type TranscodeJob = {
   chapterProbeState?: "idle" | "running" | "done";
   chapterProbeNotBefore?: number;
   chapterProbeBytes?: number;
+  introProbeState?: "idle" | "running" | "done";
+  introProbeNotBefore?: number;
+  introScannedSec?: number;
+  introFoundEndSec?: number | null;
+  introProbeFailures?: number;
   /** Segment index through which audio tracks have been checked. */
   audioScanThrough?: number;
   /** ffmpeg reads the still-downloading source through stdin. */
@@ -3296,6 +3557,7 @@ export async function handleVodTranscodeRequest(opts: {
     }
     phase.mark("ensure-job");
     scheduleVodChapterProbe(job);
+    scheduleVodIntroProbe(job);
     // Drop a silent resumed stretch before deciding the episode is finished.
     await dropSilentTranscodeTail(job);
     phase.mark("silent-tail");

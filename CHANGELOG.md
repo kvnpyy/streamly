@@ -29,6 +29,14 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.14.1] — 2026-10-21
+
+Skip intro follows each show's opening, and a video that has started playing is no longer covered by Try again.
+
+### Fixed
+- Try again stayed on screen after the picture had already started. Once the video is playing, that screen goes away.
+- Skip intro was 1:30 for every series. The player measures the opening and reuses that time for the show. The 1:30 button is only a stand-in until that measurement arrives, and tapping it no longer locks later episodes at 1:30.
+
 ## [0.14.0] — 2026-10-13
 
 Episode playback, skip intro, next episode, and the series page now sit on a new version.

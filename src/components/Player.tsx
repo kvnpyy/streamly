@@ -49,6 +49,7 @@ import {
   type ParsedVodChapters,
 } from "@/lib/vod-chapter-markers";
 import { humanizePlaybackErrorResponse } from "@/lib/playback-error-message";
+import { startupFailureStillApplies } from "@/lib/playback-recovered";
 import { waitForVodTranscodePlaylistReady } from "@/lib/vod-transcode-http";
 import { TvPlayerRemoteHints } from "@/components/TvPlayerRemoteHints";
 import { VodPrepareOverlay } from "@/components/VodPrepareOverlay";
@@ -751,6 +752,7 @@ export function PlayerOverlay() {
   /** Slow server encode — nudge bar; hard fail only if decode never starts. */
   useEffect(() => {
     if (!showVodPrepare || !vodPrepStartedAt) return;
+    let cancelled = false;
     const slowId = window.setTimeout(() => {
       setVodPrepProgress((p) => Math.max(p, 22));
     }, 12_000);
@@ -762,14 +764,28 @@ export function PlayerOverlay() {
     const failMs = encodedReady || resumeTarget ? 90_000 : 28_000;
     const failId = window.setTimeout(() => {
       void (async () => {
-        const v = videoRef.current;
-        if (v && v.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) return;
-        if (v && v.buffered.length > 0) return;
+        const stillFailing = () =>
+          !cancelled &&
+          startupFailureStillApplies(
+            videoRef.current
+              ? {
+                  error: videoRef.current.error,
+                  paused: videoRef.current.paused,
+                  ended: videoRef.current.ended,
+                  readyState: videoRef.current.readyState,
+                  videoWidth: videoRef.current.videoWidth,
+                  currentTime: videoRef.current.currentTime,
+                  bufferedLength: videoRef.current.buffered.length,
+                }
+              : null
+          );
+        if (!stillFailing()) return;
         const manifestUrl = vodPlaybackUrl ?? current?.url ?? "";
         if (playbackUrlUsesVodTranscode(manifestUrl)) {
           try {
             const res = await fetch(manifestUrl, { credentials: "same-origin" });
             const raw = (await res.text()).trim();
+            if (!stillFailing()) return;
             if (res.status === 503) {
               setError(
                 humanizePlaybackErrorResponse(
@@ -794,12 +810,14 @@ export function PlayerOverlay() {
             /* noop */
           }
         }
+        if (!stillFailing()) return;
         setError(
           "This episode is taking unusually long to prepare. Check your connection, then try Play again — or use a native IPTV app for MKV files."
         );
       })();
     }, failMs);
     return () => {
+      cancelled = true;
       window.clearTimeout(slowId);
       window.clearTimeout(failId);
     };
@@ -817,7 +835,23 @@ export function PlayerOverlay() {
     const failMs = 55_000;
     const failId = window.setTimeout(() => {
       const v = videoRef.current;
-      if (v && v.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) return;
+      if (
+        !startupFailureStillApplies(
+          v
+            ? {
+                error: v.error,
+                paused: v.paused,
+                ended: v.ended,
+                readyState: v.readyState,
+                videoWidth: v.videoWidth,
+                currentTime: v.currentTime,
+                bufferedLength: v.buffered.length,
+              }
+            : null
+        )
+      ) {
+        return;
+      }
       setError(
         "Still couldn't start transcoded playback. Your provider may be slow or blocking the file — wait a minute, then try again, or use a native IPTV app for MKV files."
       );

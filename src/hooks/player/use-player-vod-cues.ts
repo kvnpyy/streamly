@@ -73,7 +73,7 @@ export function usePlayerVodCues(p: UsePlayerVodCuesParams): UsePlayerVodCuesRes
   const markerSig =
     chapterMarkers == null
       ? ""
-      : `${chapterMarkers.intro?.startSec ?? ""}-${chapterMarkers.intro?.endSec ?? ""}-${chapterMarkers.intro?.kind ?? ""}-${chapterMarkers.creditsStartSec ?? ""}-${titleDurationSec}`;
+      : `${chapterMarkers.intro?.startSec ?? ""}-${chapterMarkers.intro?.endSec ?? ""}-${chapterMarkers.intro?.kind ?? ""}-${chapterMarkers.introOrigin ?? ""}-${chapterMarkers.creditsStartSec ?? ""}-${titleDurationSec}`;
   if (
     open &&
     current &&
@@ -81,12 +81,27 @@ export function usePlayerVodCues(p: UsePlayerVodCuesParams): UsePlayerVodCuesRes
     chapterMarkers &&
     markerSig !== appliedMarkerSig
   ) {
-    const next = applyChapterMarkers(
-      db,
-      identityOf(current),
-      chapterMarkers,
-      titleDurationSec
-    );
+    const detectedIntro =
+      chapterMarkers.introOrigin === "detected" ? chapterMarkers.intro : undefined;
+    const chapterPayload: ParsedVodChapters = detectedIntro
+      ? {
+          ...(chapterMarkers.creditsStartSec != null
+            ? { creditsStartSec: chapterMarkers.creditsStartSec }
+            : {}),
+        }
+      : chapterMarkers;
+    let next = db;
+    if (chapterPayload.intro || chapterPayload.creditsStartSec != null) {
+      next = applyChapterMarkers(
+        next,
+        identityOf(current),
+        chapterPayload,
+        titleDurationSec
+      );
+    }
+    if (detectedIntro) {
+      next = applyLearnedIntro(next, identityOf(current), detectedIntro);
+    }
     saveVodMarkerDb(next);
     setAppliedMarkerSig(markerSig);
     setDb(next);

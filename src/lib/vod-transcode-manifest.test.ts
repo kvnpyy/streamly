@@ -552,6 +552,25 @@ describe("rewriteTranscodeManifest", () => {
     });
   });
 
+  it("round-trips a measured intro separately from a chapter intro", () => {
+    const out = rewriteTranscodeManifest(
+      "#EXTM3U\n#EXTINF:6,\nseg_00000.ts\n",
+      "http://x/m.mkv",
+      false,
+      {
+        chapterMarkers: {
+          intro: { startSec: 0, endSec: 47, kind: "intro" },
+          introOrigin: "detected",
+        },
+      }
+    );
+    expect(out).toContain("#EXT-X-STREAMLY-INTRO-ORIGIN:detected");
+    expect(chapterMarkersFromTranscodePlaylist(out)).toEqual({
+      intro: { startSec: 0, endSec: 47, kind: "intro" },
+      introOrigin: "detected",
+    });
+  });
+
   it("reads title duration from the header or the playlist tag", () => {
     const tagged = rewriteTranscodeManifest(
       "#EXTM3U\n#EXTINF:6,\nseg_00000.ts\n",

@@ -6,8 +6,8 @@ export type { VodIntroSpan };
 export const DEFAULT_CREDITS_FROM_END_SEC = 75;
 
 /**
- * Opening window used when a series file has no chapter mark and this show
- * has not been skipped before. Long enough to cover a typical title sequence.
+ * Opening window used when a series file has no measured opening yet.
+ * Not saved as the show's intro — a measured or skipped time replaces it.
  */
 export const DEFAULT_SERIES_INTRO_END_SEC = 90;
 
@@ -17,7 +17,7 @@ export const MIN_CUE_TITLE_DURATION_SEC = 8 * 60;
 const MAX_STORED_CREDITS_FROM_END_SEC = 300;
 const MIN_STORED_CREDITS_FROM_END_SEC = 12;
 
-export type MarkerSource = "chapter" | "learned";
+export type MarkerSource = "chapter" | "learned" | "placeholder";
 
 export type StoredIntro = VodIntroSpan & { source: MarkerSource };
 
@@ -117,7 +117,7 @@ export function defaultSeriesIntroSpan(): StoredIntro {
     startSec: 0,
     endSec: DEFAULT_SERIES_INTRO_END_SEC,
     kind: "intro",
-    source: "learned",
+    source: "placeholder",
   };
 }
 
@@ -224,8 +224,9 @@ export function applyChapterMarkers(
 export function applyLearnedIntro(
   db: VodMarkerDb,
   source: MarkerIdentity,
-  span: VodIntroSpan
+  span: VodIntroSpan & { source?: MarkerSource }
 ): VodMarkerDb {
+  if (span.source === "placeholder") return db;
   const intro: StoredIntro = { ...span, source: "learned" };
   const episodeKey = episodeMarkerKey(source);
   const showKey = showMarkerKey(source);

@@ -11,6 +11,16 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.14.1",
+    date: "2026-10-21",
+    summary:
+      "Skip intro follows each show's opening, and a video that has started playing is no longer covered by Try again.",
+    highlights: [
+      "Try again stayed on screen after the picture had already started. Once the video is playing, that screen goes away.",
+      "Skip intro was 1:30 for every series. The player measures the opening and reuses that time for the show. The 1:30 button is only a stand-in until that measurement arrives, and tapping it no longer locks later episodes at 1:30.",
+    ],
+  },
+  {
     version: "0.14.0",
     date: "2026-10-13",
     summary:

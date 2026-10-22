@@ -15,6 +15,7 @@ const ENCODED_DURATION_TAG_RE =
 const INTRO_START_TAG_RE = /^#EXT-X-STREAMLY-INTRO-START:([\d.]+)/im;
 const INTRO_END_TAG_RE = /^#EXT-X-STREAMLY-INTRO-END:([\d.]+)/im;
 const INTRO_KIND_TAG_RE = /^#EXT-X-STREAMLY-INTRO-KIND:(intro|recap)/im;
+const INTRO_ORIGIN_TAG_RE = /^#EXT-X-STREAMLY-INTRO-ORIGIN:(chapter|detected)/im;
 const CREDITS_START_TAG_RE = /^#EXT-X-STREAMLY-CREDITS-START:([\d.]+)/im;
 
 /** While ffmpeg is still running, cap playlist size so Safari/hls.js don't choke on huge m3u8. */
@@ -723,6 +724,7 @@ export function chapterMarkersFromTranscodePlaylist(
     introStart: tagValue(playlistText, INTRO_START_TAG_RE),
     introEnd: tagValue(playlistText, INTRO_END_TAG_RE),
     introKind: tagValue(playlistText, INTRO_KIND_TAG_RE),
+    introOrigin: tagValue(playlistText, INTRO_ORIGIN_TAG_RE),
     creditsStart: tagValue(playlistText, CREDITS_START_TAG_RE),
   });
 }
@@ -807,6 +809,9 @@ export function rewriteTranscodeManifest(
       `#EXT-X-STREAMLY-INTRO-END:${markers.intro.endSec.toFixed(3)}`
     );
     streamlyTags.push(`#EXT-X-STREAMLY-INTRO-KIND:${markers.intro.kind}`);
+    if (markers.introOrigin === "detected") {
+      streamlyTags.push("#EXT-X-STREAMLY-INTRO-ORIGIN:detected");
+    }
   }
   if (markers?.creditsStartSec != null) {
     streamlyTags.push(

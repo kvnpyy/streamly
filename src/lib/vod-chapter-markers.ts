@@ -11,6 +11,12 @@ export type VodIntroSpan = {
 export type ParsedVodChapters = {
   intro?: VodIntroSpan;
   creditsStartSec?: number;
+  /**
+   * chapter = a titled chapter in the file.
+   * detected = measured from silence and black frames in the opening.
+   * Missing means chapter, so older playlists stay chapter-accurate.
+   */
+  introOrigin?: "chapter" | "detected";
 };
 
 export type ProbeChapter = {
@@ -22,6 +28,7 @@ export type ProbeChapter = {
 export const VOD_INTRO_START_HEADER = "x-vod-intro-start";
 export const VOD_INTRO_END_HEADER = "x-vod-intro-end";
 export const VOD_INTRO_KIND_HEADER = "x-vod-intro-kind";
+export const VOD_INTRO_ORIGIN_HEADER = "x-vod-intro-origin";
 export const VOD_CREDITS_START_HEADER = "x-vod-credits-start";
 
 const INTRO_TITLE =
@@ -134,6 +141,9 @@ export function chapterMarkerResponseHeaders(
     headers[VOD_INTRO_START_HEADER] = markers.intro.startSec.toFixed(3);
     headers[VOD_INTRO_END_HEADER] = markers.intro.endSec.toFixed(3);
     headers[VOD_INTRO_KIND_HEADER] = markers.intro.kind;
+    if (markers.introOrigin === "detected") {
+      headers[VOD_INTRO_ORIGIN_HEADER] = "detected";
+    }
   }
   if (markers.creditsStartSec != null) {
     headers[VOD_CREDITS_START_HEADER] = markers.creditsStartSec.toFixed(3);
@@ -145,6 +155,7 @@ export function chapterMarkersFromHeaders(opts: {
   introStart: string | null | undefined;
   introEnd: string | null | undefined;
   introKind: string | null | undefined;
+  introOrigin?: string | null | undefined;
   creditsStart: string | null | undefined;
 }): ParsedVodChapters | null {
   const start = finiteSec(opts.introStart ?? undefined);
@@ -157,8 +168,10 @@ export function chapterMarkersFromHeaders(opts: {
       ? { startSec: start, endSec: end, kind }
       : undefined;
   if (!intro && credits == null) return null;
+  const introOrigin = intro && opts.introOrigin === "detected" ? "detected" : undefined;
   return {
     ...(intro ? { intro } : {}),
+    ...(introOrigin ? { introOrigin } : {}),
     ...(credits != null ? { creditsStartSec: credits } : {}),
   };
 }
@@ -176,6 +189,7 @@ export function sameChapterMarkers(
     if (aIntro.kind !== bIntro.kind) return false;
     if (Math.abs(aIntro.startSec - bIntro.startSec) > 0.05) return false;
     if (Math.abs(aIntro.endSec - bIntro.endSec) > 0.05) return false;
+    if ((a.introOrigin ?? "chapter") !== (b.introOrigin ?? "chapter")) return false;
   }
   const ac = a.creditsStartSec;
   const bc = b.creditsStartSec;
