@@ -11,6 +11,16 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.14.2",
+    date: "2026-10-27",
+    summary:
+      "My List is on the TV home, and Fire TV no longer opens the site zoomed in.",
+    highlights: [
+      "TV home, and the bar on Live, Movies, and Series, now include My List. Those buttons stay on screen when a featured title is showing.",
+      "Fire TV Silk was stretching a phone-sized layout across the TV. The page now lays out at 1080p, and moving with the remote no longer magnifies a tile.",
+    ],
+  },
+  {
     version: "0.14.1",
     date: "2026-10-21",
     summary:

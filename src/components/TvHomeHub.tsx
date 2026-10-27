@@ -20,11 +20,7 @@ import {
   stubLiveStreamFromRecent,
 } from "@/lib/live-flip-playlist";
 import { buildLivePlayUrl } from "@/lib/xtream";
-import {
-  Clapperboard,
-  PlaySquare,
-  Tv,
-} from "lucide-react";
+import { TV_HOME_QUICK_NAV } from "@/lib/tv-home-nav";
 import type { Favorite, RecentItem } from "@/store/preferences";
 
 import type { PlayerPlaylist, PlayerSource } from "@/store/player";
@@ -120,25 +116,7 @@ export function TvHomeHub({
         <h1 className="tv-home__greeting">
           Hey <span>{greetingName}</span>
         </h1>
-        <TvHomeQuickNav
-          items={[
-            {
-              href: "/app/live",
-              label: "Live TV",
-              icon: Tv,
-            },
-            {
-              href: "/app/movies",
-              label: "Movies",
-              icon: Clapperboard,
-            },
-            {
-              href: "/app/series",
-              label: "Series",
-              icon: PlaySquare,
-            },
-          ]}
-        />
+        <TvHomeQuickNav items={[...TV_HOME_QUICK_NAV]} />
       </header>
 
       {(regionalTrending.show || regionalTrending.loading) && (

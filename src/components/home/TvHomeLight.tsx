@@ -21,7 +21,7 @@ import {
   usePrefs,
 } from "@/store/preferences";
 import type { PlayerSource } from "@/store/player";
-import { Clapperboard, PlaySquare, Tv } from "lucide-react";
+import { TV_HOME_QUICK_NAV } from "@/lib/tv-home-nav";
 import { useMemo } from "react";
 
 type TvHomeLightProps = {
@@ -98,36 +98,32 @@ export function TvHomeLight({
 
   return (
     <div className="tv-home">
-      {spotlight && spotlightRecent ? (
-        <FeaturedSpotlightHero
-          compact
-          spotlight={spotlight}
-          creds={creds}
-          recent={spotlightRecent}
-          onPlay={() =>
-            void playFeaturedSpotlight(
-              spotlight,
-              creds,
-              spotlightRecent,
-              play,
-              addRecent
-            )
-          }
-        />
-      ) : (
-        <header className="tv-home__hero">
+      <header className="tv-home__hero">
+        {spotlight && spotlightRecent ? (
+          <div className="w-full basis-full">
+            <FeaturedSpotlightHero
+              compact
+              spotlight={spotlight}
+              creds={creds}
+              recent={spotlightRecent}
+              onPlay={() =>
+                void playFeaturedSpotlight(
+                  spotlight,
+                  creds,
+                  spotlightRecent,
+                  play,
+                  addRecent
+                )
+              }
+            />
+          </div>
+        ) : (
           <h1 className="tv-home__greeting">
             Hey <span>{greetingName}</span>
           </h1>
-          <TvHomeQuickNav
-            items={[
-              { href: "/app/live", label: "Live TV", icon: Tv },
-              { href: "/app/movies", label: "Movies", icon: Clapperboard },
-              { href: "/app/series", label: "Series", icon: PlaySquare },
-            ]}
-          />
-        </header>
-      )}
+        )}
+        <TvHomeQuickNav items={[...TV_HOME_QUICK_NAV]} />
+      </header>
 
       {recentSlice.length > 0 && (
         <TvHomeRow

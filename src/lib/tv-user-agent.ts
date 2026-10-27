@@ -32,14 +32,14 @@ export function isTvClassUserAgent(ua: string): boolean {
   if (/googletv/.test(u)) return true;
   if (/androidtv/.test(u)) return true;
   if (/;\s*tv[\s);]/.test(u)) return true;
-  if (/aft[a-z]{2,5}\)/i.test(ua)) return true;
+  if (/;\s*aft[a-z0-9]+\b/i.test(ua)) return true;
   if (/playstation|nintendo|xbox/i.test(ua)) return true;
   if (/crkey/i.test(u)) return true;
 
   /** Amazon Silk on Fire TV / Echo Show — avoid classifying tablet Silk without TV hints */
   if (
     /\bsilk\b/.test(u) &&
-    /(aft[a-z]{2,5}|fire\s*tv|amazon\.fire|cloud_fire_tv)/i.test(ua)
+    /(;\s*aft[a-z0-9]+\b|fire\s*tv|amazon\.fire|cloud_fire_tv)/i.test(ua)
   ) {
     return true;
   }

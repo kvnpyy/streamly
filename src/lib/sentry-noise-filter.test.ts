@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  isAnonymousScriptFrame,
   isThirdPartyScriptFrame,
   shouldDropSentryClientEvent,
   shouldDropSentryException,
@@ -85,6 +86,58 @@ describe("shouldDropSentryClientEvent", () => {
     ).toBe(true);
   });
 
+  it("drops injected anonymous DOM reads and keeps the same error from app code", () => {
+    expect(isAnonymousScriptFrame("<anonymous>")).toBe(true);
+    expect(isAnonymousScriptFrame("")).toBe(true);
+    const injected = shouldDropSentryClientEvent({
+      exception: {
+        values: [
+          {
+            type: "TypeError",
+            value: "Cannot read properties of undefined (reading 'style')",
+            stacktrace: {
+              frames: [{ filename: "<anonymous>", in_app: false }],
+            },
+          },
+        ],
+      },
+    });
+    expect(injected).toBe(true);
+    const paused = shouldDropSentryClientEvent({
+      exception: {
+        values: [
+          {
+            type: "TypeError",
+            value: "Cannot read properties of undefined (reading 'paused')",
+            stacktrace: {
+              frames: [{ filename: "<anonymous>", lineno: 1 }],
+            },
+          },
+        ],
+      },
+    });
+    expect(paused).toBe(true);
+    const inApp = shouldDropSentryClientEvent({
+      exception: {
+        values: [
+          {
+            type: "TypeError",
+            value: "Cannot read properties of undefined (reading 'paused')",
+            stacktrace: {
+              frames: [
+                {
+                  filename: "https://iptvwebplayer.org/_next/static/chunks/player.js",
+                  in_app: true,
+                },
+              ],
+            },
+          },
+        ],
+      },
+    });
+    expect(inApp).toBe(false);
+  });
+
   it("drops browser-extension removeChild races and Safari network Load failed", () => {
     expect(
       shouldDropSentryException(
@@ -96,6 +149,12 @@ describe("shouldDropSentryClientEvent", () => {
       shouldDropSentryException(
         "NotFoundError",
         "The object can not be found here."
+      )
+    ).toBe(true);
+    expect(
+      shouldDropSentryException(
+        "TypeError",
+        "Cannot read properties of null (reading 'removeChild')"
       )
     ).toBe(true);
     expect(

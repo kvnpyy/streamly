@@ -29,6 +29,14 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.14.2] — 2026-10-27
+
+My List is on the TV home, and Fire TV no longer opens the site zoomed in.
+
+### Fixed
+- TV home, and the bar on Live, Movies, and Series, now include My List. Those buttons stay on screen when a featured title is showing.
+- Fire TV Silk was stretching a phone-sized layout across the TV. The page now lays out at 1080p, and moving with the remote no longer magnifies a tile.
+
 ## [0.14.1] — 2026-10-21
 
 Skip intro follows each show's opening, and a video that has started playing is no longer covered by Try again.

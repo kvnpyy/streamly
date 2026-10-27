@@ -1,6 +1,11 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import {
+  fireTvViewportBootScript,
+  isFireTvBrowserUa,
+  FIRE_TV_WIDE_LAYOUT_PX,
+} from "@/lib/fire-tv-viewport";
+import {
   STREAM_SAMSUNG_TV_HEADER,
   STREAM_SILK_HEADER,
   STREAM_TV_HEADER,
@@ -75,20 +80,33 @@ export const metadata: Metadata = {
   },
 };
 
-export const viewport: Viewport = {
-  themeColor: "#06070b",
-  width: "device-width",
-  initialScale: 1,
-  viewportFit: "cover",
-};
+export async function generateViewport(): Promise<Viewport> {
+  const h = await headers();
+  const ua = h.get("user-agent") ?? "";
+  const base: Viewport = {
+    themeColor: "#06070b",
+    width: "device-width",
+    initialScale: 1,
+    viewportFit: "cover",
+  };
+  if (!isFireTvBrowserUa(ua)) return base;
+  return {
+    ...base,
+    width: FIRE_TV_WIDE_LAYOUT_PX,
+    maximumScale: 1,
+    userScalable: false,
+  };
+}
 
 export default async function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   const h = await headers();
+  const ua = h.get("user-agent") ?? "";
   const tvServerHint = h.get(STREAM_TV_HEADER) === "1";
   const silkHint = h.get(STREAM_SILK_HEADER) === "1";
   const samsungTvHint = h.get(STREAM_SAMSUNG_TV_HEADER) === "1";
+  const fireTv = isFireTvBrowserUa(ua);
   const skipRemoteFonts = tvServerHint || silkHint;
 
   const jsonLd = {
@@ -137,6 +155,13 @@ export default async function RootLayout({
           src="/ethereum-provider-noop.js"
           strategy="beforeInteractive"
         />
+        {fireTv ? (
+          <Script
+            id="fire-tv-viewport"
+            strategy="beforeInteractive"
+            dangerouslySetInnerHTML={{ __html: fireTvViewportBootScript() }}
+          />
+        ) : null}
         <Script
           id="streamly-jsonld"
           type="application/ld+json"

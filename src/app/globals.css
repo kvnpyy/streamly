@@ -381,6 +381,23 @@ html[data-living-room="true"] [data-tv-card-root][data-tv-focused="true"] {
   position: relative;
 }
 
+/*
+ * Fire TV Silk already stretches a narrow layout across the panel. Scaling the
+ * focused card on top of that reads as the whole page zooming while you move.
+ */
+html.stream-silk-hint.tv-server-hint {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+html.stream-silk-hint.tv-server-hint [data-tv-card-root]:focus,
+html.stream-silk-hint.tv-server-hint [data-tv-card-root]:focus-visible,
+html.stream-silk-hint.tv-server-hint [data-tv-card-root][data-tv-focused="true"] {
+  transform: none;
+}
+html.stream-silk-hint.tv-server-hint .tv-shelf-scroll {
+  will-change: auto;
+}
+
 html[data-tv-comfort="true"] [data-tv-card-root] {
   min-height: 2.75rem;
 }
@@ -671,6 +688,13 @@ html[data-samsung-tv="true"] .tv-home-spotlight {
   padding: 0.85rem 1.25rem;
   border-bottom: 1px solid var(--line);
   background: var(--bg-0);
+}
+
+.tv-sub-nav__actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.65rem;
 }
 
 .tv-sub-nav__back,
