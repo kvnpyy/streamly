@@ -3180,7 +3180,11 @@ export function PlayerOverlay() {
   }, [epgHeaderListings, clockMs]);
 
   const instantPlayerTransition =
-    quickVodPlayerOpen || mobileLikeViewport || chromiumDesktopClient;
+    quickVodPlayerOpen ||
+    mobileLikeViewport ||
+    chromiumDesktopClient ||
+    tvBrowser ||
+    silkLikeClient;
   const shownMuted = playerChromeShowsMuted({
     muted,
     volume,

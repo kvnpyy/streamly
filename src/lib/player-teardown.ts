@@ -38,6 +38,91 @@ export function destroyHlsInstance(hls: HlsTeardownTarget): void {
   }
 }
 
+type CloseHls = HlsTeardownTarget & {
+  bufferController?: {
+    mediaSource?: MediaSource | null;
+  } | null;
+};
+
+/**
+ * hls.js detach calls `sourceBuffer.abort()`, `removeSourceBuffer()`,
+ * `mediaSource.endOfStream()`, then `video.load()`. After a long live or VOD
+ * session those walk an infinite-duration buffer and never return on Silk,
+ * Tizen, and webOS — the tab stays dead until it is closed.
+ * Stop the network, then let destroy drop JS listeners without touching MSE.
+ */
+export function destroyHlsAfterLongPlayback(
+  hls: CloseHls,
+  video: HTMLVideoElement | null | undefined
+): void {
+  if (!hls) return;
+  const restore = disarmMediaPipelineForClose(hls, video);
+  try {
+    destroyHlsInstance(hls);
+  } finally {
+    restore();
+  }
+  if (video) {
+    try {
+      video.removeAttribute("src");
+    } catch {
+      /* noop */
+    }
+  }
+}
+
+function disarmMediaPipelineForClose(
+  hls: NonNullable<CloseHls>,
+  video: HTMLVideoElement | null | undefined
+): () => void {
+  const restores: Array<() => void> = [];
+  const mediaSource = hls.bufferController?.mediaSource ?? null;
+  if (mediaSource) {
+    restores.push(replaceMethod(mediaSource, "endOfStream", () => {}));
+    restores.push(replaceMethod(mediaSource, "removeSourceBuffer", () => {}));
+    try {
+      const buffers = mediaSource.sourceBuffers;
+      for (let i = 0; i < buffers.length; i++) {
+        const sb = buffers[i];
+        if (sb) restores.push(replaceMethod(sb, "abort", () => {}));
+      }
+    } catch {
+      /* noop */
+    }
+  }
+  if (video) {
+    restores.push(replaceMethod(video, "load", () => {}));
+    try {
+      video.removeAttribute("src");
+    } catch {
+      /* noop */
+    }
+  }
+  return () => {
+    for (const restore of restores) restore();
+  };
+}
+
+function replaceMethod<T extends object, K extends keyof T>(
+  target: T,
+  key: K,
+  next: T[K]
+): () => void {
+  const previous = target[key];
+  try {
+    target[key] = next;
+  } catch {
+    return () => {};
+  }
+  return () => {
+    try {
+      target[key] = previous;
+    } catch {
+      /* noop */
+    }
+  };
+}
+
 /**
  * Pause `<video>` and tear down hls.js immediately — used after fatal errors when a sync
  * stop is required before retry. Prefer deferred teardown on player close.

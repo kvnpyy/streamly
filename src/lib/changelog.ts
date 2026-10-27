@@ -11,6 +11,15 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.14.3",
+    date: "2026-10-27",
+    summary:
+      "Closing the player after a long watch no longer freezes the TV.",
+    highlights: [
+      "After a long movie or live session, closing the player flushed the whole buffer on the TV and the page never came back. That flush is skipped on Fire TV, Samsung, and LG. The home screen returns once the picture is gone.",
+    ],
+  },
+  {
     version: "0.14.2",
     date: "2026-10-27",
     summary:

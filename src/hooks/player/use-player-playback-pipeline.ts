@@ -59,10 +59,12 @@ import {
   vodTranscodeRecoveryPlayhead,
 } from "@/lib/player-transcode-playback-end";
 import {
+  destroyHlsAfterLongPlayback,
   destroyHlsInstance,
   pauseVideoElement,
   scheduleDeferredPlayerTeardown,
 } from "@/lib/player-teardown";
+import { usePlayer } from "@/store/player";
 import { detachVideoElement, safeVideoPlay, voidSafeVideoPlay } from "@/lib/video-play";
 import { applyElementMuted } from "@/lib/player-element-mute";
 import {
@@ -183,6 +185,23 @@ export type UsePlayerPlaybackPipelineParams = {
   /** Wall-clock: skip tip resume writes after an intentional scrub. */
   vodSeekSuppressTipPersistUntilRef?: RefObject<number>;
 };
+
+/**
+ * Channel changes still destroy MSE so the same `<video>` can attach again.
+ * Closing on a TV skips the buffer flush — that flush wedges Silk/Tizen
+ * after a long session.
+ */
+function releaseHlsOnTeardown(
+  hls: Parameters<typeof destroyHlsAfterLongPlayback>[0],
+  video: HTMLVideoElement | null | undefined
+): void {
+  const closingOnTv = !usePlayer.getState().open && isTvOrSilkUserAgent();
+  if (closingOnTv) {
+    destroyHlsAfterLongPlayback(hls, video);
+    return;
+  }
+  destroyHlsInstance(hls);
+}
 
 export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
   const {
@@ -521,7 +540,7 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
         hlsRef.current = null;
         deferredTeardownCancelRef.current = scheduleDeferredPlayerTeardown(() => {
           deferredTeardownCancelRef.current = null;
-          destroyHlsInstance(hlsToDestroy);
+          releaseHlsOnTeardown(hlsToDestroy, video);
           detachVideoElement(video);
         });
       };
@@ -1622,7 +1641,7 @@ export function usePlayerPlaybackPipeline(p: UsePlayerPlaybackPipelineParams) {
             }
           }
         }
-        destroyHlsInstance(hlsToDestroy);
+        releaseHlsOnTeardown(hlsToDestroy, video);
         if (vodTranscodeHls) {
           releaseVodTranscodePlayback(url);
         }

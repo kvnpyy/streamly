@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  destroyHlsAfterLongPlayback,
   destroyHlsInstance,
   eagerStopPlayerMedia,
   pauseVideoElement,
@@ -32,6 +33,46 @@ describe("destroyHlsInstance", () => {
 
   it("no-ops on null", () => {
     expect(() => destroyHlsInstance(null)).not.toThrow();
+  });
+});
+
+describe("destroyHlsAfterLongPlayback", () => {
+  it("stops the network and skips the MSE flush that hangs TV browsers", () => {
+    const load = vi.fn();
+    const abort = vi.fn();
+    const endOfStream = vi.fn();
+    const removeSourceBuffer = vi.fn();
+    const sourceBuffer = { abort };
+    const mediaSource = {
+      sourceBuffers: [sourceBuffer],
+      endOfStream,
+      removeSourceBuffer,
+    };
+    const video = {
+      pause: vi.fn(),
+      load,
+      removeAttribute: vi.fn(),
+      src: "blob:http://tv/session",
+    } as unknown as HTMLVideoElement;
+    const hls = {
+      stopLoad: vi.fn(),
+      bufferController: { mediaSource: mediaSource as unknown as MediaSource },
+      destroy() {
+        sourceBuffer.abort();
+        mediaSource.removeSourceBuffer(sourceBuffer);
+        mediaSource.endOfStream();
+        video.load();
+      },
+    };
+
+    destroyHlsAfterLongPlayback(hls, video);
+
+    expect(hls.stopLoad).toHaveBeenCalledOnce();
+    expect(abort).not.toHaveBeenCalled();
+    expect(removeSourceBuffer).not.toHaveBeenCalled();
+    expect(endOfStream).not.toHaveBeenCalled();
+    expect(load).not.toHaveBeenCalled();
+    expect(video.removeAttribute).toHaveBeenCalledWith("src");
   });
 });
 

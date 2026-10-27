@@ -29,6 +29,13 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.14.3] — 2026-10-27
+
+Closing the player after a long watch no longer freezes the TV.
+
+### Fixed
+- After a long movie or live session, closing the player flushed the whole buffer on the TV and the page never came back. That flush is skipped on Fire TV, Samsung, and LG. The home screen returns once the picture is gone.
+
 ## [0.14.2] — 2026-10-27
 
 My List is on the TV home, and Fire TV no longer opens the site zoomed in.

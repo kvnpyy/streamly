@@ -1,7 +1,15 @@
 "use client";
 
 import { scheduleBrowseRemountAfterClose } from "@/lib/player-teardown";
-import { useLayoutEffect, useEffect, useRef, useState, type ReactNode } from "react";
+import { isTvOrSilkUserAgent } from "@/lib/tv-user-agent";
+import {
+  startTransition,
+  useLayoutEffect,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 
 /**
  * Unmount browse UI while the player is open (saves TV RAM).
@@ -28,9 +36,15 @@ export function BrowseMountGate({
   useEffect(() => {
     if (frozen) return;
     const cycle = ++cycleRef.current;
-    return scheduleBrowseRemountAfterClose(() => {
-      if (cycleRef.current === cycle) setMounted(true);
-    });
+    const tv = isTvOrSilkUserAgent();
+    return scheduleBrowseRemountAfterClose(
+      () => {
+        startTransition(() => {
+          if (cycleRef.current === cycle) setMounted(true);
+        });
+      },
+      { maxWaitMs: tv ? 800 : 320 }
+    );
   }, [frozen]);
 
   if (!mounted) return null;
