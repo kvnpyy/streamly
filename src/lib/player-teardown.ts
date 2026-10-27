@@ -38,7 +38,9 @@ export function destroyHlsInstance(hls: HlsTeardownTarget): void {
   }
 }
 
-type CloseHls = HlsTeardownTarget & {
+type CloseHls = {
+  stopLoad(): void;
+  destroy(): void;
   bufferController?: {
     mediaSource?: MediaSource | null;
   } | null;
@@ -52,11 +54,11 @@ type CloseHls = HlsTeardownTarget & {
  * Stop the network, then let destroy drop JS listeners without touching MSE.
  */
 export function destroyHlsAfterLongPlayback(
-  hls: CloseHls,
+  hls: HlsTeardownTarget,
   video: HTMLVideoElement | null | undefined
 ): void {
   if (!hls) return;
-  const restore = disarmMediaPipelineForClose(hls, video);
+  const restore = disarmMediaPipelineForClose(hls as CloseHls, video);
   try {
     destroyHlsInstance(hls);
   } finally {
@@ -72,7 +74,7 @@ export function destroyHlsAfterLongPlayback(
 }
 
 function disarmMediaPipelineForClose(
-  hls: NonNullable<CloseHls>,
+  hls: CloseHls,
   video: HTMLVideoElement | null | undefined
 ): () => void {
   const restores: Array<() => void> = [];

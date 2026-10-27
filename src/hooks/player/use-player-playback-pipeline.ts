@@ -192,7 +192,7 @@ export type UsePlayerPlaybackPipelineParams = {
  * after a long session.
  */
 function releaseHlsOnTeardown(
-  hls: Parameters<typeof destroyHlsAfterLongPlayback>[0],
+  hls: Parameters<typeof destroyHlsInstance>[0],
   video: HTMLVideoElement | null | undefined
 ): void {
   const closingOnTv = !usePlayer.getState().open && isTvOrSilkUserAgent();
