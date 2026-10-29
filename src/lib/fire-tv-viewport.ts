@@ -1,10 +1,8 @@
 /**
- * Fire TV Silk (Fire Stick, Fire TV Cube) lays the page out around 960 CSS
- * pixels and stretches that across 1080p. The UI looks zoomed in, and D-pad
- * focus magnifies it further. Pin the layout width to the panel and lock
- * scale so navigation cannot pinch-zoom.
- *
- * Fire tablets (KF* Silk) are not matched — they keep device-width.
+ * Fire TV Silk lays the page out around 960 CSS pixels and stretches that
+ * across 1080p. `width=1920` with `maximum-scale=1` locks that stretch, so a
+ * refresh still looks zoomed in. Leave the viewport at device-width and let
+ * CSS zoom fit a narrow Silk window. Fire tablets (KF*) are not matched.
  */
 
 export const FIRE_TV_WIDE_LAYOUT_PX = 1920;
@@ -30,12 +28,12 @@ export function fireTvLayoutWidth(screenWidth: number): number {
   return FIRE_TV_WIDE_LAYOUT_PX;
 }
 
-export function fireTvViewportContent(layoutWidth: number): string {
-  const width = Math.min(
-    FIRE_TV_WIDE_LAYOUT_PX,
-    Math.max(FIRE_TV_COMPACT_LAYOUT_PX, Math.round(layoutWidth) || FIRE_TV_WIDE_LAYOUT_PX)
-  );
-  return `width=${width}, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover`;
+/** Unlocks a Fire TV browser that was pinned to a 1920px layout at scale 1. */
+export const FIRE_TV_DEVICE_VIEWPORT =
+  "width=device-width, initial-scale=1, viewport-fit=cover";
+
+export function fireTvViewportContent(): string {
+  return FIRE_TV_DEVICE_VIEWPORT;
 }
 
 /**
@@ -53,12 +51,11 @@ export function resolveFireTvViewportBoot(input: {
     /;\s*AFT[A-Z0-9]+\b/i.test(ua) ||
     (/\bsilk\b/i.test(ua) && /fire\s*tv|amazon\.fire|cloud_fire_tv/i.test(ua));
   if (!fireTv) return null;
-  const screenWidth = input.screenWidth;
-  const layout =
-    screenWidth >= 1280 && screenWidth <= 1360 ? Math.round(screenWidth) : 1920;
-  const width = Math.min(1920, Math.max(1280, Math.round(layout) || 1920));
-  const next = `width=${width}, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover`;
   const current = (input.currentContent ?? "").trim();
+  const locked =
+    /width\s*=\s*1920\b/.test(current) || /maximum-scale\s*=\s*1\b/.test(current);
+  if (!locked) return null;
+  const next = "width=device-width, initial-scale=1, viewport-fit=cover";
   if (current.replace(/\s+/g, "") === next.replace(/\s+/g, "")) return null;
   return next;
 }
@@ -72,7 +69,35 @@ export function resolveFireTvViewport(input: {
   return resolveFireTvViewportBoot(input);
 }
 
+/**
+ * Scale that fits a narrow Silk layout onto the panel. Null when the viewport
+ * is already about as wide as the TV. Self-contained so the boot script can
+ * eval `toString()` without module bindings.
+ */
+export function fireTvFitZoom(input: {
+  ua: string;
+  innerWidth: number;
+  screenWidth: number;
+}): number | null {
+  const ua = input.ua || "";
+  const fireTv =
+    /;\s*AFT[A-Z0-9]+\b/i.test(ua) ||
+    (/\bsilk\b/i.test(ua) && /fire\s*tv|amazon\.fire|cloud_fire_tv/i.test(ua));
+  if (!fireTv) return null;
+  const screenWidth = input.screenWidth || 0;
+  const inner = input.innerWidth || 0;
+  if (inner <= 0) return null;
+  const layout =
+    screenWidth >= 1280 && screenWidth <= 1360 ? Math.round(screenWidth) : 1920;
+  if (inner >= layout * 0.85) return null;
+  let scale = Math.round((inner / layout) * 100) / 100;
+  if (scale < 0.4) scale = 0.4;
+  if (scale > 1) scale = 1;
+  return scale;
+}
+
 export function fireTvViewportBootScript(): string {
-  const fn = resolveFireTvViewportBoot.toString();
-  return `(function(){try{var meta=document.querySelector('meta[name="viewport"]');var current=meta?meta.getAttribute("content")||"":"";var next=(${fn})({ua:navigator.userAgent||"",innerWidth:window.innerWidth||0,screenWidth:(window.screen&&window.screen.width)||0,currentContent:current});if(!next)return;if(!meta){meta=document.createElement("meta");meta.setAttribute("name","viewport");(document.head||document.documentElement).appendChild(meta);}meta.setAttribute("content",next);}catch(e){}})();`;
+  const viewportFn = resolveFireTvViewportBoot.toString();
+  const zoomFn = fireTvFitZoom.toString();
+  return `(function(){try{var ua=navigator.userAgent||"";var apply=function(){var inner=window.innerWidth||0;var screenW=(window.screen&&window.screen.width)||0;var meta=document.querySelector('meta[name="viewport"]');var current=meta?meta.getAttribute("content")||"":"";var next=(${viewportFn})({ua:ua,innerWidth:inner,screenWidth:screenW,currentContent:current});if(next){if(!meta){meta=document.createElement("meta");meta.setAttribute("name","viewport");(document.head||document.documentElement).appendChild(meta);}meta.setAttribute("content",next);}var zoom=(${zoomFn})({ua:ua,innerWidth:inner,screenWidth:screenW});if(zoom){var root=document.documentElement;root.style.zoom=String(zoom);root.style.width=Math.round(100/zoom)+"%";}};apply();document.addEventListener("DOMContentLoaded",apply);}catch(e){}})();`;
 }

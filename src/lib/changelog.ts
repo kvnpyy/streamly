@@ -11,6 +11,14 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.14.4",
+    date: "2026-10-28",
+    summary: "Fire TV no longer stays zoomed in after a refresh.",
+    highlights: [
+      "The last Fire TV fix locked the page at full scale, so a refresh still looked magnified. A narrow Silk window now draws at half size and fills the screen.",
+    ],
+  },
+  {
     version: "0.14.3",
     date: "2026-10-27",
     summary:

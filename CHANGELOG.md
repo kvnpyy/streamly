@@ -29,6 +29,13 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.14.4] — 2026-10-28
+
+Fire TV no longer stays zoomed in after a refresh.
+
+### Fixed
+- The last Fire TV fix locked the page at full scale, so a refresh still looked magnified. A narrow Silk window now draws at half size and fills the screen.
+
 ## [0.14.3] — 2026-10-27
 
 Closing the player after a long watch no longer freezes the TV.

@@ -389,6 +389,7 @@ html.stream-silk-hint.tv-server-hint {
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
 }
+
 html.stream-silk-hint.tv-server-hint [data-tv-card-root]:focus,
 html.stream-silk-hint.tv-server-hint [data-tv-card-root]:focus-visible,
 html.stream-silk-hint.tv-server-hint [data-tv-card-root][data-tv-focused="true"] {

@@ -1,10 +1,11 @@
 import { runInNewContext } from "node:vm";
 import { describe, expect, it } from "vitest";
 import {
+  FIRE_TV_DEVICE_VIEWPORT,
   FIRE_TV_WIDE_LAYOUT_PX,
+  fireTvFitZoom,
   fireTvLayoutWidth,
   fireTvViewportBootScript,
-  fireTvViewportContent,
   isFireTvBrowserUa,
   resolveFireTvViewport,
 } from "./fire-tv-viewport";
@@ -17,6 +18,9 @@ const FIRE_TABLET_UA =
 
 const DESKTOP_UA =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36";
+
+const LOCKED_1920 =
+  "width=1920, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover";
 
 describe("isFireTvBrowserUa", () => {
   it("matches Fire Stick and Fire TV Silk, not tablets or desktop", () => {
@@ -33,44 +37,25 @@ describe("isFireTvBrowserUa", () => {
 });
 
 describe("resolveFireTvViewport", () => {
-  it("pins a narrow Fire TV layout to the panel and locks pinch zoom", () => {
+  it("drops the locked 1920px scale that keeps Silk zoomed in", () => {
     expect(fireTvLayoutWidth(960)).toBe(FIRE_TV_WIDE_LAYOUT_PX);
-    expect(fireTvLayoutWidth(1920)).toBe(1920);
-    expect(fireTvLayoutWidth(1280)).toBe(1280);
-    expect(fireTvLayoutWidth(1470)).toBe(1920);
-    expect(fireTvLayoutWidth(3840)).toBe(1920);
-
-    const next = resolveFireTvViewport({
-      ua: FIRE_STICK_UA,
-      innerWidth: 960,
-      screenWidth: 1920,
-      currentContent: "width=device-width, initial-scale=1",
-    });
-    expect(next).toBe(fireTvViewportContent(1920));
-    expect(next).toContain("width=1920");
-    expect(next).toContain("maximum-scale=1");
-    expect(next).toContain("user-scalable=no");
-  });
-
-  it("uses the 720p panel width when Silk reports it", () => {
     expect(
       resolveFireTvViewport({
         ua: FIRE_STICK_UA,
-        innerWidth: 640,
-        screenWidth: 1280,
-        currentContent: "width=device-width, initial-scale=1",
-      })
-    ).toBe(fireTvViewportContent(1280));
-  });
-
-  it("leaves an already locked Fire TV viewport alone", () => {
-    const locked = fireTvViewportContent(1920);
-    expect(
-      resolveFireTvViewport({
-        ua: FIRE_STICK_UA,
-        innerWidth: 1920,
+        innerWidth: 960,
         screenWidth: 1920,
-        currentContent: locked,
+        currentContent: LOCKED_1920,
+      })
+    ).toBe(FIRE_TV_DEVICE_VIEWPORT);
+  });
+
+  it("leaves a normal device-width viewport alone", () => {
+    expect(
+      resolveFireTvViewport({
+        ua: FIRE_STICK_UA,
+        innerWidth: 960,
+        screenWidth: 1920,
+        currentContent: FIRE_TV_DEVICE_VIEWPORT,
       })
     ).toBeNull();
   });
@@ -81,7 +66,7 @@ describe("resolveFireTvViewport", () => {
         ua: FIRE_TABLET_UA,
         innerWidth: 800,
         screenWidth: 1200,
-        currentContent: "width=device-width, initial-scale=1",
+        currentContent: LOCKED_1920,
       })
     ).toBeNull();
     expect(
@@ -89,17 +74,46 @@ describe("resolveFireTvViewport", () => {
         ua: DESKTOP_UA,
         innerWidth: 1440,
         screenWidth: 1440,
-        currentContent: "width=device-width, initial-scale=1",
+        currentContent: LOCKED_1920,
+      })
+    ).toBeNull();
+  });
+});
+
+describe("fireTvFitZoom", () => {
+  it("halves a 960px Silk layout on a 1080p panel", () => {
+    expect(
+      fireTvFitZoom({
+        ua: FIRE_STICK_UA,
+        innerWidth: 960,
+        screenWidth: 1920,
+      })
+    ).toBe(0.5);
+  });
+
+  it("does not shrink a layout that is already panel-sized", () => {
+    expect(
+      fireTvFitZoom({
+        ua: FIRE_STICK_UA,
+        innerWidth: 1920,
+        screenWidth: 1920,
+      })
+    ).toBeNull();
+    expect(
+      fireTvFitZoom({
+        ua: FIRE_TABLET_UA,
+        innerWidth: 800,
+        screenWidth: 1200,
       })
     ).toBeNull();
   });
 });
 
 describe("fireTvViewportBootScript", () => {
-  it("rewrites the viewport meta the same way as the helper", () => {
+  it("rewrites a locked 1920 viewport back to device-width", () => {
     const script = fireTvViewportBootScript();
     const meta = {
-      content: "width=device-width, initial-scale=1",
+      content: LOCKED_1920,
       getAttribute(name: string) {
         return name === "content" ? this.content : null;
       },
@@ -107,12 +121,13 @@ describe("fireTvViewportBootScript", () => {
         if (name === "content") this.content = value;
       },
     };
+    const root = { style: { zoom: "", width: "" } };
     const document = {
       querySelector(sel: string) {
         return sel === 'meta[name="viewport"]' ? meta : null;
       },
       head: { appendChild() {} },
-      documentElement: { appendChild() {} },
+      documentElement: root,
       createElement() {
         return meta;
       },
@@ -122,13 +137,8 @@ describe("fireTvViewportBootScript", () => {
       navigator: { userAgent: FIRE_STICK_UA },
       window: { innerWidth: 960, screen: { width: 1920 } },
     });
-    expect(meta.content).toBe(
-      resolveFireTvViewport({
-        ua: FIRE_STICK_UA,
-        innerWidth: 960,
-        screenWidth: 1920,
-        currentContent: "width=device-width, initial-scale=1",
-      })
-    );
+    expect(meta.content).toBe(FIRE_TV_DEVICE_VIEWPORT);
+    expect(root.style.zoom).toBe("0.5");
+    expect(root.style.width).toBe("200%");
   });
 });

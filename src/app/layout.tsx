@@ -3,7 +3,6 @@ import { Geist, Geist_Mono } from "next/font/google";
 import {
   fireTvViewportBootScript,
   isFireTvBrowserUa,
-  FIRE_TV_WIDE_LAYOUT_PX,
 } from "@/lib/fire-tv-viewport";
 import {
   STREAM_SAMSUNG_TV_HEADER,
@@ -80,23 +79,12 @@ export const metadata: Metadata = {
   },
 };
 
-export async function generateViewport(): Promise<Viewport> {
-  const h = await headers();
-  const ua = h.get("user-agent") ?? "";
-  const base: Viewport = {
-    themeColor: "#06070b",
-    width: "device-width",
-    initialScale: 1,
-    viewportFit: "cover",
-  };
-  if (!isFireTvBrowserUa(ua)) return base;
-  return {
-    ...base,
-    width: FIRE_TV_WIDE_LAYOUT_PX,
-    maximumScale: 1,
-    userScalable: false,
-  };
-}
+export const viewport: Viewport = {
+  themeColor: "#06070b",
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+};
 
 export default async function RootLayout({
   children,
@@ -132,6 +120,7 @@ export default async function RootLayout({
       className={cn(
         "h-full antialiased",
         tvServerHint && "tv-server-hint",
+        fireTv && "fire-tv-hint",
         silkHint && "stream-silk-hint",
         samsungTvHint && "samsung-tv-hint",
         !skipRemoteFonts && geistSans.variable,
