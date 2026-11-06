@@ -21,6 +21,7 @@ import {
   LANDING_HERO_ASIDE,
   LANDING_HERO_KICKER,
   LANDING_HERO_LEAD,
+  LANDING_HERO_TAGLINE,
   LANDING_STEPS,
   LANDING_STEPS_HEADING,
   type LandingFeatureIcon,
@@ -148,7 +149,7 @@ export function MarketingLanding() {
         {/* Hero */}
         <section className="max-w-6xl mx-auto px-4 sm:px-6 pt-10 sm:pt-14 pb-14 sm:pb-20">
           <div className="grid lg:grid-cols-[1.08fr_0.92fr] gap-10 lg:gap-14 items-center">
-            <div className="order-2 lg:order-1">
+            <div>
               <p className="inline-flex items-center gap-2 rounded-full border border-(--brand-2)/25 bg-(--brand-2)/8 px-3.5 py-1.5 text-xs sm:text-sm text-(--brand-2) font-medium mb-5 max-w-full">
                 <span className="landing-live-dot size-1.5 rounded-full bg-(--brand-2) shrink-0" />
                 <span>{LANDING_HERO_KICKER}</span>
@@ -160,25 +161,28 @@ export function MarketingLanding() {
                 </span>
                 {h1After}
               </h1>
-              <p className="mt-6 text-base sm:text-[1.0625rem] text-(--text-dim) max-w-xl leading-[1.7]">
-                {LANDING_HERO_LEAD}
+              <p className="mt-4 text-lg sm:text-xl font-medium text-(--text) max-w-xl leading-snug">
+                {LANDING_HERO_TAGLINE}
               </p>
-              <div className="mt-8 flex flex-col sm:flex-row gap-3">
+              <div className="mt-7 flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-5">
                 <Link
                   href="/login"
                   className="landing-focus-ring inline-flex items-center justify-center gap-2 rounded-xl btn-brand px-8 py-3.5 text-base font-semibold text-white min-h-12 shadow-[0_12px_40px_rgba(124,92,255,0.35)] hover:shadow-[0_16px_48px_rgba(124,92,255,0.42)] transition-shadow"
                 >
-                  Sign in with your provider
+                  Open the player
                   <ChevronRight className="size-4" aria-hidden />
                 </Link>
                 <Link
                   href="/blog/how-to-self-host-streamly"
-                  className="landing-focus-ring inline-flex items-center justify-center rounded-xl border border-white/12 bg-white/[0.04] px-6 py-3.5 text-sm font-medium text-(--text) min-h-12 hover:border-white/22 hover:bg-white/[0.06] transition-colors"
+                  className="landing-focus-ring inline-flex items-center justify-center rounded-lg px-1 text-sm font-medium text-(--text-muted) min-h-11 hover:text-(--text) underline-offset-4 hover:underline transition-colors"
                 >
                   Self-hosted IPTV player (Docker)
                 </Link>
               </div>
-              <ul className="mt-6 flex flex-wrap gap-2" aria-label="Supported formats">
+              <p className="mt-7 text-[15px] sm:text-base text-(--text-dim) max-w-xl leading-[1.7]">
+                {LANDING_HERO_LEAD}
+              </p>
+              <ul className="mt-5 flex flex-wrap gap-2" aria-label="Supported formats">
                 {HERO_TRUST.map((label) => (
                   <li key={label} className="chip text-[11px] sm:text-xs">
                     {label}
@@ -190,7 +194,7 @@ export function MarketingLanding() {
                 <span>{LANDING_HERO_ASIDE}</span>
               </p>
             </div>
-            <div className="order-1 lg:order-2">
+            <div>
               <LandingHeroPreview />
             </div>
           </div>
