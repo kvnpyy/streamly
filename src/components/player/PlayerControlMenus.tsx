@@ -1,7 +1,11 @@
 "use client";
 
 import type { CastSenderUiState } from "@/hooks/player/use-player-cast";
-import type { PlayerAudioTrack } from "@/lib/player-audio-tracks";
+import {
+  audioTrackMatchesPreferred,
+  viewerPreferredAudioLanguages,
+  type PlayerAudioTrack,
+} from "@/lib/player-audio-tracks";
 import {
   PLAYBACK_SPEED_OPTIONS,
   playbackSpeedLabel,
@@ -27,6 +31,7 @@ import {
   Check,
   Copy,
   ExternalLink,
+  Headphones,
   Settings2,
   Share2,
 } from "lucide-react";
@@ -44,6 +49,8 @@ export type PlayerControlMenusProps = {
   hasSubtitles: boolean;
   showSubs: boolean;
   setShowSubs: React.Dispatch<React.SetStateAction<boolean>>;
+  showAudio: boolean;
+  setShowAudio: React.Dispatch<React.SetStateAction<boolean>>;
   showSettings: boolean;
   setShowSettings: React.Dispatch<React.SetStateAction<boolean>>;
   showShare: boolean;
@@ -80,6 +87,8 @@ export function PlayerControlMenus({
   hasSubtitles,
   showSubs,
   setShowSubs,
+  showAudio,
+  setShowAudio,
   showSettings,
   setShowSettings,
   showShare,
@@ -110,11 +119,23 @@ export function PlayerControlMenus({
   directUrl,
 }: PlayerControlMenusProps) {
   const [providerCopied, setProviderCopied] = useState(false);
-  const closeOtherPanels = (except: "subs" | "settings" | "share") => {
+  const closeOtherPanels = (except: "subs" | "audio" | "settings" | "share") => {
     if (except !== "subs") setShowSubs(false);
+    if (except !== "audio") setShowAudio(false);
     if (except !== "settings") setShowSettings(false);
     if (except !== "share") setShowShare(false);
   };
+
+  const preferredLanguages = viewerPreferredAudioLanguages();
+  const activeAudio = audioTracks.find((track) => track.id === activeAudioTrack);
+  const onlyAudioIsOtherLanguage =
+    audioTracks.length === 1 &&
+    !audioTrackMatchesPreferred(
+      { lang: audioTracks[0]?.lang, name: audioTracks[0]?.label },
+      preferredLanguages
+    );
+  const showAudioButton = audioTracks.length > 1 || onlyAudioIsOtherLanguage;
+  const showCaptionsButton = hasSubtitles || !isLive;
 
   const appleWebKit =
     typeof navigator !== "undefined" && isAppleMobileWebKitDevice();
@@ -127,7 +148,7 @@ export function PlayerControlMenus({
 
   return (
     <>
-      {hasSubtitles && (
+      {showCaptionsButton && (
         <div className="relative">
           <button
             type="button"
@@ -136,6 +157,7 @@ export function PlayerControlMenus({
               closeOtherPanels("subs");
             }}
             aria-label="Subtitles"
+            title="Subtitles"
             className={cn(
               "size-9 grid place-items-center rounded-lg hover:bg-white/10",
               showSubs && "bg-white/15",
@@ -155,44 +177,120 @@ export function PlayerControlMenus({
                 <div className="px-3 py-2 text-[11px] uppercase tracking-wider text-white/50">
                   Subtitles
                 </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    onSwitchSubtitle(-1);
-                    setShowSubs(false);
-                  }}
-                  className={cn(
-                    "w-full text-left px-3 py-2 rounded-lg text-sm hover:bg-white/10 flex items-center justify-between",
-                    activeSubtitle === -1 && "bg-white/10"
-                  )}
-                >
-                  Off
-                  {activeSubtitle === -1 && <Check className="size-3.5" />}
-                </button>
-                {subtitles.map((s) => (
+                {subtitles.length === 0 ? (
+                  <div className="px-3 py-2 text-sm text-white/70 leading-snug">
+                    This video doesn’t include subtitles.
+                  </div>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onSwitchSubtitle(-1);
+                        setShowSubs(false);
+                      }}
+                      className={cn(
+                        "w-full text-left px-3 py-2 rounded-lg text-sm hover:bg-white/10 flex items-center justify-between",
+                        activeSubtitle === -1 && "bg-white/10"
+                      )}
+                    >
+                      Off
+                      {activeSubtitle === -1 && <Check className="size-3.5" />}
+                    </button>
+                    {subtitles.map((s) => (
+                      <button
+                        key={s.id}
+                        type="button"
+                        onClick={() => {
+                          onSwitchSubtitle(s.id);
+                          setShowSubs(false);
+                        }}
+                        className={cn(
+                          "w-full text-left px-3 py-2 rounded-lg text-sm hover:bg-white/10 flex items-center justify-between",
+                          activeSubtitle === s.id && "bg-white/10"
+                        )}
+                      >
+                        <span className="truncate">
+                          {s.label}
+                          {s.lang && (
+                            <span className="text-white/40 ml-1.5">{s.lang}</span>
+                          )}
+                        </span>
+                        {activeSubtitle === s.id && (
+                          <Check className="size-3.5 shrink-0" />
+                        )}
+                      </button>
+                    ))}
+                  </>
+                )}
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+      )}
+
+      {showAudioButton && (
+        <div className="relative">
+          <button
+            type="button"
+            onClick={() => {
+              setShowAudio((s) => !s);
+              closeOtherPanels("audio");
+            }}
+            aria-label="Audio language"
+            title="Audio language"
+            className={cn(
+              "h-9 px-2.5 grid grid-flow-col place-items-center gap-1.5 rounded-lg hover:bg-white/10 text-xs",
+              showAudio && "bg-white/15"
+            )}
+          >
+            <Headphones className="size-4" />
+            <span className="hidden sm:inline max-w-16 truncate">
+              {activeAudio?.label || "Audio"}
+            </span>
+          </button>
+          <AnimatePresence>
+            {showAudio && (
+              <motion.div
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 6 }}
+                className="absolute right-0 bottom-11 w-56 glass rounded-xl p-1.5 overflow-hidden max-h-72 overflow-y-auto"
+              >
+                <div className="px-3 py-2 text-[11px] uppercase tracking-wider text-white/50">
+                  Audio language
+                </div>
+                {audioTracks.map((track) => (
                   <button
-                    key={s.id}
+                    key={track.id}
                     type="button"
                     onClick={() => {
-                      onSwitchSubtitle(s.id);
-                      setShowSubs(false);
+                      onSwitchAudioTrack(track.id);
+                      setShowAudio(false);
                     }}
+                    disabled={audioTracks.length < 2}
                     className={cn(
                       "w-full text-left px-3 py-2 rounded-lg text-sm hover:bg-white/10 flex items-center justify-between",
-                      activeSubtitle === s.id && "bg-white/10"
+                      activeAudioTrack === track.id && "bg-white/10",
+                      audioTracks.length < 2 && "cursor-default hover:bg-transparent"
                     )}
                   >
                     <span className="truncate">
-                      {s.label}
-                      {s.lang && (
-                        <span className="text-white/40 ml-1.5">{s.lang}</span>
+                      {track.label}
+                      {track.lang && (
+                        <span className="text-white/40 ml-1.5">{track.lang}</span>
                       )}
                     </span>
-                    {activeSubtitle === s.id && (
+                    {activeAudioTrack === track.id && (
                       <Check className="size-3.5 shrink-0" />
                     )}
                   </button>
                 ))}
+                {audioTracks.length < 2 && (
+                  <div className="px-3 py-2 text-xs text-white/50 leading-snug">
+                    This is the only language in this video.
+                  </div>
+                )}
               </motion.div>
             )}
           </AnimatePresence>
@@ -246,40 +344,12 @@ export function PlayerControlMenus({
                   ))}
                 </>
               )}
-              {audioTracks.length > 1 && (
-                <>
-                  <div className="px-3 py-2 text-[11px] uppercase tracking-wider text-white/50 border-t border-white/10 mt-1">
-                    Audio
-                  </div>
-                  {audioTracks.map((track) => (
-                    <button
-                      key={track.id}
-                      type="button"
-                      onClick={() => {
-                        onSwitchAudioTrack(track.id);
-                        setShowSettings(false);
-                      }}
-                      className={cn(
-                        "w-full text-left px-3 py-2 rounded-lg text-sm hover:bg-white/10 flex items-center justify-between",
-                        activeAudioTrack === track.id && "bg-white/10"
-                      )}
-                    >
-                      <span className="truncate">
-                        {track.label}
-                        {track.lang && (
-                          <span className="text-white/40 ml-1.5">
-                            {track.lang}
-                          </span>
-                        )}
-                      </span>
-                      {activeAudioTrack === track.id && (
-                        <Check className="size-3.5 shrink-0" />
-                      )}
-                    </button>
-                  ))}
-                </>
-              )}
-              <div className="px-3 py-2 text-[11px] uppercase tracking-wider text-white/50 border-t border-white/10 mt-1">
+              <div
+                className={cn(
+                  "px-3 py-2 text-[11px] uppercase tracking-wider text-white/50",
+                  !isLive && "border-t border-white/10 mt-1"
+                )}
+              >
                 Quality
               </div>
               {levels.length > 1 &&

@@ -9,6 +9,10 @@ import {
   isSafariFamilyWithoutChromium,
 } from "@/lib/browser";
 import type { TvLiveFreezeAction } from "@/lib/live-tv-freeze-recovery";
+import {
+  pickBrowserFriendlyAudioTrackIndex,
+  viewerPreferredAudioLanguages,
+} from "@/lib/player-audio-tracks";
 import { voidSafeVideoPlay } from "@/lib/video-play";
 import Hls, { type Level } from "hls.js";
 
@@ -311,35 +315,17 @@ export function tryCapAbrLower(hls: Hls): void {
 }
 
 export function preferBrowserFriendlyAudioTrack(
-  hls: Pick<Hls, "audioTracks" | "audioTrack">
+  hls: Pick<Hls, "audioTracks" | "audioTrack">,
+  preferredLanguages?: readonly string[]
 ): void {
   const tracks = hls.audioTracks;
   if (!tracks?.length) return;
 
-  const rank = (codec: string | undefined) => {
-    const c = (codec ?? "").toLowerCase();
-    if (c.includes("mp4a") || c.includes("aac")) return 0;
-    if (c.includes("opus")) return 1;
-    if (
-      c.includes("ec-3") ||
-      c.includes("eac3") ||
-      c.includes("ac-3") ||
-      c.includes("ac3")
-    )
-      return 4;
-    if (c.includes("dts")) return 4;
-    return 2;
-  };
-
-  let best = 0;
-  let bestR = rank(tracks[0].audioCodec);
-  for (let i = 1; i < tracks.length; i++) {
-    const r = rank(tracks[i].audioCodec);
-    if (r < bestR) {
-      bestR = r;
-      best = i;
-    }
-  }
+  const best = pickBrowserFriendlyAudioTrackIndex(
+    tracks,
+    preferredLanguages ?? viewerPreferredAudioLanguages()
+  );
+  if (best < 0 || hls.audioTrack === best) return;
 
   try {
     hls.audioTrack = best;

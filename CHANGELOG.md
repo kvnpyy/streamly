@@ -29,6 +29,14 @@ Also published at **[iptvwebplayer.org/changelog](https://iptvwebplayer.org/chan
 
 ---
 
+## [0.14.5] — 2026-11-09
+
+Shows start in your language when the browser can play it, and audio and subtitles are easier to find.
+
+### Fixed
+- If a show has English and another language in a format your browser can play, it starts on your language instead of whichever track is listed first.
+- Audio language has its own button in the player. On movies and episodes, the captions button is always there, and it says so when the video has no subtitles.
+
 ## [0.14.4] — 2026-10-28
 
 Fire TV no longer stays zoomed in after a refresh.

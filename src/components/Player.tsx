@@ -477,6 +477,7 @@ export function PlayerOverlay() {
   );
   const [showSettings, setShowSettings] = useState(false);
   const [showSubs, setShowSubs] = useState(false);
+  const [showAudio, setShowAudio] = useState(false);
   const [showShare, setShowShare] = useState(false);
   const [showEpg, setShowEpg] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -509,8 +510,8 @@ export function PlayerOverlay() {
   }, [isPlaying]);
   useEffect(() => {
     playerPanelsOpenRef.current =
-      showSettings || showSubs || showShare || showEpg;
-  }, [showSettings, showSubs, showShare, showEpg]);
+      showSettings || showSubs || showAudio || showShare || showEpg;
+  }, [showSettings, showSubs, showAudio, showShare, showEpg]);
   const stallTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const probeFetchRef = useRef<AbortController | null>(null);
   const fragLoadDowngradeRef = useRef(0);
@@ -2399,6 +2400,7 @@ export function PlayerOverlay() {
     document.documentElement.classList.remove("player-immersive");
     setShowSettings(false);
     setShowSubs(false);
+    setShowAudio(false);
     setShowShare(false);
     setShowEpg(false);
     setShowControls(true);
@@ -3608,6 +3610,7 @@ export function PlayerOverlay() {
                           if (hideTimer.current) clearTimeout(hideTimer.current);
                           setShowSettings(false);
                           setShowSubs(false);
+                          setShowAudio(false);
                           setShowShare(false);
                           setShowEpg(false);
                           setShowControls(false);
@@ -3850,6 +3853,8 @@ export function PlayerOverlay() {
                           hasSubtitles={subtitles.length > 0}
                           showSubs={showSubs}
                           setShowSubs={setShowSubs}
+                          showAudio={showAudio}
+                          setShowAudio={setShowAudio}
                           showSettings={showSettings}
                           setShowSettings={setShowSettings}
                           showShare={showShare}

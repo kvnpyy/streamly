@@ -11,6 +11,16 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: "0.14.5",
+    date: "2026-11-09",
+    summary:
+      "Shows start in your language when the browser can play it, and audio and subtitles are easier to find.",
+    highlights: [
+      "If a show has English and another language in a format your browser can play, it starts on your language instead of whichever track is listed first.",
+      "Audio language has its own button in the player. On movies and episodes, the captions button is always there, and it says so when the video has no subtitles.",
+    ],
+  },
+  {
     version: "0.14.4",
     date: "2026-10-28",
     summary: "Fire TV no longer stays zoomed in after a refresh.",
