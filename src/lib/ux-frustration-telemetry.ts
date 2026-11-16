@@ -132,8 +132,10 @@ export function reportUxSeekOutcome(input: {
 }
 
 function readReloadMemory(): ReloadMemory | null {
-  if (typeof sessionStorage === "undefined") return null;
   try {
+    // typeof does not suppress SecurityError from the sessionStorage getter
+    // (sandboxed iframe / opaque origin). Must stay inside try.
+    if (typeof sessionStorage === "undefined") return null;
     const raw = sessionStorage.getItem(RELOAD_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as ReloadMemory;
